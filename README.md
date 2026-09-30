@@ -1,47 +1,88 @@
 # Warcraft Logs Agent App
 
-A small Python starter app to fetch and analyze Warcraft Logs data for encounters like Heroic Ula'tek in The Venomous Abyss.
+An interactive terminal chat app that lets you pick a raid encounter and then ask
+an AI agent to pull and analyze [Warcraft Logs](https://www.warcraftlogs.com)
+ranking data for it.
 
-## What this app does
+Example session:
 
-- Authenticates against Warcraft Logs using OAuth2 client credentials
-- Runs GraphQL queries against the public v2 API
-- Normalizes ranking/spec data into pandas DataFrames
-- Lets you ask an LLM-driven agent questions over fetched parse/ranking data
-- Supports saving raw JSON and CSV outputs for later analysis
+```
+Selected: The Venomous Abyss > Ula'tek > Heroic
 
-## What you need to do manually
+You: How well are hunters performing?
+  [calling get_selected_encounter...]
+  [calling get_spec_options...]
+  [calling get_rankings_distribution...]
+Agent: On Heroic Ula'tek this season, across 500 logged Hunter parses ...
+```
 
-1. Create a Warcraft Logs API client in your account:
-   - Log in to Warcraft Logs
-   - Open the client management page
-   - Create a client and copy your `client_id` and `client_secret`
-2. Export these environment variables before running:
-   - `WCL_CLIENT_ID`
-   - `WCL_CLIENT_SECRET`
-   - optionally `OPENAI_API_KEY` if you want the agent mode
-3. Decide whether you want:
-   - public API only, enough for public rankings/statistics
-   - user auth later, if you want private reports
-4. Install Python 3.11+ and dependencies.
+## How it works
 
-## Quick start
+- **Frontend:** a terminal menu (`main.py`) that lists live zones/encounters/
+  difficulties, then a chat REPL.
+- **Agent:** built with [Google ADK](https://adk.dev) driven by **Gemini**
+  (`wcl_agent/`). It calls tools that query the Warcraft Logs v2 GraphQL API,
+  compute score percentiles / spec breakdowns, and report back.
+- **Data:** the current-season ranking leaderboard for the selected fight
+  (top-of-distribution; not a rolling last-7-days window).
+
+## Setup
+
+1. **Create a Warcraft Logs API client** at
+   <https://www.warcraftlogs.com/api/clients/> and copy the `client_id` /
+   `client_secret`.
+2. **Set up Gemini via Vertex AI** using your gcloud Application Default
+   Credentials (no API key stored in the repo):
+   ```bash
+   gcloud auth application-default login
+   ```
+   Make sure the Vertex AI API is enabled on your project.
+3. **Configure env:**
+   ```bash
+   cp .env.example .env
+   # edit .env: WCL keys + GOOGLE_CLOUD_PROJECT
+   # (GOOGLE_CLOUD_LOCATION defaults to the global endpoint)
+   ```
+4. **Install deps with uv** (Python >= 3.10):
+   ```bash
+   uv sync
+   ```
+
+> Prefer an AI Studio API key instead of Vertex? Set
+> `GOOGLE_GENAI_USE_VERTEXAI=FALSE` and `GOOGLE_API_KEY=...` in `.env`.
+
+## Run
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export WCL_CLIENT_ID=your_client_id
-export WCL_CLIENT_SECRET=your_client_secret
-export OPENAI_API_KEY=your_openai_key   # optional
-python app.py fetch-rankings --zone 53 --difficulty 4 --encounter 3492 --metric dps --out data/ulatek_rankings.json
-python app.py summarize --input data/ulatek_rankings.json
+uv run python main.py
+```
+
+Pick a zone → encounter → difficulty from the menu, then chat. Try:
+
+- `How well are hunters performing?`
+- `Which hunter spec is strongest here?`
+- `What DPS do I need for a 95th percentile parse?`
+
+Type `exit` to quit.
+
+## Quick checks
+
+```bash
+# Verify imports resolve
+uv run python -c "import google.adk, requests, pandas"
+
+# Smoke-test the WCL API (no LLM) — prints your hourly points budget
+uv run python -c "from dotenv import load_dotenv; load_dotenv(); \
+from wcl_agent.wcl_client import check_rate_limit; print(check_rate_limit())"
 ```
 
 ## Notes
 
-- Warcraft Logs public API uses OAuth 2.0 client credentials and the v2 API is GraphQL.
-- Public API endpoint: `https://www.warcraftlogs.com/api/v2/client`
-- Token endpoint: `https://www.warcraftlogs.com/oauth/token`
-- Private-report access requires a user authorization flow instead of simple client credentials.
-
+- Warcraft Logs v2 is a GraphQL API using OAuth2 client credentials
+  (`https://www.warcraftlogs.com/api/v2/client`). Requests cost "points"; the
+  agent can call a `check_rate_limit` tool to see the remaining budget.
+- Class/spec filters use PascalCase, space-free names (e.g. `Hunter` /
+  `Marksmanship`) — handled for you in `wcl_agent/constants.py`.
+- The agent uses `gemini-2.5-flash` by default; change the `model` in
+  `wcl_agent/agent.py` (ADK can also drive Claude/OpenAI via its LiteLLM
+  connector).
