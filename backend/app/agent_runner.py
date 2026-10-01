@@ -62,7 +62,9 @@ async def stream_response(
 ) -> AsyncIterator[dict]:
     """Run one turn and yield stream frames (tool_start/tool_end/token).
 
-    Concatenating all `token` frames in order yields the final message text.
+    The agent uses the native thinking planner, so reasoning arrives as separate
+    `thought`-marked parts which we skip — only the answer text is streamed. Tool
+    calls surface as tool frames. Concatenating all `token` frames yields the answer.
     """
     runner = _get_runner(model)
     await _ensure_session(session_id)
@@ -83,17 +85,22 @@ async def stream_response(
             call = getattr(part, "function_call", None)
             if call:
                 yield {"type": "tool_start", "name": call.name}
+                continue
             response = getattr(part, "function_response", None)
             if response:
                 yield {"type": "tool_end", "name": response.name, "ok": True}
+                continue
+            if getattr(part, "thought", False):
+                continue  # model reasoning — never shown to the user
             text = getattr(part, "text", None)
-            if text:
-                if getattr(event, "partial", False):
-                    streamed_any = True
-                    yield {"type": "token", "text": text}
-                elif event.is_final_response():
-                    final_text = text
+            if not text:
+                continue
+            if getattr(event, "partial", False):
+                streamed_any = True
+                yield {"type": "token", "text": text}
+            elif event.is_final_response():
+                final_text = text
 
-    # If the model returned text only in the final (non-partial) event, emit it once.
+    # If text only arrived in the final (non-partial) event, emit it once.
     if not streamed_any and final_text:
         yield {"type": "token", "text": final_text}

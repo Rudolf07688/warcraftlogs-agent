@@ -10,6 +10,7 @@ import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
+import { THINKING_DEFAULT, toolLabel } from "./toolLabels";
 import type { Conversation, Message } from "./types";
 
 export default function App() {
@@ -22,7 +23,7 @@ export default function App() {
 
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
-  const [tools, setTools] = useState<string[]>([]);
+  const [status, setStatus] = useState(THINKING_DEFAULT);
   const [error, setError] = useState<string | null>(null);
 
   // Refs to avoid stale closures inside the socket frame handler.
@@ -45,7 +46,7 @@ export default function App() {
           }
           break;
         case "tool_start":
-          setTools((t) => [...t, f.name]);
+          setStatus(toolLabel(f.name));
           break;
         case "token":
           streamRef.current += f.text;
@@ -56,7 +57,7 @@ export default function App() {
           setMessages((m) => [...m, { role: "agent", content: text }]);
           setStreaming(false);
           setStreamText("");
-          setTools([]);
+          setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           void refreshConversations();
           break;
@@ -65,7 +66,7 @@ export default function App() {
           setError(f.message);
           setStreaming(false);
           setStreamText("");
-          setTools([]);
+          setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           break;
       }
@@ -117,7 +118,7 @@ export default function App() {
     setMessages((m) => [...m, { role: "user", content: text }]);
     streamRef.current = "";
     setStreamText("");
-    setTools([]);
+    setStatus(THINKING_DEFAULT);
     setStreaming(true);
     const ok = socketRef.current?.send({
       conversation_id: activeIdRef.current,
@@ -151,7 +152,7 @@ export default function App() {
           messages={messages}
           streamingText={streamText}
           streaming={streaming}
-          tools={tools}
+          status={status}
           error={error}
         />
         <Composer disabled={streaming || !connected} onSend={send} />

@@ -14,11 +14,13 @@ import pandas as pd
 from google.adk.tools import ToolContext
 
 from .constants import CLASS_SPECS, METRICS, normalize_class_name
-from .queries import ENCOUNTER_RANKINGS
+from .queries import ENCOUNTER_RANKINGS, MENU_DISCOVERY
 from .wcl_client import check_rate_limit as _check_rate_limit
 from .wcl_client import get_client
 
 MAX_PAGES = 10  # hard cap to protect the API points budget
+
+_DIFFICULTY_NAMES = {5: "Mythic", 4: "Heroic", 3: "Normal", 1: "LFR"}
 
 
 def _selection(tool_context: ToolContext) -> dict[str, Any]:
@@ -139,9 +141,63 @@ def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
     if not sel.get("encounterID"):
         return {
             "status": "error",
-            "error_message": "No encounter is selected in this session.",
+            "error_message": (
+                "No encounter is selected in this session. Use find_encounter to "
+                "resolve the boss/difficulty the user asked about, then pass its "
+                "encounter_id and difficulty_id to the ranking tools."
+            ),
         }
     return {"status": "success", "selection": sel}
+
+
+def find_encounter(query: str) -> dict[str, Any]:
+    """Resolve a raid boss/encounter by name to its id, zone, and difficulties.
+
+    Use this when no encounter is pre-selected (e.g. the web app) to turn a name
+    like "Ula'tek" or "heroic ulatek" into the encounter_id and difficulty_id that
+    get_rankings_distribution / compare_specs need.
+
+    Args:
+        query (str): A boss/encounter name (partial, any casing), e.g. 'ulatek'.
+
+    Returns:
+        dict: {"status": "success", "matches": [ {encounter_id, encounter, zone,
+            zone_id, difficulties:[{id,name}], default_partition} ]} or an error.
+    """
+    try:
+        data = get_client().query(MENU_DISCOVERY)
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
+
+    q = query.strip().lower().replace("'", "")
+    for word in ("mythic", "heroic", "normal", "lfr"):
+        q = q.replace(word, "")
+    q = q.strip()
+
+    matches: list[dict[str, Any]] = []
+    for zone in data["data"]["worldData"]["zones"]:
+        for enc in zone.get("encounters") or []:
+            name = enc["name"].lower().replace("'", "")
+            if q and q in name:
+                matches.append(
+                    {
+                        "encounter_id": enc["id"],
+                        "encounter": enc["name"],
+                        "zone": zone["name"],
+                        "zone_id": zone["id"],
+                        "difficulties": [
+                            {"id": d["id"], "name": d["name"]}
+                            for d in (zone.get("difficulties") or [])
+                        ],
+                        "default_partition": next(
+                            (p["id"] for p in (zone.get("partitions") or []) if p.get("default")),
+                            None,
+                        ),
+                    }
+                )
+    if not matches:
+        return {"status": "error", "error_message": f"No encounter matching '{query}'."}
+    return {"status": "success", "matches": matches[:8]}
 
 
 def get_spec_options(class_name: str) -> dict[str, Any]:
@@ -180,13 +236,15 @@ def get_rankings_distribution(
     metric: str,
     num_pages: int,
     tool_context: ToolContext,
+    encounter_id: int = 0,
+    difficulty_id: int = 0,
 ) -> dict[str, Any]:
     """Fetch current-season ranking scores for a class/spec and summarize them.
 
-    Pulls the leaderboard for the selected encounter+difficulty and computes the
-    score (amount) percentile distribution, a per-spec breakdown, and the top
-    parses. Scores are sorted highest-first, so a bounded page pull characterizes
-    the top of the current-season distribution.
+    Pulls the leaderboard for the given (or session-selected) encounter+difficulty
+    and computes the score (amount) percentile distribution, a per-spec breakdown,
+    and the top parses. Scores are sorted highest-first, so a bounded page pull
+    characterizes the top of the current-season distribution.
 
     Args:
         class_name (str): API class filter, e.g. 'Hunter'. Pass '' for all classes.
@@ -195,14 +253,40 @@ def get_rankings_distribution(
         metric (str): Ranking metric: 'dps', 'hps', 'wdps', or 'default'.
         num_pages (int): How many 100-entry pages to pull (1-10). More pages =
             deeper distribution but higher API cost. Use 3-5 for a good overview.
+        encounter_id (int): Encounter to analyze. 0 = use the session's selected
+            encounter. When nothing is pre-selected (web app), resolve it first with
+            find_encounter and pass the id here.
+        difficulty_id (int): 5=Mythic, 4=Heroic, 3=Normal, 1=LFR. 0 = use the
+            session's difficulty (defaults to Heroic if none).
 
     Returns:
         dict: {"status": "success", ...summary...} including sample_size,
             amount_percentiles, spec_breakdown, and top_parses; or an error.
     """
     sel = _selection(tool_context)
+    if encounter_id:
+        diff = difficulty_id or sel.get("difficultyID") or 4
+        sel = {
+            "encounterID": encounter_id,
+            "encounterName": sel.get("encounterName") or f"encounter {encounter_id}",
+            "difficultyID": diff,
+            "difficultyName": _DIFFICULTY_NAMES.get(diff, str(diff)),
+            "partition": sel.get("partition"),
+        }
+    elif difficulty_id and sel.get("encounterID"):
+        sel = {
+            **sel,
+            "difficultyID": difficulty_id,
+            "difficultyName": _DIFFICULTY_NAMES.get(difficulty_id, sel.get("difficultyName")),
+        }
     if not sel.get("encounterID"):
-        return {"status": "error", "error_message": "No encounter is selected."}
+        return {
+            "status": "error",
+            "error_message": (
+                "No encounter selected. Call find_encounter to resolve the boss and "
+                "difficulty, then pass encounter_id (and difficulty_id)."
+            ),
+        }
     if metric not in METRICS:
         return {
             "status": "error",
@@ -256,8 +340,10 @@ def compare_specs(
     metric: str,
     num_pages: int,
     tool_context: ToolContext,
+    encounter_id: int = 0,
+    difficulty_id: int = 0,
 ) -> dict[str, Any]:
-    """Compare every spec of a class on the selected encounter side-by-side.
+    """Compare every spec of a class on the given encounter side-by-side.
 
     Runs get_rankings_distribution for each spec of the class and returns their
     median/max/p95 scores together, ranked by median.
@@ -267,6 +353,9 @@ def compare_specs(
         metric (str): Ranking metric: 'dps', 'hps', 'wdps', or 'default'.
         num_pages (int): Pages per spec (1-10). Keep small (1-3) since this makes
             one request set per spec.
+        encounter_id (int): Encounter to analyze. 0 = session's selected encounter
+            (resolve with find_encounter first in the web app).
+        difficulty_id (int): 5=Mythic, 4=Heroic, 3=Normal, 1=LFR. 0 = session default.
 
     Returns:
         dict: {"status": "success", "comparison": [ {spec, sample_size,
@@ -288,6 +377,8 @@ def compare_specs(
             metric=metric,
             num_pages=num_pages,
             tool_context=tool_context,
+            encounter_id=encounter_id,
+            difficulty_id=difficulty_id,
         )
         if result.get("status") != "success" or result.get("sample_size", 0) == 0:
             comparison.append({"spec": spec, "sample_size": 0})
