@@ -37,6 +37,16 @@ export function MessageList({ messages, streamingText, streaming, status, error 
           ) : (
             <div className="message-content">{m.content}</div>
           )}
+          {m.role === "agent" && m.grounded && (
+            <div className="grounding-note" title="This reply used web search results.">
+              🌐 Used web search
+            </div>
+          )}
+          {m.status === "partial" && (
+            <div className="partial-note" title="This reply was interrupted before it finished.">
+              ⚠️ Interrupted — partial response
+            </div>
+          )}
         </div>
       ))}
 

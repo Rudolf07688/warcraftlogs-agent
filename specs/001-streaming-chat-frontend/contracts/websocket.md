@@ -10,7 +10,7 @@ All frames are JSON text messages. Pydantic models validate both directions.
 ```jsonc
 {
   "conversation_id": "uuid-or-null",   // null => create a new conversation
-  "model": "gemini-2.5-flash",          // selected model id (must be in allow-list)
+  "model": "gemini-3.6-flash",          // selected model id (must be in allow-list)
   "content": "How are hunters performing on Heroic Ula'tek?"
 }
 ```

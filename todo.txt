@@ -5,3 +5,11 @@
 3. Add a web-search subagent as a tool to the agent.
 4. The available models must be dynamically fetched from the available gemini and anthropic models on vertex. If there is a "health check" api, test with that, otherwise just try with a "hello" message and see if the llm responds.
 5. Download PDF report with graphs and stuff.
+
+
+---------
+1. Agent must be able to predict follow-up questions the user might want know, for example "What are the parse scores for everyone?", and then render buttons (max 3) for the user to click to further prompt the agent.
+2. Confirm parallel tool calls - make better - shared disk space for tool output the agent can pick up when done.
+3. Fix chat window rendering whre response panel sizes seem fixed.
+4. Your name is "Barnaby" the tavern / innkeeper. See your prompt. You can't be oberly nice and must emphasize the mistakes (in a fun way of course)
+5. New background image `frontend/dist/assets/morgan-howell-img-1760.jpg`. Use that as the new background but keep it in and make it togglable from config.

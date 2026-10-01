@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
 from ..db import repository as repo
 from ..db.session import get_session
+from ..model_state import is_valid_model
 from ..schemas import (
     ConversationCreate,
     ConversationDetail,
@@ -32,9 +32,11 @@ async def list_conversations(
 
 @router.post("", response_model=ConversationOut, status_code=201)
 async def create_conversation(
-    body: ConversationCreate, session: AsyncSession = Depends(get_session)
+    body: ConversationCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
 ) -> ConversationOut:
-    if body.model not in settings.model_list:
+    if not is_valid_model(request.app, body.model):
         raise HTTPException(status_code=400, detail="invalid_model")
     conv = await repo.create_conversation(session, model=body.model, title=body.title)
     return ConversationOut.model_validate(conv)

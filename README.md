@@ -78,17 +78,39 @@ docker compose up --build
 ```
 
 - Frontend: <http://localhost:5173>  •  Backend API: <http://localhost:8000>
-  (`/health`, `/api/models`, `/api/conversations`, WebSocket `/ws/chat`)
+  (`/health`, `/api/models`, `/api/conversations`, `/api/raids`, WebSocket
+  `/ws/chat`, PDF export `/api/conversations/{id}/report.pdf`)
 
 Architecture:
 
 - **Backend** (`backend/`): FastAPI + asyncio. WebSocket streams agent tokens;
-  REST handles conversations/models. Reuses `wcl_agent/` unchanged and builds the
-  agent per selected model. SQLAlchemy async + Postgres for state.
-- **Frontend** (`frontend/`): React + Vite (basic, dark). Sidebar of past chats,
-  model dropdown, chat box with tokens appearing as they stream.
+  REST handles conversations/models/raids/reports. Reuses `wcl_agent/` and builds
+  the agent per selected model. SQLAlchemy async + Postgres for state; ADK
+  `DatabaseSessionService` persists agent session context in the same database.
+- **Frontend** (`frontend/`): React + Vite (basic, dark). Sidebar of past chats
+  **and tracked raids**, model dropdown, chat box with tokens appearing as they
+  stream, and a per-conversation **Download PDF** button.
 
-See `specs/001-streaming-chat-frontend/quickstart.md` for the full walkthrough and
+### Enhancements (feature 002)
+
+- **Tracked raids** — every report you successfully pull data for is recorded and
+  listed in the sidebar (most-recent first). Click one to open a new chat that
+  auto-investigates that raid. Stored in Postgres (`tracked_raids`).
+- **Durable sessions** — the ADK agent session is persisted, so conversation
+  *context* (not just the transcript) survives a backend restart. Interrupted
+  replies are saved as `partial` rather than lost.
+- **Web search** — Gemini models use native Google Search grounding (via a
+  `web_search` sub-agent tool); the UI shows a "used web search" indicator.
+  Anthropic/other models degrade gracefully with no web access.
+- **Validated model list** — the model dropdown is discovered and probed at
+  startup; only responsive models are offered, with a fallback + "degraded" notice
+  if Vertex is unreachable. Configure candidates with `WCL_GEMINI_MODELS` /
+  `WCL_ANTHROPIC_MODELS` (see `.env.example`).
+- **PDF export** — download any conversation as a PDF with the written analysis
+  plus the graphs the agent fetched (rendered with matplotlib + reportlab).
+
+See `specs/001-streaming-chat-frontend/quickstart.md` and
+`specs/002-agent-enhancements/quickstart.md` for walkthroughs, and
 `documentation/deployment.md` for the Cloud Run / Cloud SQL / Secret Manager plan.
 
 Run the backend tests:
@@ -115,6 +137,8 @@ from wcl_agent.wcl_client import check_rate_limit; print(check_rate_limit())"
   agent can call a `check_rate_limit` tool to see the remaining budget.
 - Class/spec filters use PascalCase, space-free names (e.g. `Hunter` /
   `Marksmanship`) — handled for you in `wcl_agent/constants.py`.
-- The agent uses `gemini-2.5-flash` by default; change the `model` in
-  `wcl_agent/agent.py` (ADK can also drive Claude/OpenAI via its LiteLLM
-  connector).
+- The agent uses `gemini-3.6-flash` by default; change it with `WCL_DEFAULT_MODEL`
+  (shared by the backend config and the `wcl_agent` CLI, so they can't drift). The
+  web app's selectable list comes from `WCL_GEMINI_MODELS` / `WCL_ANTHROPIC_MODELS`
+  probed at startup. ADK drives Claude on Vertex natively (registered in
+  `wcl_agent/agent.py`).

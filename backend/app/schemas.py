@@ -53,12 +53,34 @@ class ErrorFrame(BaseModel):
     message: str
 
 
+class RaidTrackedFrame(BaseModel):
+    """Emitted after a raid is upserted so the UI can refresh its Raids list."""
+
+    type: Literal["raid_tracked"] = "raid_tracked"
+    report_code: str
+    label: str
+
+
+class GroundingSource(BaseModel):
+    title: str | None = None
+    uri: str | None = None
+
+
+class GroundingFrame(BaseModel):
+    """Emitted once per turn when the model used native web grounding (US3/FR-011)."""
+
+    type: Literal["grounding"] = "grounding"
+    used: bool = True
+    sources: list[GroundingSource] = []
+
+
 # --- REST --------------------------------------------------------------------
 
 
 class ModelsResponse(BaseModel):
     models: list[str]
     default: str
+    degraded: bool = False
 
 
 class ConversationCreate(BaseModel):
@@ -72,6 +94,7 @@ class MessageOut(BaseModel):
     role: str
     content: str
     seq: int
+    status: str = "complete"
     created_at: datetime
 
 
@@ -90,3 +113,31 @@ class ConversationDetail(ConversationOut):
 
 class ConversationListResponse(BaseModel):
     conversations: list[ConversationOut]
+
+
+# --- Tracked raids (US1) -----------------------------------------------------
+
+
+class RaidOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    report_code: str
+    label: str
+    zone: str | None = None
+    guild: str | None = None
+    report_started_at: datetime | None = None
+    last_asked_at: datetime
+    first_seen_at: datetime
+
+
+class RaidListResponse(BaseModel):
+    raids: list[RaidOut]
+
+
+class InvestigateRequest(BaseModel):
+    model: str | None = None
+
+
+class InvestigateResponse(BaseModel):
+    conversation_id: uuid.UUID
+    model: str
+    kickoff_prompt: str

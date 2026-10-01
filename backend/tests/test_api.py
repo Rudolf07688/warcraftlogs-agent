@@ -26,10 +26,10 @@ async def test_models_endpoint_returns_list_and_default():
 
 def test_chatturn_rejects_empty_content():
     with pytest.raises(ValidationError):
-        ChatTurn(model="gemini-2.5-flash", content="")
+        ChatTurn(model="gemini-3.6-flash", content="")
 
 
 def test_chatturn_accepts_valid():
-    turn = ChatTurn(model="gemini-2.5-flash", content="hi")
+    turn = ChatTurn(model="gemini-3.6-flash", content="hi")
     assert turn.conversation_id is None
     assert turn.content == "hi"

@@ -39,7 +39,7 @@ frame.
 **Decision**: The agent's model is chosen per request. `agent_runner.py` builds an
 ADK `Agent` with `model=<requested id>` and the existing tool list, caching one
 `Runner` per model id (small `dict`). `GET /api/models` returns the configured
-allow-list (from settings, default includes the current `gemini-2.5-flash`); the
+allow-list (from settings, default includes the current `gemini-3.6-flash`); the
 backend accepts any id in the allow-list and passes it straight to ADK.
 
 **Rationale**: ADK accepts a model-id string directly for Gemini/Vertex, so

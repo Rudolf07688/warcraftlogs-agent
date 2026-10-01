@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from datetime import datetime as dt
 
 from google.adk.agents import Agent
+from google.adk.models.registry import LLMRegistry
 from google.adk.planners import BuiltInPlanner
+from google.adk.tools import google_search
+from google.adk.tools.agent_tool import AgentTool
 from google.genai import types as genai_types
+
+logger = logging.getLogger(__name__)
+
+# Register Anthropic-on-Vertex (Claude) so `Agent(model="claude-…")` resolves to
+# the Claude LLM class; Gemini ids pass through as plain strings (US4). Safe no-op
+# if the optional anthropic dependency isn't installed.
+try:
+    from google.adk.models.anthropic_llm import Claude
+
+    LLMRegistry.register(Claude)
+except Exception as exc:  # noqa: BLE001
+    logger.warning("Anthropic (Claude) model class not registered: %s", exc)
 
 from .report_tools import (
     get_character_encounter_rankings,
@@ -109,9 +126,24 @@ Method:
 - When a question needs several independent Warcraft Logs lookups (e.g. comparing
   specs or several encounters), issue those tool calls together in parallel rather
   than one at a time, so the data is gathered concurrently.
+
+WEB SEARCH:
+- If a `web_search` tool is available and a question needs current or external
+  information the Warcraft Logs data can't provide (patch notes, class guides,
+  recent meta changes, news), call `web_search` with a focused query and cite what
+  it returns. If no web tool is available, answer from the data you can access and
+  say so rather than guessing.
 """.strip()
 
-DEFAULT_MODEL = "gemini-3.6-flash"
+# Single source of truth for the default model id: the same WCL_DEFAULT_MODEL env
+# that backend config reads, so the CLI/root_agent fallback can't drift from the
+# backend's runtime default (US4 / F2). The backend always passes an explicit,
+# startup-validated model from app.state; this constant is only a last resort.
+DEFAULT_MODEL = os.getenv("WCL_DEFAULT_MODEL", "gemini-3.6-flash")
+
+# Name of the grounding sub-agent; also the tool name the model calls and the
+# signal the backend uses to surface a "used web search" indicator (US3).
+WEB_SEARCH_AGENT_NAME = "web_search"
 
 # Single source of truth for the agent's tools (reused by every model variant).
 TOOLS = [
@@ -138,14 +170,52 @@ TOOLS = [
 ]
 
 
+def _is_anthropic(model: str) -> bool:
+    """Anthropic-on-Vertex ids (Claude) vs Gemini ids."""
+    return "claude" in model.lower()
+
+
+def _build_web_search_tool(model: str) -> AgentTool:
+    """Wrap a grounding-only Gemini agent as a callable `web_search` tool.
+
+    Native Google Search grounding is exposed via a sub-agent rather than adding
+    the built-in `google_search` tool directly to the root agent: some Gemini
+    generations reject combining `google_search` with many function tools in one
+    request, and this keeps all 16 WCL function tools intact. It also matches the
+    original "web-search sub-agent as a tool" intent. ``propagate_grounding_metadata``
+    surfaces the sub-agent's grounding signal to the parent event stream so the UI
+    can show a "used web search" indicator (US3/FR-011).
+    """
+    search_agent = Agent(
+        name=WEB_SEARCH_AGENT_NAME,
+        model=model,
+        description="Searches the web with Google Search and returns a concise, cited answer.",
+        instruction=(
+            "You are a web search assistant. Use Google Search to find current, "
+            "accurate information for the given query and return a concise summary "
+            "with the key facts and their source titles/links."
+        ),
+        tools=[google_search],
+    )
+    return AgentTool(agent=search_agent, propagate_grounding_metadata=True)
+
+
 def build_agent(model: str = DEFAULT_MODEL) -> Agent:
-    """Build the WCL analyst agent for a given model id (DRY factory)."""
+    """Build the WCL analyst agent for a given model id (DRY factory).
+
+    Gemini models get web grounding (via the `web_search` sub-agent tool);
+    Anthropic-on-Vertex (and any non-grounding) models run with the WCL tools only
+    and degrade gracefully without web access (US3/FR-012).
+    """
+    tools = list(TOOLS)
+    if not _is_anthropic(model):
+        tools.append(_build_web_search_tool(model))
     return Agent(
         name="wcl_agent",
         model=model,
         description="Analyzes Warcraft Logs ranking and report data for any question.",
         instruction=INSTRUCTION,
-        tools=TOOLS,
+        tools=tools,
         # Native thinking planner — fits Gemini 3.x thinking models (unlike the
         # ReAct text planner, which fights them). Reasoning is returned as separate
         # `thought` parts that the backend filters out of the streamed answer.

@@ -1,6 +1,13 @@
 # Backend: FastAPI + ADK agent (Python 3.14)
 FROM python:3.14-slim
 
+# Runtime libs for matplotlib/reportlab chart rendering on the slim base
+# (fonts + freetype/png). manylinux wheels mostly bundle these, but installing
+# them keeps PDF/graph rendering robust across base-image changes.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libfreetype6 libpng16-16 fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # uv for fast, locked installs
 RUN pip install --no-cache-dir uv
 

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from google.adk.sessions import DatabaseSessionService
 from sqlalchemy import text
 
-from .api import conversations, models, ws
+from wcl_agent.models import discover_models
+
+from .agent_runner import set_session_service
+from .api import conversations, models, raids, reports, ws
 from .config import settings
 from .db.models import Base
 from .db.session import engine
@@ -16,9 +21,41 @@ from .db.session import engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup (simple v1; migrations are a later improvement).
+    # Create tables on startup (simple v1; a migration tool is a later improvement).
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all adds new *tables* only — it does NOT alter the pre-existing
+        # `messages` table from feature 001. Add the US2 `status` column with an
+        # idempotent statement (Postgres only; SQLite test DBs get it via create_all).
+        if engine.dialect.name == "postgresql":
+            await conn.execute(
+                text(
+                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS "
+                    "status VARCHAR(10) NOT NULL DEFAULT 'complete'"
+                )
+            )
+
+    # Durable ADK sessions on the same database (US2): conversation context now
+    # survives a restart. Reuses the app's async engine (ADK won't dispose it).
+    session_service = DatabaseSessionService(db_engine=engine)
+    await session_service.prepare_tables()
+    set_session_service(session_service)
+    app.state.session_service = session_service
+
+    # US4: discover + validate the selectable models once (blocking probes off the
+    # event loop). app.state is the single runtime source of truth for the set and
+    # the default (see model_state.get_model_state); never left empty (FR-016).
+    discovery = await asyncio.to_thread(
+        discover_models,
+        gemini_ids=settings.gemini_models,
+        anthropic_ids=settings.anthropic_models,
+        configured_default=settings.default_model,
+        fallback_models=settings.model_list,
+    )
+    app.state.models = discovery["models"]
+    app.state.default_model = discovery["default"]
+    app.state.models_degraded = discovery["degraded"]
+
     yield
     await engine.dispose()
 
@@ -35,6 +72,8 @@ app.add_middleware(
 
 app.include_router(models.router)
 app.include_router(conversations.router)
+app.include_router(raids.router)
+app.include_router(reports.router)
 app.include_router(ws.router)
 
 

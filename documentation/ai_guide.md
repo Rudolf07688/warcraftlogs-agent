@@ -37,7 +37,7 @@ Agent: On Heroic Ula'tek this season, Marksmanship leads (median ~306k dps, p95 
 | Language | Python `>=3.10` | Pinned to `3.13` via `.python-version`. |
 | Dependency mgmt | **uv** | `uv sync` to install; `uv run …` to execute. |
 | Agent framework | **Google ADK** (`google-adk`, installed 2.10.0) | Docs: <https://adk.dev> |
-| LLM | **Gemini** (`gemini-2.5-flash`) via **Vertex AI** | Auth = gcloud **ADC**, global endpoint. |
+| LLM | **Gemini** (`gemini-3.6-flash`) via **Vertex AI** | Auth = gcloud **ADC**, global endpoint. |
 | Data source | **Warcraft Logs v2 GraphQL API** | OAuth2 client-credentials. |
 | Analysis | **pandas** (3.x) | Percentile/quantile math + groupby. |
 | Packaging | hatchling; console script `wcl` | `uv run wcl` or activate venv then `wcl`. |
@@ -287,7 +287,6 @@ going leaderboard → report → per-ability table.
 
 **Not done / ideas for next steps:**
 - Automated test suite (pytest) with recorded/mock GraphQL responses.
-- Persistent sessions (swap `InMemorySessionService` for a DB-backed one).
 - Guild-centric tools (`guildData.guild`, roster/progression) — currently only
   reachable via `run_wcl_graphql`.
 - Report search (`reportData.reports(...)`) as a first-class tool.
@@ -295,3 +294,29 @@ going leaderboard → report → per-ability table.
 - Points-budget guard before deep paging / large `events` pulls.
 - Optionally surface the partition **name** (e.g. "12.1") into session state; the
   agent currently sees only the partition id and may label it "Season 1".
+
+## 11. Feature 002 — agent enhancements (web app)
+
+Implemented in `specs/002-agent-enhancements/` (see its plan/spec/tasks). Summary
+for future agents:
+
+- **Tracked raids** (`tracked_raids` table, `backend/app/services/raids.py`,
+  `api/raids.py`): the agent-runner backbone (`agent_runner.stream_response`) now
+  yields tool `args` + `result`; the WS layer upserts a raid on any successful
+  report-scoped tool call and exposes list + one-click investigate endpoints.
+- **Durable sessions**: `InMemorySessionService` → ADK `DatabaseSessionService`
+  (async-native in ADK 2.10; reuses the app's async engine — no sync psycopg
+  driver needed). Installed in the lifespan via `agent_runner.set_session_service`.
+  Interrupted replies persist as `messages.status = "partial"`.
+- **Web grounding**: `build_agent` adds a `web_search` grounding sub-agent tool for
+  Gemini models only; the runner emits a `grounding` frame.
+- **Model discovery**: `wcl_agent/models.py` probes `WCL_GEMINI_MODELS` /
+  `WCL_ANTHROPIC_MODELS` at startup; result lives on `app.state` and is read via
+  `backend/app/model_state.py` (single source of truth for the default). Claude is
+  registered with ADK's `LLMRegistry`.
+- **PDF export**: `captured_graphs` table + `services/graphs.py` capture graph JSON
+  during chat; `services/pdf_report.py` renders analysis + matplotlib charts;
+  `api/reports.py` streams it.
+- **Testing note**: ORM uses portable column types (`Uuid`, `JSON`/`JSONB`
+  variant) so `backend/tests/` run on in-memory SQLite (`conftest.py`); live
+  Postgres/Vertex flows are covered by the quickstart.

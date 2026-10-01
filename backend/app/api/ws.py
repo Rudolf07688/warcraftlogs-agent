@@ -11,10 +11,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from ..agent_runner import stream_response
-from ..config import settings
 from ..db import repository as repo
 from ..db.session import SessionLocal
-from ..schemas import ChatTurn, DoneFrame, ErrorFrame, MetaFrame
+from ..model_state import is_valid_model
+from ..schemas import ChatTurn, DoneFrame, ErrorFrame, MetaFrame, RaidTrackedFrame
+from ..services import graphs as graphs_service
+from ..services import raids as raids_service
 
 router = APIRouter()
 
@@ -22,6 +24,55 @@ router = APIRouter()
 async def _send(ws: WebSocket, frame) -> None:
     payload = frame.model_dump(mode="json") if hasattr(frame, "model_dump") else frame
     await ws.send_json(payload)
+
+
+async def _forward_tool_start(ws: WebSocket, record: dict) -> None:
+    """Forward a user-safe tool_start (name + optional report_code only)."""
+    frame: dict = {"type": "tool_start", "name": record["name"]}
+    report_code = (record.get("args") or {}).get("report_code")
+    if isinstance(report_code, str):
+        frame["report_code"] = report_code
+    await ws.send_json(frame)
+
+
+async def _handle_tool_end(ws: WebSocket, session, record: dict, conv_id) -> None:
+    """Forward a user-safe tool_end and route the full record to capture services."""
+    await ws.send_json({"type": "tool_end", "name": record["name"], "ok": record.get("ok", False)})
+
+    name = record["name"]
+    ok = record.get("ok", False)
+    args = record.get("args") or {}
+
+    # US1: upsert a tracked raid on a successful report retrieval.
+    raid = await raids_service.capture_raid_from_tool(
+        session, name=name, ok=ok, args=args, conversation_id=conv_id
+    )
+    # US5: capture graph JSON for later PDF rendering.
+    graph = await graphs_service.capture_graph_from_tool(
+        session,
+        name=name,
+        ok=ok,
+        args=args,
+        result=record.get("result") or {},
+        conversation_id=conv_id,
+    )
+    # Commit immediately so a later stream error can't lose what we actually pulled.
+    if raid is not None or graph is not None:
+        await session.commit()
+    if raid is not None:
+        await _send(ws, RaidTrackedFrame(report_code=raid.report_code, label=raid.label))
+
+
+async def _persist_partial(session, conv_id, tokens: list[str]) -> None:
+    """Persist whatever streamed so far as a `partial` agent message (US2/FR-009).
+
+    Never presents a partial answer as complete; no silent loss on interruption.
+    """
+    text = "".join(tokens)
+    if not text:
+        return
+    await repo.add_message(session, conv_id, "agent", text, status="partial")
+    await session.commit()
 
 
 async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
@@ -44,12 +95,27 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
         # Stream the agent response, accumulating tokens into the final content.
         tokens: list[str] = []
         try:
-            async for frame in stream_response(turn.model, str(conv_id), turn.content):
-                if frame.get("type") == "token":
-                    tokens.append(frame["text"])
-                await ws.send_json(frame)
+            async for record in stream_response(turn.model, str(conv_id), turn.content):
+                kind = record.get("type")
+                if kind == "token":
+                    tokens.append(record["text"])
+                    await ws.send_json(record)
+                elif kind == "tool_start":
+                    await _forward_tool_start(ws, record)
+                elif kind == "tool_end":
+                    await _handle_tool_end(ws, session, record, conv_id)
+                elif kind == "grounding":
+                    await ws.send_json(record)
+        except WebSocketDisconnect:
+            # Client vanished mid-reply: keep what we have, can't send anything.
+            await _persist_partial(session, conv_id, tokens)
+            raise
         except Exception as exc:  # noqa: BLE001 - surface failure to the client
-            await _send(ws, ErrorFrame(code="agent_error", message=str(exc)))
+            await _persist_partial(session, conv_id, tokens)
+            try:
+                await _send(ws, ErrorFrame(code="agent_error", message=str(exc)))
+            except Exception:  # noqa: BLE001 - socket may already be gone
+                pass
             return
 
         final_text = "".join(tokens) or "(no response)"
@@ -69,7 +135,7 @@ async def chat(ws: WebSocket) -> None:
             except ValidationError:
                 await _send(ws, ErrorFrame(code="empty_message", message="Invalid or empty message."))
                 continue
-            if turn.model not in settings.model_list:
+            if not is_valid_model(ws.app, turn.model):
                 await _send(ws, ErrorFrame(code="invalid_model", message=f"Unknown model '{turn.model}'."))
                 continue
             await _handle_turn(ws, turn)

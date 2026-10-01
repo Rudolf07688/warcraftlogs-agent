@@ -13,7 +13,7 @@ Liveness/readiness.
 
 List selectable model ids (the configured allow-list).
 
-- **200** → `{ "models": ["gemini-2.5-flash", "gemini-3.7-flash"], "default": "gemini-2.5-flash" }`
+- **200** → `{ "models": ["gemini-3.6-flash", "gemini-3.7-flash"], "default": "gemini-3.6-flash" }`
 
 ## GET /api/conversations
 
@@ -22,7 +22,7 @@ List conversations for the sidebar, most-recent-first.
 - **200** →
   ```jsonc
   { "conversations": [
-      { "id": "uuid", "title": "Hunters on Heroic Ula'tek", "model": "gemini-2.5-flash",
+      { "id": "uuid", "title": "Hunters on Heroic Ula'tek", "model": "gemini-3.6-flash",
         "created_at": "2026-10-01T12:00:00Z", "updated_at": "2026-10-01T12:05:00Z" }
   ] }
   ```
@@ -31,7 +31,7 @@ List conversations for the sidebar, most-recent-first.
 
 Create an empty conversation.
 
-- Body: `{ "model": "gemini-2.5-flash", "title": "optional" }`
+- Body: `{ "model": "gemini-3.6-flash", "title": "optional" }`
 - **201** → the conversation object (as above).
 - **400** → `{ "error": "invalid_model" }` if model not in allow-list.
 

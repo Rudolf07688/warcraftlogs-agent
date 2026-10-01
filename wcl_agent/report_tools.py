@@ -177,6 +177,45 @@ def get_report_master_data(report_code: str) -> dict[str, Any]:
     return {"status": "success", "actors": _cap(md.get("actors")), "abilities": _cap(md.get("abilities"))}
 
 
+def get_report_metadata(report_code: str) -> dict[str, Any]:
+    """Resolve a report's human-readable metadata in a single GraphQL call.
+
+    Used to label a tracked raid (``"<guild> — <zone> — <date>"``). Not exposed to
+    the agent as a tool — called server-side when a raid is first captured.
+
+    Args:
+        report_code (str): The report code.
+
+    Returns:
+        dict: {"status": "success", "title", "zone", "guild", "start_time_ms"} or
+            an error dict. ``zone``/``guild`` may be ``None`` for some reports.
+    """
+    query = """
+    query ReportMeta($code: String!) {
+      reportData { report(code: $code) {
+        title
+        startTime
+        zone { name }
+        guild { name }
+      } }
+    }
+    """.strip()
+    try:
+        data = get_client().query(query, {"code": report_code})
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
+    report = ((data.get("data") or {}).get("reportData") or {}).get("report")
+    if not report:
+        return {"status": "error", "error_message": f"No report '{report_code}'."}
+    return {
+        "status": "success",
+        "title": report.get("title"),
+        "zone": (report.get("zone") or {}).get("name"),
+        "guild": (report.get("guild") or {}).get("name"),
+        "start_time_ms": report.get("startTime"),
+    }
+
+
 # --- The workhorses: table / events / graph -----------------------------------
 
 def get_report_table(

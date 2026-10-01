@@ -11,7 +11,7 @@ A chat session shown in the sidebar.
 |-------|------|-------|
 | `id` | UUID (PK) | Generated server-side. |
 | `title` | text | Short label for the sidebar. Default derived from the first user message (e.g. first ~60 chars); editable later. |
-| `model` | text | Model id currently associated with the conversation (e.g. `gemini-2.5-flash`). |
+| `model` | text | Model id currently associated with the conversation (e.g. `gemini-3.6-flash`). |
 | `created_at` | timestamptz | Set on creation. |
 | `updated_at` | timestamptz | Bumped on each new message; sidebar orders by this desc. |
 

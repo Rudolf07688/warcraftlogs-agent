@@ -107,6 +107,96 @@ body {
   opacity: 1;
 }
 
+/* Sidebar sections (Raids + Conversations) */
+.sidebar-section-label {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 4px 8px 0;
+  margin-top: 4px;
+}
+
+.raid-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 32vh;
+  flex-shrink: 0;
+}
+
+.raid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-dim);
+  text-align: left;
+  width: 100%;
+}
+
+.raid-item:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+.raid-label {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.raid-when {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.partial-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #d98a00;
+}
+
+.grounding-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.model-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-degraded {
+  font-size: 12px;
+  color: #d98a00;
+}
+
+.download-pdf {
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.download-pdf:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Chat area */
 .chat {
   display: flex;

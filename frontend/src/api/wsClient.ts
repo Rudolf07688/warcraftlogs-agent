@@ -1,8 +1,10 @@
 export type Frame =
   | { type: "meta"; conversation_id: string; seq: number }
   | { type: "token"; text: string }
-  | { type: "tool_start"; name: string }
+  | { type: "tool_start"; name: string; report_code?: string }
   | { type: "tool_end"; name: string; ok: boolean }
+  | { type: "grounding"; used: boolean; sources?: { title?: string; uri?: string }[] }
+  | { type: "raid_tracked"; report_code: string; label: string }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };
 

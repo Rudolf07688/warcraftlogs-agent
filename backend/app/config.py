@@ -27,9 +27,16 @@ class Settings(BaseSettings):
     wcl_client_id: str = ""
     wcl_client_secret: str = ""
 
-    # Model allow-list + default (comma-separated env: WCL_MODELS / WCL_DEFAULT_MODEL)
-    wcl_models: str = "gemini-2.5-flash"
-    wcl_default_model: str = "gemini-2.5-flash"
+    # Fallback allow-list + default (comma-separated env: WCL_MODELS / WCL_DEFAULT_MODEL).
+    # The live dropdown is the startup-validated set (US4); these are the documented
+    # fallback served if discovery/validation can't run.
+    wcl_models: str = "gemini-3.6-flash,gemini-3.1-pro-preview"
+    wcl_default_model: str = "gemini-3.6-flash"
+
+    # Candidate models to discover + probe at startup (US4). Gemini ids pass through
+    # to Vertex; Anthropic-on-Vertex ids run Claude via Model Garden.
+    wcl_gemini_models: str = "gemini-3.6-flash,gemini-3.1-pro-preview"
+    wcl_anthropic_models: str = ""
 
     # CORS origins for the local frontend (comma-separated)
     cors_origins: str = "http://localhost:5173"
@@ -39,8 +46,24 @@ class Settings(BaseSettings):
         return [m.strip() for m in self.wcl_models.split(",") if m.strip()]
 
     @property
+    def gemini_models(self) -> list[str]:
+        return [m.strip() for m in self.wcl_gemini_models.split(",") if m.strip()]
+
+    @property
+    def anthropic_models(self) -> list[str]:
+        return [m.strip() for m in self.wcl_anthropic_models.split(",") if m.strip()]
+
+    @property
+    def candidate_models(self) -> list[str]:
+        """De-duplicated candidate set for startup discovery (Gemini + Anthropic)."""
+        seen: dict[str, None] = {}
+        for m in [*self.gemini_models, *self.anthropic_models]:
+            seen.setdefault(m, None)
+        return list(seen)
+
+    @property
     def default_model(self) -> str:
-        return self.wcl_default_model or (self.model_list[0] if self.model_list else "gemini-2.5-flash")
+        return self.wcl_default_model or (self.model_list[0] if self.model_list else "gemini-3.6-flash")
 
     @property
     def cors_list(self) -> list[str]:
