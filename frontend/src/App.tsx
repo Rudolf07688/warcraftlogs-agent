@@ -13,8 +13,17 @@ import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
+import { BackgroundToggle } from "./components/BackgroundToggle";
+import { backgroundCssValue, DEFAULT_BACKGROUND_ID } from "./config";
 import { THINKING_DEFAULT, toolLabel } from "./toolLabels";
 import type { Conversation, Message, Raid } from "./types";
+import {
+  clampSidebarWidth,
+  getBackgroundId,
+  getSidebarWidth,
+  setBackgroundId,
+  setSidebarWidth,
+} from "./uiPrefs";
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -30,6 +39,9 @@ export default function App() {
   const [streamText, setStreamText] = useState("");
   const [status, setStatus] = useState(THINKING_DEFAULT);
   const [error, setError] = useState<string | null>(null);
+  const [backgroundId, setBackgroundIdState] = useState(() =>
+    getBackgroundId(DEFAULT_BACKGROUND_ID),
+  );
 
   // Refs to avoid stale closures inside the socket frame handler.
   const socketRef = useRef<ChatSocket | null>(null);
@@ -37,6 +49,7 @@ export default function App() {
   const streamRef = useRef("");
   const modelRef = useRef("");
   const groundedRef = useRef(false);
+  const suggestionsRef = useRef<string[]>([]);
 
   const refreshConversations = useCallback(async () => {
     const { conversations } = await listConversations();
@@ -73,15 +86,21 @@ export default function App() {
           streamRef.current += f.text;
           setStreamText(streamRef.current);
           break;
+        case "suggestions":
+          // US1: arrives just before `done`; attached to the agent message there.
+          suggestionsRef.current = f.suggestions.slice(0, 3);
+          break;
         case "done": {
           const text = streamRef.current || "(no response)";
           const grounded = groundedRef.current;
-          setMessages((m) => [...m, { role: "agent", content: text, grounded }]);
+          const suggestions = suggestionsRef.current;
+          setMessages((m) => [...m, { role: "agent", content: text, grounded, suggestions }]);
           setStreaming(false);
           setStreamText("");
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
+          suggestionsRef.current = [];
           void refreshConversations();
           void refreshRaids();
           break;
@@ -93,6 +112,7 @@ export default function App() {
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
+          suggestionsRef.current = [];
           break;
       }
     },
@@ -103,6 +123,44 @@ export default function App() {
   useEffect(() => {
     modelRef.current = model;
   }, [model]);
+
+  // US5: restore the persisted sidebar width on load, then drag to resize.
+  const applySidebarWidth = useCallback((px: number): number => {
+    const w = clampSidebarWidth(px);
+    document.documentElement.style.setProperty("--sidebar-width", `${w}px`);
+    return w;
+  }, []);
+
+  useEffect(() => {
+    applySidebarWidth(getSidebarWidth());
+  }, [applySidebarWidth]);
+
+  // US6: apply the selected background (as the `--bg-image` CSS var) and persist it.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--bg-image", backgroundCssValue(backgroundId));
+  }, [backgroundId]);
+
+  const changeBackground = useCallback((id: string) => {
+    setBackgroundId(id);
+    setBackgroundIdState(id);
+  }, []);
+
+  const startResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const onMove = (ev: MouseEvent) => applySidebarWidth(ev.clientX);
+      const onUp = (ev: MouseEvent) => {
+        setSidebarWidth(applySidebarWidth(ev.clientX));
+        document.body.classList.remove("resizing");
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      document.body.classList.add("resizing");
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [applySidebarWidth],
+  );
 
   // Initial load + socket lifecycle.
   useEffect(() => {
@@ -156,6 +214,7 @@ export default function App() {
     setMessages((m) => [...m, { role: "user", content: text }]);
     streamRef.current = "";
     groundedRef.current = false;
+    suggestionsRef.current = [];
     setStreamText("");
     setStatus(THINKING_DEFAULT);
     setStreaming(true);
@@ -216,6 +275,13 @@ export default function App() {
         onDelete={removeConversation}
         onInvestigateRaid={handleInvestigateRaid}
       />
+      <div
+        className="resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onMouseDown={startResize}
+      />
       <main className="chat">
         <header className="chat-header">
           <span className="app-title">WCL Agent Chat</span>
@@ -226,6 +292,7 @@ export default function App() {
             disabled={streaming}
             degraded={modelsDegraded}
           />
+          <BackgroundToggle value={backgroundId} onChange={changeBackground} />
           {activeId && messages.length > 0 && (
             <button
               className="download-pdf"
@@ -246,6 +313,7 @@ export default function App() {
           streaming={streaming}
           status={status}
           error={error}
+          onPickSuggestion={send}
         />
         <Composer disabled={streaming || !connected} onSend={send} />
       </main>

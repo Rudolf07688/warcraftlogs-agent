@@ -33,3 +33,12 @@ def test_chatturn_accepts_valid():
     turn = ChatTurn(model="gemini-3.6-flash", content="hi")
     assert turn.conversation_id is None
     assert turn.content == "hi"
+
+
+def test_ws_module_has_required_names_bound():
+    # Guard against missing imports used inside _handle_turn (which no offline test
+    # can execute, since it needs Postgres + ADK). Catches NameErrors at the surface.
+    from backend.app.api import ws
+
+    for name in ("TurnScratch", "generate_followups", "SuggestionsFrame"):
+        assert hasattr(ws, name), f"ws.py is missing `{name}`"

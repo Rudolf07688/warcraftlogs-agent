@@ -13,3 +13,9 @@
 3. Fix chat window rendering whre response panel sizes seem fixed.
 4. Your name is "Barnaby" the tavern / innkeeper. See your prompt. You can't be oberly nice and must emphasize the mistakes (in a fun way of course)
 5. New background image `frontend/dist/assets/morgan-howell-img-1760.jpg`. Use that as the new background but keep it in and make it togglable from config.
+6. Resizable side panel.
+
+----------
+1. Always paste links to the warcraftlogs url that you are sourcing information from (or just query patameters if easier).
+2. Duplicating raids tracked in the side bar? 
+  2.1 Display date and time of the raid encounter + boss name if applicable.

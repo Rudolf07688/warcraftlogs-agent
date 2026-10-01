@@ -5,6 +5,7 @@ export type Frame =
   | { type: "tool_end"; name: string; ok: boolean }
   | { type: "grounding"; used: boolean; sources?: { title?: string; uri?: string }[] }
   | { type: "raid_tracked"; report_code: string; label: string }
+  | { type: "suggestions"; suggestions: string[] }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };
 

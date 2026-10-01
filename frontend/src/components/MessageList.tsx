@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Message } from "../types";
+import { FollowUps } from "./FollowUps";
 import { Markdown } from "./Markdown";
 
 interface Props {
@@ -8,9 +9,17 @@ interface Props {
   streaming: boolean;
   status: string;
   error: string | null;
+  onPickSuggestion: (text: string) => void;
 }
 
-export function MessageList({ messages, streamingText, streaming, status, error }: Props) {
+export function MessageList({
+  messages,
+  streamingText,
+  streaming,
+  status,
+  error,
+  onPickSuggestion,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
 
@@ -47,6 +56,18 @@ export function MessageList({ messages, streamingText, streaming, status, error 
               ⚠️ Interrupted — partial response
             </div>
           )}
+          {/* US1: only the latest agent turn shows follow-ups (never stale ones). */}
+          {m.role === "agent" &&
+            i === messages.length - 1 &&
+            !streaming &&
+            m.suggestions &&
+            m.suggestions.length > 0 && (
+              <FollowUps
+                suggestions={m.suggestions}
+                disabled={streaming}
+                onPick={onPickSuggestion}
+              />
+            )}
         </div>
       ))}
 

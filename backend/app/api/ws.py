@@ -14,7 +14,16 @@ from ..agent_runner import stream_response
 from ..db import repository as repo
 from ..db.session import SessionLocal
 from ..model_state import is_valid_model
-from ..schemas import ChatTurn, DoneFrame, ErrorFrame, MetaFrame, RaidTrackedFrame
+from ..scratch import TurnScratch
+from ..schemas import (
+    ChatTurn,
+    DoneFrame,
+    ErrorFrame,
+    MetaFrame,
+    RaidTrackedFrame,
+    SuggestionsFrame,
+)
+from ..suggestions import generate_followups
 from ..services import graphs as graphs_service
 from ..services import raids as raids_service
 
@@ -93,9 +102,14 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
         await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_msg.seq))
 
         # Stream the agent response, accumulating tokens into the final content.
+        # US2: a per-turn scratch store holds each tool's full output on disk so large
+        # concurrent results are preserved and picked up after every call completes.
         tokens: list[str] = []
+        scratch = TurnScratch(str(conv_id))
         try:
-            async for record in stream_response(turn.model, str(conv_id), turn.content):
+            async for record in stream_response(
+                turn.model, str(conv_id), turn.content, scratch
+            ):
                 kind = record.get("type")
                 if kind == "token":
                     tokens.append(record["text"])
@@ -117,10 +131,19 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
             except Exception:  # noqa: BLE001 - socket may already be gone
                 pass
             return
+        finally:
+            scratch.cleanup()
 
         final_text = "".join(tokens) or "(no response)"
         agent_msg = await repo.add_message(session, conv_id, "agent", final_text)
         await session.commit()
+
+        # US1: predict up to 3 follow-up questions and emit them just before `done`.
+        # Best-effort and non-blocking — never block or fail the turn over suggestions.
+        suggestions = await generate_followups(turn.model, turn.content, final_text)
+        if suggestions:
+            await _send(ws, SuggestionsFrame(suggestions=suggestions))
+
         await _send(ws, DoneFrame(message_id=agent_msg.id))
 
 

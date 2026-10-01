@@ -74,6 +74,16 @@ class GroundingFrame(BaseModel):
     sources: list[GroundingSource] = []
 
 
+class SuggestionsFrame(BaseModel):
+    """Up to 3 predicted follow-up questions, emitted just before `done` (US1).
+
+    Omitted entirely when there are no useful suggestions.
+    """
+
+    type: Literal["suggestions"] = "suggestions"
+    suggestions: list[str] = Field(default_factory=list, max_length=3)
+
+
 # --- REST --------------------------------------------------------------------
 
 

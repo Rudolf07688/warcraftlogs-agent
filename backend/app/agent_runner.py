@@ -28,6 +28,8 @@ from google.genai import types
 
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
 
+from .scratch import TurnScratch
+
 APP_NAME = "wcl_app"
 USER_ID = "local_user"
 
@@ -105,15 +107,18 @@ async def _ensure_session(session_id: str) -> None:
 
 
 async def stream_response(
-    model: str, session_id: str, user_text: str
+    model: str, session_id: str, user_text: str, scratch: TurnScratch | None = None
 ) -> AsyncIterator[dict]:
     """Run one turn and yield stream records.
 
     Yields dicts of these shapes (the WS layer filters/forwards them):
     - `{"type": "tool_start", "name", "args"}` — a tool call began.
-    - `{"type": "tool_end", "name", "ok", "args", "result"}` — a tool returned;
-      `ok` reflects `result["status"] == "success"`, `args` is the originating
-      call's arguments (correlated by id), `result` is the raw tool payload.
+    - `{"type": "tool_end", "name", "ok", "args", "result", "result_path"?}` — a
+      tool returned; `ok` reflects `result["status"] == "success"`, `args` is the
+      originating call's arguments (correlated by id), `result` is the raw tool
+      payload. When a per-turn `scratch` store is supplied, the full result is also
+      written to disk keyed by the call id and `result_path` points at that file, so
+      large concurrent outputs are preserved and picked up after all calls finish (US2).
     - `{"type": "token", "text"}` — a streamed answer chunk.
 
     The agent uses the native thinking planner, so reasoning arrives as separate
@@ -167,13 +172,22 @@ async def stream_response(
                 args = pending_args.pop(call_id, {}) if call_id else {}
                 result = _to_plain(getattr(response, "response", None))
                 ok = result.get("status") == "success"
-                yield {
+                record = {
                     "type": "tool_end",
                     "name": response.name,
                     "ok": ok,
                     "args": args,
                     "result": result,
                 }
+                # US2: deposit the full result on the shared per-turn scratch so large
+                # concurrent outputs are preserved and can be picked up when done.
+                if scratch is not None:
+                    key = call_id or f"{response.name}-{len(pending_args)}"
+                    try:
+                        record["result_path"] = scratch.write(key, record)
+                    except OSError:
+                        pass  # scratch is a durability aid; never fail the turn over it
+                yield record
                 continue
             if getattr(part, "thought", False):
                 continue  # model reasoning — never shown to the user

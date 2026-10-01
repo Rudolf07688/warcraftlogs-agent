@@ -1,5 +1,5 @@
 <!-- SPECKIT START -->
-Active feature plan: specs/002-agent-enhancements/plan.md
+Active feature plan: specs/003-chat-followups-ux/plan.md
 (spec.md, research.md, data-model.md, contracts/, quickstart.md in the same dir).
 For technologies, project structure, and other important context, read that plan
 and the project constitution at .specify/memory/constitution.md.

@@ -13,6 +13,7 @@ export interface Message {
   seq?: number;
   status?: "complete" | "partial";
   grounded?: boolean;
+  suggestions?: string[];
 }
 
 export interface ConversationDetail extends Conversation {
