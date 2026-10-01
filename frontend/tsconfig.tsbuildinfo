@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/api/restclient.ts","./src/api/wsclient.ts","./src/components/composer.tsx","./src/components/messagelist.tsx","./src/components/modelselect.tsx","./src/components/sidebar.tsx"],"version":"5.9.3"}

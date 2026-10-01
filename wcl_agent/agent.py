@@ -70,32 +70,47 @@ Method:
 - If a tool errors, read the message, adjust filters (or fix your GraphQL) and
   retry; check `check_rate_limit` if you suspect the API budget.
 - Keep reports tight, concrete, and scannable.
+- When a question needs several independent Warcraft Logs lookups (e.g. comparing
+  specs or several encounters), issue those tool calls together in parallel rather
+  than one at a time, so the data is gathered concurrently.
 """.strip()
 
-root_agent = Agent(
-    name="wcl_agent",
-    model="gemini-2.5-flash",
-    description="Analyzes Warcraft Logs ranking and report data for any question.",
-    instruction=INSTRUCTION,
-    tools=[
-        # Leaderboard / population
-        get_selected_encounter,
-        get_spec_options,
-        get_rankings_distribution,
-        compare_specs,
-        # Report deep-dive
-        get_report_fights,
-        get_report_table,
-        get_report_events,
-        get_report_graph,
-        get_report_rankings,
-        get_report_player_details,
-        get_report_master_data,
-        # Individual characters
-        get_character_zone_rankings,
-        get_character_encounter_rankings,
-        # Utility / escape hatch
-        check_rate_limit,
-        run_wcl_graphql,
-    ],
-)
+DEFAULT_MODEL = "gemini-2.5-flash"
+
+# Single source of truth for the agent's tools (reused by every model variant).
+TOOLS = [
+    # Leaderboard / population
+    get_selected_encounter,
+    get_spec_options,
+    get_rankings_distribution,
+    compare_specs,
+    # Report deep-dive
+    get_report_fights,
+    get_report_table,
+    get_report_events,
+    get_report_graph,
+    get_report_rankings,
+    get_report_player_details,
+    get_report_master_data,
+    # Individual characters
+    get_character_zone_rankings,
+    get_character_encounter_rankings,
+    # Utility / escape hatch
+    check_rate_limit,
+    run_wcl_graphql,
+]
+
+
+def build_agent(model: str = DEFAULT_MODEL) -> Agent:
+    """Build the WCL analyst agent for a given model id (DRY factory)."""
+    return Agent(
+        name="wcl_agent",
+        model=model,
+        description="Analyzes Warcraft Logs ranking and report data for any question.",
+        instruction=INSTRUCTION,
+        tools=TOOLS,
+    )
+
+
+# Default agent (used by the terminal CLI and `adk` tooling).
+root_agent = build_agent()

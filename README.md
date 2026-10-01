@@ -65,6 +65,38 @@ Pick a zone → encounter → difficulty from the menu, then chat. Try:
 
 Type `exit` to quit.
 
+## Web app (streaming chat)
+
+A browser frontend + FastAPI backend surface the same agent as a live, streaming
+chat (incremental responses, model selector, dark UI, conversation history), with
+state persisted in PostgreSQL. Everything runs locally via Docker Compose.
+
+```bash
+cp .env.example .env         # fill WCL keys, GOOGLE_CLOUD_PROJECT, POSTGRES_*
+gcloud auth application-default login   # Vertex ADC (mounted into the backend)
+docker compose up --build
+```
+
+- Frontend: <http://localhost:5173>  •  Backend API: <http://localhost:8000>
+  (`/health`, `/api/models`, `/api/conversations`, WebSocket `/ws/chat`)
+
+Architecture:
+
+- **Backend** (`backend/`): FastAPI + asyncio. WebSocket streams agent tokens;
+  REST handles conversations/models. Reuses `wcl_agent/` unchanged and builds the
+  agent per selected model. SQLAlchemy async + Postgres for state.
+- **Frontend** (`frontend/`): React + Vite (basic, dark). Sidebar of past chats,
+  model dropdown, chat box with tokens appearing as they stream.
+
+See `specs/001-streaming-chat-frontend/quickstart.md` for the full walkthrough and
+`documentation/deployment.md` for the Cloud Run / Cloud SQL / Secret Manager plan.
+
+Run the backend tests:
+
+```bash
+uv run pytest backend/tests/ -q
+```
+
 ## Quick checks
 
 ```bash
