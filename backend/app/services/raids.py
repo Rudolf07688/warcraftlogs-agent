@@ -19,6 +19,7 @@ from wcl_agent.report_tools import get_report_metadata
 
 from ..db import repository as repo
 from ..db.models import TrackedRaid
+from .encounters import encounters_from_tool
 
 # Tools whose first positional arg is a real, accessible ``report_code``. A
 # successful response from any of these means the log exists and we pulled it.
@@ -60,11 +61,14 @@ async def capture_raid_from_tool(
     ok: bool,
     args: dict,
     conversation_id: uuid.UUID | None,
+    result: dict | None = None,
 ) -> TrackedRaid | None:
     """Upsert a TrackedRaid if this tool record is a successful report retrieval.
 
     Returns the raid (so the caller can emit a ``raid_tracked`` frame), or ``None``
-    when the record isn't a successful report-scoped call.
+    when the record isn't a successful report-scoped call. A successful
+    ``get_report_fights`` also contributes its distinct boss list (US2), merged into
+    the raid without duplicating.
     """
     if not ok or name not in REPORT_SCOPED_TOOLS:
         return None
@@ -72,14 +76,18 @@ async def capture_raid_from_tool(
     if not report_code or not isinstance(report_code, str):
         return None
 
+    # Distinct bosses only come from get_report_fights; [] for every other tool.
+    encounters = encounters_from_tool(name, ok, result or {})
+
     existing = await repo.get_tracked_raid(session, report_code)
     if existing is not None:
-        # Known raid — just touch recency (no extra WCL call).
+        # Known raid — touch recency and merge any new encounters (no extra WCL call).
         return await repo.upsert_tracked_raid(
             session,
             report_code=report_code,
             label=existing.label,
             conversation_id=conversation_id,
+            encounters=encounters,
         )
 
     # First time we've seen this report — resolve its label off the event loop.
@@ -96,4 +104,5 @@ async def capture_raid_from_tool(
         guild=guild,
         report_started_at=started,
         conversation_id=conversation_id,
+        encounters=encounters,
     )

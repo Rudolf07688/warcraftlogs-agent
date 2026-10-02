@@ -150,3 +150,96 @@ async def test_investigate_invalid_model_is_400(session_factory):
     finally:
         app.dependency_overrides.clear()
         await client.aclose()
+
+
+# --- US2: encounters merge + race-safe upsert ---------------------------------
+
+
+async def test_upsert_merges_encounters_without_duplicating(session):
+    await repo.upsert_tracked_raid(
+        session,
+        report_code="ENC1",
+        label="ENC1",
+        encounters=[{"encounter_id": 2902, "name": "Ulgrax", "difficulty": 5, "kill": False}],
+    )
+    # Re-reference with an overlapping boss (now a kill) plus a new one.
+    raid = await repo.upsert_tracked_raid(
+        session,
+        report_code="ENC1",
+        label="ENC1",
+        encounters=[
+            {"encounter_id": 2902, "name": "Ulgrax", "difficulty": 5, "kill": True},
+            {"encounter_id": 2917, "name": "Sikran", "difficulty": 5, "kill": False},
+        ],
+    )
+    raids = await repo.list_tracked_raids(session)
+    assert len(raids) == 1  # no duplicate row
+    by_id = {e["encounter_id"]: e for e in raid.encounters}
+    assert set(by_id) == {2902, 2917}  # deduped by encounter_id
+    assert by_id[2902]["kill"] is True  # a later kill upgrades the earlier non-kill
+
+
+async def test_capture_persists_distinct_encounters_from_fights(monkeypatch, session):
+    monkeypatch.setattr(
+        raids_service, "get_report_metadata", lambda code: {"status": "error"}
+    )
+    result = {
+        "status": "success",
+        "fights": [
+            {"id": 1, "name": "Ulgrax", "encounterID": 2902, "difficulty": 5, "kill": False},
+            {"id": 2, "name": "Ulgrax", "encounterID": 2902, "difficulty": 5, "kill": True},
+            {"id": 3, "name": "Trash", "encounterID": 0, "kill": False},
+        ],
+    }
+    raid = await raids_service.capture_raid_from_tool(
+        session,
+        name="get_report_fights",
+        ok=True,
+        args={"report_code": "FGT1"},
+        conversation_id=None,
+        result=result,
+    )
+    assert raid is not None
+    assert [e["encounter_id"] for e in raid.encounters] == [2902]
+    assert raid.encounters[0]["kill"] is True
+
+
+async def test_concurrent_first_reference_converges_to_one_row(tmp_path):
+    # True concurrency needs real connections, so use a file-backed SQLite (the
+    # shared in-memory StaticPool can't model two racing transactions). A generous
+    # busy timeout lets the losing writer wait, hit the unique violation, and fall
+    # through to the update branch instead of erroring.
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from backend.app.db.models import Base
+
+    db_path = tmp_path / "race.db"
+    eng = create_async_engine(
+        f"sqlite+aiosqlite:///{db_path}", connect_args={"timeout": 30}
+    )
+    try:
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(eng, expire_on_commit=False, class_=AsyncSession)
+
+        async def do_upsert(enc):
+            async with factory() as s:
+                await repo.upsert_tracked_raid(
+                    s, report_code="RACE", label="RACE", encounters=enc
+                )
+                await s.commit()
+
+        await asyncio.gather(
+            do_upsert([{"encounter_id": 2902, "name": "Ulgrax", "difficulty": 5, "kill": True}]),
+            do_upsert([{"encounter_id": 2917, "name": "Sikran", "difficulty": 5, "kill": False}]),
+        )
+
+        async with factory() as s:
+            raids = await repo.list_tracked_raids(s)
+        assert len(raids) == 1  # concurrent first references converged to one row
+    finally:
+        await eng.dispose()

@@ -18,6 +18,7 @@ loop. (Native async I/O via httpx is a documented later improvement.)
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -135,6 +136,8 @@ async def stream_response(
     # Correlate function_response back to its originating function_call by id, so
     # tool_end can carry the arguments (e.g. report_code) the call was made with.
     pending_args: dict[str, dict] = {}
+    # US6: monotonic start time per call id, to report each tool call's elapsed ms.
+    pending_started: dict[str, float] = {}
 
     async for event in runner.run_async(
         user_id=USER_ID,
@@ -159,6 +162,7 @@ async def stream_response(
                 call_id = getattr(call, "id", None)
                 if call_id:
                     pending_args[call_id] = args
+                    pending_started[call_id] = time.monotonic()
                 # Fallback grounding signal: the model invoked the web_search tool
                 # (used when grounding_metadata isn't propagated).
                 if call.name == WEB_SEARCH_AGENT_NAME and not grounding_emitted:
@@ -170,6 +174,7 @@ async def stream_response(
             if response:
                 call_id = getattr(response, "id", None)
                 args = pending_args.pop(call_id, {}) if call_id else {}
+                started = pending_started.pop(call_id, None) if call_id else None
                 result = _to_plain(getattr(response, "response", None))
                 ok = result.get("status") == "success"
                 record = {
@@ -179,6 +184,8 @@ async def stream_response(
                     "args": args,
                     "result": result,
                 }
+                if started is not None:
+                    record["ms"] = int((time.monotonic() - started) * 1000)
                 # US2: deposit the full result on the shared per-turn scratch so large
                 # concurrent outputs are preserved and can be picked up when done.
                 if scratch is not None:

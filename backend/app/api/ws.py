@@ -18,6 +18,7 @@ from ..scratch import TurnScratch
 from ..schemas import (
     ChatTurn,
     DoneFrame,
+    EncountersFrame,
     ErrorFrame,
     MetaFrame,
     RaidTrackedFrame,
@@ -26,6 +27,8 @@ from ..schemas import (
 from ..suggestions import generate_followups
 from ..services import graphs as graphs_service
 from ..services import raids as raids_service
+from ..services.encounters import encounters_from_tool
+from ..services.tool_summary import summarize_tool_result
 
 router = APIRouter()
 
@@ -46,15 +49,26 @@ async def _forward_tool_start(ws: WebSocket, record: dict) -> None:
 
 async def _handle_tool_end(ws: WebSocket, session, record: dict, conv_id) -> None:
     """Forward a user-safe tool_end and route the full record to capture services."""
-    await ws.send_json({"type": "tool_end", "name": record["name"], "ok": record.get("ok", False)})
-
     name = record["name"]
     ok = record.get("ok", False)
     args = record.get("args") or {}
+    result = record.get("result") or {}
 
-    # US1: upsert a tracked raid on a successful report retrieval.
+    # US6: forward a short result summary + elapsed ms so the UI can resolve the
+    # spell card to a compact chip. Both optional/additive.
+    tool_end: dict = {"type": "tool_end", "name": name, "ok": ok}
+    summary = summarize_tool_result(name, ok, result)
+    if summary:
+        tool_end["summary"] = summary
+    ms = record.get("ms")
+    if isinstance(ms, int):
+        tool_end["ms"] = ms
+    await ws.send_json(tool_end)
+
+    # US1: upsert a tracked raid on a successful report retrieval (also merges the
+    # distinct boss list from a successful get_report_fights).
     raid = await raids_service.capture_raid_from_tool(
-        session, name=name, ok=ok, args=args, conversation_id=conv_id
+        session, name=name, ok=ok, args=args, conversation_id=conv_id, result=result
     )
     # US5: capture graph JSON for later PDF rendering.
     graph = await graphs_service.capture_graph_from_tool(
@@ -62,7 +76,7 @@ async def _handle_tool_end(ws: WebSocket, session, record: dict, conv_id) -> Non
         name=name,
         ok=ok,
         args=args,
-        result=record.get("result") or {},
+        result=result,
         conversation_id=conv_id,
     )
     # Commit immediately so a later stream error can't lose what we actually pulled.
@@ -70,6 +84,12 @@ async def _handle_tool_end(ws: WebSocket, session, record: dict, conv_id) -> Non
         await session.commit()
     if raid is not None:
         await _send(ws, RaidTrackedFrame(report_code=raid.report_code, label=raid.label))
+
+    # US4: surface the report's distinct bosses so the UI can render a focus picker.
+    encounters = encounters_from_tool(name, ok, result)
+    report_code = args.get("report_code")
+    if encounters and isinstance(report_code, str):
+        await _send(ws, EncountersFrame(report_code=report_code, encounters=encounters))
 
 
 async def _persist_partial(session, conv_id, tokens: list[str]) -> None:

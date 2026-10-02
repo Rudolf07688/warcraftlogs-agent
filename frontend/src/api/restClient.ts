@@ -13,6 +13,12 @@ export async function getModels(): Promise<{
   return json(await fetch("/api/models"));
 }
 
+// US5: warm Barnaby greeting for a new chat (model-agnostic, served from a startup
+// cache). Best-effort — a network failure should still open a clean chat, so callers catch.
+export async function getGreeting(): Promise<{ greeting: string }> {
+  return json(await fetch("/api/greeting"));
+}
+
 export async function getRaids(): Promise<{ raids: Raid[] }> {
   return json(await fetch("/api/raids"));
 }

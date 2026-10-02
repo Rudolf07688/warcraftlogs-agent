@@ -3,27 +3,21 @@ import {
   deleteConversation,
   downloadReport,
   getConversation,
+  getGreeting,
   getModels,
   getRaids,
   investigateRaid,
   listConversations,
 } from "./api/restClient";
 import { ChatSocket, type Frame } from "./api/wsClient";
+import { Ambient } from "./components/Ambient";
 import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
-import { BackgroundToggle } from "./components/BackgroundToggle";
-import { backgroundCssValue, DEFAULT_BACKGROUND_ID } from "./config";
 import { THINKING_DEFAULT, toolLabel } from "./toolLabels";
-import type { Conversation, Message, Raid } from "./types";
-import {
-  clampSidebarWidth,
-  getBackgroundId,
-  getSidebarWidth,
-  setBackgroundId,
-  setSidebarWidth,
-} from "./uiPrefs";
+import type { Conversation, Encounter, Message, Raid, SpellCardState } from "./types";
+import { clampSidebarWidth, getSidebarWidth, setSidebarWidth } from "./uiPrefs";
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -39,9 +33,11 @@ export default function App() {
   const [streamText, setStreamText] = useState("");
   const [status, setStatus] = useState(THINKING_DEFAULT);
   const [error, setError] = useState<string | null>(null);
-  const [backgroundId, setBackgroundIdState] = useState(() =>
-    getBackgroundId(DEFAULT_BACKGROUND_ID),
-  );
+
+  // US6: live spellcasting cards for the in-flight turn.
+  const [streamCards, setStreamCards] = useState<SpellCardState[]>([]);
+  // US4: the boss ids the user has ticked on the latest sourcing turn (reset per turn).
+  const [selectedBosses, setSelectedBosses] = useState<number[]>([]);
 
   // Refs to avoid stale closures inside the socket frame handler.
   const socketRef = useRef<ChatSocket | null>(null);
@@ -50,6 +46,21 @@ export default function App() {
   const modelRef = useRef("");
   const groundedRef = useRef(false);
   const suggestionsRef = useRef<string[]>([]);
+  const streamCardsRef = useRef<SpellCardState[]>([]);
+  const pendingEncountersRef = useRef<Encounter[]>([]); // bosses surfaced this turn
+  const activeEncountersRef = useRef<Encounter[]>([]); // bosses shown by the live picker
+  const selectedBossesRef = useRef<number[]>([]);
+  const greetingReqId = useRef(0); // invalidates a late greeting if a turn/chat starts first
+
+  // Keep refs in sync for use inside imperative handlers.
+  useEffect(() => {
+    selectedBossesRef.current = selectedBosses;
+  }, [selectedBosses]);
+
+  const setCards = useCallback((next: SpellCardState[]) => {
+    streamCardsRef.current = next;
+    setStreamCards(next);
+  }, []);
 
   const refreshConversations = useCallback(async () => {
     const { conversations } = await listConversations();
@@ -70,9 +81,33 @@ export default function App() {
             setActiveId(f.conversation_id);
           }
           break;
-        case "tool_start":
+        case "tool_start": {
           setStatus(toolLabel(f.name));
+          // US6: spawn a casting spell card (correlated to tool_end by name + FIFO order,
+          // since the frames carry no call id).
+          const key = `${f.name}-${streamCardsRef.current.length}`;
+          setCards([
+            ...streamCardsRef.current,
+            { key, name: f.name, status: "casting", reportCode: f.report_code },
+          ]);
           break;
+        }
+        case "tool_end": {
+          // US6: resolve the oldest still-casting card for this tool.
+          const cards = streamCardsRef.current;
+          const idx = cards.findIndex((c) => c.status === "casting" && c.name === f.name);
+          if (idx >= 0) {
+            const next = cards.slice();
+            next[idx] = {
+              ...next[idx],
+              status: f.ok ? "resolved" : "fizzled",
+              summary: f.summary,
+              ms: f.ms,
+            };
+            setCards(next);
+          }
+          break;
+        }
         case "grounding":
           if (f.used) {
             groundedRef.current = true;
@@ -82,6 +117,15 @@ export default function App() {
         case "raid_tracked":
           void refreshRaids();
           break;
+        case "encounters": {
+          // US4: accumulate distinct bosses surfaced this turn (dedup by id).
+          const merged = [...pendingEncountersRef.current];
+          for (const e of f.encounters) {
+            if (!merged.some((m) => m.encounter_id === e.encounter_id)) merged.push(e);
+          }
+          pendingEncountersRef.current = merged;
+          break;
+        }
         case "token":
           streamRef.current += f.text;
           setStreamText(streamRef.current);
@@ -94,13 +138,22 @@ export default function App() {
           const text = streamRef.current || "(no response)";
           const grounded = groundedRef.current;
           const suggestions = suggestionsRef.current;
-          setMessages((m) => [...m, { role: "agent", content: text, grounded, suggestions }]);
+          const tools = streamCardsRef.current;
+          const encounters = pendingEncountersRef.current;
+          activeEncountersRef.current = encounters; // the live picker tracks this turn's bosses
+          setMessages((m) => [
+            ...m,
+            { role: "agent", content: text, grounded, suggestions, tools, encounters },
+          ]);
           setStreaming(false);
           setStreamText("");
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
           suggestionsRef.current = [];
+          setCards([]);
+          pendingEncountersRef.current = [];
+          setSelectedBosses([]); // fresh picker, no stale selection (FR-020)
           void refreshConversations();
           void refreshRaids();
           break;
@@ -113,10 +166,12 @@ export default function App() {
           streamRef.current = "";
           groundedRef.current = false;
           suggestionsRef.current = [];
+          setCards([]);
+          pendingEncountersRef.current = [];
           break;
       }
     },
-    [refreshConversations, refreshRaids],
+    [refreshConversations, refreshRaids, setCards],
   );
 
   // Keep a ref of the selected model so imperative sends never read a stale value.
@@ -134,16 +189,6 @@ export default function App() {
   useEffect(() => {
     applySidebarWidth(getSidebarWidth());
   }, [applySidebarWidth]);
-
-  // US6: apply the selected background (as the `--bg-image` CSS var) and persist it.
-  useEffect(() => {
-    document.documentElement.style.setProperty("--bg-image", backgroundCssValue(backgroundId));
-  }, [backgroundId]);
-
-  const changeBackground = useCallback((id: string) => {
-    setBackgroundId(id);
-    setBackgroundIdState(id);
-  }, []);
 
   const startResize = useCallback(
     (e: React.MouseEvent) => {
@@ -181,19 +226,39 @@ export default function App() {
   }, [handleFrame, refreshConversations, refreshRaids]);
 
   async function selectConversation(id: string) {
+    greetingReqId.current++; // a late greeting must not land in another chat
     const detail = await getConversation(id);
     activeIdRef.current = id;
     setActiveId(id);
     setMessages(detail.messages.map((m) => ({ ...m })));
     setModel(detail.model);
     setError(null);
+    setSelectedBosses([]);
+    activeEncountersRef.current = [];
   }
 
+  // US5: open a clean chat and (best-effort) inject a warm Barnaby greeting, unless
+  // the user starts typing/sends or switches chats first (then a late greeting is ignored).
   function newChat() {
     activeIdRef.current = null;
     setActiveId(null);
     setMessages([]);
     setError(null);
+    setCards([]);
+    setSelectedBosses([]);
+    activeEncountersRef.current = [];
+    pendingEncountersRef.current = [];
+
+    const reqId = ++greetingReqId.current;
+    getGreeting()
+      .then(({ greeting }) => {
+        if (!greeting || greetingReqId.current !== reqId) return;
+        // Only inject into a still-empty new chat (the hidden kickoff is never shown).
+        setMessages((m) => (m.length === 0 ? [{ role: "agent", content: greeting }] : m));
+      })
+      .catch(() => {
+        /* no greeting — a clean chat is fine */
+      });
   }
 
   async function removeConversation(id: string) {
@@ -207,6 +272,7 @@ export default function App() {
     opts?: { conversationId?: string | null; model?: string },
   ): boolean {
     if (streaming) return false;
+    greetingReqId.current++; // a real turn started — drop any in-flight greeting
     const useModel = opts?.model ?? modelRef.current;
     const convId =
       opts && "conversationId" in opts ? opts.conversationId ?? null : activeIdRef.current;
@@ -215,6 +281,8 @@ export default function App() {
     streamRef.current = "";
     groundedRef.current = false;
     suggestionsRef.current = [];
+    setCards([]);
+    pendingEncountersRef.current = [];
     setStreamText("");
     setStatus(THINKING_DEFAULT);
     setStreaming(true);
@@ -230,8 +298,19 @@ export default function App() {
     return !!ok;
   }
 
+  // US4: fold the ticked bosses into the next message text (visible), then clear the
+  // selection so it never reapplies to a later turn (FR-020).
+  function composeWithFocus(text: string): string {
+    const ids = selectedBossesRef.current;
+    const encs = activeEncountersRef.current;
+    if (!ids.length || !encs.length) return text;
+    const names = encs.filter((e) => ids.includes(e.encounter_id)).map((e) => e.name);
+    return names.length ? `${text}\n\n(Focus on: ${names.join(", ")})` : text;
+  }
+
   function send(text: string) {
-    sendText(text);
+    const ok = sendText(composeWithFocus(text));
+    if (ok) setSelectedBosses([]);
   }
 
   async function handleDownloadPdf() {
@@ -266,6 +345,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <Ambient />
       <Sidebar
         conversations={conversations}
         raids={raids}
@@ -292,7 +372,6 @@ export default function App() {
             disabled={streaming}
             degraded={modelsDegraded}
           />
-          <BackgroundToggle value={backgroundId} onChange={changeBackground} />
           {activeId && messages.length > 0 && (
             <button
               className="download-pdf"
@@ -313,9 +392,19 @@ export default function App() {
           streaming={streaming}
           status={status}
           error={error}
+          streamCards={streamCards}
+          selectedBosses={selectedBosses}
+          onSelectBosses={setSelectedBosses}
           onPickSuggestion={send}
         />
         <Composer disabled={streaming || !connected} onSend={send} />
+        <div className="attribution">
+          Icons by{" "}
+          <a href="https://game-icons.net" target="_blank" rel="noopener noreferrer">
+            game-icons.net
+          </a>{" "}
+          contributors, CC BY 3.0
+        </div>
       </main>
     </div>
   );

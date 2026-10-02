@@ -1,3 +1,5 @@
+# ----- Phase 1 ----- #
+
 1. Keep track of raid encounters I have previously asked about - give date/time on the UI and sort by that so I know which raids I'm looking at. 
   - When I click the specific raid encounter it must automatically start a new chat, sending the AI a prompt like "Please investigate this raid and highlight and important findings".
   - Store this in the postgres DB.
@@ -7,7 +9,8 @@
 5. Download PDF report with graphs and stuff.
 
 
----------
+# ----- Phase 2 ----- #
+
 1. Agent must be able to predict follow-up questions the user might want know, for example "What are the parse scores for everyone?", and then render buttons (max 3) for the user to click to further prompt the agent.
 2. Confirm parallel tool calls - make better - shared disk space for tool output the agent can pick up when done.
 3. Fix chat window rendering whre response panel sizes seem fixed.
@@ -15,9 +18,27 @@
 5. New background image `frontend/dist/assets/morgan-howell-img-1760.jpg`. Use that as the new background but keep it in and make it togglable from config.
 6. Resizable side panel.
 
-----------
+# ----- Phase 3 ----- #
+
 1. Always paste links to the warcraftlogs url that you are sourcing information from (or just query patameters if easier).
 2. Duplicating raids tracked in the side bar? 
   2.1 Display date and time of the raid encounter + boss name if applicable.
 3. As specific bosses come up in the raid results, list them as checkboxes to send to the agent prompt to focus/filter on.
 4. PDF report not working anymore. Previous render looked terrible.
+5. When entering a new chat the backend must preemptively send a message to the agent, invisible to the user, saying "Greetings, Barnaby!" so the agent greets yoy with a warm greeting when you start.
+  - To get this still feeling snappy, the greating prompt should be sent on application startup and cached for new chats during the session.
+
+# ----- Phase 4 ----- #
+
+1. Define self/friend characters for extra context.
+  - Add guild name as well (limited to one main guild for current user)
+  - responses are more focussed to guild members (unless answering unrelated questions)
+2. Store / cache results for quick access.
+3. Speed up tool calls (parallelize tasks? Run predefined workflows? Subagents?)
+4. Implement MCP communication protocol, specifically (but not limited to), being able to render plots and artifacts
+  - Perhaps use python plotly at the back and pass the json to the js plotly library so the graphs are nice and interactive.
+5. The "Download pdf report" button should sit on a specific message reply as well - taking only that message (with required context to generate the answer) and generate almost "analytic" reports
+6. When you lock in the names in the "Add a personal character" / "Add guild name" / "Add friend character", a background task should kick off that fetches and persists a guide to the characters' active spec for the agent to use in context.
+7. Fix the rendering of agent responses such as: "Top players always open with: $$\text{Pre-cast Frostbolt} \longrightarrow \text{Icy Veins} \longrightarrow \text{Frozen Orb} \longrightarrow \text{Flurry/Spike Combo}$$"
+  - Include rendering for mathmatical equations such as latex, or howwever the agent typicallt responds with.
+  

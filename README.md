@@ -87,9 +87,11 @@ Architecture:
   REST handles conversations/models/raids/reports. Reuses `wcl_agent/` and builds
   the agent per selected model. SQLAlchemy async + Postgres for state; ADK
   `DatabaseSessionService` persists agent session context in the same database.
-- **Frontend** (`frontend/`): React + Vite (basic, dark). Sidebar of past chats
-  **and tracked raids**, model dropdown, chat box with tokens appearing as they
-  stream, and a per-conversation **Download PDF** button.
+- **Frontend** (`frontend/`): React 19 + Vite + **Tailwind v4 + shadcn/ui**, a
+  single fixed high-fantasy theme (motion animations, streaming-safe markdown via
+  Streamdown, ambient particles). Sidebar of past chats **and tracked raids**,
+  model dropdown, chat box with tokens inscribing as they stream, and a
+  per-conversation **Download PDF** button.
 
 ### Enhancements (feature 002)
 
@@ -109,14 +111,41 @@ Architecture:
 - **PDF export** — download any conversation as a PDF with the written analysis
   plus the graphs the agent fetched (rendered with matplotlib + reportlab).
 
-See `specs/001-streaming-chat-frontend/quickstart.md` and
-`specs/002-agent-enhancements/quickstart.md` for walkthroughs, and
+### Enhancements (feature 004 — Phase 3)
+
+- **Cited source links** — when Barnaby uses Warcraft Logs data he now links the
+  exact WCL page (report / `#fight=` / `&source=&type=`), built from identifiers the
+  tools already return; links open in a new tab and are never fabricated for
+  non-WCL content.
+- **Accurate raid list** — each tracked raid shows its **own date/time** and the
+  **boss(es)** pulled (kills marked ✓), de-duplicated by report code with a
+  race-safe upsert so two near-simultaneous first references converge to one row.
+- **Boss focus checkboxes** — after a report's fights are listed, its distinct
+  bosses appear as a checkbox group; ticking some folds `(Focus on: …)` into your
+  next question (selection resets per turn).
+- **Fixed PDF export** — the markdown→PDF renderer now lays out GFM tables,
+  numbered/intro-plus-bullet lists, and wraps long tokens; each answer sits under
+  the question that prompted it.
+- **Warm greeting** — a new chat shows a cached Barnaby greeting instantly (primed
+  at startup, `GET /api/greeting`); the hidden kickoff is never shown and a failure
+  just opens a clean chat.
+- **High-fantasy UX polish (US6)** — one fixed theme (no switcher; the background
+  toggle was removed), smooth "inscribed" streaming, tool calls rendered as
+  **spellcasting cards** (summoning → casting → resolved/fizzled, with a `summary`
+  and duration), ambient particles, and a reduced-motion path. Tool telemetry rides
+  the existing WebSocket (`tool_end` gains optional `summary`/`ms`; a new
+  `encounters` frame drives the picker). Icons are from game-icons.net (CC BY 3.0,
+  credited in-app); no Blizzard assets.
+
+See `specs/001-streaming-chat-frontend/quickstart.md`,
+`specs/002-agent-enhancements/quickstart.md`, and
+`specs/004-raid-sourcing-ux/quickstart.md` for walkthroughs, and
 `documentation/deployment.md` for the Cloud Run / Cloud SQL / Secret Manager plan.
 
-Run the backend tests:
+Run the backend tests (pytest lives in the `test` extra):
 
 ```bash
-uv run pytest backend/tests/ -q
+uv run --extra test pytest -q
 ```
 
 ## Quick checks

@@ -13,10 +13,11 @@ from sqlalchemy import text
 from wcl_agent.models import discover_models
 
 from .agent_runner import set_session_service
-from .api import conversations, models, raids, reports, ws
+from .api import conversations, greeting, models, raids, reports, ws
 from .config import settings
 from .db.models import Base
 from .db.session import engine
+from .greeting import GREETING_MODEL, get_greeting
 
 
 @asynccontextmanager
@@ -32,6 +33,14 @@ async def lifespan(app: FastAPI):
                 text(
                     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS "
                     "status VARCHAR(10) NOT NULL DEFAULT 'complete'"
+                )
+            )
+            # US2/US4: distinct boss list per report (added idempotently; existing
+            # rows read back as NULL and are coerced to [] at the API edge).
+            await conn.execute(
+                text(
+                    "ALTER TABLE tracked_raids ADD COLUMN IF NOT EXISTS "
+                    "encounters JSONB"
                 )
             )
 
@@ -56,6 +65,13 @@ async def lifespan(app: FastAPI):
     app.state.default_model = discovery["default"]
     app.state.models_degraded = discovery["degraded"]
 
+    # US5: prime the fixed greeting model at startup, without blocking it. get_greeting
+    # swallows its own failures, so a background task is safe (kept referenced so it
+    # isn't garbage-collected before it runs). The endpoint awaits this task on a miss
+    # rather than regenerating, so a fast model id makes greetings effectively instant.
+    app.state.greeting_cache = {}
+    app.state.greeting_prime_task = asyncio.create_task(get_greeting(app, GREETING_MODEL))
+
     yield
     await engine.dispose()
 
@@ -74,6 +90,7 @@ app.include_router(models.router)
 app.include_router(conversations.router)
 app.include_router(raids.router)
 app.include_router(reports.router)
+app.include_router(greeting.router)
 app.include_router(ws.router)
 
 

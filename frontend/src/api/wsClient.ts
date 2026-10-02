@@ -1,10 +1,17 @@
+import type { Encounter } from "../types";
+
 export type Frame =
   | { type: "meta"; conversation_id: string; seq: number }
   | { type: "token"; text: string }
   | { type: "tool_start"; name: string; report_code?: string }
-  | { type: "tool_end"; name: string; ok: boolean }
+  // US6: tool_end gains optional summary/ms for the resolved spell chip.
+  | { type: "tool_end"; name: string; ok: boolean; summary?: string; ms?: number }
+  // US6 (optional): determinate cast-bar progress for tools that report it.
+  | { type: "tool_progress"; id: string; done: number; total: number; note?: string }
   | { type: "grounding"; used: boolean; sources?: { title?: string; uri?: string }[] }
   | { type: "raid_tracked"; report_code: string; label: string }
+  // US4: distinct bosses from a successful get_report_fights, for the picker.
+  | { type: "encounters"; report_code: string; encounters: Encounter[] }
   | { type: "suggestions"; suggestions: string[] }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };

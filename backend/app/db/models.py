@@ -99,6 +99,9 @@ class TrackedRaid(Base):
     last_conversation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
     )
+    # US2/US4: deduped distinct boss list for this report (list of
+    # {encounter_id, name, difficulty, kill}); merged on each get_report_fights.
+    encounters: Mapped[list | None] = mapped_column(_JSON, nullable=True)
 
 
 class CapturedGraph(Base):

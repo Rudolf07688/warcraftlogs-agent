@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # --- WebSocket: client -> server ---------------------------------------------
 
@@ -35,6 +35,22 @@ class ToolEndFrame(BaseModel):
     type: Literal["tool_end"] = "tool_end"
     name: str
     ok: bool = True
+    # US6: optional telemetry for resolved spell chips. Additive — older clients ignore them.
+    summary: str | None = None  # short human-readable result summary (≤140 chars)
+    ms: int | None = None  # elapsed duration of the tool call, in milliseconds
+
+
+class ToolProgressFrame(BaseModel):
+    """US6 (optional): upgrade a cast bar from indeterminate to determinate.
+
+    Only emitted by tools that can report progress; clients that ignore it still work.
+    """
+
+    type: Literal["tool_progress"] = "tool_progress"
+    id: str  # correlates to the tool call
+    done: int
+    total: int
+    note: str | None = None
 
 
 class TokenFrame(BaseModel):
@@ -82,6 +98,26 @@ class SuggestionsFrame(BaseModel):
 
     type: Literal["suggestions"] = "suggestions"
     suggestions: list[str] = Field(default_factory=list, max_length=3)
+
+
+class EncounterOut(BaseModel):
+    """A distinct boss encounter from a report's fight list (US2 display + US4 picker)."""
+
+    encounter_id: int
+    name: str
+    difficulty: int | None = None
+    kill: bool | None = None
+
+
+class EncountersFrame(BaseModel):
+    """Emitted after a successful `get_report_fights` when the report has distinct bosses (US4).
+
+    `encounters` is deduped by `encounter_id`; omitted entirely when empty.
+    """
+
+    type: Literal["encounters"] = "encounters"
+    report_code: str
+    encounters: list[EncounterOut] = []
 
 
 # --- REST --------------------------------------------------------------------
@@ -137,6 +173,14 @@ class RaidOut(BaseModel):
     report_started_at: datetime | None = None
     last_asked_at: datetime
     first_seen_at: datetime
+    # US2: distinct boss(es) for this report, for the sidebar summary. Defaults empty.
+    encounters: list[EncounterOut] = []
+
+    @field_validator("encounters", mode="before")
+    @classmethod
+    def _none_encounters_to_empty(cls, v):
+        # The DB column is nullable; rows predating the migration read back as None.
+        return v or []
 
 
 class RaidListResponse(BaseModel):
@@ -151,3 +195,9 @@ class InvestigateResponse(BaseModel):
     conversation_id: uuid.UUID
     model: str
     kickoff_prompt: str
+
+
+class GreetingResponse(BaseModel):
+    """Warm Barnaby greeting for a new chat (US5). Empty string on generation failure."""
+
+    greeting: str = ""

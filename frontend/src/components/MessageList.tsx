@@ -1,7 +1,10 @@
-import { useEffect, useRef } from "react";
-import type { Message } from "../types";
+import { useState } from "react";
+import type { Message, SpellCardState } from "../types";
+import { StickToBottom } from "use-stick-to-bottom";
 import { FollowUps } from "./FollowUps";
-import { Markdown } from "./Markdown";
+import { StreamMarkdown } from "./StreamMarkdown";
+import { SpellCard } from "./SpellCard";
+import { EncounterPicker } from "./EncounterPicker";
 
 interface Props {
   messages: Message[];
@@ -9,7 +12,48 @@ interface Props {
   streaming: boolean;
   status: string;
   error: string | null;
+  streamCards: SpellCardState[];
+  selectedBosses: number[];
+  onSelectBosses: (ids: number[]) => void;
   onPickSuggestion: (text: string) => void;
+}
+
+// Persisted tool calls collapse into a one-line disclosure so completed messages stay
+// tidy; the live (streaming) spellbook renders expanded so the user can watch the cast.
+function Spellbook({ cards, instant }: { cards: SpellCardState[]; instant?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (cards.length === 0) return null;
+
+  if (!instant) {
+    return (
+      <div className="spellbook">
+        {cards.map((c) => (
+          <SpellCard key={c.key} card={c} />
+        ))}
+      </div>
+    );
+  }
+
+  const label = `📖 ${cards.length} ${cards.length === 1 ? "spell" : "spells"} cast`;
+  return (
+    <div className="spellbook">
+      <button
+        className="spellbook-toggle"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span>{label}</span>
+        <span className="spellbook-chevron">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="spellbook-chips">
+          {cards.map((c) => (
+            <SpellCard key={c.key} card={c} instant />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function MessageList({
@@ -18,83 +62,112 @@ export function MessageList({
   streaming,
   status,
   error,
+  streamCards,
+  selectedBosses,
+  onSelectBosses,
   onPickSuggestion,
 }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const stickRef = useRef(true);
-
-  // Only auto-scroll when the user is already near the bottom, so scrolling up to
-  // read earlier content isn't interrupted while new tokens stream in.
-  function onScroll() {
-    const el = containerRef.current;
-    if (!el) return;
-    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  }
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streamingText, streaming, status, error]);
-
   return (
-    <div className="message-list" ref={containerRef} onScroll={onScroll}>
-      {messages.map((m, i) => (
-        <div key={m.id ?? i} className={`message ${m.role}`}>
-          <div className="message-role">{m.role === "user" ? "You" : "Agent"}</div>
-          {m.role === "agent" ? (
-            <Markdown content={m.content} />
-          ) : (
-            <div className="message-content">{m.content}</div>
-          )}
-          {m.role === "agent" && m.grounded && (
-            <div className="grounding-note" title="This reply used web search results.">
-              🌐 Used web search
-            </div>
-          )}
-          {m.status === "partial" && (
-            <div className="partial-note" title="This reply was interrupted before it finished.">
-              ⚠️ Interrupted — partial response
-            </div>
-          )}
-          {/* US1: only the latest agent turn shows follow-ups (never stale ones). */}
-          {m.role === "agent" &&
-            i === messages.length - 1 &&
-            !streaming &&
-            m.suggestions &&
-            m.suggestions.length > 0 && (
-              <FollowUps
-                suggestions={m.suggestions}
-                disabled={streaming}
-                onPick={onPickSuggestion}
-              />
+    <StickToBottom className="message-list" resize="smooth" initial="smooth">
+      {({ isAtBottom, scrollToBottom }) => (
+        <>
+          <StickToBottom.Content className="message-list-content">
+            {messages.map((m, i) => {
+              const isLast = i === messages.length - 1;
+              return (
+                <div
+                  key={m.id ?? i}
+                  className={`message ${m.role}${
+                    m.role === "agent" && isLast && !streaming ? " sheen-once" : ""
+                  }`}
+                >
+                  <div className="message-role">{m.role === "user" ? "You" : "Barnaby"}</div>
+                  {/* US6: the resolved "spellbook" of tool calls for this turn. */}
+                  {m.role === "agent" && m.tools && <Spellbook cards={m.tools} instant />}
+                  {m.role === "agent" ? (
+                    <StreamMarkdown content={m.content} />
+                  ) : (
+                    <div className="message-content">{m.content}</div>
+                  )}
+                  {m.role === "agent" && m.grounded && (
+                    <div className="grounding-note" title="This reply used web search results.">
+                      🌐 Used web search
+                    </div>
+                  )}
+                  {m.status === "partial" && (
+                    <div
+                      className="partial-note"
+                      title="This reply was interrupted before it finished."
+                    >
+                      ⚠️ Interrupted — partial response
+                    </div>
+                  )}
+                  {/* US4: boss focus checkboxes under the latest sourcing turn only. */}
+                  {m.role === "agent" &&
+                    isLast &&
+                    !streaming &&
+                    m.encounters &&
+                    m.encounters.length > 0 && (
+                      <EncounterPicker
+                        encounters={m.encounters}
+                        selected={selectedBosses}
+                        onChange={onSelectBosses}
+                      />
+                    )}
+                  {/* US1: only the latest agent turn shows follow-ups (never stale ones). */}
+                  {m.role === "agent" &&
+                    isLast &&
+                    !streaming &&
+                    m.suggestions &&
+                    m.suggestions.length > 0 && (
+                      <FollowUps
+                        suggestions={m.suggestions}
+                        disabled={streaming}
+                        onPick={onPickSuggestion}
+                      />
+                    )}
+                </div>
+              );
+            })}
+
+            {streaming && (
+              <div className="message agent arcane-border">
+                <div className="message-role">Barnaby</div>
+                {/* US6: live spellcasting cards for the in-flight turn. */}
+                <Spellbook cards={streamCards} />
+                {streamingText ? (
+                  <StreamMarkdown content={streamingText} streaming />
+                ) : (
+                  streamCards.length === 0 && (
+                    <div className="thinking" aria-label={status}>
+                      <span key={status} className="thinking-text">
+                        {status}
+                      </span>
+                      <span className="thinking-dots">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    </div>
+                  )
+                )}
+              </div>
             )}
-        </div>
-      ))}
 
-      {streaming && (
-        <div className="message agent">
-          <div className="message-role">Agent</div>
-          {streamingText ? (
-            <div className="streaming-body">
-              <Markdown content={streamingText} />
-              <span className="cursor" />
-            </div>
-          ) : (
-            <div className="thinking" aria-label={status}>
-              <span key={status} className="thinking-text">
-                {status}
-              </span>
-              <span className="thinking-dots">
-                <i />
-                <i />
-                <i />
-              </span>
-            </div>
+            {error && <div className="message error">⚠️ {error}</div>}
+          </StickToBottom.Content>
+
+          {!isAtBottom && (
+            <button
+              className="back-to-bottom"
+              onClick={() => scrollToBottom()}
+              title="Scroll to the latest message"
+            >
+              ↓ Back to bottom
+            </button>
           )}
-        </div>
+        </>
       )}
-
-      {error && <div className="message error">⚠️ {error}</div>}
-    </div>
+    </StickToBottom>
   );
 }

@@ -6,9 +6,11 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..services.encounters import merge_encounters
 from .models import CapturedGraph, Conversation, Message, TrackedRaid
 
 
@@ -80,6 +82,35 @@ async def list_messages(session: AsyncSession, conv_id: uuid.UUID) -> list[Messa
 # --- Tracked raids (US1) ------------------------------------------------------
 
 
+def _apply_raid_update(
+    raid: TrackedRaid,
+    *,
+    label: str,
+    zone: str | None,
+    guild: str | None,
+    report_started_at: datetime | None,
+    conversation_id: uuid.UUID | None,
+    encounters: list[dict] | None,
+) -> None:
+    """Touch recency and backfill metadata on an existing raid (US2 merge)."""
+    raid.last_asked_at = datetime.now(timezone.utc)
+    if conversation_id is not None:
+        raid.last_conversation_id = conversation_id
+    # Backfill label/metadata if it was previously only the bare code.
+    if label and (not raid.label or raid.label == raid.report_code):
+        raid.label = label
+    if zone and not raid.zone:
+        raid.zone = zone
+    if guild and not raid.guild:
+        raid.guild = guild
+    if report_started_at and not raid.report_started_at:
+        raid.report_started_at = report_started_at
+    if encounters:
+        merged = merge_encounters(raid.encounters, encounters)
+        if merged != (raid.encounters or []):
+            raid.encounters = merged
+
+
 async def upsert_tracked_raid(
     session: AsyncSession,
     *,
@@ -89,40 +120,68 @@ async def upsert_tracked_raid(
     guild: str | None = None,
     report_started_at: datetime | None = None,
     conversation_id: uuid.UUID | None = None,
+    encounters: list[dict] | None = None,
 ) -> TrackedRaid:
     """Insert a raid on first capture, or touch ``last_asked_at`` on re-reference.
 
     Dedup is by ``report_code`` (FR-002); re-referencing never creates duplicates.
+    The insert is race-safe (US2): two concurrent first-time references converge to
+    one row — a losing insert catches the unique-violation and updates instead. Any
+    supplied ``encounters`` are merged with what's already stored (never duplicated).
     """
     existing = await session.execute(
         select(TrackedRaid).where(TrackedRaid.report_code == report_code)
     )
     raid = existing.scalar_one_or_none()
-    if raid is None:
-        raid = TrackedRaid(
-            report_code=report_code,
+    if raid is not None:
+        _apply_raid_update(
+            raid,
             label=label,
             zone=zone,
             guild=guild,
             report_started_at=report_started_at,
-            last_conversation_id=conversation_id,
+            conversation_id=conversation_id,
+            encounters=encounters,
         )
-        session.add(raid)
-    else:
-        raid.last_asked_at = datetime.now(timezone.utc)
-        if conversation_id is not None:
-            raid.last_conversation_id = conversation_id
-        # Backfill label/metadata if it was previously only the bare code.
-        if label and (not raid.label or raid.label == raid.report_code):
-            raid.label = label
-        if zone and not raid.zone:
-            raid.zone = zone
-        if guild and not raid.guild:
-            raid.guild = guild
-        if report_started_at and not raid.report_started_at:
-            raid.report_started_at = report_started_at
-    await session.flush()
-    return raid
+        await session.flush()
+        return raid
+
+    # First time we've seen this report — attempt the insert. If a concurrent first
+    # reference won the race, the unique constraint on report_code rejects ours; we
+    # roll back the failed insert and adopt the winner's row instead. (This runs
+    # before any other capture work in the turn, so the rollback discards nothing
+    # else — the user message was already committed in a prior transaction.)
+    raid = TrackedRaid(
+        report_code=report_code,
+        label=label,
+        zone=zone,
+        guild=guild,
+        report_started_at=report_started_at,
+        last_conversation_id=conversation_id,
+        encounters=encounters or None,
+    )
+    session.add(raid)
+    try:
+        await session.flush()
+        return raid
+    except IntegrityError:
+        await session.rollback()
+        raid = (
+            await session.execute(
+                select(TrackedRaid).where(TrackedRaid.report_code == report_code)
+            )
+        ).scalar_one()
+        _apply_raid_update(
+            raid,
+            label=label,
+            zone=zone,
+            guild=guild,
+            report_started_at=report_started_at,
+            conversation_id=conversation_id,
+            encounters=encounters,
+        )
+        await session.flush()
+        return raid
 
 
 async def list_tracked_raids(session: AsyncSession) -> list[TrackedRaid]:

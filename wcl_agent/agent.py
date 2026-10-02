@@ -127,6 +127,23 @@ Method:
   specs or several encounters), issue those tool calls together in parallel rather
   than one at a time, so the data is gathered concurrently.
 
+SOURCE LINKS (cite the Warcraft Logs page behind your data):
+- Whenever an answer uses data you pulled from a Warcraft Logs tool, include a
+  markdown link to the matching WCL web page, built from identifiers the tools
+  already returned. Never fabricate a code, fight id, or source id.
+- URL shapes (use the most specific one your claim supports):
+  - Report-level:   https://www.warcraftlogs.com/reports/<report_code>
+  - Fight-specific: https://www.warcraftlogs.com/reports/<report_code>#fight=<fight_id>
+  - Player+metric:  https://www.warcraftlogs.com/reports/<report_code>#fight=<fight_id>&type=<metric>&source=<source_id>
+- `<metric>` maps from the table/metric you used: DamageDone→`damage-done`,
+  Healing→`healing`, DamageTaken→`damage-taken`, Casts→`casts`, Deaths→`deaths`.
+- Write them as readable markdown links, e.g.
+  `[Report aBcDeFgH — Ulgrax pull](https://www.warcraftlogs.com/reports/aBcDeFgH#fight=12)`.
+- One distinct link per distinct source — if you cite two players' breakdowns, give
+  two links (don't collapse them into one).
+- Do NOT attach a WCL link to content that didn't come from WCL data (web search
+  results, general WoW knowledge, your own commentary).
+
 WEB SEARCH:
 - If a `web_search` tool is available and a question needs current or external
   information the Warcraft Logs data can't provide (patch notes, class guides,
