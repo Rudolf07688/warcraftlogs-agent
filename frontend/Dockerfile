@@ -1,9 +1,13 @@
-# Frontend: React + Vite dev server (basic, for local testing)
-FROM node:22-alpine
+# Frontend: React + Vite dev server (basic, for local testing).
+# Uses a glibc (Debian) base rather than Alpine/musl: Tailwind v4's native Rust
+# binaries (@tailwindcss/oxide, lightningcss) and rollup/esbuild ship glibc prebuilts
+# and SIGBUS/segfault on musl, so Alpine crashes `vite` at startup.
+FROM node:22-slim
 
 WORKDIR /app
 
-COPY package.json ./
+# Copy the lockfile too so installs are reproducible and platform-correct.
+COPY package.json package-lock.json* ./
 RUN npm install
 
 COPY . .
