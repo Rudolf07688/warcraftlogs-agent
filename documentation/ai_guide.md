@@ -320,3 +320,47 @@ for future agents:
 - **Testing note**: ORM uses portable column types (`Uuid`, `JSON`/`JSONB`
   variant) so `backend/tests/` run on in-memory SQLite (`conftest.py`); live
   Postgres/Vertex flows are covered by the quickstart.
+
+## 12. Feature 005 — guild context, interactive artifacts & faster analysis
+
+Implemented in `specs/005-guild-context-artifacts/`. Summary for future agents:
+
+- **Global profile** (`user_characters`, `guild_profile` tables,
+  `api/profile.py`, `db/repository.py`): a single default-tenant profile (self +
+  friends + one main guild). `services/profile_context.build_preamble` turns it into
+  a non-persisted "KNOWN PLAYER CONTEXT" preamble that `agent_runner.stream_response`
+  prepends to the model input only (via the new `context_preamble` arg); the stored
+  user message is unchanged. Empty profile → empty preamble → behavior unchanged.
+- **Interactive charts** (`artifacts` table): the agent calls the dependency-light
+  `create_chart` tool (`wcl_agent/tools.py`) which returns a validated `ChartSpec`.
+  `ws._handle_tool_end` persists it, derives a Plotly figure
+  (`services/charts.chart_spec_to_plotly`), and emits an `artifact` frame; the
+  frontend renders it via a lazy-loaded `PlotlyArtifact`. The same spec renders to
+  matplotlib for the PDF (`chart_spec_to_matplotlib`) — one spec, two renderers.
+  Captures are linked to their agent message at turn end via
+  `repo.assign_message_seq_to_turn_captures` and re-render on reload.
+- **Math/LaTeX**: `StreamMarkdown` enables Streamdown's first-class `plugins.math`
+  slot (remark-math + rehype-katex); KaTeX CSS imported in `main.tsx`. The PDF
+  renders block `$$…$$` as matplotlib-mathtext images and unwraps inline math to
+  italics (`services/pdf_report.py`). Currency like "$5" is never treated as math.
+- **WCL query cache** (`wcl_agent/cache.py`): an in-process TTL+LRU cache behind the
+  single `WCLClient.query` chokepoint — transparent to all tools, deep-copied on
+  read/write. Two tiers: report-scoped (~24h, `WCL_CACHE_TTL_REPORT_S`) vs
+  leaderboard/other (~1h, `WCL_CACHE_TTL_LEADERBOARD_S`); `rateLimitData` always
+  bypasses (zero cached budget).
+- **Per-message PDF**: `GET /api/conversations/{id}/messages/{message_id}/report.pdf`
+  (`api/reports.py`) renders one agent reply + its originating question + that
+  message's charts/graphs, excluding other messages.
+- **Auto spec guides** (`services/guide.py`): locking a character/guild schedules a
+  non-blocking `asyncio` task that resolves the active spec from WCL and generates a
+  guide via the **web-search-capable guide model** (`WCL_GUIDE_MODEL`), reusing
+  `stream_response` over a disposable session. Status flows `pending → ready|failed`;
+  a bogus name still saves (status `failed`) and the agent answers without a guide.
+
+New env vars (also in `.env.example`):
+
+```
+WCL_GUIDE_MODEL=gemini-3.6-flash   # web-search-capable model for background guides
+WCL_CACHE_TTL_REPORT_S=86400       # report-scoped (immutable) cache TTL
+WCL_CACHE_TTL_LEADERBOARD_S=3600   # leaderboard/volatile cache TTL
+```

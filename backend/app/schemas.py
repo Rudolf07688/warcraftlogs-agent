@@ -155,6 +155,8 @@ class ConversationOut(BaseModel):
 
 class ConversationDetail(ConversationOut):
     messages: list[MessageOut] = []
+    # US2/FR-011: persisted charts, so reopening a conversation re-renders them.
+    artifacts: list["ArtifactOut"] = []
 
 
 class ConversationListResponse(BaseModel):
@@ -201,3 +203,102 @@ class GreetingResponse(BaseModel):
     """Warm Barnaby greeting for a new chat (US5). Empty string on generation failure."""
 
     greeting: str = ""
+
+
+# --- Profile (feature 005 / US1) ---------------------------------------------
+
+
+class CharacterIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    server: str = Field(min_length=1, max_length=100)
+    region: str = Field(min_length=1, max_length=8)
+
+
+class CharacterOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    role: str
+    name: str
+    server: str
+    region: str
+    class_name: str | None = None
+    active_spec: str | None = None
+    guide_status: str = "none"
+    guide_updated_at: datetime | None = None
+
+
+class GuildIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    server: str = Field(min_length=1, max_length=100)
+    region: str = Field(min_length=1, max_length=8)
+
+
+class GuildOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    name: str
+    server: str
+    region: str
+    summary_status: str = "none"
+
+
+class ProfileOut(BaseModel):
+    # Field name intentionally "self" (the user's own character); not a method arg here.
+    self_character: CharacterOut | None = Field(default=None, serialization_alias="self")
+    friends: list[CharacterOut] = []
+    guild: GuildOut | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# --- Charts & artifacts (feature 005 / US2) ----------------------------------
+
+CHART_KINDS = {"line", "bar", "scatter", "area"}
+
+
+class ChartSeries(BaseModel):
+    name: str
+    y: list[float] = Field(min_length=1)
+    x: list[float | int | str] | None = None
+
+    @field_validator("x")
+    @classmethod
+    def _x_matches_y(cls, v, info):
+        y = info.data.get("y")
+        if v is not None and y is not None and len(v) != len(y):
+            raise ValueError("series 'x' length must match 'y' length")
+        return v
+
+
+class ChartSpec(BaseModel):
+    """Single source of truth for both the Plotly (UI) and matplotlib (PDF) renderers."""
+
+    kind: str
+    title: str
+    x_label: str = ""
+    y_label: str = ""
+    series: list[ChartSeries] = Field(min_length=1)
+    source_url: str = ""
+
+    @field_validator("kind")
+    @classmethod
+    def _known_kind(cls, v):
+        if v not in CHART_KINDS:
+            raise ValueError(f"kind must be one of {sorted(CHART_KINDS)}")
+        return v
+
+
+class ArtifactOut(BaseModel):
+    id: uuid.UUID
+    message_seq: int | None = None
+    kind: str
+    title: str
+    figure: dict  # {data, layout} — rebuilt from the stored ChartSpec on read
+
+
+class ArtifactFrame(BaseModel):
+    type: Literal["artifact"] = "artifact"
+    artifact_id: uuid.UUID
+    kind: str
+    title: str
+    figure: dict  # Plotly figure JSON: {"data": [...], "layout": {...}}

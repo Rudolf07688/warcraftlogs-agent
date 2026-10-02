@@ -13,7 +13,7 @@ from sqlalchemy import text
 from wcl_agent.models import discover_models
 
 from .agent_runner import set_session_service
-from .api import conversations, greeting, models, raids, reports, ws
+from .api import conversations, greeting, models, profile, raids, reports, ws
 from .config import settings
 from .db.models import Base
 from .db.session import engine
@@ -23,6 +23,8 @@ from .greeting import GREETING_MODEL, get_greeting
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup (simple v1; a migration tool is a later improvement).
+    # Feature 005 adds three new tables (user_characters, guild_profile, artifacts) —
+    # create_all picks them up additively (new tables only; no ALTER needed).
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # create_all adds new *tables* only — it does NOT alter the pre-existing
@@ -88,6 +90,7 @@ app.add_middleware(
 
 app.include_router(models.router)
 app.include_router(conversations.router)
+app.include_router(profile.router)
 app.include_router(raids.router)
 app.include_router(reports.router)
 app.include_router(greeting.router)

@@ -108,7 +108,11 @@ async def _ensure_session(session_id: str) -> None:
 
 
 async def stream_response(
-    model: str, session_id: str, user_text: str, scratch: TurnScratch | None = None
+    model: str,
+    session_id: str,
+    user_text: str,
+    scratch: TurnScratch | None = None,
+    context_preamble: str | None = None,
 ) -> AsyncIterator[dict]:
     """Run one turn and yield stream records.
 
@@ -129,7 +133,10 @@ async def stream_response(
     runner = _get_runner(model)
     await _ensure_session(session_id)
 
-    message = types.Content(role="user", parts=[types.Part(text=user_text)])
+    # US1: prepend the (non-persisted) KNOWN PLAYER CONTEXT preamble to the model
+    # input only. The stored user message (ws layer) remains just `user_text`.
+    model_text = f"{context_preamble}\n\n{user_text}" if context_preamble else user_text
+    message = types.Content(role="user", parts=[types.Part(text=model_text)])
     streamed_any = False
     final_text = ""
     grounding_emitted = False

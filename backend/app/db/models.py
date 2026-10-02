@@ -120,3 +120,75 @@ class CapturedGraph(Base):
     source_id: Mapped[int] = mapped_column(Integer, default=0)
     graph_json: Mapped[dict] = mapped_column(_JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserCharacter(Base):
+    """A self or friend character in the single global profile (feature 005 / US1).
+
+    Each character carries a resolved active spec and a persisted spec guide fetched
+    by the background guide task (US6). Identity is ``(name, server, region)``.
+    """
+
+    __tablename__ = "user_characters"
+    __table_args__ = (
+        UniqueConstraint("name", "server", "region", "role", name="uq_user_char_identity"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    role: Mapped[str] = mapped_column(String(10))  # "self" | "friend"
+    name: Mapped[str] = mapped_column(String(100))
+    server: Mapped[str] = mapped_column(String(100))
+    region: Mapped[str] = mapped_column(String(8))
+    class_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    active_spec: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    guide_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "none" | "pending" | "ready" | "failed"
+    guide_status: Mapped[str] = mapped_column(String(10), server_default="none", default="none")
+    guide_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class GuildProfile(Base):
+    """The single main guild in the global profile (one-main-guild limit, FR-003).
+
+    Singleton row — ``set_guild`` replaces it so a new main guild supersedes the old.
+    """
+
+    __tablename__ = "guild_profile"
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    server: Mapped[str] = mapped_column(String(100))
+    region: Mapped[str] = mapped_column(String(8))
+    summary_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "none" | "pending" | "ready" | "failed"
+    summary_status: Mapped[str] = mapped_column(String(10), server_default="none", default="none")
+    summary_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Artifact(Base):
+    """An agent-declared chart (chart spec), persisted so it re-renders on reload (FR-011)
+    and prints in the PDF (FR-024). Mirrors ``CapturedGraph``'s conversation linkage."""
+
+    __tablename__ = "artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    message_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kind: Mapped[str] = mapped_column(String(20))  # "line" | "bar" | "scatter" | "area"
+    title: Mapped[str] = mapped_column(String(200))
+    spec_json: Mapped[dict] = mapped_column(_JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

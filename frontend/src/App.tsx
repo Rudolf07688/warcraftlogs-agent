@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   deleteConversation,
+  downloadMessageReport,
   downloadReport,
   getConversation,
   getGreeting,
@@ -14,9 +15,17 @@ import { Ambient } from "./components/Ambient";
 import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
+import { ProfilePanel } from "./components/ProfilePanel";
 import { Sidebar } from "./components/Sidebar";
 import { THINKING_DEFAULT, toolLabel } from "./toolLabels";
-import type { Conversation, Encounter, Message, Raid, SpellCardState } from "./types";
+import type {
+  ChartArtifact,
+  Conversation,
+  Encounter,
+  Message,
+  Raid,
+  SpellCardState,
+} from "./types";
 import { clampSidebarWidth, getSidebarWidth, setSidebarWidth } from "./uiPrefs";
 
 export default function App() {
@@ -28,6 +37,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [connected, setConnected] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
@@ -48,6 +58,7 @@ export default function App() {
   const suggestionsRef = useRef<string[]>([]);
   const streamCardsRef = useRef<SpellCardState[]>([]);
   const pendingEncountersRef = useRef<Encounter[]>([]); // bosses surfaced this turn
+  const pendingArtifactsRef = useRef<ChartArtifact[]>([]); // charts produced this turn
   const activeEncountersRef = useRef<Encounter[]>([]); // bosses shown by the live picker
   const selectedBossesRef = useRef<number[]>([]);
   const greetingReqId = useRef(0); // invalidates a late greeting if a turn/chat starts first
@@ -126,6 +137,19 @@ export default function App() {
           pendingEncountersRef.current = merged;
           break;
         }
+        case "artifact":
+          // US2: accumulate per-turn charts; attached to the agent message on `done`
+          // (mirrors the encounters flow — no partial chart renders mid-stream).
+          pendingArtifactsRef.current = [
+            ...pendingArtifactsRef.current,
+            {
+              artifact_id: f.artifact_id,
+              kind: f.kind,
+              title: f.title,
+              figure: f.figure,
+            },
+          ];
+          break;
         case "token":
           streamRef.current += f.text;
           setStreamText(streamRef.current);
@@ -140,10 +164,20 @@ export default function App() {
           const suggestions = suggestionsRef.current;
           const tools = streamCardsRef.current;
           const encounters = pendingEncountersRef.current;
+          const artifacts = pendingArtifactsRef.current;
           activeEncountersRef.current = encounters; // the live picker tracks this turn's bosses
           setMessages((m) => [
             ...m,
-            { role: "agent", content: text, grounded, suggestions, tools, encounters },
+            {
+              id: f.message_id,
+              role: "agent",
+              content: text,
+              grounded,
+              suggestions,
+              tools,
+              encounters,
+              artifacts,
+            },
           ]);
           setStreaming(false);
           setStreamText("");
@@ -153,6 +187,7 @@ export default function App() {
           suggestionsRef.current = [];
           setCards([]);
           pendingEncountersRef.current = [];
+          pendingArtifactsRef.current = [];
           setSelectedBosses([]); // fresh picker, no stale selection (FR-020)
           void refreshConversations();
           void refreshRaids();
@@ -168,6 +203,7 @@ export default function App() {
           suggestionsRef.current = [];
           setCards([]);
           pendingEncountersRef.current = [];
+          pendingArtifactsRef.current = [];
           break;
       }
     },
@@ -248,6 +284,7 @@ export default function App() {
     setSelectedBosses([]);
     activeEncountersRef.current = [];
     pendingEncountersRef.current = [];
+    pendingArtifactsRef.current = [];
 
     const reqId = ++greetingReqId.current;
     getGreeting()
@@ -283,6 +320,7 @@ export default function App() {
     suggestionsRef.current = [];
     setCards([]);
     pendingEncountersRef.current = [];
+    pendingArtifactsRef.current = [];
     setStreamText("");
     setStatus(THINKING_DEFAULT);
     setStreaming(true);
@@ -322,6 +360,16 @@ export default function App() {
     }
   }
 
+  // US5: export a single agent reply (its question + its charts) as a PDF.
+  async function handleDownloadMessage(messageId: string) {
+    if (!activeIdRef.current) return;
+    try {
+      await downloadMessageReport(activeIdRef.current, messageId);
+    } catch {
+      setError("Could not generate the per-message PDF report.");
+    }
+  }
+
   // One-click raid investigation (US1): the server creates an empty conversation
   // and owns the kickoff wording; we send it as a normal first turn.
   async function handleInvestigateRaid(reportCode: string) {
@@ -354,7 +402,9 @@ export default function App() {
         onNew={newChat}
         onDelete={removeConversation}
         onInvestigateRaid={handleInvestigateRaid}
+        onOpenProfile={() => setProfileOpen(true)}
       />
+      <ProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} />
       <div
         className="resizer"
         role="separator"
@@ -396,6 +446,7 @@ export default function App() {
           selectedBosses={selectedBosses}
           onSelectBosses={setSelectedBosses}
           onPickSuggestion={send}
+          onDownloadMessage={handleDownloadMessage}
         />
         <Composer disabled={streaming || !connected} onSend={send} />
         <div className="attribution">

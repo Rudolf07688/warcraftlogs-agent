@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # CORS origins for the local frontend (comma-separated)
     cors_origins: str = "http://localhost:5173"
 
+    # Background spec-guide generation (US6). A web-search-capable model so guides
+    # reflect the current retail patch. Runs over a disposable session like the greeting.
+    wcl_guide_model: str = "gemini-3.6-flash"
+
+    # WCL query cache TTLs in seconds (US4). Report-scoped data is effectively immutable
+    # (~24h); leaderboard/ranking data is volatile (~1h).
+    wcl_cache_ttl_report_s: int = 86400
+    wcl_cache_ttl_leaderboard_s: int = 3600
+
     @property
     def model_list(self) -> list[str]:
         return [m.strip() for m in self.wcl_models.split(",") if m.strip()]

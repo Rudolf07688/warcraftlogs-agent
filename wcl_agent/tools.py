@@ -8,6 +8,7 @@ was placed there from the startup menu (see ``main.py``).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pandas as pd
@@ -422,3 +423,103 @@ def check_rate_limit() -> dict[str, Any]:
         "pointsRemaining": round(remaining, 1),
         "pointsResetIn": rl["pointsResetIn"],
     }
+
+
+# --- Chart declaration (feature 005 / US2) ------------------------------------
+
+_CHART_KINDS = {"line", "bar", "scatter", "area"}
+_MAX_SERIES = 12
+_MAX_POINTS = 500
+
+
+def create_chart(
+    kind: str,
+    title: str,
+    series_json: str,
+    x_label: str = "",
+    y_label: str = "",
+    source_url: str = "",
+) -> dict[str, Any]:
+    """Render an interactive chart in the chat from data you have already gathered.
+
+    Use this when a visualization aids the answer (DPS/HPS over time, spec comparison
+    bars, ability breakdowns). Build ``series_json`` from numbers the WCL tools
+    returned — never invent data. The chart appears inline in your reply; still
+    explain it in text.
+
+    Args:
+        kind (str): One of "line", "bar", "scatter", "area".
+        title (str): Chart title.
+        series_json (str): JSON array of series: [{"name": str, "y": [num,...],
+            "x": [..]?}, ...]. ``x`` is optional (defaults to the point index) but
+            when present must match the length of ``y``.
+        x_label (str): Optional x-axis label.
+        y_label (str): Optional y-axis label.
+        source_url (str): Optional Warcraft Logs link the data was sourced from.
+
+    Returns:
+        dict: {"status": "success", "chart": <ChartSpec>} or
+            {"status": "error", "error_message": ...}.
+    """
+    if kind not in _CHART_KINDS:
+        return {
+            "status": "error",
+            "error_message": f"Unknown kind '{kind}'.",
+            "valid": sorted(_CHART_KINDS),
+        }
+    try:
+        series = json.loads(series_json) if series_json.strip() else None
+    except json.JSONDecodeError as exc:
+        return {"status": "error", "error_message": f"series_json is not valid JSON: {exc}"}
+    if not isinstance(series, list) or not series:
+        return {
+            "status": "error",
+            "error_message": "series_json must be a non-empty JSON array of {name, y, x?}.",
+        }
+    if len(series) > _MAX_SERIES:
+        return {
+            "status": "error",
+            "error_message": f"Too many series ({len(series)} > {_MAX_SERIES}); reduce them.",
+        }
+
+    normalized: list[dict[str, Any]] = []
+    for i, s in enumerate(series):
+        if not isinstance(s, dict):
+            return {"status": "error", "error_message": f"Series {i} must be an object."}
+        y = s.get("y")
+        if not isinstance(y, list) or not y:
+            return {
+                "status": "error",
+                "error_message": f"Series {i} needs a non-empty numeric 'y' list.",
+            }
+        if len(y) > _MAX_POINTS:
+            return {
+                "status": "error",
+                "error_message": (
+                    f"Series {i} has too many points ({len(y)} > {_MAX_POINTS}); "
+                    "aggregate or sample before charting."
+                ),
+            }
+        try:
+            y_vals = [float(v) for v in y]
+        except (TypeError, ValueError):
+            return {"status": "error", "error_message": f"Series {i} 'y' must be all numeric."}
+        entry: dict[str, Any] = {"name": str(s.get("name") or f"series {i + 1}"), "y": y_vals}
+        x = s.get("x")
+        if x is not None:
+            if not isinstance(x, list) or len(x) != len(y_vals):
+                return {
+                    "status": "error",
+                    "error_message": f"Series {i} 'x' must be a list the same length as 'y'.",
+                }
+            entry["x"] = list(x)
+        normalized.append(entry)
+
+    chart: dict[str, Any] = {"kind": kind, "title": str(title), "series": normalized}
+    if x_label:
+        chart["x_label"] = str(x_label)
+    if y_label:
+        chart["y_label"] = str(y_label)
+    if source_url:
+        chart["source_url"] = str(source_url)
+    return {"status": "success", "chart": chart}

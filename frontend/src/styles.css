@@ -723,3 +723,175 @@ body::after {
     opacity: 1;
   }
 }
+
+/* --- Profile panel (feature 005 / US1) ------------------------------------- */
+.profile-open {
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.profile-open:hover {
+  border-color: var(--accent);
+}
+
+.profile-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.profile-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.profile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.profile-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.profile-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+.profile-error {
+  background: rgba(255, 90, 90, 0.12);
+  border: 1px solid rgba(255, 90, 90, 0.4);
+  color: #ffb3b3;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.profile-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-section h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.profile-row > span:first-child {
+  flex: 1;
+}
+.profile-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.profile-remove:hover {
+  color: #ffb3b3;
+}
+.profile-form {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.profile-form input,
+.profile-form select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.profile-form input {
+  flex: 1;
+  min-width: 90px;
+}
+.profile-form button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.profile-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.guide-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.guide-pending {
+  background: rgba(91, 140, 255, 0.15);
+  color: var(--accent);
+}
+.guide-ready {
+  background: rgba(80, 200, 120, 0.15);
+  color: #6ad48a;
+}
+.guide-failed {
+  background: rgba(255, 90, 90, 0.12);
+  color: #ffb3b3;
+}
+
+/* --- Chart artifacts (feature 005 / US2) ----------------------------------- */
+.chart-artifact {
+  margin: 10px 0;
+  padding: 8px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.chart-loading {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 20px;
+  text-align: center;
+}
+
+/* --- Per-message PDF button (feature 005 / US5) ---------------------------- */
+.message-report-btn {
+  margin-top: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.message-report-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

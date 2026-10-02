@@ -12,6 +12,14 @@ export type Frame =
   | { type: "raid_tracked"; report_code: string; label: string }
   // US4: distinct bosses from a successful get_report_fights, for the picker.
   | { type: "encounters"; report_code: string; encounters: Encounter[] }
+  // US2: an interactive chart, ready to render (figure built server-side).
+  | {
+      type: "artifact";
+      artifact_id: string;
+      kind: string;
+      title: string;
+      figure: { data: unknown[]; layout: Record<string, unknown> };
+    }
   | { type: "suggestions"; suggestions: string[] }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };

@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { Streamdown, defaultRehypePlugins } from "streamdown";
 import type { Components } from "streamdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { rehypeWordSpans } from "../lib/rehypeWordSpans";
 import { useSmoothText } from "../hooks/useSmoothText";
 
@@ -17,6 +19,17 @@ import { useSmoothText } from "../hooks/useSmoothText";
 
 // Append our word-span plugin to Streamdown's defaults (passing rehypePlugins replaces them).
 const REHYPE_PLUGINS = [...Object.values(defaultRehypePlugins), rehypeWordSpans];
+
+// US3: math rendering via Streamdown's first-class `plugins.math` slot. Streamdown
+// runs `remarkPlugin` after remark-gfm and `rehypePlugin` after its sanitize step —
+// verified to render KaTeX correctly through that ordering. KaTeX CSS is imported in
+// index.css (T036). This is additive: code highlighting and other defaults are kept.
+const MATH_PLUGIN = {
+  name: "katex" as const,
+  type: "math" as const,
+  remarkPlugin: remarkMath,
+  rehypePlugin: rehypeKatex,
+};
 
 const COMPONENTS: Partial<Components> = {
   a: ({ node, children, ...props }) => {
@@ -43,6 +56,7 @@ function StreamMarkdownImpl({
         mode={streaming ? "streaming" : "static"}
         parseIncompleteMarkdown={streaming}
         rehypePlugins={REHYPE_PLUGINS}
+        plugins={{ math: MATH_PLUGIN }}
         components={COMPONENTS}
       >
         {shown}

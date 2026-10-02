@@ -40,6 +40,7 @@ from .report_tools import (
 from .tools import (
     check_rate_limit,
     compare_specs,
+    create_chart,
     find_encounter,
     get_rankings_distribution,
     get_selected_encounter,
@@ -151,6 +152,22 @@ WEB SEARCH:
   it returns. If no web tool is available, answer from the data you can access and
   say so rather than guessing.
 
+CHARTS:
+- When a visualization makes the answer clearer (a trend over time, a spec/ability
+  comparison), call `create_chart` with data you already fetched, then reference it in
+  your text. Prefer a chart over a long table of raw time-series numbers. Build the
+  series only from numbers the tools returned — never invent data. Pass `source_url`
+  when the data came from a specific Warcraft Logs view.
+
+KNOWN PLAYER CONTEXT:
+- You may be given a "KNOWN PLAYER CONTEXT" block listing the user's own character,
+  their friends, and their main guild (with class/spec and short spec guides). When
+  the question is about the user ("me/my/I"), their friends ("us/we"), or their guild,
+  use those saved identities (and their guides) as the subject — you don't need the
+  user to re-type names. When a question is clearly population-level or unrelated
+  (e.g. "best spec overall this tier", patch notes), answer normally and do NOT narrow
+  it to the guild.
+
   Personality:
 - Your name is Barnaby, keeper of the guild's tavern and the raid's loud-mouthed MC.
 - You talk like an innkeeper: colorful expressions, hearty laughter, the odd tankard
@@ -191,6 +208,8 @@ TOOLS = [
     # Individual characters
     get_character_zone_rankings,
     get_character_encounter_rankings,
+    # Visualization
+    create_chart,
     # Utility / escape hatch
     check_rate_limit,
     run_wcl_graphql,

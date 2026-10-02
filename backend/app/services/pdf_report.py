@@ -33,13 +33,59 @@ from reportlab.platypus import (  # noqa: E402
 )
 
 
+def _unwrap_latex_text(expr: str) -> str:
+    """Reduce a bit of inline LaTeX to plain readable text (US3/FR-016).
+
+    Unwraps ``\\text{...}``/``\\mathrm{...}``, drops thin-space commands, and strips a
+    few common wrappers so an inline formula reads legibly in italics (we don't
+    typeset inline math in the PDF, only block equations are rendered as images).
+    """
+    s = expr
+    s = re.sub(r"\\(?:text|mathrm|mathit|operatorname)\{([^}]*)\}", r"\1", s)
+    s = re.sub(r"\\[,;:! ]", " ", s)
+    s = s.replace("\\cdot", "·").replace("\\times", "×")
+    s = re.sub(r"[{}]", "", s)
+    return s.strip()
+
+
+# Inline math: \( ... \) always; $ ... $ only when the content looks mathematical
+# (contains \ ^ _ = ), so prose like "it costs $5" is never treated as math (FR-015).
+_INLINE_PAREN_MATH = re.compile(r"\\\((.+?)\\\)")
+_INLINE_DOLLAR_MATH = re.compile(r"(?<!\d)\$(?!\s)([^$\n]*?[\\^_=][^$\n]*?)\$(?!\d)")
+
+
 def _inline_md_to_rl(text: str) -> str:
     """Convert a line of inline markdown to reportlab's mini-HTML markup (escaped)."""
     out = html.escape(text)
     out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", out)
     out = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<i>\1</i>", out)
     out = re.sub(r"`(.+?)`", r'<font face="Courier">\1</font>', out)
+    # Inline math → italic plain text (delimiters/`\text{}` unwrapped). html.escape
+    # leaves `$` and `\` intact, so these run safely on the escaped string.
+    out = _INLINE_PAREN_MATH.sub(lambda m: f"<i>{_unwrap_latex_text(m.group(1))}</i>", out)
+    out = _INLINE_DOLLAR_MATH.sub(lambda m: f"<i>{_unwrap_latex_text(m.group(1))}</i>", out)
     return out
+
+
+_BLOCK_MATH_RE = re.compile(r"^\$\$(.+?)\$\$$|^\\\[(.+?)\\\]$", re.DOTALL)
+
+
+def _mathtext_image(latex: str) -> Image | None:
+    """Render a block equation to an image via matplotlib mathtext (US3/FR-016)."""
+    expr = latex.strip()
+    if not expr:
+        return None
+    fig = plt.figure(figsize=(6.5, 0.9))
+    try:
+        fig.text(0.02, 0.5, f"${expr}$", fontsize=16, ha="left", va="center")
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=150, transparent=True)
+        buf.seek(0)
+    except Exception:  # noqa: BLE001 - mathtext can't parse every LaTeX; fall back to text
+        return None
+    finally:
+        plt.close(fig)
+    return Image(buf, width=6.5 * inch, height=0.9 * inch)
 
 
 def _ensure_pdf_styles(styles) -> None:
@@ -143,6 +189,21 @@ def _markdown_flowables(content: str, styles) -> list:
         if not block:
             continue
         lines = block.splitlines()
+
+        # Block math ($$…$$ or \[…\]) → rendered equation image, with a legible text
+        # fallback if matplotlib's mathtext can't parse it (US3/FR-016).
+        math_block = _BLOCK_MATH_RE.match(block)
+        if math_block:
+            latex = math_block.group(1) or math_block.group(2) or ""
+            img = _mathtext_image(latex)
+            if img is not None:
+                flowables.append(img)
+            else:
+                flowables.append(
+                    Paragraph(f"<i>{html.escape(_unwrap_latex_text(latex))}</i>", styles["BodyText"])
+                )
+            flowables.append(Spacer(1, 8))
+            continue
 
         # GFM pipe table.
         if _looks_like_table(lines):
@@ -251,18 +312,34 @@ def _graph_image(graph: dict) -> Image | None:
     return Image(buf, width=6.5 * inch, height=3.2 * inch)
 
 
+def _artifact_image(spec_json: dict) -> Image | None:
+    """Render a persisted chart spec to a reportlab Image (US2/US5), or None on error."""
+    # Imported here to keep the pure PDF module decoupled from the chart/schema layer
+    # until a chart actually needs rendering.
+    from ..schemas import ChartSpec
+    from .charts import chart_spec_to_matplotlib
+
+    try:
+        return chart_spec_to_matplotlib(ChartSpec.model_validate(spec_json))
+    except Exception:  # noqa: BLE001 - a malformed spec must not sink the whole report
+        return None
+
+
 def render_report_pdf(
     *,
     title: str,
     generated_at: datetime,
     messages: list[dict[str, Any]],
     graphs: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]] | None = None,
 ) -> bytes:
     """Render the conversation into PDF bytes (header + analysis + charts).
 
     ``messages``: dicts with ``role``/``content``/``status``.
     ``graphs``: dicts with ``data_type``/``report_code``/``graph_json``.
-    A conversation with no captured graphs still produces an analysis-only PDF.
+    ``artifacts``: dicts with ``spec_json`` (agent-declared charts, US2) rendered as
+    images alongside the captured graphs.
+    A conversation with no captured graphs/artifacts still produces an analysis-only PDF.
     """
     styles = getSampleStyleSheet()
     _ensure_pdf_styles(styles)
@@ -295,9 +372,14 @@ def render_report_pdf(
         story.append(Paragraph("No written analysis in this conversation.", styles["BodyText"]))
 
     rendered = [img for g in graphs if (img := _graph_image(g)) is not None]
+    rendered += [
+        img
+        for a in (artifacts or [])
+        if (img := _artifact_image(a.get("spec_json") or {})) is not None
+    ]
     if rendered:
         story.append(PageBreak())
-        story.append(Paragraph("Graphs", styles["Heading1"]))
+        story.append(Paragraph("Charts", styles["Heading1"]))
         for img in rendered:
             story.append(img)
             story.append(Spacer(1, 12))

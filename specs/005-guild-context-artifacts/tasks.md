@@ -30,9 +30,9 @@ Web app layout: `wcl_agent/` (ADK agent + WCL client, standalone), `backend/app/
 
 **Purpose**: Dependencies and configuration for the feature.
 
-- [ ] T001 [P] Add backend `plotly` dependency (`uv add plotly`); confirm `pyproject.toml` + `uv.lock` updated
-- [ ] T002 [P] Add frontend deps in `frontend/package.json` and install: `react-plotly.js`, `plotly.js-dist-min`, `katex`, `remark-math`, `rehype-katex` (`cd frontend && npm install`)
-- [ ] T003 [P] Add settings to `backend/app/config.py` (`wcl_guide_model` default `gemini-3.6-flash`; optional `wcl_cache_ttl_report_s`, `wcl_cache_ttl_leaderboard_s`) and document them in `.env.example`
+- [X] T001 [P] Add backend `plotly` dependency (`uv add plotly`); confirm `pyproject.toml` + `uv.lock` updated
+- [X] T002 [P] Add frontend deps in `frontend/package.json` and install: `react-plotly.js`, `plotly.js-dist-min`, `katex`, `remark-math`, `rehype-katex` (`cd frontend && npm install`)
+- [X] T003 [P] Add settings to `backend/app/config.py` (`wcl_guide_model` default `gemini-3.6-flash`; optional `wcl_cache_ttl_report_s`, `wcl_cache_ttl_leaderboard_s`) and document them in `.env.example`
 
 ---
 
@@ -42,9 +42,9 @@ Web app layout: `wcl_agent/` (ADK agent + WCL client, standalone), `backend/app/
 
 **⚠️ CRITICAL**: Complete before starting any user story.
 
-- [ ] T004 Add ORM models `UserCharacter`, `GuildProfile`, `Artifact` to `backend/app/db/models.py` (reuse `_JSON`/`_UUID` dual-dialect helpers; follow `CapturedGraph`/`TrackedRaid` patterns per data-model.md)
-- [ ] T005 Ensure the three new tables are created at startup via `Base.metadata.create_all` in `backend/app/main.py` lifespan (verify model imports; additive/idempotent, SQLite-safe for tests)
-- [ ] T006 [P] Add `assign_message_seq_to_turn_captures(session, conv_id, seq)` to `backend/app/db/repository.py` — set `message_seq=seq` on this conversation's `message_seq IS NULL` `Artifact` and `CapturedGraph` rows (shared by US2 + US5)
+- [X] T004 Add ORM models `UserCharacter`, `GuildProfile`, `Artifact` to `backend/app/db/models.py` (reuse `_JSON`/`_UUID` dual-dialect helpers; follow `CapturedGraph`/`TrackedRaid` patterns per data-model.md)
+- [X] T005 Ensure the three new tables are created at startup via `Base.metadata.create_all` in `backend/app/main.py` lifespan (verify model imports; additive/idempotent, SQLite-safe for tests)
+- [X] T006 [P] Add `assign_message_seq_to_turn_captures(session, conv_id, seq)` to `backend/app/db/repository.py` — set `message_seq=seq` on this conversation's `message_seq IS NULL` `Artifact` and `CapturedGraph` rows (shared by US2 + US5)
 
 **Checkpoint**: Schema + capture-linkage ready — user stories can begin.
 
@@ -62,22 +62,22 @@ leaves all behavior unchanged.
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] `backend/tests/test_profile.py` — profile CRUD, single-`self` enforcement, one-main-guild replacement (FR-002/003)
-- [ ] T008 [P] [US1] `backend/tests/test_profile_context.py` — preamble built from a profile; empty when no profile (FR-006); includes scoping rule + capped guides
+- [X] T007 [P] [US1] `backend/tests/test_profile.py` — profile CRUD, single-`self` enforcement, one-main-guild replacement (FR-002/003)
+- [X] T008 [P] [US1] `backend/tests/test_profile_context.py` — preamble built from a profile; empty when no profile (FR-006); includes scoping rule + capped guides
 
 ### Implementation for User Story 1
 
-- [ ] T009 [P] [US1] Add `CharacterIn`, `CharacterOut`, `GuildIn`, `GuildOut`, `ProfileOut` to `backend/app/schemas.py` (per contracts/rest.md)
-- [ ] T010 [US1] Add profile repository functions to `backend/app/db/repository.py`: `get_profile`, `upsert_self`, `add_friend`, `delete_friend`, `set_guild`, `delete_guild` (enforce single self row + single guild)
-- [ ] T011 [P] [US1] Create `backend/app/services/profile_context.py` — `build_preamble(profile)` producing the capped "KNOWN PLAYER CONTEXT" block (data-model.md); returns "" when empty
-- [ ] T012 [US1] Add optional `context_preamble` param to `stream_response` in `backend/app/agent_runner.py`, prepended to the model `Content` only (never persisted/shown)
-- [ ] T013 [US1] In `backend/app/api/ws.py` `_handle_turn`, load the profile and pass `build_preamble(...)` into `stream_response` (persist only `turn.content`)
-- [ ] T014 [US1] Append the "KNOWN PLAYER CONTEXT" usage section to `INSTRUCTION` in `wcl_agent/agent.py` (scoping rule per contracts/agent-tools.md)
-- [ ] T015 [US1] Create `backend/app/api/profile.py` router: `GET /api/profile`, `PUT /api/profile/self`, `POST /api/profile/friends`, `DELETE /api/profile/friends/{id}`, `PUT /api/profile/guild`, `DELETE /api/profile/guild`
-- [ ] T016 [US1] Mount the profile router in `backend/app/main.py`
-- [ ] T017 [P] [US1] Add `Character`, `Guild`, `Profile` types to `frontend/src/types.ts` and profile CRUD calls to `frontend/src/api/restClient.ts`
-- [ ] T018 [US1] Create `frontend/src/components/ProfilePanel.tsx` (edit self/friends/guild; show `guide_status`)
-- [ ] T019 [US1] Wire the Profile panel entry point into `frontend/src/components/Sidebar.tsx` and load/open it from `frontend/src/App.tsx`
+- [X] T009 [P] [US1] Add `CharacterIn`, `CharacterOut`, `GuildIn`, `GuildOut`, `ProfileOut` to `backend/app/schemas.py` (per contracts/rest.md)
+- [X] T010 [US1] Add profile repository functions to `backend/app/db/repository.py`: `get_profile`, `upsert_self`, `add_friend`, `delete_friend`, `set_guild`, `delete_guild` (enforce single self row + single guild)
+- [X] T011 [P] [US1] Create `backend/app/services/profile_context.py` — `build_preamble(profile)` producing the capped "KNOWN PLAYER CONTEXT" block (data-model.md); returns "" when empty
+- [X] T012 [US1] Add optional `context_preamble` param to `stream_response` in `backend/app/agent_runner.py`, prepended to the model `Content` only (never persisted/shown)
+- [X] T013 [US1] In `backend/app/api/ws.py` `_handle_turn`, load the profile and pass `build_preamble(...)` into `stream_response` (persist only `turn.content`)
+- [X] T014 [US1] Append the "KNOWN PLAYER CONTEXT" usage section to `INSTRUCTION` in `wcl_agent/agent.py` (scoping rule per contracts/agent-tools.md)
+- [X] T015 [US1] Create `backend/app/api/profile.py` router: `GET /api/profile`, `PUT /api/profile/self`, `POST /api/profile/friends`, `DELETE /api/profile/friends/{id}`, `PUT /api/profile/guild`, `DELETE /api/profile/guild`
+- [X] T016 [US1] Mount the profile router in `backend/app/main.py`
+- [X] T017 [P] [US1] Add `Character`, `Guild`, `Profile` types to `frontend/src/types.ts` and profile CRUD calls to `frontend/src/api/restClient.ts`
+- [X] T018 [US1] Create `frontend/src/components/ProfilePanel.tsx` (edit self/friends/guild; show `guide_status`)
+- [X] T019 [US1] Wire the Profile panel entry point into `frontend/src/components/Sidebar.tsx` and load/open it from `frontend/src/App.tsx`
 
 **Checkpoint**: Profile is editable and demonstrably steers answers; MVP shippable.
 
@@ -93,23 +93,23 @@ inline (hover/zoom); no broken chart mid-stream; reopening the conversation re-r
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] `backend/tests/test_charts.py` — `chart_spec_to_plotly` and `chart_spec_to_matplotlib` from a ChartSpec; validation/bounds
-- [ ] T021 [P] [US2] `backend/tests/test_artifacts.py` — `create_chart` tool result captured + persisted; `GET /api/conversations/{id}` returns artifacts mapped to `message_seq`
+- [X] T020 [P] [US2] `backend/tests/test_charts.py` — `chart_spec_to_plotly` and `chart_spec_to_matplotlib` from a ChartSpec; validation/bounds
+- [X] T021 [P] [US2] `backend/tests/test_artifacts.py` — `create_chart` tool result captured + persisted; `GET /api/conversations/{id}` returns artifacts mapped to `message_seq`
 
 ### Implementation for User Story 2
 
-- [ ] T022 [P] [US2] Add `create_chart` tool to `wcl_agent/tools.py` (validate `kind`/`series_json`/bounds; return normalized `ChartSpec`; no plotly dep) per contracts/agent-tools.md
-- [ ] T023 [US2] Register `create_chart` in `wcl_agent/agent.py` `TOOLS` and append the "CHARTS" INSTRUCTION section
-- [ ] T024 [P] [US2] Add `ChartSpec`, `ArtifactOut`, `ArtifactFrame` to `backend/app/schemas.py` (per contracts/)
-- [ ] T025 [P] [US2] Create `backend/app/services/charts.py` — `chart_spec_to_plotly(spec)` → `{data,layout}` and `chart_spec_to_matplotlib(spec)` → ReportLab `Image` (bound points/series)
-- [ ] T026 [US2] Add `add_artifact` + `list_artifacts` to `backend/app/db/repository.py`
-- [ ] T027 [US2] Create `backend/app/services/artifacts.py` — `capture_artifact_from_tool(name, ok, result)` validating the `create_chart` payload into a `ChartSpec`
-- [ ] T028 [US2] In `backend/app/api/ws.py` `_handle_tool_end`, on successful `create_chart`: persist the artifact (+commit), build the figure, emit `ArtifactFrame`; at turn end call `assign_message_seq_to_turn_captures` (T006)
-- [ ] T029 [US2] Include persisted artifacts in `ConversationDetail` in `backend/app/api/conversations.py` (figure rebuilt from stored spec)
-- [ ] T030 [US2] Add the `artifact` frame to the `Frame` union in `frontend/src/api/wsClient.ts`; add `ChartArtifact` + `Message.artifacts` to `frontend/src/types.ts`
-- [ ] T031 [P] [US2] Create `frontend/src/components/PlotlyArtifact.tsx` — lazy-loaded `react-plotly.js` wrapper (reduced-motion aware)
-- [ ] T032 [US2] In `frontend/src/App.tsx`, accumulate per-turn artifacts (`pendingArtifactsRef`) and attach to the agent message on `done`; clear on `error`
-- [ ] T033 [US2] Render per-message artifacts in `frontend/src/components/MessageList.tsx`; map reloaded artifacts by `message_seq` in `frontend/src/api/restClient.ts` `getConversation`
+- [X] T022 [P] [US2] Add `create_chart` tool to `wcl_agent/tools.py` (validate `kind`/`series_json`/bounds; return normalized `ChartSpec`; no plotly dep) per contracts/agent-tools.md
+- [X] T023 [US2] Register `create_chart` in `wcl_agent/agent.py` `TOOLS` and append the "CHARTS" INSTRUCTION section
+- [X] T024 [P] [US2] Add `ChartSpec`, `ArtifactOut`, `ArtifactFrame` to `backend/app/schemas.py` (per contracts/)
+- [X] T025 [P] [US2] Create `backend/app/services/charts.py` — `chart_spec_to_plotly(spec)` → `{data,layout}` and `chart_spec_to_matplotlib(spec)` → ReportLab `Image` (bound points/series)
+- [X] T026 [US2] Add `add_artifact` + `list_artifacts` to `backend/app/db/repository.py`
+- [X] T027 [US2] Create `backend/app/services/artifacts.py` — `capture_artifact_from_tool(name, ok, result)` validating the `create_chart` payload into a `ChartSpec`
+- [X] T028 [US2] In `backend/app/api/ws.py` `_handle_tool_end`, on successful `create_chart`: persist the artifact (+commit), build the figure, emit `ArtifactFrame`; at turn end call `assign_message_seq_to_turn_captures` (T006)
+- [X] T029 [US2] Include persisted artifacts in `ConversationDetail` in `backend/app/api/conversations.py` (figure rebuilt from stored spec)
+- [X] T030 [US2] Add the `artifact` frame to the `Frame` union in `frontend/src/api/wsClient.ts`; add `ChartArtifact` + `Message.artifacts` to `frontend/src/types.ts`
+- [X] T031 [P] [US2] Create `frontend/src/components/PlotlyArtifact.tsx` — lazy-loaded `react-plotly.js` wrapper (reduced-motion aware)
+- [X] T032 [US2] In `frontend/src/App.tsx`, accumulate per-turn artifacts (`pendingArtifactsRef`) and attach to the agent message on `done`; clear on `error`
+- [X] T033 [US2] Render per-message artifacts in `frontend/src/components/MessageList.tsx`; map reloaded artifacts by `message_seq` in `frontend/src/api/restClient.ts` `getConversation`
 
 **Checkpoint**: Interactive charts render live and on reload, independent of other stories.
 
@@ -124,13 +124,13 @@ inline (hover/zoom); no broken chart mid-stream; reopening the conversation re-r
 
 ### Tests for User Story 3
 
-- [ ] T034 [P] [US3] Extend `backend/tests/test_pdf_report.py` — a message with a block equation renders without raw `$$` source (image/legible)
+- [X] T034 [P] [US3] Extend `backend/tests/test_pdf_report.py` — a message with a block equation renders without raw `$$` source (image/legible)
 
 ### Implementation for User Story 3
 
-- [ ] T035 [US3] In `frontend/src/components/StreamMarkdown.tsx`, add `remark-math` to `remarkPlugins` and append `rehype-katex` to the rehype pipeline (validate the installed Streamdown forwards `remarkPlugins`; fallback per research R5)
-- [ ] T036 [P] [US3] Import KaTeX CSS in `frontend/src/index.css` (or `styles.css`)
-- [ ] T037 [US3] Make `backend/app/services/pdf_report.py` math-aware — block `$$…$$` → matplotlib mathtext image flowable; inline math → unwrap `\text{}`/delimiters to italic (FR-016)
+- [X] T035 [US3] In `frontend/src/components/StreamMarkdown.tsx`, add `remark-math` to `remarkPlugins` and append `rehype-katex` to the rehype pipeline (validate the installed Streamdown forwards `remarkPlugins`; fallback per research R5)
+- [X] T036 [P] [US3] Import KaTeX CSS in `frontend/src/index.css` (or `styles.css`)
+- [X] T037 [US3] Make `backend/app/services/pdf_report.py` math-aware — block `$$…$$` → matplotlib mathtext image flowable; inline math → unwrap `\text{}`/delimiters to italic (FR-016)
 
 **Checkpoint**: Math renders correctly in chat and PDF, no regressions to prose/tables/links.
 
@@ -146,12 +146,12 @@ rate-limit points; automated cache test passes.
 
 ### Tests for User Story 4
 
-- [ ] T038 [P] [US4] `backend/tests/test_wcl_cache.py` — hit/miss by query+variables; report vs leaderboard TTL; `rateLimitData` bypass; deep-copy isolation (per contracts/caching.md)
+- [X] T038 [P] [US4] `backend/tests/test_wcl_cache.py` — hit/miss by query+variables; report vs leaderboard TTL; `rateLimitData` bypass; deep-copy isolation (per contracts/caching.md)
 
 ### Implementation for User Story 4
 
-- [ ] T039 [P] [US4] Create `wcl_agent/cache.py` — `TTLCache` (LRU + lazy expiry), `cache_key(query, variables)`, tier classifier (report-scoped vs leaderboard vs rateLimit bypass), env-tunable TTLs
-- [ ] T040 [US4] Integrate the cache into `WCLClient.query` in `wcl_agent/wcl_client.py` (consult before network; store with tier TTL; deep-copy on read/write; bypass `rateLimitData`)
+- [X] T039 [P] [US4] Create `wcl_agent/cache.py` — `TTLCache` (LRU + lazy expiry), `cache_key(query, variables)`, tier classifier (report-scoped vs leaderboard vs rateLimit bypass), env-tunable TTLs
+- [X] T040 [US4] Integrate the cache into `WCLClient.query` in `wcl_agent/wcl_client.py` (consult before network; store with tier TTL; deep-copy on read/write; bypass `rateLimitData`)
 
 **Checkpoint**: Repeat lookups are cached; no behavior change on cache miss.
 
@@ -167,14 +167,14 @@ that reply + its question + the chart, excludes other messages, renders cleanly.
 
 ### Tests for User Story 5
 
-- [ ] T041 [P] [US5] `backend/tests/test_message_report.py` — endpoint returns a PDF scoped to one message (its question + its captures), 404 on unknown message, excludes other messages (FR-023/026)
+- [X] T041 [P] [US5] `backend/tests/test_message_report.py` — endpoint returns a PDF scoped to one message (its question + its captures), 404 on unknown message, excludes other messages (FR-023/026)
 
 ### Implementation for User Story 5
 
-- [ ] T042 [US5] Add `GET /api/conversations/{conv_id}/messages/{message_id}/report.pdf` to `backend/app/api/reports.py` — resolve message→seq, gather that agent message + nearest preceding user message + `captured_graphs`/`artifacts` with `message_seq==seq`; render via `render_report_pdf`
-- [ ] T043 [US5] Ensure `backend/app/services/pdf_report.py` renders chart-spec artifacts (via `chart_spec_to_matplotlib`) in both per-message and conversation reports (depends on T025)
-- [ ] T044 [US5] Add `downloadMessageReport(convId, messageId)` to `frontend/src/api/restClient.ts`
-- [ ] T045 [US5] Add a per-message "Download report" control to agent replies in `frontend/src/components/MessageList.tsx` and wire the handler in `frontend/src/App.tsx`
+- [X] T042 [US5] Add `GET /api/conversations/{conv_id}/messages/{message_id}/report.pdf` to `backend/app/api/reports.py` — resolve message→seq, gather that agent message + nearest preceding user message + `captured_graphs`/`artifacts` with `message_seq==seq`; render via `render_report_pdf`
+- [X] T043 [US5] Ensure `backend/app/services/pdf_report.py` renders chart-spec artifacts (via `chart_spec_to_matplotlib`) in both per-message and conversation reports (depends on T025)
+- [X] T044 [US5] Add `downloadMessageReport(convId, messageId)` to `frontend/src/api/restClient.ts`
+- [X] T045 [US5] Add a per-message "Download report" control to agent replies in `frontend/src/components/MessageList.tsx` and wire the handler in `frontend/src/App.tsx`
 
 **Checkpoint**: Both conversation-level and per-message PDFs work and include artifacts.
 
@@ -191,13 +191,13 @@ gracefully.
 
 ### Tests for User Story 6
 
-- [ ] T046 [P] [US6] `backend/tests/test_guide.py` — guide lifecycle `pending→ready`; failure path → `failed` with entry still saved; idempotent re-lock (mock WCL resolve + `stream_response`)
+- [X] T046 [P] [US6] `backend/tests/test_guide.py` — guide lifecycle `pending→ready`; failure path → `failed` with entry still saved; idempotent re-lock (mock WCL resolve + `stream_response`)
 
 ### Implementation for User Story 6
 
-- [ ] T047 [P] [US6] Add `set_character_guide(...)` (and guild summary setter) to `backend/app/db/repository.py`
-- [ ] T048 [US6] Create `backend/app/services/guide.py` — `resolve_active_spec(name,server,region)` (WCL characterData), `run_guide_task(...)` generating via `stream_response` on `settings.wcl_guide_model`, persist status transitions; in-flight-set idempotency; guild variant compiles a progression summary
-- [ ] T049 [US6] In `backend/app/api/profile.py`, schedule `asyncio.create_task(run_guide_task(...))` on `PUT self` / `POST friend` / `PUT guild` (status→`pending`, return immediately)
+- [X] T047 [P] [US6] Add `set_character_guide(...)` (and guild summary setter) to `backend/app/db/repository.py`
+- [X] T048 [US6] Create `backend/app/services/guide.py` — `resolve_active_spec(name,server,region)` (WCL characterData), `run_guide_task(...)` generating via `stream_response` on `settings.wcl_guide_model`, persist status transitions; in-flight-set idempotency; guild variant compiles a progression summary
+- [X] T049 [US6] In `backend/app/api/profile.py`, schedule `asyncio.create_task(run_guide_task(...))` on `PUT self` / `POST friend` / `PUT guild` (status→`pending`, return immediately)
 
 **Checkpoint**: Guides populate in the background and feed the US1 preamble.
 
@@ -205,9 +205,9 @@ gracefully.
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T050 [P] Reduced-motion + bundle check: confirm `PlotlyArtifact` is lazy-loaded and honors `prefers-reduced-motion`; verify `npm run build` bundle is acceptable (`plotly.js-dist-min`)
-- [ ] T051 [P] Update `.env.example` and `documentation/ai_guide.md` with the guide model + cache env vars
-- [ ] T052 Run `uv run pytest -q` and `cd frontend && npm run build`; fix any regressions (esp. `test_api`, `test_pdf_report`)
+- [X] T050 [P] Reduced-motion + bundle check: confirm `PlotlyArtifact` is lazy-loaded and honors `prefers-reduced-motion`; verify `npm run build` bundle is acceptable (`plotly.js-dist-min`)
+- [X] T051 [P] Update `.env.example` and `documentation/ai_guide.md` with the guide model + cache env vars
+- [X] T052 Run `uv run pytest -q` and `cd frontend && npm run build`; fix any regressions (esp. `test_api`, `test_pdf_report`)
 - [ ] T053 Execute `specs/005-guild-context-artifacts/quickstart.md` end-to-end (all six stories + regression)
 
 ---

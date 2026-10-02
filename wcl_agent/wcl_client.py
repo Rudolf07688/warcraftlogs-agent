@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from .cache import cache_key, get_cache, is_rate_limit, ttl_for
+
 TOKEN_URL = "https://www.warcraftlogs.com/oauth/token"
 GRAPHQL_URL = "https://www.warcraftlogs.com/api/v2/client"
 
@@ -39,11 +41,23 @@ class WCLClient:
         return self.access_token
 
     def query(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+        # US4: transparent read-through cache. A hit returns a deep copy and spends no
+        # network / WCL API points; `rateLimitData` always bypasses (it IS the budget).
+        # On a miss behavior is identical to an uncached call.
+        variables = variables or {}
+        cache = get_cache()
+        key: str | None = None
+        if not is_rate_limit(query):
+            key = cache_key(query, variables)
+            hit = cache.get(key)
+            if hit is not None:
+                return hit
+
         if not self.access_token:
             self.authenticate()
         resp = requests.post(
             GRAPHQL_URL,
-            json={"query": query, "variables": variables or {}},
+            json={"query": query, "variables": variables},
             headers={"Authorization": f"Bearer {self.access_token}"},
             timeout=60,
         )
@@ -51,6 +65,8 @@ class WCLClient:
         payload = resp.json()
         if "errors" in payload:
             raise RuntimeError(json.dumps(payload["errors"], indent=2))
+        if key is not None:
+            cache.set(key, payload, ttl_for(query, variables))
         return payload
 
 

@@ -11,11 +11,14 @@ from ..db import repository as repo
 from ..db.session import get_session
 from ..model_state import is_valid_model
 from ..schemas import (
+    ArtifactOut,
+    ChartSpec,
     ConversationCreate,
     ConversationDetail,
     ConversationListResponse,
     ConversationOut,
 )
+from ..services.charts import chart_spec_to_plotly
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -49,7 +52,21 @@ async def get_conversation(
     conv = await repo.get_conversation(session, conv_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="not_found")
-    return ConversationDetail.model_validate(conv)
+    detail = ConversationDetail.model_validate(conv)
+    # US2: rebuild each persisted chart's Plotly figure from its stored spec so the
+    # conversation re-renders its artifacts on reload (FR-011).
+    artifacts = await repo.list_artifacts(session, conv_id)
+    detail.artifacts = [
+        ArtifactOut(
+            id=a.id,
+            message_seq=a.message_seq,
+            kind=a.kind,
+            title=a.title,
+            figure=chart_spec_to_plotly(ChartSpec.model_validate(a.spec_json)),
+        )
+        for a in artifacts
+    ]
+    return detail
 
 
 @router.delete("/{conv_id}", status_code=204)

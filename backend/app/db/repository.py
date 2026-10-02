@@ -5,13 +5,21 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..services.encounters import merge_encounters
-from .models import CapturedGraph, Conversation, Message, TrackedRaid
+from .models import (
+    Artifact,
+    CapturedGraph,
+    Conversation,
+    GuildProfile,
+    Message,
+    TrackedRaid,
+    UserCharacter,
+)
 
 
 async def create_conversation(
@@ -239,3 +247,214 @@ async def list_captured_graphs(
         )
     )
     return list(result.scalars().all())
+
+
+# --- Artifacts (feature 005 / US2) --------------------------------------------
+
+
+async def add_artifact(
+    session: AsyncSession,
+    *,
+    conversation_id: uuid.UUID,
+    kind: str,
+    title: str,
+    spec_json: dict,
+    message_seq: int | None = None,
+) -> Artifact:
+    artifact = Artifact(
+        conversation_id=conversation_id,
+        kind=kind,
+        title=title,
+        spec_json=spec_json,
+        message_seq=message_seq,
+    )
+    session.add(artifact)
+    await session.flush()
+    return artifact
+
+
+async def list_artifacts(session: AsyncSession, conv_id: uuid.UUID) -> list[Artifact]:
+    result = await session.execute(
+        select(Artifact)
+        .where(Artifact.conversation_id == conv_id)
+        .order_by(
+            Artifact.message_seq.is_(None),  # non-null seqs first
+            Artifact.message_seq,
+            Artifact.created_at,
+        )
+    )
+    return list(result.scalars().all())
+
+
+# --- Turn-end capture linkage (feature 005, shared by US2 + US5) ---------------
+
+
+async def assign_message_seq_to_turn_captures(
+    session: AsyncSession, conv_id: uuid.UUID, seq: int
+) -> None:
+    """Stamp ``message_seq=seq`` on this conversation's still-unassigned captures.
+
+    Turns are serialized per socket, so the ``message_seq IS NULL`` artifacts and
+    captured graphs for this conversation are exactly the captures of the turn that
+    just produced the agent message at ``seq``. Links them so per-message reports and
+    reload-time rendering can scope captures to their originating message.
+    """
+    await session.execute(
+        update(Artifact)
+        .where(Artifact.conversation_id == conv_id, Artifact.message_seq.is_(None))
+        .values(message_seq=seq)
+    )
+    await session.execute(
+        update(CapturedGraph)
+        .where(CapturedGraph.conversation_id == conv_id, CapturedGraph.message_seq.is_(None))
+        .values(message_seq=seq)
+    )
+    await session.flush()
+
+
+# --- Global profile (feature 005 / US1) ---------------------------------------
+
+
+async def get_self_character(session: AsyncSession) -> UserCharacter | None:
+    result = await session.execute(
+        select(UserCharacter).where(UserCharacter.role == "self")
+    )
+    return result.scalars().first()
+
+
+async def list_friend_characters(session: AsyncSession) -> list[UserCharacter]:
+    result = await session.execute(
+        select(UserCharacter)
+        .where(UserCharacter.role == "friend")
+        .order_by(UserCharacter.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def get_guild_profile(session: AsyncSession) -> GuildProfile | None:
+    result = await session.execute(select(GuildProfile))
+    return result.scalars().first()
+
+
+async def get_profile(
+    session: AsyncSession,
+) -> tuple[UserCharacter | None, list[UserCharacter], GuildProfile | None]:
+    """Return the single global profile: (self, friends, guild)."""
+    return (
+        await get_self_character(session),
+        await list_friend_characters(session),
+        await get_guild_profile(session),
+    )
+
+
+async def upsert_self(
+    session: AsyncSession, *, name: str, server: str, region: str
+) -> UserCharacter:
+    """Create or replace the single ``self`` character. Resets the guide lifecycle."""
+    existing = await get_self_character(session)
+    if existing is not None:
+        existing.name = name
+        existing.server = server
+        existing.region = region
+        existing.class_name = None
+        existing.active_spec = None
+        existing.guide_markdown = None
+        existing.guide_status = "pending"
+        existing.guide_updated_at = None
+        await session.flush()
+        return existing
+    char = UserCharacter(
+        role="self", name=name, server=server, region=region, guide_status="pending"
+    )
+    session.add(char)
+    await session.flush()
+    return char
+
+
+async def add_friend(
+    session: AsyncSession, *, name: str, server: str, region: str
+) -> UserCharacter:
+    """Add a friend character. Raises IntegrityError on an identical duplicate."""
+    char = UserCharacter(
+        role="friend", name=name, server=server, region=region, guide_status="pending"
+    )
+    session.add(char)
+    await session.flush()
+    return char
+
+
+async def delete_friend(session: AsyncSession, char_id: uuid.UUID) -> bool:
+    result = await session.execute(
+        delete(UserCharacter).where(
+            UserCharacter.id == char_id, UserCharacter.role == "friend"
+        )
+    )
+    return result.rowcount > 0
+
+
+async def set_guild(
+    session: AsyncSession, *, name: str, server: str, region: str
+) -> GuildProfile:
+    """Replace the single main guild (one-main-guild limit, FR-003)."""
+    await session.execute(delete(GuildProfile))
+    guild = GuildProfile(
+        name=name, server=server, region=region, summary_status="pending"
+    )
+    session.add(guild)
+    await session.flush()
+    return guild
+
+
+async def delete_guild(session: AsyncSession) -> bool:
+    result = await session.execute(delete(GuildProfile))
+    return result.rowcount > 0
+
+
+async def get_character(session: AsyncSession, char_id: uuid.UUID) -> UserCharacter | None:
+    return await session.get(UserCharacter, char_id)
+
+
+async def set_character_guide(
+    session: AsyncSession,
+    char_id: uuid.UUID,
+    *,
+    class_name: str | None = None,
+    active_spec: str | None = None,
+    markdown: str | None = None,
+    status: str,
+) -> UserCharacter | None:
+    """Persist guide-task output (US6). Stamps ``guide_updated_at`` when ready."""
+    char = await session.get(UserCharacter, char_id)
+    if char is None:
+        return None
+    if class_name is not None:
+        char.class_name = class_name
+    if active_spec is not None:
+        char.active_spec = active_spec
+    if markdown is not None:
+        char.guide_markdown = markdown
+    char.guide_status = status
+    if status == "ready":
+        char.guide_updated_at = datetime.now(timezone.utc)
+    await session.flush()
+    return char
+
+
+async def set_guild_summary(
+    session: AsyncSession,
+    guild_id: uuid.UUID,
+    *,
+    markdown: str | None = None,
+    status: str,
+) -> GuildProfile | None:
+    """Persist guild progression-summary output (US6)."""
+    guild = await session.get(GuildProfile, guild_id)
+    if guild is None:
+        return None
+    if markdown is not None:
+        guild.summary_markdown = markdown
+    guild.summary_status = status
+    if status == "ready":
+        guild.summary_updated_at = datetime.now(timezone.utc)
+    await session.flush()
+    return guild

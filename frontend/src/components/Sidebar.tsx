@@ -9,6 +9,7 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string) => void;
   onInvestigateRaid: (reportCode: string) => void;
+  onOpenProfile: () => void;
 }
 
 function formatWhen(iso: string | null | undefined): string {
@@ -47,6 +48,7 @@ export function Sidebar({
   onNew,
   onDelete,
   onInvestigateRaid,
+  onOpenProfile,
 }: Props) {
   const [raidsOpen, setRaidsOpen] = useState(true);
   const [convsOpen, setConvsOpen] = useState(true);
@@ -55,6 +57,9 @@ export function Sidebar({
     <aside className="sidebar">
       <button className="new-chat" onClick={onNew}>
         + New chat
+      </button>
+      <button className="profile-open" onClick={onOpenProfile} title="Edit your profile">
+        ⚑ Profile
       </button>
 
       <button

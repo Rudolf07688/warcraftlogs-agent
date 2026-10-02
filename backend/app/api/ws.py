@@ -16,6 +16,7 @@ from ..db.session import SessionLocal
 from ..model_state import is_valid_model
 from ..scratch import TurnScratch
 from ..schemas import (
+    ArtifactFrame,
     ChatTurn,
     DoneFrame,
     EncountersFrame,
@@ -27,7 +28,10 @@ from ..schemas import (
 from ..suggestions import generate_followups
 from ..services import graphs as graphs_service
 from ..services import raids as raids_service
+from ..services.artifacts import capture_artifact_from_tool
+from ..services.charts import chart_spec_to_plotly
 from ..services.encounters import encounters_from_tool
+from ..services.profile_context import build_preamble
 from ..services.tool_summary import summarize_tool_result
 
 router = APIRouter()
@@ -79,11 +83,32 @@ async def _handle_tool_end(ws: WebSocket, session, record: dict, conv_id) -> Non
         result=result,
         conversation_id=conv_id,
     )
+    # US2: capture an agent-declared chart as a persisted artifact + emit a frame.
+    spec = capture_artifact_from_tool(name, ok, result)
+    artifact = None
+    if spec is not None:
+        artifact = await repo.add_artifact(
+            session,
+            conversation_id=conv_id,
+            kind=spec.kind,
+            title=spec.title,
+            spec_json=spec.model_dump(),
+        )
     # Commit immediately so a later stream error can't lose what we actually pulled.
-    if raid is not None or graph is not None:
+    if raid is not None or graph is not None or artifact is not None:
         await session.commit()
     if raid is not None:
         await _send(ws, RaidTrackedFrame(report_code=raid.report_code, label=raid.label))
+    if artifact is not None and spec is not None:
+        await _send(
+            ws,
+            ArtifactFrame(
+                artifact_id=artifact.id,
+                kind=spec.kind,
+                title=spec.title,
+                figure=chart_spec_to_plotly(spec),
+            ),
+        )
 
     # US4: surface the report's distinct bosses so the UI can render a focus picker.
     encounters = encounters_from_tool(name, ok, result)
@@ -121,6 +146,11 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
         await session.commit()
         await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_msg.seq))
 
+        # US1: build the (non-persisted) KNOWN PLAYER CONTEXT preamble from the global
+        # profile. Empty string when no profile exists, so behavior is unchanged (FR-006).
+        self_char, friends, guild = await repo.get_profile(session)
+        preamble = build_preamble(self_char, friends, guild)
+
         # Stream the agent response, accumulating tokens into the final content.
         # US2: a per-turn scratch store holds each tool's full output on disk so large
         # concurrent results are preserved and picked up after every call completes.
@@ -128,7 +158,7 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
         scratch = TurnScratch(str(conv_id))
         try:
             async for record in stream_response(
-                turn.model, str(conv_id), turn.content, scratch
+                turn.model, str(conv_id), turn.content, scratch, context_preamble=preamble or None
             ):
                 kind = record.get("type")
                 if kind == "token":
@@ -156,6 +186,9 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
 
         final_text = "".join(tokens) or "(no response)"
         agent_msg = await repo.add_message(session, conv_id, "agent", final_text)
+        # US2/US5: link this turn's captures (artifacts + graphs) to the agent message
+        # so per-message reports and reload-time rendering can scope them correctly.
+        await repo.assign_message_seq_to_turn_captures(session, conv_id, agent_msg.seq)
         await session.commit()
 
         # US1: predict up to 3 follow-up questions and emit them just before `done`.

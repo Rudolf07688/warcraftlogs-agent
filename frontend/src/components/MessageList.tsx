@@ -5,6 +5,7 @@ import { FollowUps } from "./FollowUps";
 import { StreamMarkdown } from "./StreamMarkdown";
 import { SpellCard } from "./SpellCard";
 import { EncounterPicker } from "./EncounterPicker";
+import { PlotlyArtifact } from "./PlotlyArtifact";
 
 interface Props {
   messages: Message[];
@@ -16,6 +17,7 @@ interface Props {
   selectedBosses: number[];
   onSelectBosses: (ids: number[]) => void;
   onPickSuggestion: (text: string) => void;
+  onDownloadMessage: (messageId: string) => void;
 }
 
 // Persisted tool calls collapse into a one-line disclosure so completed messages stay
@@ -66,6 +68,7 @@ export function MessageList({
   selectedBosses,
   onSelectBosses,
   onPickSuggestion,
+  onDownloadMessage,
 }: Props) {
   return (
     <StickToBottom className="message-list" resize="smooth" initial="smooth">
@@ -88,6 +91,21 @@ export function MessageList({
                     <StreamMarkdown content={m.content} />
                   ) : (
                     <div className="message-content">{m.content}</div>
+                  )}
+                  {/* US2: interactive charts the agent produced this turn. */}
+                  {m.role === "agent" &&
+                    m.artifacts?.map((a) => (
+                      <PlotlyArtifact key={a.artifact_id} artifact={a} />
+                    ))}
+                  {/* US5: export just this reply (its question + its charts) as a PDF. */}
+                  {m.role === "agent" && m.id && (
+                    <button
+                      className="message-report-btn"
+                      onClick={() => onDownloadMessage(m.id!)}
+                      title="Download this reply as a PDF report"
+                    >
+                      ⬇ Report
+                    </button>
                   )}
                   {m.role === "agent" && m.grounded && (
                     <div className="grounding-note" title="This reply used web search results.">
