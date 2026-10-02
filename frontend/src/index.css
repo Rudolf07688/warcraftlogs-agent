@@ -1,0 +1,573 @@
+/* US6 single fixed high-fantasy theme + Tailwind v4 entry + streaming-safe markdown.
+   This file is the source of truth for the look: theme tokens on :root, consumed via
+   Tailwind's @theme inline and by the hand-written rules in styles.css (whose legacy
+   --bg/--accent/… vars are remapped here to the fantasy palette). There is NO theme or
+   background switcher (FR-027); the retained background image is the fixed backdrop. */
+
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Alegreya+Sans:wght@400;500;700&display=swap");
+@import "tailwindcss";
+@import "streamdown/styles.css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-border: var(--border-token);
+  --color-glow: var(--glow);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+}
+
+/* ---- The one fixed theme: Tavern Hearth — ember gold over dark oak ---- */
+:root {
+  --background: oklch(0.15 0.02 60);
+  --foreground: oklch(0.92 0.025 85);
+  --card: oklch(0.21 0.03 55 / 0.78);
+  --muted: oklch(0.7 0.045 75);
+  --primary: oklch(0.76 0.15 75);
+  --glow: oklch(0.84 0.16 82);
+  --border-token: oklch(0.52 0.08 70 / 0.5);
+  --font-display: "Cinzel", Georgia, serif;
+  --font-body: "Alegreya Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+
+  /* Fixed backdrop (no switcher): the retained tavern image. */
+  --bg-image: url("/assets/background_2.jpg");
+
+  /* Remap the legacy styles.css palette onto the fantasy tokens so every existing
+     rule inherits the new mood without being rewritten. */
+  --bg: oklch(0.15 0.02 60);
+  --bg-elev: oklch(0.19 0.025 58);
+  --bg-elev-2: oklch(0.24 0.03 58);
+  --border: var(--border-token);
+  --text: var(--foreground);
+  --text-dim: var(--muted);
+  --accent: var(--primary);
+  --user: oklch(0.32 0.05 70 / 0.85);
+  --agent: oklch(0.21 0.03 55 / 0.82);
+  --danger: oklch(0.64 0.2 25);
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--foreground);
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.03em;
+}
+
+.app-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  color: var(--glow);
+  text-shadow: 0 0 10px oklch(0.84 0.16 82 / 0.35);
+}
+
+/* ---- US1: source links open in a new tab, legible over the backdrop ---- */
+.markdown a,
+.stream a {
+  color: var(--glow);
+  text-decoration: underline;
+  text-decoration-color: oklch(0.84 0.16 82 / 0.5);
+  text-underline-offset: 2px;
+}
+.markdown a:hover,
+.stream a:hover {
+  color: var(--primary);
+  text-decoration-color: var(--primary);
+}
+
+/* ---- US6 §3: streaming inscription (ink-in + ember caret + flourish) ---- */
+.stream {
+  position: relative;
+}
+
+/* Each word is wrapped by rehypeWordSpans; the mount animation plays once per new
+   word while streaming (CSS keyframes only — thousands of words stay cheap). */
+.is-streaming .ink {
+  animation: ink-in 460ms ease-out both;
+}
+@keyframes ink-in {
+  0% {
+    opacity: 0;
+    filter: blur(5px);
+    color: var(--glow);
+    text-shadow: 0 0 12px var(--glow);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+
+/* Ember caret trailing the streamed text. */
+.ember-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.15em;
+  vertical-align: baseline;
+  border-radius: 50%;
+  background: var(--glow);
+  box-shadow: 0 0 10px 2px var(--glow);
+  animation: ember-flicker 1.1s ease-in-out infinite;
+}
+@keyframes ember-flicker {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+/* One-shot gold completion sheen on a freshly finished agent message. */
+.sheen-once {
+  position: relative;
+  overflow: hidden;
+}
+.sheen-once::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    oklch(0.9 0.16 85 / 0.22) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  animation: sheen-sweep 900ms ease-out 1 both;
+}
+@keyframes sheen-sweep {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+/* Living border on the actively streaming agent message. */
+@property --angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.arcane-border {
+  border: 1px solid transparent !important;
+  background:
+    linear-gradient(var(--agent), var(--agent)) padding-box,
+    conic-gradient(from var(--angle), transparent 58%, var(--glow), transparent 90%) border-box;
+  animation: spin-angle 4s linear infinite;
+}
+@keyframes spin-angle {
+  to {
+    --angle: 360deg;
+  }
+}
+
+/* ---- US6 §4: spellcasting tool cards ---- */
+.spellbook {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+/* Collapsible disclosure for the persisted spellbook on completed messages. */
+.spellbook-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 3px 10px;
+  border: 1px solid var(--border-token);
+  border-radius: 14px;
+  background: oklch(0.21 0.03 55 / 0.5);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.spellbook-toggle:hover {
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+.spellbook-chevron {
+  opacity: 0.7;
+}
+.spellbook-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.spell-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-token);
+  border-radius: 10px;
+  background: var(--card);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+  position: relative;
+}
+.spell-card.fizzled {
+  filter: saturate(0.4);
+  border-color: var(--danger);
+}
+
+.spell-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  position: relative;
+}
+.spell-icon svg {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.spell-rune {
+  position: absolute;
+  inset: 0;
+}
+.spell-glyph {
+  position: relative;
+  z-index: 1;
+  font-size: 16px;
+}
+
+.spell-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.spell-verb {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: var(--foreground);
+}
+.spell-flavor {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Spell resolves into a compact chip. */
+.spell-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-token);
+  border-radius: 20px;
+  background: oklch(0.21 0.03 55 / 0.6);
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 100%;
+}
+.spell-chip.ok .spell-chip-dot {
+  color: var(--glow);
+}
+.spell-chip.fizzled {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.spell-chip-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spell-chip-ms {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* Cast bar. */
+.cast-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: oklch(0 0 0 / 0.4);
+  border: 1px solid var(--border-token);
+}
+.cast-bar-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  border-radius: 999px;
+}
+.cast-bar-sheen {
+  position: absolute;
+  inset-block: 0;
+  width: 40px;
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.5), transparent);
+  animation: cast-sheen 1.4s linear infinite;
+}
+@keyframes cast-sheen {
+  from {
+    transform: translateX(-40px);
+  }
+  to {
+    transform: translateX(600%);
+  }
+}
+
+/* Rune circle (pure SVG) — continuous rotation via utility classes below. */
+.spin-slow {
+  transform-origin: center;
+  animation: spin 12s linear infinite;
+}
+.spin-rev {
+  transform-origin: center;
+  animation: spin 8s linear infinite reverse;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Flavor shimmer. */
+.shimmer-text {
+  background: linear-gradient(90deg, var(--muted), var(--glow), var(--muted));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+
+/* ---- US4: boss focus checkboxes ---- */
+.encounter-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-token);
+  border-radius: 12px;
+  background: oklch(0.19 0.025 58 / 0.6);
+}
+.encounter-picker-label {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.encounter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.encounter-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-token);
+  border-radius: 18px;
+  background: oklch(0.24 0.03 58 / 0.7);
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.encounter-option:hover {
+  border-color: var(--primary);
+}
+.encounter-option.selected {
+  border-color: var(--glow);
+  background: oklch(0.32 0.06 72 / 0.7);
+  box-shadow: 0 0 10px oklch(0.84 0.16 82 / 0.25);
+}
+.encounter-option input {
+  accent-color: var(--primary);
+}
+.encounter-kill {
+  font-size: 11px;
+  color: var(--glow);
+}
+
+/* Collapsible sidebar section headers (Raids / Conversations). */
+.sidebar-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.sidebar-section-label:hover {
+  color: var(--foreground);
+}
+.section-chevron {
+  font-size: 9px;
+  opacity: 0.7;
+  width: 10px;
+}
+.section-count {
+  margin-left: auto;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Raid sidebar: date/time + boss summary (US2). */
+.raid-bosses {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ---- US6 §5: ambient world ---- */
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+.ambient-blob.a {
+  width: 50vw;
+  height: 50vw;
+  left: -10vw;
+  top: -10vh;
+  background: var(--primary);
+  animation: drift-a 72s ease-in-out infinite;
+}
+.ambient-blob.b {
+  width: 42vw;
+  height: 42vw;
+  right: -8vw;
+  bottom: -12vh;
+  background: var(--glow);
+  animation: drift-b 86s ease-in-out infinite;
+}
+@keyframes drift-a {
+  50% {
+    transform: translate(12vw, 10vh) scale(1.15);
+  }
+}
+@keyframes drift-b {
+  50% {
+    transform: translate(-10vw, -8vh) scale(1.1);
+  }
+}
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Game-icons.net CC BY 3.0 attribution line (FR-035). */
+.attribution {
+  padding: 6px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.7;
+  text-align: right;
+}
+.attribution a {
+  color: var(--muted);
+}
+
+/* ---- Back-to-bottom control for the stick-to-bottom scroller (FR-030) ---- */
+.scroll-viewport {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.message-list {
+  position: relative;
+  padding: 0;
+  gap: 0;
+}
+.message-list-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+.back-to-bottom {
+  position: sticky;
+  bottom: 18px;
+  margin-inline: auto;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-token);
+  border-radius: 20px;
+  background: var(--card);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 12px oklch(0 0 0 / 0.4);
+  z-index: 5;
+}
+.chat-main-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Accessibility: honor reduced motion (FR-034 / SC-010) ---- */
+@media (prefers-reduced-motion: reduce) {
+  .is-streaming .ink,
+  .spin-slow,
+  .spin-rev,
+  .shimmer-text,
+  .cast-bar-sheen,
+  .ember-caret,
+  .arcane-border,
+  .ambient-blob,
+  .sheen-once::after {
+    animation: none !important;
+  }
+  .is-streaming .ink {
+    opacity: 1;
+    filter: none;
+  }
+  .arcane-border {
+    border-color: var(--border-token) !important;
+  }
+}

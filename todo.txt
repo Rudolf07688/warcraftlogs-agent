@@ -41,4 +41,12 @@
 6. When you lock in the names in the "Add a personal character" / "Add guild name" / "Add friend character", a background task should kick off that fetches and persists a guide to the characters' active spec for the agent to use in context.
 7. Fix the rendering of agent responses such as: "Top players always open with: $$\text{Pre-cast Frostbolt} \longrightarrow \text{Icy Veins} \longrightarrow \text{Frozen Orb} \longrightarrow \text{Flurry/Spike Combo}$$"
   - Include rendering for mathmatical equations such as latex, or howwever the agent typicallt responds with.
-  
+
+  uv sync
+cd frontend && npm install && cd ..
+uv run pytest -q 
+
+# ----- Phase X ----- #
+- Multi-tenency
+  - Static "default" tenent mvp
+- Deployment / Hosting Plan
