@@ -42,6 +42,10 @@
 7. Fix the rendering of agent responses such as: "Top players always open with: $$\text{Pre-cast Frostbolt} \longrightarrow \text{Icy Veins} \longrightarrow \text{Frozen Orb} \longrightarrow \text{Flurry/Spike Combo}$$"
   - Include rendering for mathmatical equations such as latex, or howwever the agent typicallt responds with.
 
+  # ----- Phase 5 ----- #
+  - Capture metadata details such as "Known Raids", "known players" etc. dynamically as tool calls are successful. This must be used as a sort of "cache" and help speed up follow-up other conversations app-wide.
+
+
   uv sync
 cd frontend && npm install && cd ..
 uv run pytest -q 

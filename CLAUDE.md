@@ -1,5 +1,5 @@
 <!-- SPECKIT START -->
-Active feature plan: specs/004-raid-sourcing-ux/plan.md
+Active feature plan: specs/005-guild-context-artifacts/plan.md
 (spec.md, research.md, data-model.md, contracts/, quickstart.md in the same dir).
 For technologies, project structure, and other important context, read that plan
 and the project constitution at .specify/memory/constitution.md.
@@ -8,7 +8,7 @@ and the project constitution at .specify/memory/constitution.md.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **warcraftlogs-agent** (634 symbols, 1009 relationships, 37 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **warcraftlogs-agent** (1826 symbols, 2767 relationships, 79 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
