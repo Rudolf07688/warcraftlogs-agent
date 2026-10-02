@@ -1781,7 +1781,7 @@ requires-dist = [
     { name = "anthropic", extras = ["vertex"], specifier = ">=1.11.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "google-adk", specifier = ">=1.0.0" },
+    { name = "google-adk", specifier = ">=2.0.0" },
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.27.0" },
     { name = "markdown", specifier = ">=3.11" },
     { name = "matplotlib", specifier = ">=3.11.2" },

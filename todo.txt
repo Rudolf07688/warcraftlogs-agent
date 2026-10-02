@@ -19,3 +19,5 @@
 1. Always paste links to the warcraftlogs url that you are sourcing information from (or just query patameters if easier).
 2. Duplicating raids tracked in the side bar? 
   2.1 Display date and time of the raid encounter + boss name if applicable.
+3. As specific bosses come up in the raid results, list them as checkboxes to send to the agent prompt to focus/filter on.
+4. PDF report not working anymore. Previous render looked terrible.
