@@ -16,36 +16,16 @@ from .agent_runner import set_session_service
 from .api import admin_users, auth, conversations, greeting, models, profile, raids, reports, ws
 from .api.errors import install_error_handlers
 from .config import settings
-from .db.models import Base
 from .db.session import engine
 from .greeting import GREETING_MODEL, get_greeting
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup (simple v1; a migration tool is a later improvement).
-    # Feature 005 adds three new tables (user_characters, guild_profile, artifacts) —
-    # create_all picks them up additively (new tables only; no ALTER needed).
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # create_all adds new *tables* only — it does NOT alter the pre-existing
-        # `messages` table from feature 001. Add the US2 `status` column with an
-        # idempotent statement (Postgres only; SQLite test DBs get it via create_all).
-        if engine.dialect.name == "postgresql":
-            await conn.execute(
-                text(
-                    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS "
-                    "status VARCHAR(10) NOT NULL DEFAULT 'complete'"
-                )
-            )
-            # US2/US4: distinct boss list per report (added idempotently; existing
-            # rows read back as NULL and are coerced to [] at the API edge).
-            await conn.execute(
-                text(
-                    "ALTER TABLE tracked_raids ADD COLUMN IF NOT EXISTS "
-                    "encounters JSONB"
-                )
-            )
+    # feature 006: Alembic is the schema authority — run `alembic upgrade head` before
+    # starting (see quickstart.md). The app no longer creates/alters its own tables
+    # (the old create_all + idempotent ALTER block was removed); create_all survives
+    # only in the SQLite test fixtures. ADK still owns its own session tables below.
 
     # Durable ADK sessions on the same database (US2): conversation context now
     # survives a restart. Reuses the app's async engine (ADK won't dispose it).

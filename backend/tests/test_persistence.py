@@ -23,30 +23,32 @@ APP_NAME = "wcl_app"
 USER_ID = "local_user"
 
 
-async def test_add_message_status_default_and_partial(session):
-    conv = await repo.create_conversation(session, model="gemini-3.6-flash")
-    done = await repo.add_message(session, conv.id, "agent", "finished")
-    part = await repo.add_message(session, conv.id, "agent", "half…", status="partial")
+async def test_add_message_status_default_and_partial(session, tenant_id):
+    conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
+    done = await repo.add_message(session, conv.id, "agent", "finished", tenant_id=tenant_id)
+    part = await repo.add_message(
+        session, conv.id, "agent", "half…", status="partial", tenant_id=tenant_id
+    )
     assert done.status == "complete"
     assert part.status == "partial"
 
 
-async def test_persist_partial_writes_partial_message(session):
-    conv = await repo.create_conversation(session, model="gemini-3.6-flash")
+async def test_persist_partial_writes_partial_message(session, tenant_id):
+    conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
     await session.commit()
-    await ws_module._persist_partial(session, conv.id, ["chunk one ", "chunk two"])
-    msgs = await repo.list_messages(session, conv.id)
+    await ws_module._persist_partial(session, conv.id, ["chunk one ", "chunk two"], tenant_id)
+    msgs = await repo.list_messages(session, conv.id, tenant_id=tenant_id)
     assert len(msgs) == 1
     assert msgs[0].role == "agent"
     assert msgs[0].status == "partial"
     assert msgs[0].content == "chunk one chunk two"
 
 
-async def test_persist_partial_noop_when_empty(session):
-    conv = await repo.create_conversation(session, model="gemini-3.6-flash")
+async def test_persist_partial_noop_when_empty(session, tenant_id):
+    conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
     await session.commit()
-    await ws_module._persist_partial(session, conv.id, [])
-    assert (await repo.list_messages(session, conv.id)) == []
+    await ws_module._persist_partial(session, conv.id, [], tenant_id)
+    assert (await repo.list_messages(session, conv.id, tenant_id=tenant_id)) == []
 
 
 async def test_adk_session_context_survives_restart(tmp_path):

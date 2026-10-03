@@ -14,10 +14,16 @@ from backend.app.main import app
 from backend.app.schemas import ChatTurn
 
 
-async def test_models_endpoint_returns_list_and_default():
+async def test_models_endpoint_requires_session():
+    # feature 006: no anonymous access.
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/models")
+    assert resp.status_code == 401
+
+
+async def test_models_endpoint_returns_list_and_default(as_user):
+    resp = await as_user.client.get("/api/models")
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body["models"], list)
@@ -66,7 +72,21 @@ _FIGHTS_RESULT = {
 }
 
 
-async def test_handle_tool_end_emits_encounters_and_telemetry(session, monkeypatch):
+def _identity(tenant_id):
+    import uuid as _uuid
+
+    from backend.app.tenancy.context import RequestIdentity
+
+    return RequestIdentity(
+        user_id=_uuid.uuid4(),
+        tenant_id=tenant_id,
+        membership_role="tenant_admin",
+        is_platform_admin=False,
+        session_id=_uuid.uuid4(),
+    )
+
+
+async def test_handle_tool_end_emits_encounters_and_telemetry(session, tenant_id, monkeypatch):
     from backend.app.api import ws as ws_mod
     from backend.app.services import raids as raids_service
 
@@ -79,7 +99,7 @@ async def test_handle_tool_end_emits_encounters_and_telemetry(session, monkeypat
         "result": _FIGHTS_RESULT,
         "ms": 812,
     }
-    await ws_mod._handle_tool_end(ws, session, record, None)
+    await ws_mod._handle_tool_end(ws, session, record, None, _identity(tenant_id))
 
     enc = [f for f in ws.sent if f.get("type") == "encounters"]
     assert len(enc) == 1
@@ -91,7 +111,7 @@ async def test_handle_tool_end_emits_encounters_and_telemetry(session, monkeypat
     assert tool_end.get("summary")  # US6 human-readable summary
 
 
-async def test_handle_tool_end_omits_encounters_for_trash_only(session, monkeypatch):
+async def test_handle_tool_end_omits_encounters_for_trash_only(session, tenant_id, monkeypatch):
     from backend.app.api import ws as ws_mod
     from backend.app.services import raids as raids_service
 
@@ -103,5 +123,5 @@ async def test_handle_tool_end_omits_encounters_for_trash_only(session, monkeypa
         "args": {"report_code": "ABCD"},
         "result": {"status": "success", "fights": [{"id": 1, "encounterID": 0, "kill": False}]},
     }
-    await ws_mod._handle_tool_end(ws, session, record, None)
+    await ws_mod._handle_tool_end(ws, session, record, None, _identity(tenant_id))
     assert not any(f.get("type") == "encounters" for f in ws.sent)

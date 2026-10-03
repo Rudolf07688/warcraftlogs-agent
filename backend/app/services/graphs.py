@@ -29,6 +29,7 @@ def _as_int(value) -> int:
 async def capture_graph_from_tool(
     session: AsyncSession,
     *,
+    tenant_id: uuid.UUID,
     name: str,
     ok: bool,
     args: dict,
@@ -49,6 +50,7 @@ async def capture_graph_from_tool(
     data_type = (args or {}).get("data_type") or (result or {}).get("data_type") or "Unknown"
     return await repo.add_captured_graph(
         session,
+        tenant_id=tenant_id,
         conversation_id=conversation_id,
         report_code=report_code,
         data_type=str(data_type),

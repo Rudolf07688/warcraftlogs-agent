@@ -1,4 +1,11 @@
-"""Async data-access helpers for conversations and messages."""
+"""Async data-access helpers for conversations, messages, raids, graphs, profile.
+
+Every tenant-owned function takes a **keyword-only ``tenant_id: UUID``** and includes it
+in the SQL predicate / insert (feature 006, contracts/tenant-scoping.md). No function ever
+fetches a tenant-owned row by id alone — a foreign/absent id returns ``None`` → the caller
+maps that to ``404`` (never fetch-then-authorize). Child rows (messages, graphs, artifacts)
+receive ``tenant_id`` from the parent at insert time.
+"""
 
 from __future__ import annotations
 
@@ -23,39 +30,51 @@ from .models import (
 
 
 async def create_conversation(
-    session: AsyncSession, model: str, title: str | None = None
+    session: AsyncSession, model: str, title: str | None = None, *, tenant_id: uuid.UUID
 ) -> Conversation:
-    conv = Conversation(model=model, title=title or "New chat")
+    conv = Conversation(model=model, title=title or "New chat", tenant_id=tenant_id)
     session.add(conv)
     await session.flush()  # populate id/timestamps
     return conv
 
 
-async def get_conversation(session: AsyncSession, conv_id: uuid.UUID) -> Conversation | None:
+async def get_conversation(
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> Conversation | None:
     result = await session.execute(
         select(Conversation)
-        .where(Conversation.id == conv_id)
+        .where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
         .options(selectinload(Conversation.messages))
     )
     return result.scalar_one_or_none()
 
 
-async def list_conversations(session: AsyncSession) -> list[Conversation]:
+async def list_conversations(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> list[Conversation]:
     result = await session.execute(
-        select(Conversation).order_by(Conversation.updated_at.desc())
+        select(Conversation)
+        .where(Conversation.tenant_id == tenant_id)
+        .order_by(Conversation.updated_at.desc())
     )
     return list(result.scalars().all())
 
 
-async def delete_conversation(session: AsyncSession, conv_id: uuid.UUID) -> bool:
-    result = await session.execute(delete(Conversation).where(Conversation.id == conv_id))
+async def delete_conversation(
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> bool:
+    result = await session.execute(
+        delete(Conversation).where(
+            Conversation.id == conv_id, Conversation.tenant_id == tenant_id
+        )
+    )
     return result.rowcount > 0
 
 
-async def _next_seq(session: AsyncSession, conv_id: uuid.UUID) -> int:
+async def _next_seq(session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID) -> int:
     result = await session.execute(
         select(func.coalesce(func.max(Message.seq), -1)).where(
-            Message.conversation_id == conv_id
+            Message.conversation_id == conv_id, Message.tenant_id == tenant_id
         )
     )
     return int(result.scalar_one()) + 1
@@ -67,12 +86,21 @@ async def add_message(
     role: str,
     content: str,
     status: str = "complete",
+    *,
+    tenant_id: uuid.UUID,
 ) -> Message:
-    seq = await _next_seq(session, conv_id)
-    msg = Message(conversation_id=conv_id, role=role, content=content, seq=seq, status=status)
+    seq = await _next_seq(session, conv_id, tenant_id=tenant_id)
+    msg = Message(
+        conversation_id=conv_id,
+        role=role,
+        content=content,
+        seq=seq,
+        status=status,
+        tenant_id=tenant_id,
+    )
     session.add(msg)
     # Touch the conversation so the sidebar re-orders and title can be set.
-    conv = await session.get(Conversation, conv_id)
+    conv = await get_conversation(session, conv_id, tenant_id=tenant_id)
     if conv is not None:
         if role == "user" and (conv.title in (None, "", "New chat")):
             conv.title = content[:60]
@@ -80,9 +108,13 @@ async def add_message(
     return msg
 
 
-async def list_messages(session: AsyncSession, conv_id: uuid.UUID) -> list[Message]:
+async def list_messages(
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> list[Message]:
     result = await session.execute(
-        select(Message).where(Message.conversation_id == conv_id).order_by(Message.seq)
+        select(Message)
+        .where(Message.conversation_id == conv_id, Message.tenant_id == tenant_id)
+        .order_by(Message.seq)
     )
     return list(result.scalars().all())
 
@@ -104,7 +136,6 @@ def _apply_raid_update(
     raid.last_asked_at = datetime.now(timezone.utc)
     if conversation_id is not None:
         raid.last_conversation_id = conversation_id
-    # Backfill label/metadata if it was previously only the bare code.
     if label and (not raid.label or raid.label == raid.report_code):
         raid.label = label
     if zone and not raid.zone:
@@ -122,6 +153,7 @@ def _apply_raid_update(
 async def upsert_tracked_raid(
     session: AsyncSession,
     *,
+    tenant_id: uuid.UUID,
     report_code: str,
     label: str,
     zone: str | None = None,
@@ -130,15 +162,15 @@ async def upsert_tracked_raid(
     conversation_id: uuid.UUID | None = None,
     encounters: list[dict] | None = None,
 ) -> TrackedRaid:
-    """Insert a raid on first capture, or touch ``last_asked_at`` on re-reference.
+    """Insert a raid on first capture (per tenant), or touch ``last_asked_at`` on re-ref.
 
-    Dedup is by ``report_code`` (FR-002); re-referencing never creates duplicates.
-    The insert is race-safe (US2): two concurrent first-time references converge to
-    one row — a losing insert catches the unique-violation and updates instead. Any
-    supplied ``encounters`` are merged with what's already stored (never duplicated).
+    Dedup is by ``(tenant_id, report_code)``; the insert is race-safe (a losing insert
+    catches the unique-violation and updates the winner's row instead).
     """
     existing = await session.execute(
-        select(TrackedRaid).where(TrackedRaid.report_code == report_code)
+        select(TrackedRaid).where(
+            TrackedRaid.tenant_id == tenant_id, TrackedRaid.report_code == report_code
+        )
     )
     raid = existing.scalar_one_or_none()
     if raid is not None:
@@ -154,12 +186,8 @@ async def upsert_tracked_raid(
         await session.flush()
         return raid
 
-    # First time we've seen this report — attempt the insert. If a concurrent first
-    # reference won the race, the unique constraint on report_code rejects ours; we
-    # roll back the failed insert and adopt the winner's row instead. (This runs
-    # before any other capture work in the turn, so the rollback discards nothing
-    # else — the user message was already committed in a prior transaction.)
     raid = TrackedRaid(
+        tenant_id=tenant_id,
         report_code=report_code,
         label=label,
         zone=zone,
@@ -176,7 +204,9 @@ async def upsert_tracked_raid(
         await session.rollback()
         raid = (
             await session.execute(
-                select(TrackedRaid).where(TrackedRaid.report_code == report_code)
+                select(TrackedRaid).where(
+                    TrackedRaid.tenant_id == tenant_id, TrackedRaid.report_code == report_code
+                )
             )
         ).scalar_one()
         _apply_raid_update(
@@ -192,16 +222,22 @@ async def upsert_tracked_raid(
         return raid
 
 
-async def list_tracked_raids(session: AsyncSession) -> list[TrackedRaid]:
+async def list_tracked_raids(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[TrackedRaid]:
     result = await session.execute(
-        select(TrackedRaid).order_by(TrackedRaid.last_asked_at.desc())
+        select(TrackedRaid)
+        .where(TrackedRaid.tenant_id == tenant_id)
+        .order_by(TrackedRaid.last_asked_at.desc())
     )
     return list(result.scalars().all())
 
 
-async def get_tracked_raid(session: AsyncSession, report_code: str) -> TrackedRaid | None:
+async def get_tracked_raid(
+    session: AsyncSession, report_code: str, *, tenant_id: uuid.UUID
+) -> TrackedRaid | None:
     result = await session.execute(
-        select(TrackedRaid).where(TrackedRaid.report_code == report_code)
+        select(TrackedRaid).where(
+            TrackedRaid.tenant_id == tenant_id, TrackedRaid.report_code == report_code
+        )
     )
     return result.scalar_one_or_none()
 
@@ -212,6 +248,7 @@ async def get_tracked_raid(session: AsyncSession, report_code: str) -> TrackedRa
 async def add_captured_graph(
     session: AsyncSession,
     *,
+    tenant_id: uuid.UUID,
     conversation_id: uuid.UUID,
     report_code: str,
     data_type: str,
@@ -221,6 +258,7 @@ async def add_captured_graph(
     message_seq: int | None = None,
 ) -> CapturedGraph:
     graph = CapturedGraph(
+        tenant_id=tenant_id,
         conversation_id=conversation_id,
         report_code=report_code,
         data_type=data_type,
@@ -235,13 +273,15 @@ async def add_captured_graph(
 
 
 async def list_captured_graphs(
-    session: AsyncSession, conv_id: uuid.UUID
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
 ) -> list[CapturedGraph]:
     result = await session.execute(
         select(CapturedGraph)
-        .where(CapturedGraph.conversation_id == conv_id)
+        .where(
+            CapturedGraph.conversation_id == conv_id, CapturedGraph.tenant_id == tenant_id
+        )
         .order_by(
-            CapturedGraph.message_seq.is_(None),  # non-null seqs first
+            CapturedGraph.message_seq.is_(None),
             CapturedGraph.message_seq,
             CapturedGraph.created_at,
         )
@@ -255,6 +295,7 @@ async def list_captured_graphs(
 async def add_artifact(
     session: AsyncSession,
     *,
+    tenant_id: uuid.UUID,
     conversation_id: uuid.UUID,
     kind: str,
     title: str,
@@ -262,6 +303,7 @@ async def add_artifact(
     message_seq: int | None = None,
 ) -> Artifact:
     artifact = Artifact(
+        tenant_id=tenant_id,
         conversation_id=conversation_id,
         kind=kind,
         title=title,
@@ -273,12 +315,14 @@ async def add_artifact(
     return artifact
 
 
-async def list_artifacts(session: AsyncSession, conv_id: uuid.UUID) -> list[Artifact]:
+async def list_artifacts(
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> list[Artifact]:
     result = await session.execute(
         select(Artifact)
-        .where(Artifact.conversation_id == conv_id)
+        .where(Artifact.conversation_id == conv_id, Artifact.tenant_id == tenant_id)
         .order_by(
-            Artifact.message_seq.is_(None),  # non-null seqs first
+            Artifact.message_seq.is_(None),
             Artifact.message_seq,
             Artifact.created_at,
         )
@@ -290,68 +334,80 @@ async def list_artifacts(session: AsyncSession, conv_id: uuid.UUID) -> list[Arti
 
 
 async def assign_message_seq_to_turn_captures(
-    session: AsyncSession, conv_id: uuid.UUID, seq: int
+    session: AsyncSession, conv_id: uuid.UUID, seq: int, *, tenant_id: uuid.UUID
 ) -> None:
-    """Stamp ``message_seq=seq`` on this conversation's still-unassigned captures.
-
-    Turns are serialized per socket, so the ``message_seq IS NULL`` artifacts and
-    captured graphs for this conversation are exactly the captures of the turn that
-    just produced the agent message at ``seq``. Links them so per-message reports and
-    reload-time rendering can scope captures to their originating message.
-    """
+    """Stamp ``message_seq=seq`` on this conversation's still-unassigned captures (tenant-scoped)."""
     await session.execute(
         update(Artifact)
-        .where(Artifact.conversation_id == conv_id, Artifact.message_seq.is_(None))
+        .where(
+            Artifact.conversation_id == conv_id,
+            Artifact.tenant_id == tenant_id,
+            Artifact.message_seq.is_(None),
+        )
         .values(message_seq=seq)
     )
     await session.execute(
         update(CapturedGraph)
-        .where(CapturedGraph.conversation_id == conv_id, CapturedGraph.message_seq.is_(None))
+        .where(
+            CapturedGraph.conversation_id == conv_id,
+            CapturedGraph.tenant_id == tenant_id,
+            CapturedGraph.message_seq.is_(None),
+        )
         .values(message_seq=seq)
     )
     await session.flush()
 
 
-# --- Global profile (feature 005 / US1) ---------------------------------------
+# --- Profile (feature 005 / US1) ---------------------------------------------
 
 
-async def get_self_character(session: AsyncSession) -> UserCharacter | None:
+async def get_self_character(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> UserCharacter | None:
     result = await session.execute(
-        select(UserCharacter).where(UserCharacter.role == "self")
+        select(UserCharacter).where(
+            UserCharacter.tenant_id == tenant_id, UserCharacter.role == "self"
+        )
     )
     return result.scalars().first()
 
 
-async def list_friend_characters(session: AsyncSession) -> list[UserCharacter]:
+async def list_friend_characters(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> list[UserCharacter]:
     result = await session.execute(
         select(UserCharacter)
-        .where(UserCharacter.role == "friend")
+        .where(UserCharacter.tenant_id == tenant_id, UserCharacter.role == "friend")
         .order_by(UserCharacter.created_at)
     )
     return list(result.scalars().all())
 
 
-async def get_guild_profile(session: AsyncSession) -> GuildProfile | None:
-    result = await session.execute(select(GuildProfile))
+async def get_guild_profile(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> GuildProfile | None:
+    result = await session.execute(
+        select(GuildProfile).where(GuildProfile.tenant_id == tenant_id)
+    )
     return result.scalars().first()
 
 
 async def get_profile(
-    session: AsyncSession,
+    session: AsyncSession, *, tenant_id: uuid.UUID
 ) -> tuple[UserCharacter | None, list[UserCharacter], GuildProfile | None]:
-    """Return the single global profile: (self, friends, guild)."""
+    """Return the tenant's profile: (self, friends, guild)."""
     return (
-        await get_self_character(session),
-        await list_friend_characters(session),
-        await get_guild_profile(session),
+        await get_self_character(session, tenant_id=tenant_id),
+        await list_friend_characters(session, tenant_id=tenant_id),
+        await get_guild_profile(session, tenant_id=tenant_id),
     )
 
 
 async def upsert_self(
-    session: AsyncSession, *, name: str, server: str, region: str
+    session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
 ) -> UserCharacter:
-    """Create or replace the single ``self`` character. Resets the guide lifecycle."""
-    existing = await get_self_character(session)
+    """Create or replace the tenant's single ``self`` character. Resets the guide lifecycle."""
+    existing = await get_self_character(session, tenant_id=tenant_id)
     if existing is not None:
         existing.name = name
         existing.server = server
@@ -364,7 +420,12 @@ async def upsert_self(
         await session.flush()
         return existing
     char = UserCharacter(
-        role="self", name=name, server=server, region=region, guide_status="pending"
+        tenant_id=tenant_id,
+        role="self",
+        name=name,
+        server=server,
+        region=region,
+        guide_status="pending",
     )
     session.add(char)
     await session.flush()
@@ -372,59 +433,78 @@ async def upsert_self(
 
 
 async def add_friend(
-    session: AsyncSession, *, name: str, server: str, region: str
+    session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
 ) -> UserCharacter:
-    """Add a friend character. Raises IntegrityError on an identical duplicate."""
+    """Add a friend character. Raises IntegrityError on an identical duplicate (per tenant)."""
     char = UserCharacter(
-        role="friend", name=name, server=server, region=region, guide_status="pending"
+        tenant_id=tenant_id,
+        role="friend",
+        name=name,
+        server=server,
+        region=region,
+        guide_status="pending",
     )
     session.add(char)
     await session.flush()
     return char
 
 
-async def delete_friend(session: AsyncSession, char_id: uuid.UUID) -> bool:
+async def delete_friend(
+    session: AsyncSession, char_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> bool:
     result = await session.execute(
         delete(UserCharacter).where(
-            UserCharacter.id == char_id, UserCharacter.role == "friend"
+            UserCharacter.id == char_id,
+            UserCharacter.tenant_id == tenant_id,
+            UserCharacter.role == "friend",
         )
     )
     return result.rowcount > 0
 
 
 async def set_guild(
-    session: AsyncSession, *, name: str, server: str, region: str
+    session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
 ) -> GuildProfile:
-    """Replace the single main guild (one-main-guild limit, FR-003)."""
-    await session.execute(delete(GuildProfile))
+    """Replace the tenant's single main guild (one-main-guild limit, FR-003)."""
+    await session.execute(delete(GuildProfile).where(GuildProfile.tenant_id == tenant_id))
     guild = GuildProfile(
-        name=name, server=server, region=region, summary_status="pending"
+        tenant_id=tenant_id, name=name, server=server, region=region, summary_status="pending"
     )
     session.add(guild)
     await session.flush()
     return guild
 
 
-async def delete_guild(session: AsyncSession) -> bool:
-    result = await session.execute(delete(GuildProfile))
+async def delete_guild(session: AsyncSession, *, tenant_id: uuid.UUID) -> bool:
+    result = await session.execute(
+        delete(GuildProfile).where(GuildProfile.tenant_id == tenant_id)
+    )
     return result.rowcount > 0
 
 
-async def get_character(session: AsyncSession, char_id: uuid.UUID) -> UserCharacter | None:
-    return await session.get(UserCharacter, char_id)
+async def get_character(
+    session: AsyncSession, char_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> UserCharacter | None:
+    result = await session.execute(
+        select(UserCharacter).where(
+            UserCharacter.id == char_id, UserCharacter.tenant_id == tenant_id
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def set_character_guide(
     session: AsyncSession,
     char_id: uuid.UUID,
     *,
+    tenant_id: uuid.UUID,
     class_name: str | None = None,
     active_spec: str | None = None,
     markdown: str | None = None,
     status: str,
 ) -> UserCharacter | None:
     """Persist guide-task output (US6). Stamps ``guide_updated_at`` when ready."""
-    char = await session.get(UserCharacter, char_id)
+    char = await get_character(session, char_id, tenant_id=tenant_id)
     if char is None:
         return None
     if class_name is not None:
@@ -444,11 +524,17 @@ async def set_guild_summary(
     session: AsyncSession,
     guild_id: uuid.UUID,
     *,
+    tenant_id: uuid.UUID,
     markdown: str | None = None,
     status: str,
 ) -> GuildProfile | None:
     """Persist guild progression-summary output (US6)."""
-    guild = await session.get(GuildProfile, guild_id)
+    result = await session.execute(
+        select(GuildProfile).where(
+            GuildProfile.id == guild_id, GuildProfile.tenant_id == tenant_id
+        )
+    )
+    guild = result.scalar_one_or_none()
     if guild is None:
         return None
     if markdown is not None:

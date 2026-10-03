@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth.dependencies import get_tenant_db, require_csrf, require_session
 from ..db import repository as repo
-from ..db.session import get_session
 from ..model_state import get_model_state, is_valid_model
 from ..schemas import (
     InvestigateRequest,
@@ -14,6 +14,7 @@ from ..schemas import (
     RaidListResponse,
     RaidOut,
 )
+from ..tenancy.context import RequestIdentity
 
 router = APIRouter(prefix="/api/raids", tags=["raids"])
 
@@ -31,8 +32,11 @@ def kickoff_prompt_for(report_code: str) -> str:
 
 
 @router.get("", response_model=RaidListResponse)
-async def list_raids(session: AsyncSession = Depends(get_session)) -> RaidListResponse:
-    raids = await repo.list_tracked_raids(session)
+async def list_raids(
+    identity: RequestIdentity = Depends(require_session),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> RaidListResponse:
+    raids = await repo.list_tracked_raids(db, tenant_id=identity.tenant_id)
     return RaidListResponse(raids=[RaidOut.model_validate(r) for r in raids])
 
 
@@ -41,7 +45,8 @@ async def investigate_raid(
     report_code: str,
     body: InvestigateRequest,
     request: Request,
-    session: AsyncSession = Depends(get_session),
+    identity: RequestIdentity = Depends(require_csrf),
+    db: AsyncSession = Depends(get_tenant_db),
 ) -> InvestigateResponse:
     """Create an empty conversation to auto-investigate a raid.
 
@@ -49,7 +54,7 @@ async def investigate_raid(
     as a normal first turn over the WebSocket, which persists it through the
     standard path (no double-persist / seq-0 special case).
     """
-    raid = await repo.get_tracked_raid(session, report_code)
+    raid = await repo.get_tracked_raid(db, report_code, tenant_id=identity.tenant_id)
     if raid is None:
         raise HTTPException(status_code=404, detail="not_found")
 
@@ -58,7 +63,9 @@ async def investigate_raid(
     if not is_valid_model(request.app, model):
         raise HTTPException(status_code=400, detail="invalid_model")
 
-    conv = await repo.create_conversation(session, model=model, title=raid.label[:60])
+    conv = await repo.create_conversation(
+        db, model=model, title=raid.label[:60], tenant_id=identity.tenant_id
+    )
     return InvestigateResponse(
         conversation_id=conv.id,
         model=model,

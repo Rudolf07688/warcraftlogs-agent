@@ -19,7 +19,7 @@ from collections import Counter
 
 from ..config import settings
 from ..db import repository as repo
-from ..db.session import SessionLocal
+from ..tenancy.context import tenant_scope
 
 logger = logging.getLogger(__name__)
 
@@ -101,56 +101,57 @@ async def _generate_text(prompt: str) -> str:
 # --- Task bodies --------------------------------------------------------------
 
 
-async def run_character_guide(char_id: uuid.UUID) -> None:
-    """Resolve the spec, generate the guide, and persist status transitions."""
-    async with SessionLocal() as session:
-        char = await repo.get_character(session, char_id)
+async def run_character_guide(char_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+    """Resolve the spec, generate the guide, and persist status transitions (tenant-scoped)."""
+    async with tenant_scope(tenant_id) as session:
+        char = await repo.get_character(session, char_id, tenant_id=tenant_id)
         if char is None:
             return
         name, server, region = char.name, char.server, char.region
 
     resolved = await resolve_active_spec(name, server, region)
     if resolved is None:
-        await _finish_character(char_id, status="failed")
+        await _finish_character(char_id, tenant_id, status="failed")
         return
     cls, spec = resolved
     try:
         markdown = await _generate_text(_GUIDE_PROMPT.format(cls=cls or "", spec=spec))
     except Exception:  # noqa: BLE001 - generation is best-effort
         logger.exception("Guide generation failed for character %s", char_id)
-        await _finish_character(char_id, status="failed", class_name=cls, active_spec=spec)
+        await _finish_character(char_id, tenant_id, status="failed", class_name=cls, active_spec=spec)
         return
     if not markdown:
-        await _finish_character(char_id, status="failed", class_name=cls, active_spec=spec)
+        await _finish_character(char_id, tenant_id, status="failed", class_name=cls, active_spec=spec)
         return
     await _finish_character(
-        char_id, status="ready", class_name=cls, active_spec=spec, markdown=markdown
+        char_id, tenant_id, status="ready", class_name=cls, active_spec=spec, markdown=markdown
     )
 
 
 async def _finish_character(
     char_id: uuid.UUID,
+    tenant_id: uuid.UUID,
     *,
     status: str,
     class_name: str | None = None,
     active_spec: str | None = None,
     markdown: str | None = None,
 ) -> None:
-    async with SessionLocal() as session:
+    async with tenant_scope(tenant_id) as session:
         await repo.set_character_guide(
             session,
             char_id,
+            tenant_id=tenant_id,
             class_name=class_name,
             active_spec=active_spec,
             markdown=markdown,
             status=status,
         )
-        await session.commit()
 
 
-async def run_guild_summary(guild_id: uuid.UUID) -> None:
-    async with SessionLocal() as session:
-        guild = await repo.get_guild_profile(session)
+async def run_guild_summary(guild_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+    async with tenant_scope(tenant_id) as session:
+        guild = await repo.get_guild_profile(session, tenant_id=tenant_id)
         if guild is None or guild.id != guild_id:
             return
         name, server, region = guild.name, guild.server, guild.region
@@ -164,11 +165,10 @@ async def run_guild_summary(guild_id: uuid.UUID) -> None:
         markdown = ""
 
     status = "ready" if markdown else "failed"
-    async with SessionLocal() as session:
+    async with tenant_scope(tenant_id) as session:
         await repo.set_guild_summary(
-            session, guild_id, markdown=markdown or None, status=status
+            session, guild_id, tenant_id=tenant_id, markdown=markdown or None, status=status
         )
-        await session.commit()
 
 
 # --- Scheduling (called from the profile router) ------------------------------
@@ -199,9 +199,9 @@ def _spawn(coro, key: uuid.UUID) -> None:
     task.add_done_callback(_done)
 
 
-def schedule_character_guide(char_id: uuid.UUID) -> None:
-    _spawn(run_character_guide(char_id), char_id)
+def schedule_character_guide(char_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+    _spawn(run_character_guide(char_id, tenant_id), char_id)
 
 
-def schedule_guild_summary(guild_id: uuid.UUID) -> None:
-    _spawn(run_guild_summary(guild_id), guild_id)
+def schedule_guild_summary(guild_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+    _spawn(run_guild_summary(guild_id, tenant_id), guild_id)

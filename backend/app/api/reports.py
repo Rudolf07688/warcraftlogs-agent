@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth.dependencies import get_tenant_db, require_session
 from ..db import repository as repo
 from ..db.models import Message, TrackedRaid
-from ..db.session import get_session
 from ..services.pdf_report import render_report_pdf
+from ..tenancy.context import RequestIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -23,23 +24,28 @@ router = APIRouter(prefix="/api/conversations", tags=["reports"])
 
 @router.get("/{conv_id}/report.pdf")
 async def download_report(
-    conv_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    conv_id: uuid.UUID,
+    identity: RequestIdentity = Depends(require_session),
+    session: AsyncSession = Depends(get_tenant_db),
 ) -> Response:
-    conv = await repo.get_conversation(session, conv_id)
+    tid = identity.tenant_id
+    conv = await repo.get_conversation(session, conv_id, tenant_id=tid)
     if conv is None:
         raise HTTPException(status_code=404, detail="not_found")
 
     messages = [
         {"role": m.role, "content": m.content, "status": m.status}
-        for m in await repo.list_messages(session, conv_id)
+        for m in await repo.list_messages(session, conv_id, tenant_id=tid)
     ]
-    graphs = _graph_dicts(await repo.list_captured_graphs(session, conv_id))
-    artifacts = _artifact_dicts(await repo.list_artifacts(session, conv_id))
+    graphs = _graph_dicts(await repo.list_captured_graphs(session, conv_id, tenant_id=tid))
+    artifacts = _artifact_dicts(await repo.list_artifacts(session, conv_id, tenant_id=tid))
 
     # Prefer a tracked-raid label for the header when one points at this chat.
     raid = (
         await session.execute(
-            select(TrackedRaid).where(TrackedRaid.last_conversation_id == conv_id)
+            select(TrackedRaid).where(
+                TrackedRaid.last_conversation_id == conv_id, TrackedRaid.tenant_id == tid
+            )
         )
     ).scalars().first()
     title = raid.label if raid else (conv.title or "WCL Report")
@@ -91,18 +97,24 @@ async def _render(*, title, messages, graphs, artifacts, ctx: str) -> bytes:
 async def download_message_report(
     conv_id: uuid.UUID,
     message_id: uuid.UUID,
-    session: AsyncSession = Depends(get_session),
+    identity: RequestIdentity = Depends(require_session),
+    session: AsyncSession = Depends(get_tenant_db),
 ) -> Response:
     """Render a PDF scoped to one agent reply + its originating question + its charts.
 
     Excludes all other messages (FR-023); captures are matched by ``message_seq``.
     """
-    msg = await session.get(Message, message_id)
+    tid = identity.tenant_id
+    msg = (
+        await session.execute(
+            select(Message).where(Message.id == message_id, Message.tenant_id == tid)
+        )
+    ).scalar_one_or_none()
     if msg is None or msg.conversation_id != conv_id or msg.role != "agent":
         raise HTTPException(status_code=404, detail="not_found")
     seq = msg.seq
 
-    all_msgs = await repo.list_messages(session, conv_id)
+    all_msgs = await repo.list_messages(session, conv_id, tenant_id=tid)
     # Nearest preceding user message is the question that prompted this reply.
     preceding = [m for m in all_msgs if m.seq < seq and m.role == "user"]
     question = preceding[-1] if preceding else None
@@ -115,13 +127,13 @@ async def download_message_report(
     messages.append({"role": "agent", "content": msg.content, "status": msg.status})
 
     graphs = _graph_dicts(
-        [g for g in await repo.list_captured_graphs(session, conv_id) if g.message_seq == seq]
+        [g for g in await repo.list_captured_graphs(session, conv_id, tenant_id=tid) if g.message_seq == seq]
     )
     artifacts = _artifact_dicts(
-        [a for a in await repo.list_artifacts(session, conv_id) if a.message_seq == seq]
+        [a for a in await repo.list_artifacts(session, conv_id, tenant_id=tid) if a.message_seq == seq]
     )
 
-    conv = await repo.get_conversation(session, conv_id)
+    conv = await repo.get_conversation(session, conv_id, tenant_id=tid)
     title = (conv.title if conv else None) or "WCL Report"
 
     pdf_bytes = await _render(

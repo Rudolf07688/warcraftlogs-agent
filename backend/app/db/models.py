@@ -266,8 +266,14 @@ class AuthAuditEvent(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_tenant_updated", "tenant_id", "updated_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    # feature 006: owning workspace. Denormalized onto every tenant-owned table so one RLS
+    # predicate (tenant_id = app.tenant_id) applies uniformly; always set from the parent.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
     title: Mapped[str] = mapped_column(String(200), default="New chat")
     model: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -284,9 +290,15 @@ class Conversation(Base):
 
 class Message(Base):
     __tablename__ = "messages"
-    __table_args__ = (UniqueConstraint("conversation_id", "seq", name="uq_message_conv_seq"),)
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "seq", name="uq_message_conv_seq"),
+        Index("ix_messages_tenant_conv_seq", "tenant_id", "conversation_id", "seq"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
@@ -309,9 +321,17 @@ class TrackedRaid(Base):
     """
 
     __tablename__ = "tracked_raids"
+    __table_args__ = (
+        # report_code uniqueness is now per-tenant (feature 006).
+        UniqueConstraint("tenant_id", "report_code", name="uq_tracked_raid_tenant_code"),
+        Index("ix_tracked_raids_tenant_asked", "tenant_id", "last_asked_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
-    report_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    report_code: Mapped[str] = mapped_column(String(32), index=True)
     label: Mapped[str] = mapped_column(String(200))
     zone: Mapped[str | None] = mapped_column(String(120), nullable=True)
     guild: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -336,8 +356,12 @@ class CapturedGraph(Base):
     """Graph JSON the agent fetched during a conversation, kept for PDF rendering (US5)."""
 
     __tablename__ = "captured_graphs"
+    __table_args__ = (Index("ix_captured_graphs_tenant_conv", "tenant_id", "conversation_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
@@ -359,10 +383,17 @@ class UserCharacter(Base):
 
     __tablename__ = "user_characters"
     __table_args__ = (
-        UniqueConstraint("name", "server", "region", "role", name="uq_user_char_identity"),
+        # Identity uniqueness is now per-tenant (feature 006).
+        UniqueConstraint(
+            "tenant_id", "name", "server", "region", "role", name="uq_user_char_identity"
+        ),
+        Index("ix_user_characters_tenant_role", "tenant_id", "role"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
     role: Mapped[str] = mapped_column(String(10))  # "self" | "friend"
     name: Mapped[str] = mapped_column(String(100))
     server: Mapped[str] = mapped_column(String(100))
@@ -388,8 +419,12 @@ class GuildProfile(Base):
     """
 
     __tablename__ = "guild_profile"
+    __table_args__ = (Index("ix_guild_profile_tenant", "tenant_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(120))
     server: Mapped[str] = mapped_column(String(100))
     region: Mapped[str] = mapped_column(String(8))
@@ -410,8 +445,12 @@ class Artifact(Base):
     and prints in the PDF (FR-024). Mirrors ``CapturedGraph``'s conversation linkage."""
 
     __tablename__ = "artifacts"
+    __table_args__ = (Index("ix_artifacts_tenant_conv", "tenant_id", "conversation_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )

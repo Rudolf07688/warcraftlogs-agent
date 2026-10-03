@@ -5,30 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-import pytest
-from httpx import ASGITransport, AsyncClient
-
 from backend.app.api import reports as reports_module
 from backend.app.db import repository as repo
-from backend.app.db.session import get_session
-from backend.app.main import app
 from backend.app.services.pdf_report import render_report_pdf
 
 SAMPLE_GRAPH = {"data": {"series": [{"name": "Player", "data": [[0, 100], [1000, 250], [2000, 180]]}]}}
-
-
-def _client_with(session_factory) -> AsyncClient:
-    async def override_get_session():
-        async with session_factory() as s:
-            try:
-                yield s
-                await s.commit()
-            except Exception:
-                await s.rollback()
-                raise
-
-    app.dependency_overrides[get_session] = override_get_session
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
 def test_render_pdf_returns_pdf_bytes():
@@ -52,60 +33,65 @@ def test_render_pdf_analysis_only():
     assert pdf[:4] == b"%PDF"
 
 
-async def test_download_report_happy_path(session_factory):
+async def test_download_report_happy_path(as_user, session_factory):
+    tid = as_user.tenant_id
     async with session_factory() as s:
-        conv = await repo.create_conversation(s, model="gemini-3.6-flash", title="My Raid")
-        await repo.add_message(s, conv.id, "user", "analyze this")
-        await repo.add_message(s, conv.id, "agent", "## Analysis\n\nLooks good.")
+        conv = await repo.create_conversation(s, model="gemini-3.6-flash", title="My Raid", tenant_id=tid)
+        await repo.add_message(s, conv.id, "user", "analyze this", tenant_id=tid)
+        await repo.add_message(s, conv.id, "agent", "## Analysis\n\nLooks good.", tenant_id=tid)
         await repo.add_captured_graph(
-            s, conversation_id=conv.id, report_code="ABCD", data_type="DamageDone", graph_json=SAMPLE_GRAPH
+            s, tenant_id=tid, conversation_id=conv.id, report_code="ABCD",
+            data_type="DamageDone", graph_json=SAMPLE_GRAPH
         )
         await s.commit()
         conv_id = conv.id
 
-    client = _client_with(session_factory)
-    try:
-        resp = await client.get(f"/api/conversations/{conv_id}/report.pdf")
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == "application/pdf"
-        assert "attachment" in resp.headers["content-disposition"]
-        assert resp.content[:4] == b"%PDF"
-    finally:
-        app.dependency_overrides.clear()
-        await client.aclose()
+    resp = await as_user.client.get(f"/api/conversations/{conv_id}/report.pdf")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "application/pdf"
+    assert "attachment" in resp.headers["content-disposition"]
+    assert resp.content[:4] == b"%PDF"
 
 
-async def test_download_report_no_graphs(session_factory):
+async def test_download_report_no_graphs(as_user, session_factory):
+    tid = as_user.tenant_id
     async with session_factory() as s:
-        conv = await repo.create_conversation(s, model="gemini-3.6-flash", title="Texty")
-        await repo.add_message(s, conv.id, "agent", "Analysis without graphs.")
+        conv = await repo.create_conversation(s, model="gemini-3.6-flash", title="Texty", tenant_id=tid)
+        await repo.add_message(s, conv.id, "agent", "Analysis without graphs.", tenant_id=tid)
         await s.commit()
         conv_id = conv.id
 
-    client = _client_with(session_factory)
-    try:
-        resp = await client.get(f"/api/conversations/{conv_id}/report.pdf")
-        assert resp.status_code == 200
-        assert resp.content[:4] == b"%PDF"
-    finally:
-        app.dependency_overrides.clear()
-        await client.aclose()
+    resp = await as_user.client.get(f"/api/conversations/{conv_id}/report.pdf")
+    assert resp.status_code == 200
+    assert resp.content[:4] == b"%PDF"
 
 
-async def test_download_report_unknown_is_404(session_factory):
-    client = _client_with(session_factory)
+async def test_download_report_unknown_is_404(as_user):
+    resp = await as_user.client.get(f"/api/conversations/{uuid.uuid4()}/report.pdf")
+    assert resp.status_code == 404
+
+
+async def test_download_report_foreign_tenant_is_404(as_user, make_authed_client, session_factory):
+    # A conversation owned by another tenant must be invisible (US3 isolation).
+    other = await make_authed_client("other@example.com")
     try:
-        resp = await client.get(f"/api/conversations/{uuid.uuid4()}/report.pdf")
+        async with session_factory() as s:
+            conv = await repo.create_conversation(
+                s, model="gemini-3.6-flash", title="Theirs", tenant_id=other.tenant_id
+            )
+            await s.commit()
+            foreign_id = conv.id
+        resp = await as_user.client.get(f"/api/conversations/{foreign_id}/report.pdf")
         assert resp.status_code == 404
     finally:
-        app.dependency_overrides.clear()
-        await client.aclose()
+        await other.client.aclose()
 
 
-async def test_download_report_render_failure_is_500(session_factory, monkeypatch):
+async def test_download_report_render_failure_is_500(as_user, session_factory, monkeypatch):
+    tid = as_user.tenant_id
     async with session_factory() as s:
-        conv = await repo.create_conversation(s, model="gemini-3.6-flash", title="Boom")
-        await repo.add_message(s, conv.id, "agent", "text")
+        conv = await repo.create_conversation(s, model="gemini-3.6-flash", title="Boom", tenant_id=tid)
+        await repo.add_message(s, conv.id, "agent", "text", tenant_id=tid)
         await s.commit()
         conv_id = conv.id
 
@@ -114,11 +100,6 @@ async def test_download_report_render_failure_is_500(session_factory, monkeypatc
 
     monkeypatch.setattr(reports_module, "render_report_pdf", boom)
 
-    client = _client_with(session_factory)
-    try:
-        resp = await client.get(f"/api/conversations/{conv_id}/report.pdf")
-        assert resp.status_code == 500
-        assert resp.json()["detail"] == "pdf_generation_failed"
-    finally:
-        app.dependency_overrides.clear()
-        await client.aclose()
+    resp = await as_user.client.get(f"/api/conversations/{conv_id}/report.pdf")
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "pdf_generation_failed"

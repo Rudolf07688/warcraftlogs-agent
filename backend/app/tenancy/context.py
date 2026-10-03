@@ -34,22 +34,56 @@ class RequestIdentity:
     session_id: uuid.UUID
 
 
-async def apply_tenant_scope(session: AsyncSession, identity: RequestIdentity) -> None:
-    """Set transaction-local ``app.tenant_id`` / ``app.user_id`` for RLS (Postgres only).
-
-    Must run inside the transaction that will do the tenant-owned work. No-op on SQLite.
-    """
+async def set_scope(
+    session: AsyncSession, *, tenant_id: uuid.UUID | None, user_id: uuid.UUID | None = None
+) -> None:
+    """Set transaction-local ``app.tenant_id`` / ``app.user_id`` for RLS (Postgres only)."""
     bind = session.get_bind()
     if bind.dialect.name != "postgresql":
         return
     await session.execute(
         text("SELECT set_config('app.tenant_id', :tid, true)"),
-        {"tid": str(identity.tenant_id) if identity.tenant_id else ""},
+        {"tid": str(tenant_id) if tenant_id else ""},
     )
     await session.execute(
         text("SELECT set_config('app.user_id', :uid, true)"),
-        {"uid": str(identity.user_id)},
+        {"uid": str(user_id) if user_id else ""},
     )
+
+
+async def apply_tenant_scope(session: AsyncSession, identity: RequestIdentity) -> None:
+    """Scope a transaction to a request's identity (must run inside it). No-op on SQLite."""
+    await set_scope(session, tenant_id=identity.tenant_id, user_id=identity.user_id)
+
+
+@asynccontextmanager
+async def tenant_scope(
+    tenant_id: uuid.UUID,
+    *,
+    user_id: uuid.UUID | None = None,
+    factory: async_sessionmaker[AsyncSession] | None = None,
+) -> AsyncIterator[AsyncSession]:
+    """Tenant-scoped transaction for non-request work (background jobs, WS internals)."""
+    maker = factory or db_session.SessionLocal
+    async with maker() as session:
+        try:
+            await set_scope(session, tenant_id=tenant_id, user_id=user_id)
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+async def commit_and_rescope(session: AsyncSession, identity: RequestIdentity) -> None:
+    """Commit, then re-apply the transaction-local tenant scope for subsequent work.
+
+    ``set_config(…, true)`` is transaction-local, so a mid-handler commit drops it; without
+    this the next query would run with no ``app.tenant_id`` and RLS would return nothing
+    (Postgres). No-op difference on SQLite.
+    """
+    await session.commit()
+    await apply_tenant_scope(session, identity)
 
 
 @asynccontextmanager

@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
+from ..auth.dependencies import require_session
 from ..greeting import GREETING_MODEL, get_greeting
 from ..schemas import GreetingResponse
+from ..tenancy.context import RequestIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,9 @@ router = APIRouter(prefix="/api", tags=["greeting"])
 
 
 @router.get("/greeting", response_model=GreetingResponse)
-async def greeting(request: Request) -> GreetingResponse:
+async def greeting(
+    request: Request, _: RequestIdentity = Depends(require_session)
+) -> GreetingResponse:
     """Serve the warm Barnaby greeting (model-agnostic; fixed fast model).
 
     Awaits the startup priming task rather than regenerating, so once the server has

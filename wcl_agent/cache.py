@@ -20,10 +20,26 @@ import json
 import os
 import time
 from collections import OrderedDict
+from contextvars import ContextVar
 from copy import deepcopy
 from typing import Any, Callable
 
 DEFAULT_MAXSIZE = 512
+
+# feature 006: a caller-supplied scope prefix (e.g. the tenant id) folded into every cache
+# key so cached lookups never cross scopes (FR-019). The backend sets this per chat turn;
+# wcl_agent stays standalone (no DB import) — it only reads a string. Propagates into ADK's
+# sync tool worker because asyncio.to_thread copies the context.
+_scope_prefix: ContextVar[str] = ContextVar("wcl_cache_scope_prefix", default="")
+
+
+def set_scope_prefix(prefix: str) -> None:
+    """Set the per-context cache scope prefix (call before running a scoped turn)."""
+    _scope_prefix.set(prefix or "")
+
+
+def get_scope_prefix() -> str:
+    return _scope_prefix.get()
 DEFAULT_TTL_REPORT_S = 86400
 DEFAULT_TTL_LEADERBOARD_S = 3600
 
@@ -46,10 +62,15 @@ def leaderboard_ttl() -> int:
     return _env_int("WCL_CACHE_TTL_LEADERBOARD_S", DEFAULT_TTL_LEADERBOARD_S)
 
 
-def cache_key(query: str, variables: dict[str, Any] | None) -> str:
-    """Stable key over the full query + all variables (sorted), per FR-020."""
+def cache_key(query: str, variables: dict[str, Any] | None, prefix: str | None = None) -> str:
+    """Stable key over the scope prefix + full query + all variables (sorted), per FR-020.
+
+    ``prefix`` defaults to the current context scope prefix (feature 006), so cached WCL
+    lookups are never shared across tenants.
+    """
+    scope = prefix if prefix is not None else get_scope_prefix()
     serialized = json.dumps(variables or {}, sort_keys=True, default=str)
-    return hashlib.sha256(f"{query} {serialized}".encode()).hexdigest()
+    return hashlib.sha256(f"{scope}\x1f{query} {serialized}".encode()).hexdigest()
 
 
 def is_rate_limit(query: str) -> bool:

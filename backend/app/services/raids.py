@@ -57,6 +57,7 @@ def _build_label(report_code: str, meta: dict) -> tuple[str, str | None, str | N
 async def capture_raid_from_tool(
     session: AsyncSession,
     *,
+    tenant_id: uuid.UUID,
     name: str,
     ok: bool,
     args: dict,
@@ -79,11 +80,12 @@ async def capture_raid_from_tool(
     # Distinct bosses only come from get_report_fights; [] for every other tool.
     encounters = encounters_from_tool(name, ok, result or {})
 
-    existing = await repo.get_tracked_raid(session, report_code)
+    existing = await repo.get_tracked_raid(session, report_code, tenant_id=tenant_id)
     if existing is not None:
         # Known raid — touch recency and merge any new encounters (no extra WCL call).
         return await repo.upsert_tracked_raid(
             session,
+            tenant_id=tenant_id,
             report_code=report_code,
             label=existing.label,
             conversation_id=conversation_id,
@@ -98,6 +100,7 @@ async def capture_raid_from_tool(
     label, zone, guild, started = _build_label(report_code, meta)
     return await repo.upsert_tracked_raid(
         session,
+        tenant_id=tenant_id,
         report_code=report_code,
         label=label,
         zone=zone,

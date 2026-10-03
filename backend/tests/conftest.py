@@ -46,6 +46,18 @@ async def session(session_factory) -> AsyncIterator[AsyncSession]:
         yield s
 
 
+# feature 006: repository/service unit tests pass an explicit tenant_id. SQLite doesn't
+# enforce FKs in the test engine, so a bare UUID is sufficient (no Tenant row needed).
+@pytest.fixture
+def tenant_id() -> uuid.UUID:
+    return uuid.UUID("11111111-1111-1111-1111-111111111111")
+
+
+@pytest.fixture
+def other_tenant_id() -> uuid.UUID:
+    return uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+
 # --- Auth/tenancy test harness (feature 006, T021) ---------------------------
 # ``as_user`` / ``as_admin`` provision a real user + tenant + membership + session in
 # the SQLite test DB and hand back an httpx client whose cookie + CSRF header + Origin

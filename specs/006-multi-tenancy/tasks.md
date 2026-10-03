@@ -136,25 +136,25 @@ predicate removed.
 
 ### Tests for User Story 3 (gating)
 
-- [ ] T037 [P] [US3] `backend/tests/test_tenant_isolation.py` (the two-tenant matrix from `contracts/tenant-scoping.md`: reads/lists/counts/search/export/update/delete, id-guessing → 404, injected ids ignored, cache + ADK isolation, disable/revoke stops in-flight socket) and Postgres-only `backend/tests/test_rls.py` (skipped on SQLite)
+- [X] T037 [P] [US3] `backend/tests/test_tenant_isolation.py` (the two-tenant matrix from `contracts/tenant-scoping.md`: reads/lists/counts/search/export/update/delete, id-guessing → 404, injected ids ignored, cache + ADK isolation, disable/revoke stops in-flight socket) and Postgres-only `backend/tests/test_rls.py` (skipped on SQLite)
 
 ### Implementation for User Story 3
 
-- [ ] T038 [US3] Add `tenant_id` columns (+ per-tenant uniqueness changes) to the 7 tenant-owned models in `backend/app/db/models.py` per `data-model.md` (depends on T007)
-- [ ] T039 [US3] Create migration `backend/migrations/versions/0003_tenant_columns.py`: for each of the 7 tables add nullable `tenant_id` → **backfill to the founder tenant** → validate no NULLs → set `NOT NULL` + add tenant-leading index + per-tenant unique constraints; fail loudly if no platform admin exists (depends on T038, T020)
-- [ ] T040 [US3] Create migration `backend/migrations/versions/0004_rls.py`: `ENABLE`+`FORCE` RLS, tenant policies, and runtime-role grants on the 7 tables (Postgres only) (depends on T039)
-- [ ] T041 [US3] ⚠️impact Thread keyword-only `tenant_id: UUID` through **every** tenant-owned function in `backend/app/db/repository.py` (include it in all `WHERE`/`INSERT`; child rows inherit parent tenant) per `contracts/tenant-scoping.md`
-- [ ] T042 [US3] ⚠️impact Require session + scope all repo calls by tenant in `backend/app/api/conversations.py` (foreign/absent `{id}` → `404`) (depends on T016, T041)
-- [ ] T043 [P] [US3] Require session + tenant scope in `backend/app/api/reports.py` (conversation + captures scoped; foreign → `404`) (depends on T016, T041)
-- [ ] T044 [P] [US3] Require session + tenant scope in `backend/app/api/raids.py` (raids scoped; investigate creates a tenant-owned conversation) (depends on T016, T041)
-- [ ] T045 [P] [US3] Require session + tenant scope in `backend/app/api/profile.py` (all profile rows scoped) (depends on T016, T041)
-- [ ] T046 [P] [US3] Require session in `backend/app/api/greeting.py` and `backend/app/api/models.py` (no anonymous access) (depends on T016)
-- [ ] T047 [US3] ⚠️impact Per-turn tenant scoping in `backend/app/api/ws.py`: assert conversation ownership, create conversations with the socket tenant, wrap work in `tenant_session`, pass `tenant_id` to every capture call, re-validate session each turn (depends on T031, T041)
-- [ ] T048 [US3] ⚠️impact Set ADK `user_id = str(tenant_id)` in `backend/app/agent_runner.py` (`_ensure_session`/`run_async`) so `DatabaseSessionService` state is tenant-isolated (depends on T032, T047)
-- [ ] T049 [US3] Prefix the WCL result cache key with `tenant_id` in `wcl_agent/cache.py` (accept a caller-supplied prefix; no DB import) and pass it from the backend tool path
-- [ ] T050 [US3] Run background spec-guide/guild-summary tasks inside a `tenant_session` scope in `backend/app/services/guide.py` (and guild summary) so derived context is tenant-scoped
-- [ ] T051 [US3] ⚠️impact Remove the altered-table `create_all`/`ALTER … IF NOT EXISTS` block from `backend/app/main.lifespan`; make Alembic the schema authority (keep `create_all` only in the SQLite test fixtures) (depends on T039, T040)
-- [ ] T051a [US3] Migrate the existing backend test suite to the authenticated, tenant-scoped contracts: update `backend/tests/{test_api,test_profile,test_raids,test_reports,test_artifacts,test_message_report,test_persistence,test_guide}.py` to use the `as_user`/`as_admin` fixtures (T021), pass the required keyword-only `tenant_id` to every `repo.*` call, and sign in before hitting now-session-guarded endpoints. Add assertions that pre-existing behavior is unchanged for a single tenant (FR-032 no-regression) (depends on T021, T038, T041, T042–T047)
+- [X] T038 [US3] Add `tenant_id` columns (+ per-tenant uniqueness changes) to the 7 tenant-owned models in `backend/app/db/models.py` per `data-model.md` (depends on T007)
+- [X] T039 [US3] Create migration `backend/migrations/versions/0003_tenant_columns.py`: for each of the 7 tables add nullable `tenant_id` → **backfill to the founder tenant** → validate no NULLs → set `NOT NULL` + add tenant-leading index + per-tenant unique constraints; fail loudly if no platform admin exists (depends on T038, T020)
+- [X] T040 [US3] Create migration `backend/migrations/versions/0004_rls.py`: `ENABLE`+`FORCE` RLS, tenant policies, and runtime-role grants on the 7 tables (Postgres only) (depends on T039)
+- [X] T041 [US3] ⚠️impact Thread keyword-only `tenant_id: UUID` through **every** tenant-owned function in `backend/app/db/repository.py` (include it in all `WHERE`/`INSERT`; child rows inherit parent tenant) per `contracts/tenant-scoping.md`
+- [X] T042 [US3] ⚠️impact Require session + scope all repo calls by tenant in `backend/app/api/conversations.py` (foreign/absent `{id}` → `404`) (depends on T016, T041)
+- [X] T043 [P] [US3] Require session + tenant scope in `backend/app/api/reports.py` (conversation + captures scoped; foreign → `404`) (depends on T016, T041)
+- [X] T044 [P] [US3] Require session + tenant scope in `backend/app/api/raids.py` (raids scoped; investigate creates a tenant-owned conversation) (depends on T016, T041)
+- [X] T045 [P] [US3] Require session + tenant scope in `backend/app/api/profile.py` (all profile rows scoped) (depends on T016, T041)
+- [X] T046 [P] [US3] Require session in `backend/app/api/greeting.py` and `backend/app/api/models.py` (no anonymous access) (depends on T016)
+- [X] T047 [US3] ⚠️impact Per-turn tenant scoping in `backend/app/api/ws.py`: assert conversation ownership, create conversations with the socket tenant, wrap work in `tenant_session`, pass `tenant_id` to every capture call, re-validate session each turn (depends on T031, T041)
+- [X] T048 [US3] ⚠️impact Set ADK `user_id = str(tenant_id)` in `backend/app/agent_runner.py` (`_ensure_session`/`run_async`) so `DatabaseSessionService` state is tenant-isolated (depends on T032, T047)
+- [X] T049 [US3] Prefix the WCL result cache key with `tenant_id` in `wcl_agent/cache.py` (accept a caller-supplied prefix; no DB import) and pass it from the backend tool path
+- [X] T050 [US3] Run background spec-guide/guild-summary tasks inside a `tenant_session` scope in `backend/app/services/guide.py` (and guild summary) so derived context is tenant-scoped
+- [X] T051 [US3] ⚠️impact Remove the altered-table `create_all`/`ALTER … IF NOT EXISTS` block from `backend/app/main.lifespan`; make Alembic the schema authority (keep `create_all` only in the SQLite test fixtures) (depends on T039, T040)
+- [X] T051a [US3] Migrate the existing backend test suite to the authenticated, tenant-scoped contracts: update `backend/tests/{test_api,test_profile,test_raids,test_reports,test_artifacts,test_message_report,test_persistence,test_guide}.py` to use the `as_user`/`as_admin` fixtures (T021), pass the required keyword-only `tenant_id` to every `repo.*` call, and sign in before hitting now-session-guarded endpoints. Add assertions that pre-existing behavior is unchanged for a single tenant (FR-032 no-regression) (depends on T021, T038, T041, T042–T047)
 
 **Checkpoint**: The gating isolation matrix (T037) passes; RLS enforced on Postgres; the full existing suite is green under auth + tenant scoping (FR-032).
 
