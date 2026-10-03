@@ -11,6 +11,7 @@ import {
   listConversations,
 } from "./api/restClient";
 import { ChatSocket, type Frame } from "./api/wsClient";
+import { useAuth } from "./auth/useAuth";
 import { Ambient } from "./components/Ambient";
 import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
@@ -38,6 +39,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [connected, setConnected] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const { identity, logout } = useAuth();
 
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
@@ -435,6 +437,14 @@ export default function App() {
           <span className={`conn ${connected ? "online" : "offline"}`}>
             {connected ? "● connected" : "● disconnected"}
           </span>
+          {identity?.is_platform_admin && (
+            <a className="download-pdf" href="/admin/users" title="Manage users & invitations">
+              Admin
+            </a>
+          )}
+          <button className="download-pdf" onClick={() => void logout()} title="Sign out">
+            Sign out
+          </button>
         </header>
         <MessageList
           messages={messages}

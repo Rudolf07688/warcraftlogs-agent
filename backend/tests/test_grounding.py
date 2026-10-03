@@ -55,7 +55,7 @@ def _grounding_meta(title="Patch 11.2 notes", uri="https://example.com"):
 async def _collect(monkeypatch, events):
     monkeypatch.setattr(agent_runner, "_get_runner", lambda model: _FakeRunner(events))
 
-    async def _noop(_session_id):
+    async def _noop(_session_id, _user_id=None):
         return None
 
     monkeypatch.setattr(agent_runner, "_ensure_session", _noop)

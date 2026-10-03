@@ -1,3 +1,45 @@
+// --- Auth / tenancy (feature 006) --------------------------------------------
+
+export type Role = "tenant_admin" | "member";
+
+export interface TenantRef {
+  id: string;
+  name: string;
+}
+
+export interface Membership {
+  tenant_id: string;
+  name: string;
+  role: Role;
+}
+
+// Mirrors the backend MeOut payload (contracts/auth-api.md).
+export interface Identity {
+  user_id: string;
+  email: string;
+  is_platform_admin: boolean;
+  active_tenant: TenantRef | null;
+  memberships: Membership[];
+  csrf_token: string;
+}
+
+export interface Invitation {
+  id: string;
+  email: string;
+  role: Role;
+  status: string; // "open" | "accepted" | "revoked" | "expired"
+  expires_at: string;
+  invite_link?: string; // returned once on create/resend only
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  status: string;
+  last_login_at: string | null;
+  memberships: Membership[];
+}
+
 export interface Conversation {
   id: string;
   title: string;

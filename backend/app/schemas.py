@@ -302,3 +302,116 @@ class ArtifactFrame(BaseModel):
     kind: str
     title: str
     figure: dict  # Plotly figure JSON: {"data": [...], "layout": {...}}
+
+
+# --- Auth / tenancy (feature 006) --------------------------------------------
+# The error envelope every failure is serialized into (contracts/auth-api.md).
+
+Role = Literal["tenant_admin", "member"]
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    request_id: str | None = None
+
+
+class ErrorEnvelope(BaseModel):
+    error: ErrorDetail
+
+
+class LoginIn(BaseModel):
+    # Email is validated loosely (not EmailStr, to avoid the email-validator dep);
+    # it is normalized to lowercase server-side.
+    email: str = Field(min_length=3, max_length=320)
+    # Password carries NO length constraint here on purpose: policy is enforced in the
+    # service so 422 validation errors never echo the secret (FR-002).
+    password: str
+
+
+class AcceptInvitationIn(BaseModel):
+    token: str = Field(min_length=1)
+    password: str
+    password_confirmation: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(min_length=1)
+    password: str
+    password_confirmation: str
+
+
+class TenantRef(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class MembershipRef(BaseModel):
+    tenant_id: uuid.UUID
+    name: str
+    role: Role
+
+
+class MeOut(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    is_platform_admin: bool
+    active_tenant: TenantRef | None = None
+    memberships: list[MembershipRef] = []
+    csrf_token: str
+
+
+class InvitationIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    role: Role = "tenant_admin"
+
+
+class InvitationOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    role: Role
+    status: str  # "open" | "accepted" | "revoked" | "expired"
+    expires_at: datetime
+    # Returned ONCE on create/resend only, never on list views (admin-api.md).
+    invite_link: str | None = None
+
+
+class InvitationListResponse(BaseModel):
+    invitations: list[InvitationOut]
+
+
+class MembershipIn(BaseModel):
+    """Retained for future multi-member workspaces; v1 endpoints are deferred."""
+
+    role: Role = "member"
+
+
+class AdminUserOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    status: str
+    last_login_at: datetime | None = None
+    memberships: list[MembershipRef] = []
+
+
+class AdminUserListResponse(BaseModel):
+    users: list[AdminUserOut]
+    next_cursor: str | None = None
+
+
+class AdminUserPatchIn(BaseModel):
+    status: Literal["active", "disabled"]
+
+
+class ResetLinkOut(BaseModel):
+    reset_link: str
+
+
+class ActionMessageOut(BaseModel):
+    """Generic message envelope for actions with no resource body (e.g. reset-password)."""
+
+    message: str

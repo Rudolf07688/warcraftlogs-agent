@@ -21,7 +21,49 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database
+    # `database_url` is the **runtime** role (non-superuser, no BYPASSRLS — RLS applies).
+    # `database_owner_url` is the **migration-owner** role used ONLY by Alembic (owns the
+    # tables, can ALTER/enable RLS). Defaults to the runtime URL for simple single-role dev
+    # setups; production MUST set a distinct owner URL (research R4). (feature 006)
     database_url: str = "postgresql+asyncpg://wcl:wcl@localhost:5432/wcl"
+    database_owner_url: str = ""
+
+    # --- Auth / session / tenancy (feature 006) -------------------------------
+    # Session cookie. `__Host-` prefix REQUIRES Secure + Path=/ + no Domain, so the
+    # browser pins it to this exact host (same-origin via the Vite/reverse proxy).
+    session_cookie_name: str = "__Host-session"
+    session_cookie_secure: bool = True  # set False only for plain-HTTP local dev
+    session_cookie_samesite: str = "lax"
+    # Lifetimes (seconds). Idle: re-up on use; absolute: hard cap regardless of activity.
+    session_idle_max_age_s: int = 60 * 60 * 24 * 7  # 7 days idle
+    session_absolute_max_age_s: int = 60 * 60 * 24 * 30  # 30 days absolute
+    session_last_seen_throttle_s: int = 300  # write last_seen_at at most every 5 min
+    # Single-use public tokens.
+    invitation_ttl_s: int = 60 * 60 * 24  # 24h
+    password_reset_ttl_s: int = 60 * 60  # 1h
+    token_entropy_bytes: int = 32  # secrets.token_bytes(N) for sessions/csrf/invites/resets
+    # Password policy (guide §Password hashing): long minimum, generous max.
+    password_min_length: int = 15
+    password_max_length: int = 256
+    # Argon2id is CPU-bound and offloaded to a thread pool; cap concurrency so hashing
+    # cannot exhaust CPU/memory under a login flood (research R2).
+    password_hash_max_concurrency: int = 4
+    # Progressive login throttle (research R7): never a permanent lockout.
+    login_failure_block_threshold: int = 5  # consecutive failures before delay kicks in
+    login_block_max_delay_s: int = 30  # capped delay ceiling
+    rate_limit_token_per_minute: int = 20  # per-source cap on public token endpoints
+    # Canonical site URL used to build invite/reset links (never the inbound Host header)
+    # and to validate WS/CSRF Origin. No trailing slash.
+    site_url: str = "http://localhost:5173"
+    # Server secret for HMAC-deriving per-session CSRF tokens (stateless: recomputable on
+    # every /me, so a page reload recovers the token). MUST be set to a strong random
+    # value in production; the dev default is intentionally obvious.
+    secret_key: str = "dev-insecure-change-me"
+
+    @property
+    def owner_database_url(self) -> str:
+        """Migration-owner URL (falls back to the runtime URL in simple dev setups)."""
+        return self.database_owner_url or self.database_url
 
     # Warcraft Logs (also consumed by wcl_agent.wcl_client via os.getenv)
     wcl_client_id: str = ""

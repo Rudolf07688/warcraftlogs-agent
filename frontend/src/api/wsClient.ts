@@ -50,8 +50,16 @@ export class ChatSocket {
   connect(): void {
     this.ws = new WebSocket(this.url);
     this.ws.onopen = () => this.onStatus(true);
-    this.ws.onclose = () => {
+    this.ws.onclose = (e) => {
       this.onStatus(false);
+      // 1008 = policy violation: the handshake was rejected (no/expired session or bad
+      // origin). Don't hammer the server reconnecting — the app should send the user to
+      // /login (feature 006). A full reload will route through RequireAuth.
+      if (e.code === 1008) {
+        this.shouldReconnect = false;
+        if (typeof window !== "undefined") window.location.assign("/login");
+        return;
+      }
       if (this.shouldReconnect) setTimeout(() => this.connect(), 1500);
     };
     this.ws.onmessage = (e) => this.onFrame(JSON.parse(e.data) as Frame);

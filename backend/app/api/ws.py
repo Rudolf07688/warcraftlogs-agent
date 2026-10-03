@@ -11,10 +11,14 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from ..agent_runner import stream_response
+from ..auth.csrf import origin_matches
+from ..auth.dependencies import authenticate_session
+from ..config import settings
 from ..db import repository as repo
 from ..db.session import SessionLocal
 from ..model_state import is_valid_model
 from ..scratch import TurnScratch
+from ..tenancy.context import RequestIdentity
 from ..schemas import (
     ArtifactFrame,
     ChatTurn,
@@ -129,7 +133,7 @@ async def _persist_partial(session, conv_id, tokens: list[str]) -> None:
     await session.commit()
 
 
-async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
+async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity) -> None:
     async with SessionLocal() as session:
         # Resolve or create the conversation.
         if turn.conversation_id is not None:
@@ -158,7 +162,13 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
         scratch = TurnScratch(str(conv_id))
         try:
             async for record in stream_response(
-                turn.model, str(conv_id), turn.content, scratch, context_preamble=preamble or None
+                turn.model,
+                str(conv_id),
+                turn.content,
+                scratch,
+                context_preamble=preamble or None,
+                # ADK session state is isolated per tenant (feature 006, websocket.md).
+                user_id=str(identity.tenant_id),
             ):
                 kind = record.get("type")
                 if kind == "token":
@@ -202,6 +212,17 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn) -> None:
 
 @router.websocket("/ws/chat")
 async def chat(ws: WebSocket) -> None:
+    # Authenticate the handshake BEFORE accept (feature 006, websocket.md): validate the
+    # Origin (WS analogue of CSRF) and the __Host-session cookie. No token is ever read
+    # from the query string or a frame. Reject with a policy-violation close on failure.
+    if not origin_matches(ws.headers.get("origin")):
+        await ws.close(code=1008)
+        return
+    identity = await authenticate_session(ws.cookies.get(settings.session_cookie_name))
+    if identity is None or identity.tenant_id is None:
+        await ws.close(code=1008)
+        return
+
     await ws.accept()
     try:
         while True:
@@ -214,6 +235,6 @@ async def chat(ws: WebSocket) -> None:
             if not is_valid_model(ws.app, turn.model):
                 await _send(ws, ErrorFrame(code="invalid_model", message=f"Unknown model '{turn.model}'."))
                 continue
-            await _handle_turn(ws, turn)
+            await _handle_turn(ws, turn, identity)
     except WebSocketDisconnect:
         return

@@ -5,9 +5,12 @@ import type {
   Conversation,
   ConversationDetail,
   Guild,
+  Identity,
+  Invitation,
   InvestigateResponse,
   Profile,
   Raid,
+  Role,
 } from "../types";
 
 // Shape of a persisted artifact as returned by GET /api/conversations/{id}.
@@ -19,9 +22,107 @@ interface BackendArtifact {
   figure: { data: unknown[]; layout: Record<string, unknown> };
 }
 
-async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json() as Promise<T>;
+// --- Auth plumbing (feature 006) ---------------------------------------------
+// The per-session CSRF token lives in memory only (never localStorage). AuthProvider
+// sets it after login/accept/me; unsafe requests attach it as X-CSRF-Token.
+
+let _csrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null): void {
+  _csrfToken = token;
+}
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  let message = res.statusText;
+  let code: string | undefined;
+  try {
+    const body = await res.json();
+    if (body?.error) {
+      code = body.error.code;
+      message = body.error.message ?? message;
+    } else if (typeof body?.detail === "string") {
+      message = body.detail;
+    }
+  } catch {
+    /* non-JSON body */
+  }
+  return new ApiError(res.status, message, code);
+}
+
+// Credentialed JSON request (sends the session cookie; attaches CSRF on unsafe methods).
+async function send<T>(
+  method: string,
+  url: string,
+  body?: unknown,
+  opts: { csrf?: boolean } = {},
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (opts.csrf && _csrfToken) headers["X-CSRF-Token"] = _csrfToken;
+  const res = await fetch(url, {
+    method,
+    headers,
+    credentials: "include",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw await toApiError(res);
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+// --- Auth endpoints ----------------------------------------------------------
+
+export async function getMe(): Promise<Identity> {
+  return send<Identity>("GET", "/api/auth/me");
+}
+
+export async function login(email: string, password: string): Promise<Identity> {
+  return send<Identity>("POST", "/api/auth/login", { email, password });
+}
+
+export async function logout(): Promise<void> {
+  return send<void>("POST", "/api/auth/logout", undefined, { csrf: true });
+}
+
+export async function acceptInvitation(
+  token: string,
+  password: string,
+  passwordConfirmation: string,
+): Promise<Identity> {
+  return send<Identity>("POST", "/api/auth/accept-invitation", {
+    token,
+    password,
+    password_confirmation: passwordConfirmation,
+  });
+}
+
+export async function resetPassword(
+  token: string,
+  password: string,
+  passwordConfirmation: string,
+): Promise<{ message: string }> {
+  return send("POST", "/api/auth/reset-password", {
+    token,
+    password,
+    password_confirmation: passwordConfirmation,
+  });
+}
+
+// --- Admin endpoints (platform admin only; all unsafe calls carry CSRF) -------
+
+export async function createInvitation(email: string, role: Role): Promise<Invitation> {
+  return send<Invitation>("POST", "/api/admin/invitations", { email, role }, { csrf: true });
 }
 
 export async function getModels(): Promise<{
@@ -29,39 +130,39 @@ export async function getModels(): Promise<{
   default: string;
   degraded?: boolean;
 }> {
-  return json(await fetch("/api/models"));
+  return send("GET", "/api/models");
 }
 
 // US5: warm Barnaby greeting for a new chat (model-agnostic, served from a startup
 // cache). Best-effort — a network failure should still open a clean chat, so callers catch.
 export async function getGreeting(): Promise<{ greeting: string }> {
-  return json(await fetch("/api/greeting"));
+  return send("GET", "/api/greeting");
 }
 
 export async function getRaids(): Promise<{ raids: Raid[] }> {
-  return json(await fetch("/api/raids"));
+  return send("GET", "/api/raids");
 }
 
 export async function investigateRaid(
   reportCode: string,
   model?: string,
 ): Promise<InvestigateResponse> {
-  return json(
-    await fetch(`/api/raids/${encodeURIComponent(reportCode)}/investigate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: model ?? null }),
-    }),
+  return send(
+    "POST",
+    `/api/raids/${encodeURIComponent(reportCode)}/investigate`,
+    { model: model ?? null },
+    { csrf: true },
   );
 }
 
 export async function listConversations(): Promise<{ conversations: Conversation[] }> {
-  return json(await fetch("/api/conversations"));
+  return send("GET", "/api/conversations");
 }
 
 export async function getConversation(id: string): Promise<ConversationDetail> {
-  const raw = await json<ConversationDetail & { artifacts?: BackendArtifact[] }>(
-    await fetch(`/api/conversations/${id}`),
+  const raw = await send<ConversationDetail & { artifacts?: BackendArtifact[] }>(
+    "GET",
+    `/api/conversations/${id}`,
   );
   // US2: attach persisted charts to their originating agent message (by seq) so the
   // conversation re-renders its artifacts on reload (FR-011).
@@ -85,12 +186,11 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) throw new Error(`${res.status}`);
+  await send("DELETE", `/api/conversations/${id}`, undefined, { csrf: true });
 }
 
 export async function downloadReport(id: string): Promise<void> {
-  const res = await fetch(`/api/conversations/${id}/report.pdf`);
+  const res = await fetch(`/api/conversations/${id}/report.pdf`, { credentials: "include" });
   if (!res.ok) throw new Error(`${res.status}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -105,7 +205,9 @@ export async function downloadReport(id: string): Promise<void> {
 
 // US5: download a PDF scoped to a single agent reply (its question + its charts).
 export async function downloadMessageReport(convId: string, messageId: string): Promise<void> {
-  const res = await fetch(`/api/conversations/${convId}/messages/${messageId}/report.pdf`);
+  const res = await fetch(`/api/conversations/${convId}/messages/${messageId}/report.pdf`, {
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(`${res.status}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -121,45 +223,25 @@ export async function downloadMessageReport(convId: string, messageId: string): 
 // --- Profile (feature 005 / US1) ---------------------------------------------
 
 export async function getProfile(): Promise<Profile> {
-  return json(await fetch("/api/profile"));
+  return send("GET", "/api/profile");
 }
 
 export async function putSelf(body: CharacterInput): Promise<Character> {
-  return json(
-    await fetch("/api/profile/self", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  );
+  return send("PUT", "/api/profile/self", body, { csrf: true });
 }
 
 export async function addFriend(body: CharacterInput): Promise<Character> {
-  return json(
-    await fetch("/api/profile/friends", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  );
+  return send("POST", "/api/profile/friends", body, { csrf: true });
 }
 
 export async function deleteFriend(id: string): Promise<void> {
-  const res = await fetch(`/api/profile/friends/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) throw new Error(`${res.status}`);
+  await send("DELETE", `/api/profile/friends/${id}`, undefined, { csrf: true });
 }
 
 export async function putGuild(body: CharacterInput): Promise<Guild> {
-  return json(
-    await fetch("/api/profile/guild", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  );
+  return send("PUT", "/api/profile/guild", body, { csrf: true });
 }
 
 export async function deleteGuild(): Promise<void> {
-  const res = await fetch("/api/profile/guild", { method: "DELETE" });
-  if (!res.ok && res.status !== 204) throw new Error(`${res.status}`);
+  await send("DELETE", "/api/profile/guild", undefined, { csrf: true });
 }

@@ -19,6 +19,8 @@ dependencies = [
     "markdown>=3.11",
     "anthropic[vertex]>=1.11.0",
     "plotly>=7.1.0",
+    "pwdlib[argon2]>=0.2.1",
+    "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]

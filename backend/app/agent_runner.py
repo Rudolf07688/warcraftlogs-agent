@@ -90,20 +90,24 @@ def _grounding_sources(gm: Any) -> list[dict]:
     return sources
 
 
-async def _ensure_session(session_id: str) -> None:
+async def _ensure_session(session_id: str, user_id: str = USER_ID) -> None:
     """Create the ADK session for this conversation if it doesn't exist yet.
 
     With the DatabaseSessionService (US2), the session — including tool/turn
     context — is loaded from Postgres, so reopening a conversation after a restart
     restores the model's context, not just the displayed transcript.
+
+    ``user_id`` isolates ADK session state per tenant (feature 006): the WS layer passes
+    ``str(tenant_id)`` so one tenant can never load another's ADK context. Defaults to the
+    legacy ``USER_ID`` for the disposable greeting session (no tenant).
     """
     service = _get_session_service()
     existing = await service.get_session(
-        app_name=APP_NAME, user_id=USER_ID, session_id=session_id
+        app_name=APP_NAME, user_id=user_id, session_id=session_id
     )
     if existing is None:
         await service.create_session(
-            app_name=APP_NAME, user_id=USER_ID, session_id=session_id, state={}
+            app_name=APP_NAME, user_id=user_id, session_id=session_id, state={}
         )
 
 
@@ -113,6 +117,8 @@ async def stream_response(
     user_text: str,
     scratch: TurnScratch | None = None,
     context_preamble: str | None = None,
+    *,
+    user_id: str = USER_ID,
 ) -> AsyncIterator[dict]:
     """Run one turn and yield stream records.
 
@@ -131,7 +137,7 @@ async def stream_response(
     Concatenating all `token` records yields the answer.
     """
     runner = _get_runner(model)
-    await _ensure_session(session_id)
+    await _ensure_session(session_id, user_id)
 
     # US1: prepend the (non-persisted) KNOWN PLAYER CONTEXT preamble to the model
     # input only. The stored user message (ws layer) remains just `user_text`.
@@ -147,7 +153,7 @@ async def stream_response(
     pending_started: dict[str, float] = {}
 
     async for event in runner.run_async(
-        user_id=USER_ID,
+        user_id=user_id,
         session_id=session_id,
         new_message=message,
         run_config=_RUN_CONFIG,

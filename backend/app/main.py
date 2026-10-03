@@ -13,7 +13,8 @@ from sqlalchemy import text
 from wcl_agent.models import discover_models
 
 from .agent_runner import set_session_service
-from .api import conversations, greeting, models, profile, raids, reports, ws
+from .api import admin_users, auth, conversations, greeting, models, profile, raids, reports, ws
+from .api.errors import install_error_handlers
 from .config import settings
 from .db.models import Base
 from .db.session import engine
@@ -88,6 +89,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+install_error_handlers(app)
+
+app.include_router(auth.router)
+app.include_router(admin_users.router)
 app.include_router(models.router)
 app.include_router(conversations.router)
 app.include_router(profile.router)
