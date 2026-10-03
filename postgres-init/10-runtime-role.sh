@@ -23,7 +23,10 @@ END
 \$\$;
 
 GRANT CONNECT ON DATABASE ${POSTGRES_DB} TO ${APP_DB_USER};
-GRANT USAGE ON SCHEMA public TO ${APP_DB_USER};
+-- USAGE to reference the schema; CREATE so Google ADK's DatabaseSessionService can create
+-- its own session tables when the app starts as this role (our 7 tenant tables stay under
+-- RLS regardless).
+GRANT USAGE, CREATE ON SCHEMA public TO ${APP_DB_USER};
 -- Future tables created by the owner should be usable by the runtime role; RLS still
 -- applies. Per-table DML grants live in migration 0004_rls.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public

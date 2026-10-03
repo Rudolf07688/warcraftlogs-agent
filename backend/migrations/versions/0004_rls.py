@@ -69,7 +69,8 @@ def _ensure_runtime_role(conn, role: str) -> None:
     )
     db = conn.execute(sa.text("SELECT current_database()")).scalar()
     conn.execute(sa.text(f'GRANT CONNECT ON DATABASE "{db}" TO {role}'))
-    conn.execute(sa.text(f"GRANT USAGE ON SCHEMA public TO {role}"))
+    # CREATE so ADK's DatabaseSessionService can create its session tables as this role.
+    conn.execute(sa.text(f"GRANT USAGE, CREATE ON SCHEMA public TO {role}"))
 
 
 def upgrade() -> None:
