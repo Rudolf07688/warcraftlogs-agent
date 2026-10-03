@@ -101,8 +101,12 @@ reports) fully isolated from everyone else. See `specs/006-multi-tenancy/` for t
 
 **Two DB roles** (RLS defense-in-depth): a **migration-owner** (owns tables, runs Alembic)
 and a non-privileged **runtime** role the app connects as (no `BYPASSRLS`, so row-level
-security constrains it). `docker compose` creates both; `.env` carries `DATABASE_URL`
-(runtime) and `DATABASE_OWNER_URL` (owner).
+security constrains it). `.env` carries `DATABASE_URL` (runtime, `APP_DB_USER`) and
+`DATABASE_OWNER_URL` (owner). The runtime role is created on a fresh `docker compose` volume
+by `postgres-init/`, **and** migration `0004_rls` creates it idempotently from
+`APP_DB_USER`/`APP_DB_PASSWORD` if it's missing (so `upgrade head` works on an existing
+database too — the owner needs `CREATEROLE`; on a managed Postgres without it, create the
+role manually first). `APP_DB_PASSWORD` must match the password in `DATABASE_URL`.
 
 **Schema is managed by Alembic** (not `create_all`). First-time / upgrade setup:
 

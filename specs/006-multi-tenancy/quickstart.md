@@ -8,7 +8,11 @@ migration. Assumes phases 1–5 complete.
 
 1. **Create two DB roles** (guide §RLS): a migration-owner (owns tables) and a runtime role (not
    superuser, not owner, no `BYPASSRLS`). Put both URLs in `.env` (`DATABASE_URL` = runtime;
-   `DATABASE_OWNER_URL` = owner, used only by Alembic). Update `docker-compose.yml`/`.env.example`.
+   `DATABASE_OWNER_URL` = owner, used only by Alembic), and set `APP_DB_USER`/`APP_DB_PASSWORD`
+   to match the runtime URL. On a fresh `docker compose` volume `postgres-init/` creates the
+   runtime role; on an **existing** database, migration `0004_rls` creates it idempotently (the
+   owner needs `CREATEROLE`, or create it manually:
+   `CREATE ROLE wcl_app LOGIN PASSWORD '…' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;`).
 2. **Create the auth/tenant schema**: `uv run alembic upgrade 0002_auth_tenancy`. This creates the
    auth/tenant tables only — it does **not** yet add `tenant_id` to the existing tables.
 3. **Bootstrap the founder**: `uv run python -m backend.cli.bootstrap_admin` (prompts for email +

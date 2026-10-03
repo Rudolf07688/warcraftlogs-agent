@@ -39,11 +39,45 @@ def _runtime_role() -> str:
     return os.getenv("APP_DB_USER", "wcl_app")
 
 
+def _runtime_password() -> str:
+    return os.getenv("APP_DB_PASSWORD", "wcl_app")
+
+
+def _ensure_runtime_role(conn, role: str) -> None:
+    """Create the non-privileged runtime role if it doesn't exist, idempotently.
+
+    The docker-compose postgres-init script only runs on a FRESH data volume, so on an
+    existing database the role may be absent. Making the migration self-sufficient means
+    `alembic upgrade head` works regardless of how the DB was provisioned. Requires the
+    migration-owner to have CREATEROLE (the compose superuser does); on a managed Postgres
+    where it doesn't, create the role manually first (see README) and this is a no-op.
+    """
+    pw = _runtime_password().replace("'", "''")
+    conn.execute(
+        sa.text(
+            f"""
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{role}') THEN
+                CREATE ROLE {role} LOGIN PASSWORD '{pw}'
+                  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+              END IF;
+            END
+            $$;
+            """
+        )
+    )
+    db = conn.execute(sa.text("SELECT current_database()")).scalar()
+    conn.execute(sa.text(f'GRANT CONNECT ON DATABASE "{db}" TO {role}'))
+    conn.execute(sa.text(f"GRANT USAGE ON SCHEMA public TO {role}"))
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name != "postgresql":
         return  # RLS is Postgres-only; SQLite tests assert app-level scoping instead.
     role = _runtime_role()
+    _ensure_runtime_role(bind, role)
     for table in _RLS_TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
