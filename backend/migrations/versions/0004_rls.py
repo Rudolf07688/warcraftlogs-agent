@@ -86,7 +86,22 @@ def upgrade() -> None:
             f"CREATE POLICY tenant_isolation ON {table} "
             f"USING ({_PREDICATE}) WITH CHECK ({_PREDICATE})"
         )
-        op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO {role}")
+    # The app does ALL its work as the runtime role, including auth (users/auth_sessions/…),
+    # which are NOT under RLS but still need table privileges. Grant DML on every existing
+    # app table + sequence usage (the audit BIGSERIAL). RLS + FORCE still constrains the 7
+    # tenant tables regardless of these grants.
+    op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}")
+    op.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {role}")
+    # Future owner-created tables/sequences (later migrations) are usable without re-granting.
+    owner = conn.execute(sa.text("SELECT current_user")).scalar()
+    op.execute(
+        f"ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA public "
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {role}"
+    )
+    op.execute(
+        f"ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA public "
+        f"GRANT USAGE, SELECT ON SEQUENCES TO {role}"
+    )
 
 
 def downgrade() -> None:
@@ -94,8 +109,9 @@ def downgrade() -> None:
     if bind.dialect.name != "postgresql":
         return
     role = _runtime_role()
+    op.execute(f"REVOKE SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM {role}")
+    op.execute(f"REVOKE USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public FROM {role}")
     for table in _RLS_TABLES:
-        op.execute(f"REVOKE SELECT, INSERT, UPDATE, DELETE ON {table} FROM {role}")
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
         op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")

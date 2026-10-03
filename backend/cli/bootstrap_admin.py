@@ -18,8 +18,10 @@ import getpass
 import os
 import sys
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from backend.app.auth.passwords import PasswordPolicyError, hash_password, validate_password_policy
-from backend.app.db import session as db_session
+from backend.app.config import settings
 from backend.app.repositories import audit
 from backend.app.repositories import tenants as tenants_repo
 from backend.app.repositories import users as users_repo
@@ -28,35 +30,42 @@ from backend.app.repositories import users as users_repo
 async def bootstrap_admin(email: str, password: str) -> tuple[str, str]:
     """Create the platform-admin user + their auto-provisioned tenant + owner membership.
 
-    Returns ``(user_id, tenant_id)`` as strings. Raises on policy violation or if the
-    email already exists.
+    Connects as the migration **OWNER** (``settings.owner_database_url``), not the runtime
+    role: this runs between ``alembic upgrade 0002_auth_tenancy`` and ``upgrade head``, so the
+    runtime role doesn't exist yet (it's created by 0004). Returns ``(user_id, tenant_id)``.
+    Raises on policy violation or if the email already exists.
     """
     validate_password_policy(password)
     normalized = users_repo.normalize_email(email)
-    async with db_session.SessionLocal() as db:
-        if await users_repo.get_user_by_email(db, normalized) is not None:
-            raise ValueError(f"A user with email {normalized!r} already exists.")
-        pw_hash = await hash_password(password)
-        user = await users_repo.create_user(
-            db,
-            email=normalized,
-            status="active",
-            is_platform_admin=True,
-            password_hash=pw_hash,
-        )
-        tenant = await tenants_repo.create_tenant(db, name=normalized)
-        await tenants_repo.create_membership(
-            db, tenant_id=tenant.id, user_id=user.id, role="tenant_admin"
-        )
-        await audit.record_event(
-            db,
-            event_type="admin.bootstrap",
-            actor_user_id=user.id,
-            target_user_id=user.id,
-            tenant_id=tenant.id,
-        )
-        await db.commit()
-        return str(user.id), str(tenant.id)
+    engine = create_async_engine(settings.owner_database_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    try:
+        async with factory() as db:
+            if await users_repo.get_user_by_email(db, normalized) is not None:
+                raise ValueError(f"A user with email {normalized!r} already exists.")
+            pw_hash = await hash_password(password)
+            user = await users_repo.create_user(
+                db,
+                email=normalized,
+                status="active",
+                is_platform_admin=True,
+                password_hash=pw_hash,
+            )
+            tenant = await tenants_repo.create_tenant(db, name=normalized)
+            await tenants_repo.create_membership(
+                db, tenant_id=tenant.id, user_id=user.id, role="tenant_admin"
+            )
+            await audit.record_event(
+                db,
+                event_type="admin.bootstrap",
+                actor_user_id=user.id,
+                target_user_id=user.id,
+                tenant_id=tenant.id,
+            )
+            await db.commit()
+            return str(user.id), str(tenant.id)
+    finally:
+        await engine.dispose()
 
 
 def main() -> int:
