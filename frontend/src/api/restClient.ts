@@ -1,4 +1,5 @@
 import type {
+  AdminUser,
   CharacterInput,
   Character,
   ChartArtifact,
@@ -123,6 +124,30 @@ export async function resetPassword(
 
 export async function createInvitation(email: string, role: Role): Promise<Invitation> {
   return send<Invitation>("POST", "/api/admin/invitations", { email, role }, { csrf: true });
+}
+
+export async function listUsers(): Promise<{ users: AdminUser[]; next_cursor: string | null }> {
+  return send("GET", "/api/admin/users");
+}
+
+export async function listInvitations(): Promise<{ invitations: Invitation[] }> {
+  return send("GET", "/api/admin/invitations");
+}
+
+export async function resendInvitation(id: string): Promise<Invitation> {
+  return send<Invitation>("POST", `/api/admin/invitations/${id}/resend`, undefined, { csrf: true });
+}
+
+export async function revokeInvitation(id: string): Promise<void> {
+  return send<void>("DELETE", `/api/admin/invitations/${id}`, undefined, { csrf: true });
+}
+
+export async function setUserStatus(id: string, status: "active" | "disabled"): Promise<AdminUser> {
+  return send<AdminUser>("PATCH", `/api/admin/users/${id}`, { status }, { csrf: true });
+}
+
+export async function triggerReset(id: string): Promise<{ reset_link: string }> {
+  return send("POST", `/api/admin/users/${id}/reset`, undefined, { csrf: true });
 }
 
 export async function getModels(): Promise<{

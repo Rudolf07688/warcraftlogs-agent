@@ -5,6 +5,7 @@ import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./auth/RequireAuth";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
+import AdminUsersPage from "./pages/AdminUsersPage";
 import ForbiddenPage from "./pages/ForbiddenPage";
 import LoginPage from "./pages/LoginPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
@@ -24,6 +25,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <App />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: "/admin/users",
+    element: (
+      <RequireAuth adminOnly>
+        <AdminUsersPage />
       </RequireAuth>
     ),
   },

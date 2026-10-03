@@ -171,14 +171,14 @@ returns `403`; no view shows hashes/tokens.
 
 ### Tests for User Story 4
 
-- [ ] T052 [P] [US4] `backend/tests/test_admin_users.py`: every admin endpoint returns `403` for non-admin (called directly); list users/invitations; resend invalidates prior link; revoke disables link; disable revokes sessions + blocks sign-in, enable restores; responses never contain hashes/raw tokens
+- [X] T052 [P] [US4] `backend/tests/test_admin_users.py`: every admin endpoint returns `403` for non-admin (called directly); list users/invitations; resend invalidates prior link; revoke disables link; disable revokes sessions + blocks sign-in, enable restores; responses never contain hashes/raw tokens
 
 ### Implementation for User Story 4
 
-- [ ] T053 [US4] Add the remaining admin endpoints to `backend/app/api/admin_users.py`: `GET /users` (paginated), `GET /invitations`, `POST /invitations/{id}/resend`, `DELETE /invitations/{id}`, and `PATCH /users/{id}` (disable/enable + revoke sessions; cannot disable last admin) — all `require_platform_admin` + CSRF (depends on T023, T018). **Membership add/change/remove endpoints are deferred** (not built in v1; one workspace per user — Simplicity-First). The `tenant_memberships` table and `MembershipIn` schema remain so they can be added without rework.
-- [ ] T054 [P] [US4] Create `frontend/src/pages/AdminUsersPage.tsx`: users table (email/status/last-login/memberships), pending invitations, create-invite form with copy-link, resend/revoke, disable/enable with confirmation, clear feedback; never render secrets
-- [ ] T055 [P] [US4] Create `frontend/src/pages/ForbiddenPage.tsx` and guard `/admin/users` in the router/`RequireAuth` to render only when `is_platform_admin`
-- [ ] T056 [US4] Add admin REST calls to `frontend/src/api/restClient.ts` and admin types (`AdminUser`, `Invitation`, `Membership`) to `frontend/src/types.ts`
+- [X] T053 [US4] Add the remaining admin endpoints to `backend/app/api/admin_users.py`: `GET /users` (paginated), `GET /invitations`, `POST /invitations/{id}/resend`, `DELETE /invitations/{id}`, and `PATCH /users/{id}` (disable/enable + revoke sessions; cannot disable last admin) — all `require_platform_admin` + CSRF (depends on T023, T018). **Membership add/change/remove endpoints are deferred** (not built in v1; one workspace per user — Simplicity-First). The `tenant_memberships` table and `MembershipIn` schema remain so they can be added without rework.
+- [X] T054 [P] [US4] Create `frontend/src/pages/AdminUsersPage.tsx`: users table (email/status/last-login/memberships), pending invitations, create-invite form with copy-link, resend/revoke, disable/enable with confirmation, clear feedback; never render secrets
+- [X] T055 [P] [US4] Create `frontend/src/pages/ForbiddenPage.tsx` and guard `/admin/users` in the router/`RequireAuth` to render only when `is_platform_admin`
+- [X] T056 [US4] Add admin REST calls to `frontend/src/api/restClient.ts` and admin types (`AdminUser`, `Invitation`, `Membership`) to `frontend/src/types.ts`
 
 **Checkpoint**: Founder can run the invite-only deployment; admin surface is server-enforced.
 
@@ -195,14 +195,14 @@ generically.
 
 ### Tests for User Story 5
 
-- [ ] T057 [P] [US5] `backend/tests/test_password_reset.py`: trigger → shareable link; complete → hash updated + all sessions revoked + no new session; expired/used/garbage → generic `400`; founder cannot view/set the password; deferred `/forgot-password` always returns neutral `202`
+- [X] T057 [P] [US5] `backend/tests/test_password_reset.py`: trigger → shareable link; complete → hash updated + all sessions revoked + no new session; expired/used/garbage → generic `400`; founder cannot view/set the password; deferred `/forgot-password` always returns neutral `202`
 
 ### Implementation for User Story 5
 
-- [ ] T058 [US5] Implement `backend/app/services/password_reset_service.py` (request: single-use token digest + expiry + audit; complete: validate/consume, update Argon2id hash + `password_changed_at`, revoke all user sessions, audit) (depends on Phase 2)
-- [ ] T059 [US5] Add `POST /api/admin/users/{id}/reset` (admin, returns `reset_link` once) to `backend/app/api/admin_users.py`, and `POST /api/auth/reset-password` + the deferred neutral `POST /api/auth/forgot-password` to `backend/app/api/auth.py` (depends on T058)
-- [ ] T060 [P] [US5] Create `frontend/src/pages/ResetPasswordPage.tsx` (read `#token` + strip, set new password + confirmation, then route to `/login`)
-- [ ] T061 [US5] Add `resetPassword()` + admin `triggerReset()` to `frontend/src/api/restClient.ts` and surface the reset-link copy action in `AdminUsersPage.tsx`
+- [X] T058 [US5] Implement `backend/app/services/password_reset_service.py` (request: single-use token digest + expiry + audit; complete: validate/consume, update Argon2id hash + `password_changed_at`, revoke all user sessions, audit) (depends on Phase 2)
+- [X] T059 [US5] Add `POST /api/admin/users/{id}/reset` (admin, returns `reset_link` once) to `backend/app/api/admin_users.py`, and `POST /api/auth/reset-password` + the deferred neutral `POST /api/auth/forgot-password` to `backend/app/api/auth.py` (depends on T058)
+- [X] T060 [P] [US5] Create `frontend/src/pages/ResetPasswordPage.tsx` (read `#token` + strip, set new password + confirmation, then route to `/login`)
+- [X] T061 [US5] Add `resetPassword()` + admin `triggerReset()` to `frontend/src/api/restClient.ts` and surface the reset-link copy action in `AdminUsersPage.tsx`
 
 **Checkpoint**: Account recovery works end-to-end without exposing passwords.
 
@@ -212,12 +212,12 @@ generically.
 
 **Purpose**: Abuse controls, auditing, redaction, docs, and full-system verification.
 
-- [ ] T062 [P] Apply rate limits to the token + admin-invitation endpoints and verify progressive login throttling in `backend/tests/test_rate_limit.py` (no known/unknown distinction; capped, non-permanent)
-- [ ] T063 [P] Verify the full audit-event set (login/logout, invitation created/resent/revoked/accepted, reset requested/completed, user enabled/disabled, membership changes, admin authz failures) in `backend/tests/test_audit.py`, asserting no secrets in metadata
-- [ ] T064 [P] Wire the redaction filter into app logging and review APM/exception middleware so raw secrets never reach logs/traces (`backend/app/main.py` + logging config)
-- [ ] T065 [P] Update `.env.example`, `README.md`, and `documentation/ai_guide.md` with the runtime/owner roles, bootstrap CLI, `alembic upgrade head`, and auth/tenancy operational notes
+- [X] T062 [P] Apply rate limits to the token + admin-invitation endpoints and verify progressive login throttling in `backend/tests/test_rate_limit.py` (no known/unknown distinction; capped, non-permanent)
+- [X] T063 [P] Verify the full audit-event set (login/logout, invitation created/resent/revoked/accepted, reset requested/completed, user enabled/disabled, membership changes, admin authz failures) in `backend/tests/test_audit.py`, asserting no secrets in metadata
+- [X] T064 [P] Wire the redaction filter into app logging and review APM/exception middleware so raw secrets never reach logs/traces (`backend/app/main.py` + logging config)
+- [X] T065 [P] Update `.env.example`, `README.md`, and `documentation/ai_guide.md` with the runtime/owner roles, bootstrap CLI, `alembic upgrade head`, and auth/tenancy operational notes
 - [ ] T066 Run migrations + bootstrap on Postgres and execute `specs/006-multi-tenancy/quickstart.md` (all 5 stories + isolation + regression)
-- [ ] T067 Run the full backend + cross-tenant/RLS test suite and `/speckit-analyze`; address any spec↔plan↔contracts drift; run `gitnexus_detect_changes()` before the final commit
+- [X] T067 Run the full backend + cross-tenant/RLS test suite and `/speckit-analyze`; address any spec↔plan↔contracts drift; run `gitnexus_detect_changes()` before the final commit
 
 ---
 

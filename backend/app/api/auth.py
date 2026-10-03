@@ -24,8 +24,17 @@ from ..db.session import get_session
 from ..repositories import sessions as sessions_repo
 from ..repositories import users as users_repo
 from ..repositories import tenants as tenants_repo
-from ..schemas import AcceptInvitationIn, LoginIn, MeOut, MembershipRef, TenantRef
-from ..services import auth_service, invitation_service
+from ..schemas import (
+    AcceptInvitationIn,
+    ActionMessageOut,
+    ForgotPasswordIn,
+    LoginIn,
+    MeOut,
+    MembershipRef,
+    ResetPasswordIn,
+    TenantRef,
+)
+from ..services import auth_service, invitation_service, password_reset_service
 from ..tenancy.context import RequestIdentity
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -169,3 +178,47 @@ async def me(
     # CSRF token is HMAC-derived, so /me recovers it after a page reload.
     csrf_token = csrf_mod.issue_csrf(identity.session_id)
     return await build_me_out(db, user, identity.tenant_id, csrf_token)
+
+
+@router.post("/reset-password", response_model=ActionMessageOut)
+async def reset_password(
+    body: ResetPasswordIn,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> ActionMessageOut:
+    if not token_limiter.allow_request(_source_key(request, "reset")):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "rate_limited", "message": "Too many attempts. Try again shortly."},
+        )
+    try:
+        await password_reset_service.complete_reset(
+            db,
+            raw_token=body.token,
+            password=body.password,
+            password_confirmation=body.password_confirmation,
+        )
+    except PasswordPolicyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_password", "message": str(exc)},
+        ) from exc
+    except password_reset_service.ResetInvalid as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    # No new session: all sessions were revoked; the user signs in again.
+    return ActionMessageOut(message="Password updated. Please sign in.")
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED, response_model=ActionMessageOut)
+async def forgot_password(
+    body: ForgotPasswordIn, request: Request
+) -> ActionMessageOut:
+    """Deferred in v1 (no email provider): always a neutral 202, performs no delivery.
+
+    Wired now so enabling email later turns on self-service without an API change.
+    """
+    token_limiter.allow_request(_source_key(request, "forgot"))
+    return ActionMessageOut(message="If that account exists, a reset link has been sent.")

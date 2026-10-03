@@ -364,3 +364,38 @@ WCL_GUIDE_MODEL=gemini-3.6-flash   # web-search-capable model for background gui
 WCL_CACHE_TTL_REPORT_S=86400       # report-scoped (immutable) cache TTL
 WCL_CACHE_TTL_LEADERBOARD_S=3600   # leaderboard/volatile cache TTL
 ```
+
+## 13. Feature 006 — multi-tenancy (invite-only accounts & private workspaces)
+
+Implemented in `specs/006-multi-tenancy/`. Summary for future agents:
+
+- **Identity/tenancy tables** (`db/models.py`): `users` (global, Argon2id `password_hash`,
+  `is_platform_admin`), `tenants` (a workspace), `tenant_memberships`, `invitations`,
+  `auth_sessions` (named to avoid ADK's `sessions` table), `password_reset_tokens`,
+  `auth_audit_events`. v1 is **one tenant per user**, auto-provisioned at invite acceptance;
+  the membership tables are retained so multi-member workspaces can land later without rework.
+- **Schema is Alembic now** (`backend/migrations/`, `alembic.ini`) — `main.lifespan` no
+  longer creates/alters tables (`create_all` survives only in SQLite test fixtures). Four
+  migrations: `0001_baseline`, `0002_auth_tenancy`, `0003_tenant_columns` (adds `tenant_id`
+  to the 7 owned tables, backfills to the founder, per-tenant uniqueness), `0004_rls`
+  (ENABLE+FORCE RLS + policies + runtime-role grants, Postgres only).
+- **Auth building blocks** (`app/auth/`): `passwords` (Argon2id off the loop, bounded),
+  `tokens` (CSPRNG + sha256 digest), `sessions` (opaque, `__Host-` cookie, idle+absolute
+  expiry), `csrf` (**HMAC-derived, stateless** — `/me` recomputes it so a reload recovers
+  it), `dependencies` (`require_session`/`require_platform_admin`/`require_csrf`/
+  `get_tenant_db`), `rate_limit`, `redaction`.
+- **Tenant scoping** (`app/tenancy/context.py`): `RequestIdentity` (the only authority;
+  never from client input), `tenant_session`/`tenant_scope` set transaction-local
+  `app.tenant_id` so RLS agrees with the app predicate; `commit_and_rescope` re-sets it
+  after a mid-handler commit. Every `repository.py` function takes keyword-only `tenant_id`;
+  no row is fetched by id alone (foreign/absent → `None` → 404).
+- **WS** (`api/ws.py`): the handshake authenticates (cookie + Origin) before `accept()`,
+  re-validates each turn (mid-session disable takes effect), scopes captures + the WCL cache
+  key (`wcl_agent.cache.set_scope_prefix`) + ADK `user_id = str(tenant_id)`.
+- **Founder bootstrap**: `backend/cli/bootstrap_admin.py` (no HTTP path). Run it between
+  `alembic upgrade 0002_auth_tenancy` and `alembic upgrade head`.
+- **Link delivery seam** (`services/link_delivery.py`): v1 returns invite/reset links to the
+  admin to copy & share (no email); the raw token rides in the URL **fragment**, shown once.
+
+New env vars (also in `.env.example`): `APP_DB_USER`/`APP_DB_PASSWORD` (runtime role),
+`DATABASE_OWNER_URL` (Alembic owner), `SITE_URL`, `SESSION_COOKIE_SECURE`, `SECRET_KEY`.

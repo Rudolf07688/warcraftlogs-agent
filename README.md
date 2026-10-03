@@ -93,6 +93,35 @@ Architecture:
   model dropdown, chat box with tokens inscribing as they stream, and a
   per-conversation **Download PDF** button.
 
+### Multi-tenancy — invite-only accounts & private workspaces (feature 006)
+
+The app is invite-only: a single **founder** (platform admin) invites friends, and each
+gets a **private workspace** (their own characters, friends, guild, conversations, raids,
+reports) fully isolated from everyone else. See `specs/006-multi-tenancy/` for the spec.
+
+**Two DB roles** (RLS defense-in-depth): a **migration-owner** (owns tables, runs Alembic)
+and a non-privileged **runtime** role the app connects as (no `BYPASSRLS`, so row-level
+security constrains it). `docker compose` creates both; `.env` carries `DATABASE_URL`
+(runtime) and `DATABASE_OWNER_URL` (owner).
+
+**Schema is managed by Alembic** (not `create_all`). First-time / upgrade setup:
+
+```bash
+# 1. Create the auth/tenant tables (not tenant_id yet):
+uv run alembic -c backend/alembic.ini upgrade 0002_auth_tenancy
+# 2. Create the founder (NO HTTP route can do this). Prompts for email + password,
+#    or set BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD:
+uv run python -m backend.cli.bootstrap_admin
+# 3. Add tenant_id to existing tables (backfilled to the founder) + enable RLS:
+uv run alembic -c backend/alembic.ini upgrade head
+```
+
+Then sign in at `/login`. Admins manage users + invitations at `/admin/users` and copy
+the one-time invite/reset **links** to share (no email provider in v1). Auth uses Argon2id
+password hashing, opaque server-side sessions in a `__Host-` cookie, and an HMAC-derived
+CSRF token (sent as `X-CSRF-Token` on unsafe requests). Full verification steps are in
+`specs/006-multi-tenancy/quickstart.md`.
+
 ### Enhancements (feature 002)
 
 - **Tracked raids** — every report you successfully pull data for is recorded and

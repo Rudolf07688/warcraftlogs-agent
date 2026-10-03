@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,7 +16,26 @@ from wcl_agent.models import discover_models
 from .agent_runner import set_session_service
 from .api import admin_users, auth, conversations, greeting, models, profile, raids, reports, ws
 from .api.errors import install_error_handlers
+from .auth.redaction import RedactionFilter
 from .config import settings
+
+
+def _install_log_redaction() -> None:
+    """Attach the redaction filter to the root logger + its handlers (feature 006, FR-030).
+
+    Defense in depth so structured ``extra``/args can't leak secrets into logs/APM. Messages
+    are not meant to carry secrets by construction; auditing still uses the dedicated writer.
+    """
+    f = RedactionFilter()
+    root = logging.getLogger()
+    root.addFilter(f)
+    for handler in root.handlers:
+        handler.addFilter(f)
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        logging.getLogger(name).addFilter(f)
+
+
+_install_log_redaction()
 from .db.session import engine
 from .greeting import GREETING_MODEL, get_greeting
 
