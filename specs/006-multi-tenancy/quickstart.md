@@ -6,13 +6,15 @@ migration. Assumes phases 1–5 complete.
 
 ## 0. One-time setup (Postgres + roles + migration)
 
-1. **Create two DB roles** (guide §RLS): a migration-owner (owns tables) and a runtime role (not
-   superuser, not owner, no `BYPASSRLS`). Put both URLs in `.env` (`DATABASE_URL` = runtime;
-   `DATABASE_OWNER_URL` = owner, used only by Alembic), and set `APP_DB_USER`/`APP_DB_PASSWORD`
-   to match the runtime URL. On a fresh `docker compose` volume `postgres-init/` creates the
-   runtime role; on an **existing** database, migration `0004_rls` creates it idempotently (the
-   owner needs `CREATEROLE`, or create it manually:
-   `CREATE ROLE wcl_app LOGIN PASSWORD '…' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;`).
+1. **Configure the two DB roles** in `.env`: `DATABASE_URL` = the non-privileged **runtime**
+   role (`APP_DB_USER`/`APP_DB_PASSWORD`), `DATABASE_OWNER_URL` = the **owner/superuser**
+   (`POSTGRES_USER`/`POSTGRES_PASSWORD`) — Alembic uses the owner. The runtime role itself is
+   created by migration `0004_rls` (step 4) from `APP_DB_USER`/`APP_DB_PASSWORD`, running as
+   the owner (needs `CREATEROLE`; the compose superuser has it). On a managed Postgres without
+   `CREATEROLE`, create it manually first:
+   `CREATE ROLE wcl_app LOGIN PASSWORD '…' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;`.
+   Start the DB (`docker compose up -d db`) before the steps below; start the **app** only
+   after step 4.
 2. **Create the auth/tenant schema**: `uv run alembic upgrade 0002_auth_tenancy`. This creates the
    auth/tenant tables only — it does **not** yet add `tenant_id` to the existing tables.
 3. **Bootstrap the founder**: `uv run python -m backend.cli.bootstrap_admin` (prompts for email +

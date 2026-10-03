@@ -99,14 +99,14 @@ The app is invite-only: a single **founder** (platform admin) invites friends, a
 gets a **private workspace** (their own characters, friends, guild, conversations, raids,
 reports) fully isolated from everyone else. See `specs/006-multi-tenancy/` for the spec.
 
-**Two DB roles** (RLS defense-in-depth): a **migration-owner** (owns tables, runs Alembic)
-and a non-privileged **runtime** role the app connects as (no `BYPASSRLS`, so row-level
-security constrains it). `.env` carries `DATABASE_URL` (runtime, `APP_DB_USER`) and
-`DATABASE_OWNER_URL` (owner). The runtime role is created on a fresh `docker compose` volume
-by `postgres-init/`, **and** migration `0004_rls` creates it idempotently from
-`APP_DB_USER`/`APP_DB_PASSWORD` if it's missing (so `upgrade head` works on an existing
-database too — the owner needs `CREATEROLE`; on a managed Postgres without it, create the
-role manually first). `APP_DB_PASSWORD` must match the password in `DATABASE_URL`.
+**Two DB roles** (RLS defense-in-depth): a **migration-owner** (the compose superuser, owns
+tables, runs Alembic) and a non-privileged **runtime** role the app connects as (no
+`BYPASSRLS`, so row-level security constrains it). `.env` carries `DATABASE_URL` (runtime =
+`APP_DB_USER`) and `DATABASE_OWNER_URL` (owner = `POSTGRES_USER`) — don't swap them. The
+runtime role is created by **migration `0004_rls`** (from `APP_DB_USER`/`APP_DB_PASSWORD`,
+run as the owner during `alembic upgrade head`; the owner needs `CREATEROLE`, which the
+compose superuser has). So the flow is: start the DB, run the migrations/bootstrap below
+(which create the role, schema, and RLS), **then** start the app.
 
 **Schema is managed by Alembic** (not `create_all`). First-time / upgrade setup:
 

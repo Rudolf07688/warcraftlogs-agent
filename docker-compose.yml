@@ -6,18 +6,14 @@ services:
     env_file: .env
     environment:
       # POSTGRES_USER is the owner/superuser — it owns the tables and runs Alembic
-      # migrations (the migration-OWNER role). APP_DB_USER is the non-privileged
-      # RUNTIME role the app connects as (created by postgres-init, no BYPASSRLS) so
-      # row-level security constrains it (feature 006, research R4).
+      # migrations. The non-privileged RUNTIME role (APP_DB_USER) that the app connects
+      # as is created by migration 0004_rls (from APP_DB_USER/APP_DB_PASSWORD), so there
+      # is no mounted init script (those are fragile to exec across platforms).
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      APP_DB_USER: ${APP_DB_USER}
-      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Runs once on first DB init: creates the runtime role (see the script header).
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
