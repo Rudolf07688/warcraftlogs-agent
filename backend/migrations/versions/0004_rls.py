@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0004_rls"
@@ -93,7 +94,7 @@ def upgrade() -> None:
     op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}")
     op.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {role}")
     # Future owner-created tables/sequences (later migrations) are usable without re-granting.
-    owner = conn.execute(sa.text("SELECT current_user")).scalar()
+    owner = bind.execute(sa.text("SELECT current_user")).scalar()
     op.execute(
         f"ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA public "
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {role}"
