@@ -5,6 +5,8 @@ import type {
   ChartArtifact,
   Conversation,
   ConversationDetail,
+  Guide,
+  GuideListResponse,
   Guild,
   Identity,
   Invitation,
@@ -278,4 +280,31 @@ export async function putGuild(body: CharacterInput): Promise<Guild> {
 
 export async function deleteGuild(): Promise<void> {
   await send("DELETE", "/api/profile/guild", undefined, { csrf: true });
+}
+
+// --- Class guides (feature 008 / US2) — shared, global spec-guide library ------
+
+export async function listGuides(): Promise<GuideListResponse> {
+  return send("GET", "/api/guides");
+}
+
+export async function getGuide(className: string, spec: string): Promise<Guide> {
+  return send(
+    "GET",
+    `/api/guides/${encodeURIComponent(className)}/${encodeURIComponent(spec)}`,
+  );
+}
+
+// Request / retry / refresh a spec's guide. `force` regenerates even if already ready.
+export async function generateGuide(
+  className: string,
+  spec: string,
+  force = false,
+): Promise<Guide> {
+  return send(
+    "POST",
+    `/api/guides/${encodeURIComponent(className)}/${encodeURIComponent(spec)}/generate`,
+    { force },
+    { csrf: true },
+  );
 }

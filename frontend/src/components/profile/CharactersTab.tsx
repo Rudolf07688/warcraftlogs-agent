@@ -8,13 +8,12 @@ import {
   putGuild,
   putSelf,
   updateFriend,
-} from "../api/restClient";
-import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../types";
+} from "../../api/restClient";
+import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../../types";
 
-interface Props {
-  open: boolean;
-  onClose: () => void;
-}
+// Characters tab (feature 008 / US1): self, friends (unlimited), raid roles, and the single
+// main guild. Extracted verbatim-in-behavior from the former ProfilePanel modal — same
+// endpoints, same friendly duplicate message — restyled for the themed profile page.
 
 const REGIONS = ["US", "EU", "KR", "TW", "CN"];
 
@@ -138,7 +137,7 @@ function IdentityForm({
   );
 }
 
-export function ProfilePanel({ open, onClose }: Props) {
+export function CharactersTab() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -153,12 +152,12 @@ export function ProfilePanel({ open, onClose }: Props) {
   }, []);
 
   useEffect(() => {
-    if (open) void refresh();
-  }, [open, refresh]);
+    void refresh();
+  }, [refresh]);
 
   // Poll while any guide is still resolving so the badges flip to "ready" on their own.
   useEffect(() => {
-    if (!open || !profile) return;
+    if (!profile) return;
     const pending =
       profile.self?.guide_status === "pending" ||
       profile.friends.some((f) => f.guide_status === "pending") ||
@@ -166,7 +165,7 @@ export function ProfilePanel({ open, onClose }: Props) {
     if (!pending) return;
     const t = setTimeout(() => void refresh(), 4000);
     return () => clearTimeout(t);
-  }, [open, profile, refresh]);
+  }, [profile, refresh]);
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -206,107 +205,92 @@ export function ProfilePanel({ open, onClose }: Props) {
     [refresh],
   );
 
-  if (!open) return null;
-
   const self = profile?.self ?? null;
   const guild: Guild | null = profile?.guild ?? null;
 
   return (
-    <div className="profile-overlay" role="dialog" aria-modal="true" aria-label="Profile">
-      <div className="profile-panel">
-        <header className="profile-header">
-          <h2>Your profile</h2>
-          <button className="profile-close" onClick={onClose} title="Close">
-            ✕
-          </button>
-        </header>
+    <div className="profile-tabpanel">
+      {err && <div className="profile-error">{err}</div>}
 
-        {err && <div className="profile-error">{err}</div>}
+      <section className="profile-section">
+        <h3>You</h3>
+        {self && (
+          <div className="profile-row">
+            <span>{identityLabel(self)}</span>
+            <RoleControl
+              char={self}
+              busy={busy}
+              onChange={(role) =>
+                run(() =>
+                  putSelf({
+                    name: self.name,
+                    server: self.server,
+                    region: self.region,
+                    raid_role: role,
+                  }),
+                )
+              }
+            />
+            <StatusBadge status={self.guide_status} />
+          </div>
+        )}
+        <IdentityForm
+          initial={self ? { name: self.name, server: self.server, region: self.region } : EMPTY}
+          submitLabel={self ? "Update" : "Set self"}
+          busy={busy}
+          onSubmit={(v) => run(() => putSelf({ ...v, raid_role: self?.raid_role ?? null }))}
+        />
+      </section>
 
-        <section className="profile-section">
-          <h3>You</h3>
-          {self && (
-            <div className="profile-row">
-              <span>{identityLabel(self)}</span>
-              <RoleControl
-                char={self}
-                busy={busy}
-                onChange={(role) =>
-                  run(() =>
-                    putSelf({
-                      name: self.name,
-                      server: self.server,
-                      region: self.region,
-                      raid_role: role,
-                    }),
-                  )
-                }
-              />
-              <StatusBadge status={self.guide_status} />
-            </div>
-          )}
-          <IdentityForm
-            initial={
-              self ? { name: self.name, server: self.server, region: self.region } : EMPTY
-            }
-            submitLabel={self ? "Update" : "Set self"}
-            busy={busy}
-            onSubmit={(v) => run(() => putSelf({ ...v, raid_role: self?.raid_role ?? null }))}
-          />
-        </section>
+      <section className="profile-section">
+        <h3>Friends</h3>
+        {profile?.friends.map((f) => (
+          <div className="profile-row" key={f.id}>
+            <span>{identityLabel(f)}</span>
+            <RoleControl
+              char={f}
+              busy={busy}
+              onChange={(role) => run(() => updateFriend(f.id, role))}
+            />
+            <StatusBadge status={f.guide_status} />
+            <button
+              className="profile-remove"
+              disabled={busy}
+              onClick={() => run(() => deleteFriend(f.id))}
+              title="Remove friend"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <IdentityForm initial={EMPTY} submitLabel="Add friend" busy={busy} onSubmit={addFriendHandler} />
+      </section>
 
-        <section className="profile-section">
-          <h3>Friends</h3>
-          {profile?.friends.map((f) => (
-            <div className="profile-row" key={f.id}>
-              <span>{identityLabel(f)}</span>
-              <RoleControl
-                char={f}
-                busy={busy}
-                onChange={(role) => run(() => updateFriend(f.id, role))}
-              />
-              <StatusBadge status={f.guide_status} />
-              <button
-                className="profile-remove"
-                disabled={busy}
-                onClick={() => run(() => deleteFriend(f.id))}
-                title="Remove friend"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <IdentityForm initial={EMPTY} submitLabel="Add friend" busy={busy} onSubmit={addFriendHandler} />
-        </section>
-
-        <section className="profile-section">
-          <h3>Main guild</h3>
-          {guild && (
-            <div className="profile-row">
-              <span>
-                {guild.name}-{guild.server} ({guild.region})
-              </span>
-              <StatusBadge status={guild.summary_status} />
-              <button
-                className="profile-remove"
-                disabled={busy}
-                onClick={() => run(() => deleteGuild())}
-                title="Remove guild"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-          <IdentityForm
-            initial={
-              guild ? { name: guild.name, server: guild.server, region: guild.region } : EMPTY
-            }
-            submitLabel={guild ? "Replace guild" : "Set guild"}
-            busy={busy}
-            onSubmit={(v) => run(() => putGuild(v))}
-          />
-        </section>
-      </div>
+      <section className="profile-section">
+        <h3>Main guild</h3>
+        {guild && (
+          <div className="profile-row">
+            <span>
+              {guild.name}-{guild.server} ({guild.region})
+            </span>
+            <StatusBadge status={guild.summary_status} />
+            <button
+              className="profile-remove"
+              disabled={busy}
+              onClick={() => run(() => deleteGuild())}
+              title="Remove guild"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        <IdentityForm
+          initial={guild ? { name: guild.name, server: guild.server, region: guild.region } : EMPTY}
+          submitLabel={guild ? "Replace guild" : "Set guild"}
+          busy={busy}
+          onSubmit={(v) => run(() => putGuild(v))}
+        />
+      </section>
     </div>
   );
 }

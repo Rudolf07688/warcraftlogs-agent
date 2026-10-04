@@ -1,13 +1,15 @@
-"""Background spec-guide / guild-summary generation (feature 005 / US6).
+"""Background spec-guide / guild-summary generation (feature 005 / US6; feature 008 / US2-US3).
 
 Locking a character or guild in the profile schedules a non-blocking task that:
 1. resolves the character's active spec from Warcraft Logs (or the guild's identity),
-2. generates a concise guide/summary via the web-search-capable guide model
-   (reusing ``stream_response`` over a disposable session, like the greeting primer),
-3. persists the result and flips ``guide_status``/``summary_status`` to ``ready``.
+2. for a character, persists the resolved ``(class, spec)`` and triggers the SHARED
+   ``spec_guides`` guide for that pair (``ensure_spec_guide``) — reusing an already-ready
+   guide (zero regeneration) or generating one; for a guild, generates its summary,
+3. generation reuses ``stream_response`` over a disposable session (like the greeting primer)
+   and flips the row's ``status``/``summary_status`` to ``ready`` (or ``failed``, retryable).
 
-Every failure path still leaves the profile entry saved with status ``failed`` so the
-agent degrades gracefully (FR-030) — a bogus name never blocks or errors the save.
+Every failure path is best-effort and non-blocking so the agent degrades gracefully
+(FR-030) — a bogus name never blocks or errors the save, and ``failed`` is always retryable.
 """
 
 from __future__ import annotations
@@ -17,8 +19,13 @@ import logging
 import uuid
 from collections import Counter
 
+from sqlalchemy.exc import IntegrityError
+
+from wcl_agent.constants import CLASS_SPECS
+
 from ..config import settings
 from ..db import repository as repo
+from ..db import session as db_session
 from ..tenancy.context import tenant_scope
 
 logger = logging.getLogger(__name__)
@@ -98,11 +105,105 @@ async def _generate_text(prompt: str) -> str:
     return "".join(tokens).strip()
 
 
+# --- Shared spec-guide library (feature 008 / US2) ----------------------------
+# One guide per (class, spec) in the GLOBAL ``spec_guides`` table, shared by all users.
+# Reuses the same off-loop generation path as the per-character guide (Principle I —
+# no second generation path) and the same ``_spawn`` dedup/GC machinery, re-keyed to
+# the ``(class, spec)`` pair. Uses a plain (non-tenant) session: the table is global.
+
+
+async def ensure_spec_guide(class_name: str, spec: str, *, force: bool = False) -> None:
+    """Idempotent, best-effort generation of the ``(class, spec)`` guide into the library.
+
+    - ``ready`` & not ``force``, or ``pending`` → no-op (dedup; FR-013, SC-004).
+    - absent | ``failed`` | ``force``          → upsert ``pending``, spawn off-loop
+      generation; success → ``ready`` + markdown, error/empty → ``failed`` (retryable).
+
+    Never raises into the caller.
+    """
+    try:
+        async with db_session.SessionLocal() as session:
+            existing = await repo.get_spec_guide(
+                session, class_name=class_name, spec=spec
+            )
+            if existing is not None and existing.status == "pending":
+                return  # generation already in flight
+            if existing is not None and existing.status == "ready" and not force:
+                return  # dedup — reuse the ready guide
+            try:
+                await repo.upsert_spec_guide(
+                    session, class_name=class_name, spec=spec, status="pending"
+                )
+                await session.commit()
+            except IntegrityError:
+                # A concurrent insert won the unique (class, spec) race; it owns
+                # generation. Read nothing more — no-op.
+                await session.rollback()
+                return
+    except Exception:  # noqa: BLE001 - scheduling is best-effort, never breaks the caller
+        logger.exception("ensure_spec_guide bookkeeping failed for %s %s", class_name, spec)
+        return
+
+    _spawn(_run_spec_guide(class_name, spec), (class_name, spec))
+
+
+async def _run_spec_guide(class_name: str, spec: str) -> None:
+    """Generate the guide text off the event loop and persist ready/failed (global)."""
+    cls_display = str(CLASS_SPECS.get(class_name, {}).get("display", class_name))
+    try:
+        markdown = await _generate_text(_GUIDE_PROMPT.format(cls=cls_display, spec=spec))
+    except Exception:  # noqa: BLE001 - generation is best-effort
+        logger.exception("Spec-guide generation failed for %s %s", class_name, spec)
+        markdown = ""
+    status = "ready" if markdown else "failed"
+    async with db_session.SessionLocal() as session:
+        await repo.upsert_spec_guide(
+            session,
+            class_name=class_name,
+            spec=spec,
+            status=status,
+            guide_markdown=markdown or None,
+        )
+        await session.commit()
+
+
+def build_guide_roster(guides: list) -> list[dict]:
+    """Merge the full ``CLASS_SPECS`` roster with existing ``spec_guides`` rows (FR-008).
+
+    Every class+spec appears exactly once (100% coverage, SC-002); a spec with no row
+    reports ``status="none"``. Ordered by class display name, then spec.
+    """
+    by_key = {(g.class_name, g.spec): g for g in guides}
+    items: list[dict] = []
+    for class_name, info in CLASS_SPECS.items():
+        display = str(info["display"])
+        for spec in info["specs"]:  # type: ignore[attr-defined]
+            g = by_key.get((class_name, spec))
+            items.append(
+                {
+                    "class_name": class_name,
+                    "class_display": display,
+                    "spec": spec,
+                    "status": g.status if g is not None else "none",
+                    "updated_at": g.updated_at if g is not None else None,
+                }
+            )
+    items.sort(key=lambda it: (it["class_display"], it["spec"]))
+    return items
+
+
 # --- Task bodies --------------------------------------------------------------
 
 
 async def run_character_guide(char_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
-    """Resolve the spec, generate the guide, and persist status transitions (tenant-scoped)."""
+    """Resolve the character's spec and feed the shared guide library (feature 008 / US3).
+
+    Resolves ``(class, spec)`` from Warcraft Logs (as before, per character), persists it on
+    the character (tenant-scoped), then triggers the SHARED ``spec_guides`` guide for that
+    pair. Reuses an already-``ready`` guide (zero regeneration; SC-004) or generates one.
+    No per-character guide content is written — the guide is the global spec guide (FR-015,
+    FR-016). An unresolved character simply gets no spec/guide (unchanged behavior).
+    """
     async with tenant_scope(tenant_id) as session:
         char = await repo.get_character(session, char_id, tenant_id=tenant_id)
         if char is None:
@@ -111,42 +212,15 @@ async def run_character_guide(char_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
 
     resolved = await resolve_active_spec(name, server, region)
     if resolved is None:
-        await _finish_character(char_id, tenant_id, status="failed")
-        return
+        return  # unresolved → no spec, no guide (character stays fully usable)
     cls, spec = resolved
-    try:
-        markdown = await _generate_text(_GUIDE_PROMPT.format(cls=cls or "", spec=spec))
-    except Exception:  # noqa: BLE001 - generation is best-effort
-        logger.exception("Guide generation failed for character %s", char_id)
-        await _finish_character(char_id, tenant_id, status="failed", class_name=cls, active_spec=spec)
-        return
-    if not markdown:
-        await _finish_character(char_id, tenant_id, status="failed", class_name=cls, active_spec=spec)
-        return
-    await _finish_character(
-        char_id, tenant_id, status="ready", class_name=cls, active_spec=spec, markdown=markdown
-    )
-
-
-async def _finish_character(
-    char_id: uuid.UUID,
-    tenant_id: uuid.UUID,
-    *,
-    status: str,
-    class_name: str | None = None,
-    active_spec: str | None = None,
-    markdown: str | None = None,
-) -> None:
     async with tenant_scope(tenant_id) as session:
-        await repo.set_character_guide(
-            session,
-            char_id,
-            tenant_id=tenant_id,
-            class_name=class_name,
-            active_spec=active_spec,
-            markdown=markdown,
-            status=status,
+        await repo.set_character_spec(
+            session, char_id, tenant_id=tenant_id, class_name=cls, active_spec=spec
         )
+    # WCL class/spec filter values key directly into the shared library.
+    if cls and spec:
+        await ensure_spec_guide(cls, spec)
 
 
 async def run_guild_summary(guild_id: uuid.UUID, tenant_id: uuid.UUID) -> None:

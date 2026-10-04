@@ -241,6 +241,9 @@ class CharacterOut(BaseModel):
     # US4: the stored user override, plus the computed effective role (override or
     # spec-inferred). The UI treats effective_role set + raid_role null as "inferred".
     raid_role: RaidRole | None = None
+    # Feature 008 / US3 (FR-016): guide status is **derived** from the shared spec-guide
+    # library (keyed by this character's resolved (class_name, active_spec)), not stored on
+    # the character. Defaults to "none" when the spec is unresolved or has no guide row.
     guide_status: str = "none"
     guide_updated_at: datetime | None = None
 
@@ -248,6 +251,22 @@ class CharacterOut(BaseModel):
     @property
     def effective_role(self) -> RaidRole | None:
         return self.raid_role or role_for_spec(self.active_spec)
+
+    @classmethod
+    def from_character(cls, char: object, guide: object | None = None) -> "CharacterOut":
+        """Build from a ``UserCharacter`` with guide status derived from its spec guide.
+
+        ``guide`` is the matching ``SpecGuide`` (or ``None`` ⇒ status "none"). Used by every
+        character response so the UI badge reflects the shared library (F1 / FR-016).
+        """
+        out = cls.model_validate(char)
+        if guide is not None:
+            out.guide_status = guide.status
+            out.guide_updated_at = guide.updated_at
+        else:
+            out.guide_status = "none"
+            out.guide_updated_at = None
+        return out
 
 
 class GuildIn(BaseModel):
@@ -272,6 +291,36 @@ class ProfileOut(BaseModel):
     guild: GuildOut | None = None
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+# --- Spec guides (feature 008 / US2) — the GLOBAL shared library ---------------
+
+# "none" = no row (not downloaded); the others mirror SpecGuide.status.
+GuideStatus = Literal["none", "pending", "ready", "failed"]
+
+
+class GuideListItem(BaseModel):
+    class_name: str  # WCL filter value, e.g. "Paladin"
+    class_display: str  # display name, e.g. "Death Knight"
+    spec: str  # e.g. "Protection"
+    status: GuideStatus
+    updated_at: datetime | None = None
+
+
+class GuideListOut(BaseModel):
+    guides: list[GuideListItem]  # full roster (every class+spec), status-merged
+
+
+class GuideOut(BaseModel):
+    class_name: str
+    spec: str
+    status: GuideStatus
+    guide_markdown: str | None = None  # present only when status == "ready"
+    updated_at: datetime | None = None
+
+
+class GuideGenerateIn(BaseModel):
+    force: bool = False  # true = regenerate/refresh even if already ready
 
 
 # --- Charts & artifacts (feature 005 / US2) ----------------------------------

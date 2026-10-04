@@ -83,3 +83,5 @@ class InProcessRateLimiter:
 # limiter keys on source for the public invite/reset endpoints.
 login_limiter = InProcessRateLimiter()
 token_limiter = InProcessRateLimiter()
+# Per-user cap on manual spec-guide generation (feature 008 / US2, FR-014). Keyed by user_id.
+guide_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_generate_per_minute)

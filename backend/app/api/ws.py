@@ -206,6 +206,22 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
         known_players = await repo.list_recent_known_players(session, tenant_id=tenant_id)
         known_encounters = await repo.list_recent_known_encounters(session, tenant_id=tenant_id)
         known_guilds = await repo.list_recent_known_guilds(session, tenant_id=tenant_id)
+        # US3 (feature 008): each profile character's guide now lives in the GLOBAL
+        # spec_guides library, keyed by its resolved (class, spec). Fetch the ready guides
+        # for the profile's specs and pass a (class, spec) → markdown map to the preamble.
+        # (spec_guides has no RLS, so reading it on the tenant session is fine.)
+        profile_chars = ([self_char] if self_char else []) + list(friends)
+        spec_pairs = [
+            (c.class_name, c.active_spec)
+            for c in profile_chars
+            if c.class_name and c.active_spec
+        ]
+        guide_rows = await repo.get_spec_guides_for(session, spec_pairs)
+        spec_guides = {
+            key: g.guide_markdown
+            for key, g in guide_rows.items()
+            if g.status == "ready" and g.guide_markdown
+        }
         preamble = build_preamble(
             self_char,
             friends,
@@ -214,6 +230,7 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
             known_players=known_players,
             known_encounters=known_encounters,
             known_guilds=known_guilds,
+            spec_guides=spec_guides,
         )
 
         # Scope the WCL result cache to this tenant (FR-019) for the turn's tool calls.

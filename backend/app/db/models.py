@@ -468,12 +468,9 @@ class UserCharacter(Base):
     # (unset). Orthogonal to ``role`` (self/friend). Nullable, no backfill; the effective
     # role is computed as ``raid_role or role_for_spec(active_spec)``. Added by 0006_raid_role.
     raid_role: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    guide_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # "none" | "pending" | "ready" | "failed"
-    guide_status: Mapped[str] = mapped_column(String(10), server_default="none", default="none")
-    guide_updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    # Feature 008 / US3: the per-character guide columns (guide_markdown / guide_status /
+    # guide_updated_at) were dropped by 0008. A character's guide is now the SHARED
+    # ``spec_guides`` row for its ``(class_name, active_spec)``; status is derived at read time.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -502,6 +499,33 @@ class GuildProfile(Base):
     summary_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SpecGuide(Base):
+    """One generated guide per ``(class, spec)`` — a GLOBAL, shared library (feature 008 / US2).
+
+    Deliberately **not** tenant-scoped and **no RLS**: guides are generic class/spec advice,
+    not user data (plan Complexity Tracking). A single shared store removes the per-character
+    duplication of identical content. Absence of a row ⇒ the spec is "not downloaded"; the
+    row ``status`` drives the Class Guides list. ``class_name``/``spec`` are the WCL PascalCase
+    filter values from ``wcl_agent.constants.CLASS_SPECS``.
+    """
+
+    __tablename__ = "spec_guides"
+    __table_args__ = (
+        UniqueConstraint("class_name", "spec", name="uq_spec_guide_identity"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    class_name: Mapped[str] = mapped_column(String(40))
+    spec: Mapped[str] = mapped_column(String(40))
+    guide_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "pending" | "ready" | "failed" (a missing row = not-downloaded / "none")
+    status: Mapped[str] = mapped_column(String(10), server_default="pending", default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

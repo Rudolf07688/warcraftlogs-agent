@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   deleteConversation,
   downloadMessageReport,
@@ -16,7 +17,6 @@ import { Ambient } from "./components/Ambient";
 import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
-import { ProfilePanel } from "./components/ProfilePanel";
 import { Sidebar } from "./components/Sidebar";
 import { THINKING_DEFAULT, toolLabel } from "./toolLabels";
 import type {
@@ -38,8 +38,8 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [connected, setConnected] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const { identity, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
@@ -404,9 +404,8 @@ export default function App() {
         onNew={newChat}
         onDelete={removeConversation}
         onInvestigateRaid={handleInvestigateRaid}
-        onOpenProfile={() => setProfileOpen(true)}
+        onOpenProfile={() => navigate("/profile")}
       />
-      <ProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} />
       <div
         className="resizer"
         role="separator"

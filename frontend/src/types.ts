@@ -156,3 +156,26 @@ export interface CharacterInput {
   region: string;
   raid_role?: RaidRole | null;
 }
+
+// --- Class guides (feature 008 / US2) — the shared, global spec-guide library --
+
+// One roster entry per class+spec, merged with the library's status.
+export interface GuideListItem {
+  class_name: string; // WCL filter value, e.g. "Paladin"
+  class_display: string; // display name, e.g. "Death Knight"
+  spec: string; // e.g. "Protection"
+  status: GuideStatus;
+  updated_at: string | null;
+}
+
+export interface GuideListResponse {
+  guides: GuideListItem[];
+}
+
+export interface Guide {
+  class_name: string;
+  spec: string;
+  status: GuideStatus;
+  guide_markdown: string | null; // present only when status === "ready"
+  updated_at: string | null;
+}

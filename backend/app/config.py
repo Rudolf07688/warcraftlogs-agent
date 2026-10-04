@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # reflect the current retail patch. Runs over a disposable session like the greeting.
     wcl_guide_model: str = "gemini-3.6-flash"
 
+    # Per-user cap on manual spec-guide generation requests (feature 008 / US2, FR-014).
+    # Bounds user-initiated generation so a burst can't cascade into WCL/model rate limits.
+    wcl_guide_generate_per_minute: int = 10
+
     # Findings-report synthesis (feature 007 / US2-US3). A plain (non-web-search) model
     # that summarizes in-scope chat content into an analytic findings document. Runs
     # off the event loop with a bounded timeout; independent of the user's chat model.

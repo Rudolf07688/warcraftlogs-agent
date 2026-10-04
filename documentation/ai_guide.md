@@ -441,3 +441,45 @@ New env var (also in `.env.example`):
 ```
 WCL_REPORT_MODEL=gemini-3.6-flash  # non-web-search model for findings-report synthesis
 ```
+
+## 15. Feature 008 — profile & class-guide pages (dedicated page + shared guide library)
+
+Implemented in `specs/008-profile-class-pages/`. Three additive slices; empty library +
+unresolved specs reproduce feature-007 agent-context behavior byte-for-byte.
+
+- **Dedicated profile page (US1)**: the former in-chat `ProfilePanel` modal is promoted to a
+  guarded route `/profile` (`frontend/src/pages/ProfilePage.tsx`, mirrors `/admin/users`) with
+  two Warcraft-themed tabs. **Characters** (`components/profile/CharactersTab.tsx`) is the old
+  profile behavior verbatim (self/friends/roles/guild, friendly duplicate message). Both tabs
+  stay mounted (toggled with `hidden`) so switching preserves in-progress input. `App.tsx` now
+  navigates to `/profile` instead of opening a modal; `ProfilePanel.tsx` is deleted.
+- **Shared spec-guide library (US2)**: a new **GLOBAL** table `spec_guides` (`db/models.py`,
+  migration `0007_spec_guides`) keyed by `(class_name, spec)` — **no `tenant_id`, no RLS**
+  (deliberate deviation, plan Complexity Tracking: generic content, no user data; runtime role
+  granted DML like `0004`). `services/guide.ensure_spec_guide(class, spec, *, force=False)` is
+  the single lifecycle: `ready`&!force or `pending` → no-op (dedup); absent|`failed`|`force` →
+  upsert `pending` + spawn the existing off-loop `_generate_text`/`_GUIDE_PROMPT` path (reuses
+  `_spawn`, re-keyed to `(class, spec)`; `IntegrityError`-safe). This makes `failed` always
+  **retryable** (fixes the stuck-guide defect). New `api/guides.py` (`GET /api/guides` roster+
+  status merge via `build_guide_roster`, `GET /api/guides/{class}/{spec}`, `POST …/generate`)
+  uses the **non-tenant** `db/session.get_session`, `require_session`/`require_csrf`, validates
+  against `CLASS_SPECS` (404), and rate-limits generate per user via `auth/rate_limit.guide_limiter`
+  (`WCL_GUIDE_GENERATE_PER_MINUTE`, default 10 → `429 rate_limited` + `Retry-After`). Frontend
+  `components/profile/ClassGuidesTab.tsx`: full roster grouped by class, status chips, Generate/
+  Retry/Refresh, View (renders markdown via existing `StreamMarkdown`), polls while any pending.
+- **Reconcile + migrate-drop (US3)**: `run_character_guide` now resolves `(class, spec)`,
+  persists it on the character (`repo.set_character_spec`), then calls `ensure_spec_guide` — no
+  per-character markdown (auto-fetch on add reuses a ready guide → zero regeneration). Character
+  guide columns (`guide_markdown/guide_status/guide_updated_at`) are **dropped** by migration
+  `0008_drop_guide_columns` (revision id kept short for `alembic_version varchar(32)`).
+  `CharacterOut.guide_status`/`guide_updated_at` are now **derived** from the matching
+  `spec_guides` row (`CharacterOut.from_character`; `api/profile.py` batch-loads via
+  `repo.get_spec_guides_for`). `build_preamble` takes a `spec_guides: {(class,spec)->markdown}`
+  map (empty ⇒ byte-identical); `ws._handle_turn` fetches the ready guides for the profile's
+  specs and passes them in.
+
+New env var (also in `.env.example`):
+
+```
+WCL_GUIDE_GENERATE_PER_MINUTE=10   # per-user cap on manual spec-guide generation (feature 008)
+```

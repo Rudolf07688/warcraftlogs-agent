@@ -19,7 +19,9 @@ async def test_upsert_self_keeps_single_row(session, tenant_id):
     self_char, friends, guild = await repo.get_profile(session, tenant_id=tenant_id)
     assert self_char is not None
     assert self_char.name == "Jaina"  # replaced, not duplicated
-    assert self_char.guide_status == "pending"
+    # Feature 008: the resolved spec is reset on upsert; the background task re-resolves it
+    # and points the character at the shared spec guide (no per-character guide columns).
+    assert self_char.active_spec is None
     assert friends == []
     assert guild is None
 

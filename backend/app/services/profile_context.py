@@ -116,11 +116,16 @@ def build_preamble(
     known_players: list[KnownPlayer] = (),
     known_encounters: list[KnownEncounter] = (),
     known_guilds: list[str] = (),
+    spec_guides: dict[tuple[str, str], str] = {},
 ) -> str:
     """Compose the capped standing-context block, or "" when there's nothing to inject.
 
     The profile portion is byte-identical to pre-feature output; the captured-metadata
     block is appended only when non-empty (FR-005, FR-011).
+
+    ``spec_guides`` maps a resolved ``(class_name, active_spec)`` to that spec's guide markdown
+    (from the shared library, feature 008). A character's guide is looked up by its resolved
+    pair; an empty map or unresolved specs ⇒ byte-identical to the pre-feature output (FR-016).
     """
     profile_chars = ([self_character] if self_character else []) + list(friends)
 
@@ -135,20 +140,24 @@ def build_preamble(
         if guild is not None:
             profile_lines.append(f"- Main guild: {guild.name}-{guild.server} ({guild.region})")
 
-        # Append any ready spec guides, bounded in total.
+        # Append each character's shared spec guide (looked up by its resolved
+        # (class, spec) pair), bounded in total. Empty map / unresolved ⇒ nothing added.
         guided = [
-            c
+            (c, spec_guides[(c.class_name, c.active_spec)])
             for c in profile_chars
-            if c is not None and c.guide_status == "ready" and c.guide_markdown
+            if c is not None
+            and c.class_name
+            and c.active_spec
+            and spec_guides.get((c.class_name, c.active_spec))
         ]
         if guided:
             guide_lines: list[str] = ["- Spec guides:"]
             used = 0
-            for c in guided:
+            for c, markdown in guided:
                 if used >= _TOTAL_GUIDE_CHARS:
                     break
                 remaining = _TOTAL_GUIDE_CHARS - used
-                body = _trim(c.guide_markdown or "", min(_PER_GUIDE_CHARS, remaining))
+                body = _trim(markdown or "", min(_PER_GUIDE_CHARS, remaining))
                 if not body:
                     continue
                 spec = c.active_spec or "spec"

@@ -28,15 +28,36 @@ from ..tenancy.context import RequestIdentity, commit_and_rescope
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
+async def _char_out(db: AsyncSession, char) -> CharacterOut:
+    """Build a ``CharacterOut`` with guide status derived from the shared spec guide (FR-016).
+
+    ``spec_guides`` is global (no RLS), so reading it on the tenant session is fine.
+    """
+    guide = None
+    if char.class_name and char.active_spec:
+        guide = await repo.get_spec_guide(
+            db, class_name=char.class_name, spec=char.active_spec
+        )
+    return CharacterOut.from_character(char, guide)
+
+
 @router.get("", response_model=ProfileOut)
 async def get_profile(
     identity: RequestIdentity = Depends(require_session),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> ProfileOut:
     self_char, friends, guild = await repo.get_profile(db, tenant_id=identity.tenant_id)
+    chars = ([self_char] if self_char else []) + list(friends)
+    pairs = [(c.class_name, c.active_spec) for c in chars if c.class_name and c.active_spec]
+    guides = await repo.get_spec_guides_for(db, pairs)
+
+    def out(c) -> CharacterOut:
+        guide = guides.get((c.class_name, c.active_spec)) if c.class_name and c.active_spec else None
+        return CharacterOut.from_character(c, guide)
+
     return ProfileOut(
-        self_character=CharacterOut.model_validate(self_char) if self_char else None,
-        friends=[CharacterOut.model_validate(f) for f in friends],
+        self_character=out(self_char) if self_char else None,
+        friends=[out(f) for f in friends],
         guild=GuildOut.model_validate(guild) if guild else None,
     )
 
@@ -57,7 +78,7 @@ async def put_self(
     )
     await commit_and_rescope(db, identity)
     schedule_character_guide(char.id, identity.tenant_id)
-    return CharacterOut.model_validate(char)
+    return await _char_out(db, char)
 
 
 @router.post("/friends", response_model=CharacterOut, status_code=201)
@@ -80,7 +101,7 @@ async def add_friend(
         await db.rollback()
         raise HTTPException(status_code=409, detail="duplicate_friend")
     schedule_character_guide(char.id, identity.tenant_id)
-    return CharacterOut.model_validate(char)
+    return await _char_out(db, char)
 
 
 @router.patch("/friends/{char_id}", response_model=CharacterOut)
@@ -97,7 +118,7 @@ async def patch_friend(
     if char is None:
         raise HTTPException(status_code=404, detail="not_found")
     await commit_and_rescope(db, identity)
-    return CharacterOut.model_validate(char)
+    return await _char_out(db, char)
 
 
 @router.delete("/friends/{char_id}", status_code=204)

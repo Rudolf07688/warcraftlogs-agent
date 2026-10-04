@@ -33,7 +33,7 @@ Web app: `backend/app/...`, `backend/migrations/...`, `backend/tests/...`, `wcl_
 
 **Purpose**: Pre-edit safety per the constitution (Principle VI).
 
-- [ ] T001 Run GitNexus impact analysis (`impact`/`context`, repo `warcraftlogs-agent`) on the shared hot-path symbols this feature edits — `build_preamble` (`backend/app/services/profile_context.py`), `run_character_guide`/`schedule_character_guide` (`backend/app/services/guide.py`), `UserCharacter` + its guide columns (`backend/app/db/models.py`), the `backend/app/api/profile.py` routes, `CharacterOut` (`backend/app/schemas.py`), and `_handle_turn` (`backend/app/api/ws.py`) — and record the blast radius / risk before any edit. Warn on HIGH/CRITICAL.
+- [X] T001 Run GitNexus impact analysis (`impact`/`context`, repo `warcraftlogs-agent`) on the shared hot-path symbols this feature edits — `build_preamble` (`backend/app/services/profile_context.py`), `run_character_guide`/`schedule_character_guide` (`backend/app/services/guide.py`), `UserCharacter` + its guide columns (`backend/app/db/models.py`), the `backend/app/api/profile.py` routes, `CharacterOut` (`backend/app/schemas.py`), and `_handle_turn` (`backend/app/api/ws.py`) — and record the blast radius / risk before any edit. Warn on HIGH/CRITICAL.
 
 ---
 
@@ -41,10 +41,10 @@ Web app: `backend/app/...`, `backend/migrations/...`, `backend/tests/...`, `wcl_
 
 **Purpose**: The shared, global spec-guide store + data access. **⚠ No US2/US3 guide work can begin until this is complete.** (US1 is independent and needs none of this.)
 
-- [ ] T002 Add `SpecGuide` **global** ORM model (table `spec_guides`: `class_name`, `spec`, `guide_markdown`, `status`, timestamps; `UniqueConstraint(class_name, spec)` → `uq_spec_guide_identity`; **no** `tenant_id`/RLS) per data-model.md §1 in `backend/app/db/models.py` — ⚠ shared file with US3 T020
-- [ ] T003 Create Alembic migration `backend/migrations/versions/0007_spec_guides.py` (down_revision `0006_raid_role`): create `spec_guides` (global), grant the runtime role `SELECT, INSERT, UPDATE, DELETE` (mirror `0004`), **backfill** one row per distinct `(class_name, active_spec)` from `user_characters` with a `ready` guide (most-recent markdown, deduped), and **keep** the `user_characters` guide columns; `import sqlalchemy as sa`. Verify `upgrade`/`downgrade` round-trips. (depends on T002)
-- [ ] T004 [P] Add non-tenant repository helpers `get_spec_guide`, `upsert_spec_guide`, `list_spec_guides`, `get_spec_guides_for(pairs)` (per contracts/context-and-generation.md) in `backend/app/db/repository.py` — ⚠ shared file with US3 T020
-- [ ] T005 [P] Add `wcl_guide_generate_per_minute: int = 10` to `backend/app/config.py` and a module-level `guide_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_generate_per_minute)` in `backend/app/auth/rate_limit.py`
+- [X] T002 Add `SpecGuide` **global** ORM model (table `spec_guides`: `class_name`, `spec`, `guide_markdown`, `status`, timestamps; `UniqueConstraint(class_name, spec)` → `uq_spec_guide_identity`; **no** `tenant_id`/RLS) per data-model.md §1 in `backend/app/db/models.py` — ⚠ shared file with US3 T020
+- [X] T003 Create Alembic migration `backend/migrations/versions/0007_spec_guides.py` (down_revision `0006_raid_role`): create `spec_guides` (global), grant the runtime role `SELECT, INSERT, UPDATE, DELETE` (mirror `0004`), **backfill** one row per distinct `(class_name, active_spec)` from `user_characters` with a `ready` guide (most-recent markdown, deduped), and **keep** the `user_characters` guide columns; `import sqlalchemy as sa`. Verify `upgrade`/`downgrade` round-trips. (depends on T002)
+- [X] T004 [P] Add non-tenant repository helpers `get_spec_guide`, `upsert_spec_guide`, `list_spec_guides`, `get_spec_guides_for(pairs)` (per contracts/context-and-generation.md) in `backend/app/db/repository.py` — ⚠ shared file with US3 T020
+- [X] T005 [P] Add `wcl_guide_generate_per_minute: int = 10` to `backend/app/config.py` and a module-level `guide_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_generate_per_minute)` in `backend/app/auth/rate_limit.py`
 
 **Checkpoint**: `uv run alembic -c backend/alembic.ini upgrade head` succeeds; `spec_guides` exists (global) and existing ready guides are backfilled; old columns still present.
 
@@ -56,11 +56,11 @@ Web app: `backend/app/...`, `backend/migrations/...`, `backend/tests/...`, `wcl_
 
 **Independent Test**: Navigate to `/profile`; confirm it's a dedicated themed page with Characters + Class Guides tabs; all self/friends/roles/guild actions work with a friendly duplicate message (quickstart US1; SC-001, SC-007). Independent of the guide backend.
 
-- [ ] T006 [US1] Add a guarded top-level `/profile` route in `frontend/src/main.tsx` and create `frontend/src/pages/ProfilePage.tsx` — themed page shell with a tab bar (Characters default, Class Guides) preserving each tab's state on switch — ⚠ shared file with US2 T015
-- [ ] T007 [US1] Create `frontend/src/components/profile/CharactersTab.tsx` by extracting the self/friends/roles/guild management from `ProfilePanel` (reuse `getProfile`/`putSelf`/`addFriend`/`updateFriend`/`deleteFriend`/`putGuild`/`deleteGuild`; per-character raid-role control; `409 duplicate_friend` → friendly "already added"); render it in the Characters tab
-- [ ] T008 [US1] In `frontend/src/App.tsx`, replace the profile-modal open with navigation to `/profile` (`useNavigate`) and remove the `ProfilePanel` usage; delete `frontend/src/components/ProfilePanel.tsx`
-- [ ] T009 [US1] Add Warcraft-themed tokens + page/tab/button/input/select/card styles in `frontend/src/styles.css` (and `index.css` as needed), applied across the page and both tabs (FR-005)
-- [ ] T010 [US1] Verify US1: `cd frontend && npx tsc --noEmit` passes and the page is exercised per quickstart US1 (manual)
+- [X] T006 [US1] Add a guarded top-level `/profile` route in `frontend/src/main.tsx` and create `frontend/src/pages/ProfilePage.tsx` — themed page shell with a tab bar (Characters default, Class Guides) preserving each tab's state on switch — ⚠ shared file with US2 T015
+- [X] T007 [US1] Create `frontend/src/components/profile/CharactersTab.tsx` by extracting the self/friends/roles/guild management from `ProfilePanel` (reuse `getProfile`/`putSelf`/`addFriend`/`updateFriend`/`deleteFriend`/`putGuild`/`deleteGuild`; per-character raid-role control; `409 duplicate_friend` → friendly "already added"); render it in the Characters tab
+- [X] T008 [US1] In `frontend/src/App.tsx`, replace the profile-modal open with navigation to `/profile` (`useNavigate`) and remove the `ProfilePanel` usage; delete `frontend/src/components/ProfilePanel.tsx`
+- [X] T009 [US1] Add Warcraft-themed tokens + page/tab/button/input/select/card styles in `frontend/src/styles.css` (and `index.css` as needed), applied across the page and both tabs (FR-005)
+- [X] T010 [US1] Verify US1: `cd frontend && npx tsc --noEmit` passes and the page is exercised per quickstart US1 (manual)
 
 **Checkpoint**: Profile is a dedicated themed page with working Characters tab; Class Guides tab may be a placeholder until US2.
 
@@ -72,12 +72,12 @@ Web app: `backend/app/...`, `backend/migrations/...`, `backend/tests/...`, `wcl_
 
 **Independent Test**: Class Guides tab lists the full roster with per-spec status; generate a guide for a spec with no character → downloaded + viewable; failed → retryable (never stuck); a second account sees the shared guide (quickstart US2; SC-002/003/005/006).
 
-- [ ] T011 [US2] Add `ensure_spec_guide(class_name, spec, *, force=False)` (dedup on ready/pending, retry on failed/force, off-loop generation via existing `_generate_text`/`_GUIDE_PROMPT`, in-flight set re-keyed to `(class, spec)`, `IntegrityError`-safe) and a roster+status merge helper (full `CLASS_SPECS` left-joined to `spec_guides`) in `backend/app/services/guide.py` (or a new `backend/app/services/spec_guides.py`) per contracts/context-and-generation.md (depends on T004) — ⚠ shared file with US3 T017
-- [ ] T012 [P] [US2] Add guide schemas `GuideStatus`, `GuideListItem`, `GuideListOut`, `GuideOut`, `GuideGenerateIn` to `backend/app/schemas.py` (per contracts/guides-api.md) — ⚠ shared file with US3 T018
-- [ ] T013 [US2] Create `backend/app/api/guides.py` (`GET /api/guides`, `GET /api/guides/{class_name}/{spec}`, `POST /api/guides/{class_name}/{spec}/generate`) using `require_session`/`require_csrf` + the non-tenant `get_session`; validate `(class,spec)` against `CLASS_SPECS` (404 otherwise); gate generate on `guide_limiter` (429 `rate_limited` + `Retry-After`); register the router in `backend/app/main.py` (depends on T011, T012, T005)
-- [ ] T014 [P] [US2] Frontend: add `GuideStatus`/`GuideListItem`/`GuideListOut`/`Guide` types in `frontend/src/types.ts` and `listGuides`/`getGuide`/`generateGuide` in `frontend/src/api/restClient.ts`
-- [ ] T015 [US2] Create `frontend/src/components/profile/ClassGuidesTab.tsx` (roster grouped by class; per-spec status chip ready/pending/failed/none; Generate/Retry/Refresh → `generateGuide`; View → `getGuide` rendered via existing `StreamMarkdown`; poll `listGuides` while any pending; `429` → "slow down" message) and wire it into the Class Guides tab of `ProfilePage.tsx` (depends on T006, T014) — ⚠ shared file with US1 T006
-- [ ] T016 [P] [US2] Tests in `backend/tests/test_spec_guides.py`: `ensure_spec_guide` dedup (ready/pending no-op), retry/force regeneration, `IntegrityError` convergence; roster+status merge covers 100% of specs; rate-limit gating returns 429; API list/detail/generate happy + 404 for unknown spec (genai generation mocked)
+- [X] T011 [US2] Add `ensure_spec_guide(class_name, spec, *, force=False)` (dedup on ready/pending, retry on failed/force, off-loop generation via existing `_generate_text`/`_GUIDE_PROMPT`, in-flight set re-keyed to `(class, spec)`, `IntegrityError`-safe) and a roster+status merge helper (full `CLASS_SPECS` left-joined to `spec_guides`) in `backend/app/services/guide.py` (or a new `backend/app/services/spec_guides.py`) per contracts/context-and-generation.md (depends on T004) — ⚠ shared file with US3 T017
+- [X] T012 [P] [US2] Add guide schemas `GuideStatus`, `GuideListItem`, `GuideListOut`, `GuideOut`, `GuideGenerateIn` to `backend/app/schemas.py` (per contracts/guides-api.md) — ⚠ shared file with US3 T018
+- [X] T013 [US2] Create `backend/app/api/guides.py` (`GET /api/guides`, `GET /api/guides/{class_name}/{spec}`, `POST /api/guides/{class_name}/{spec}/generate`) using `require_session`/`require_csrf` + the non-tenant `get_session`; validate `(class,spec)` against `CLASS_SPECS` (404 otherwise); gate generate on `guide_limiter` (429 `rate_limited` + `Retry-After`); register the router in `backend/app/main.py` (depends on T011, T012, T005)
+- [X] T014 [P] [US2] Frontend: add `GuideStatus`/`GuideListItem`/`GuideListOut`/`Guide` types in `frontend/src/types.ts` and `listGuides`/`getGuide`/`generateGuide` in `frontend/src/api/restClient.ts`
+- [X] T015 [US2] Create `frontend/src/components/profile/ClassGuidesTab.tsx` (roster grouped by class; per-spec status chip ready/pending/failed/none; Generate/Retry/Refresh → `generateGuide`; View → `getGuide` rendered via existing `StreamMarkdown`; poll `listGuides` while any pending; `429` → "slow down" message) and wire it into the Class Guides tab of `ProfilePage.tsx` (depends on T006, T014) — ⚠ shared file with US1 T006
+- [X] T016 [P] [US2] Tests in `backend/tests/test_spec_guides.py`: `ensure_spec_guide` dedup (ready/pending no-op), retry/force regeneration, `IntegrityError` convergence; roster+status merge covers 100% of specs; rate-limit gating returns 429; API list/detail/generate happy + 404 for unknown spec (genai generation mocked)
 
 **Checkpoint**: Class Guides tab fully functional; failures retryable; library shared and deduped.
 
@@ -89,12 +89,12 @@ Web app: `backend/app/...`, `backend/migrations/...`, `backend/tests/...`, `wcl_
 
 **Independent Test**: Add a friend whose spec guide is ready → attaches with zero new generation; preamble/agent context still includes the guide; empty library + unresolved spec ⇒ preamble byte-identical; removing a character keeps the shared guide (quickstart US3; SC-004).
 
-- [ ] T017 [US3] Refactor `run_character_guide` in `backend/app/services/guide.py` to resolve `(class, spec)`, persist `class_name`/`active_spec` on the character, then call `ensure_spec_guide(class, spec)` — no per-character markdown writes (depends on T011; ⚠ same file as T011 — after it)
-- [ ] T018 [US3] Make `CharacterOut.guide_status`/`guide_updated_at` **derived** from the character's spec guide, and batch-load spec guides in `GET /api/profile` to populate them, in `backend/app/schemas.py` + `backend/app/api/profile.py` (⚠ schemas.py shared with US2 T012 — after it)
-- [ ] T019 [US3] Extend `build_preamble` in `backend/app/services/profile_context.py` to take a `spec_guides: dict[(class,spec)->markdown]` map and inject guide-by-spec (reuse existing `_PER_GUIDE_CHARS`/`_TOTAL_GUIDE_CHARS` caps; empty/unresolved ⇒ byte-identical), and in `backend/app/api/ws.py` `_handle_turn` fetch `get_spec_guides_for(...)` for the profile characters' specs and pass it in
-- [ ] T020 [US3] Remove the retired `guide_markdown`/`guide_status`/`guide_updated_at` columns from `UserCharacter` in `backend/app/db/models.py` and clean up `set_character_guide`'s markdown/status writes in `backend/app/db/repository.py` (⚠ shared files with T002/T004 — after them)
-- [ ] T021 [US3] Create Alembic migration `backend/migrations/versions/0008_drop_character_guide_columns.py` (down_revision `0007_spec_guides`): drop the three columns; downgrade re-adds them nullable; `import sqlalchemy as sa`. Verify `upgrade`/`downgrade` round-trips. (depends on T017–T020 landed)
-- [ ] T022 [P] [US3] Tests in `backend/tests/test_profile_context.py` + `backend/tests/test_guide_reconcile.py`: `build_preamble` guide-by-spec reuse + empty-state byte-equality; derived `CharacterOut` guide status; auto-fetch reuse performs zero regeneration when the spec guide is ready; removing a character leaves the shared `spec_guides` row intact
+- [X] T017 [US3] Refactor `run_character_guide` in `backend/app/services/guide.py` to resolve `(class, spec)`, persist `class_name`/`active_spec` on the character, then call `ensure_spec_guide(class, spec)` — no per-character markdown writes (depends on T011; ⚠ same file as T011 — after it)
+- [X] T018 [US3] Make `CharacterOut.guide_status`/`guide_updated_at` **derived** from the character's spec guide, and batch-load spec guides in `GET /api/profile` to populate them, in `backend/app/schemas.py` + `backend/app/api/profile.py` (⚠ schemas.py shared with US2 T012 — after it)
+- [X] T019 [US3] Extend `build_preamble` in `backend/app/services/profile_context.py` to take a `spec_guides: dict[(class,spec)->markdown]` map and inject guide-by-spec (reuse existing `_PER_GUIDE_CHARS`/`_TOTAL_GUIDE_CHARS` caps; empty/unresolved ⇒ byte-identical), and in `backend/app/api/ws.py` `_handle_turn` fetch `get_spec_guides_for(...)` for the profile characters' specs and pass it in
+- [X] T020 [US3] Remove the retired `guide_markdown`/`guide_status`/`guide_updated_at` columns from `UserCharacter` in `backend/app/db/models.py` and clean up `set_character_guide`'s markdown/status writes in `backend/app/db/repository.py` (⚠ shared files with T002/T004 — after them)
+- [X] T021 [US3] Create Alembic migration `backend/migrations/versions/0008_drop_character_guide_columns.py` (down_revision `0007_spec_guides`): drop the three columns; downgrade re-adds them nullable; `import sqlalchemy as sa`. Verify `upgrade`/`downgrade` round-trips. (depends on T017–T020 landed)
+- [X] T022 [P] [US3] Tests in `backend/tests/test_profile_context.py` + `backend/tests/test_guide_reconcile.py`: `build_preamble` guide-by-spec reuse + empty-state byte-equality; derived `CharacterOut` guide status; auto-fetch reuse performs zero regeneration when the spec guide is ready; removing a character leaves the shared `spec_guides` row intact
 
 **Checkpoint**: Single source of truth for guides; all four behaviors above hold; schema cleaned.
 
@@ -102,10 +102,10 @@ Web app: `backend/app/...`, `backend/migrations/...`, `backend/tests/...`, `wcl_
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T023 [P] Update `documentation/ai_guide.md` (and `README.md` if it documents profile/guide behavior) for the dedicated profile page, the shared spec-guide library + `/api/guides`, and migrations `0007`/`0008`
-- [ ] T024 Run GitNexus `detect_changes --scope all` (and `--scope compare --base-ref main`) to confirm only expected symbols/flows changed — before committing
+- [X] T023 [P] Update `documentation/ai_guide.md` (and `README.md` if it documents profile/guide behavior) for the dedicated profile page, the shared spec-guide library + `/api/guides`, and migrations `0007`/`0008`
+- [X] T024 Run GitNexus `detect_changes --scope all` (and `--scope compare --base-ref main`) to confirm only expected symbols/flows changed — before committing
 - [ ] T025 Run `quickstart.md` manual validation for all three stories (incl. migration/no-regression: backfilled guides appear; empty library ⇒ preamble unchanged)
-- [ ] T026 [P] Run the backend suite `uv run pytest backend/tests -k "guide or spec_guide or preamble or profile or rate"` and `cd frontend && npx tsc --noEmit`
+- [X] T026 [P] Run the backend suite `uv run pytest backend/tests -k "guide or spec_guide or preamble or profile or rate"` and `cd frontend && npx tsc --noEmit`
 
 ---
 

@@ -26,6 +26,7 @@ from .models import (
     KnownEncounter,
     KnownPlayer,
     Message,
+    SpecGuide,
     TrackedRaid,
     UserCharacter,
 )
@@ -561,12 +562,11 @@ async def upsert_self(
         existing.name = name
         existing.server = server
         existing.region = region
+        # Reset the resolved spec; the background task re-resolves it and (re)points the
+        # character at the shared spec guide (feature 008 / US3).
         existing.class_name = None
         existing.active_spec = None
         existing.raid_role = raid_role
-        existing.guide_markdown = None
-        existing.guide_status = "pending"
-        existing.guide_updated_at = None
         await session.flush()
         return existing
     char = UserCharacter(
@@ -576,7 +576,6 @@ async def upsert_self(
         server=server,
         region=region,
         raid_role=raid_role,
-        guide_status="pending",
     )
     session.add(char)
     await session.flush()
@@ -600,7 +599,6 @@ async def add_friend(
         server=server,
         region=region,
         raid_role=raid_role,
-        guide_status="pending",
     )
     session.add(char)
     await session.flush()
@@ -678,31 +676,100 @@ async def get_character(
     return result.scalar_one_or_none()
 
 
-async def set_character_guide(
+async def set_character_spec(
     session: AsyncSession,
     char_id: uuid.UUID,
     *,
     tenant_id: uuid.UUID,
-    class_name: str | None = None,
-    active_spec: str | None = None,
-    markdown: str | None = None,
-    status: str,
+    class_name: str | None,
+    active_spec: str | None,
 ) -> UserCharacter | None:
-    """Persist guide-task output (US6). Stamps ``guide_updated_at`` when ready."""
+    """Persist a character's resolved ``(class_name, active_spec)`` (feature 008 / US3).
+
+    The guide itself lives in the shared ``spec_guides`` library keyed by this pair; the
+    character no longer stores guide content/status (those columns were dropped by 0008).
+    """
     char = await get_character(session, char_id, tenant_id=tenant_id)
     if char is None:
         return None
-    if class_name is not None:
-        char.class_name = class_name
-    if active_spec is not None:
-        char.active_spec = active_spec
-    if markdown is not None:
-        char.guide_markdown = markdown
-    char.guide_status = status
-    if status == "ready":
-        char.guide_updated_at = datetime.now(timezone.utc)
+    char.class_name = class_name
+    char.active_spec = active_spec
     await session.flush()
     return char
+
+
+# --- Spec guides (feature 008 / US2) — GLOBAL, non-tenant shared library -------
+# These helpers take a plain (non-tenant) session: ``spec_guides`` has no ``tenant_id``
+# and no RLS (plan Complexity Tracking). Keyed by the WCL ``(class_name, spec)`` pair.
+
+
+async def get_spec_guide(
+    session: AsyncSession, *, class_name: str, spec: str
+) -> SpecGuide | None:
+    result = await session.execute(
+        select(SpecGuide).where(
+            SpecGuide.class_name == class_name, SpecGuide.spec == spec
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_spec_guide(
+    session: AsyncSession,
+    *,
+    class_name: str,
+    spec: str,
+    status: str,
+    guide_markdown: str | None = None,
+) -> SpecGuide:
+    """Create or update the ``(class, spec)`` guide. Stamps markdown only when provided.
+
+    Raises ``IntegrityError`` if a concurrent insert wins the unique ``(class, spec)``
+    constraint — the caller rolls back and re-reads the winner (contracts: dedup).
+    """
+    existing = await get_spec_guide(session, class_name=class_name, spec=spec)
+    if existing is not None:
+        existing.status = status
+        if guide_markdown is not None:
+            existing.guide_markdown = guide_markdown
+        await session.flush()
+        return existing
+    guide = SpecGuide(
+        class_name=class_name,
+        spec=spec,
+        status=status,
+        guide_markdown=guide_markdown,
+    )
+    session.add(guide)
+    await session.flush()
+    return guide
+
+
+async def list_spec_guides(session: AsyncSession) -> list[SpecGuide]:
+    """All guide rows (global library)."""
+    result = await session.execute(select(SpecGuide))
+    return list(result.scalars().all())
+
+
+async def get_spec_guides_for(
+    session: AsyncSession, pairs: list[tuple[str, str]]
+) -> dict[tuple[str, str], SpecGuide]:
+    """Batch-load guides for the given ``(class_name, spec)`` pairs → keyed map."""
+    wanted = {(c, s) for c, s in pairs if c and s}
+    if not wanted:
+        return {}
+    classes = {c for c, _ in wanted}
+    specs = {s for _, s in wanted}
+    result = await session.execute(
+        select(SpecGuide).where(
+            SpecGuide.class_name.in_(classes), SpecGuide.spec.in_(specs)
+        )
+    )
+    return {
+        (g.class_name, g.spec): g
+        for g in result.scalars().all()
+        if (g.class_name, g.spec) in wanted
+    }
 
 
 async def set_guild_summary(

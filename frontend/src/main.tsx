@@ -8,6 +8,7 @@ import AcceptInvitePage from "./pages/AcceptInvitePage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import ForbiddenPage from "./pages/ForbiddenPage";
 import LoginPage from "./pages/LoginPage";
+import ProfilePage from "./pages/ProfilePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import "katex/dist/katex.min.css"; // US3: math typesetting styles
 import "./styles.css";
@@ -25,6 +26,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <App />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: "/profile",
+    element: (
+      <RequireAuth>
+        <ProfilePage />
       </RequireAuth>
     ),
   },
