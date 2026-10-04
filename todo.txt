@@ -52,7 +52,13 @@
   - More than one friend
   - Roles for those characters (DPS/Tank/Healer)
 
+# ----- Phase 6 ----- #
+- Welcome page
+  - Background fetch of your character's most recent raids.
+    - Must be stored since it won't change
+  - Clicking on one opens up a new chat.
+
+
 # ----- Phase X ----- #
-- Multi-tenency
-  - Static "default" tenent mvp
 - Deployment / Hosting Plan
+- Implement redis - confirm browser cache usage. 

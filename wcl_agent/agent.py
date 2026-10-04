@@ -37,6 +37,7 @@ from .report_tools import (
     get_report_table,
     run_wcl_graphql,
 )
+from .genai_compat import ensure_genai_serializers_built
 from .tools import (
     check_rate_limit,
     compare_specs,
@@ -253,6 +254,10 @@ def build_agent(model: str = DEFAULT_MODEL) -> Agent:
     Anthropic-on-Vertex (and any non-grounding) models run with the WCL tools only
     and degrade gracefully without web access (US3/FR-012).
     """
+    # Eagerly build google-genai model serializers (they default to defer_build=True) so ADK
+    # can serialize genai types nested in EventActions.state_delta during parallel tool calls
+    # (otherwise the still-deferred "MockValSer" serializer aborts the turn). Idempotent.
+    ensure_genai_serializers_built()
     tools = list(TOOLS)
     if not _is_anthropic(model):
         tools.append(_build_web_search_tool(model))

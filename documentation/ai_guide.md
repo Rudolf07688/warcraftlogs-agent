@@ -316,7 +316,8 @@ for future agents:
   registered with ADK's `LLMRegistry`.
 - **PDF export**: `captured_graphs` table + `services/graphs.py` capture graph JSON
   during chat; `services/pdf_report.py` renders analysis + matplotlib charts;
-  `api/reports.py` streams it.
+  `api/reports.py` streams it. (Feature 007 inserts a findings-synthesis step before
+  the render — the PDF body is now an analytic findings document, not the transcript.)
 - **Testing note**: ORM uses portable column types (`Uuid`, `JSON`/`JSONB`
   variant) so `backend/tests/` run on in-memory SQLite (`conftest.py`); live
   Postgres/Vertex flows are covered by the quickstart.
@@ -392,10 +393,51 @@ Implemented in `specs/006-multi-tenancy/`. Summary for future agents:
 - **WS** (`api/ws.py`): the handshake authenticates (cookie + Origin) before `accept()`,
   re-validates each turn (mid-session disable takes effect), scopes captures + the WCL cache
   key (`wcl_agent.cache.set_scope_prefix`) + ADK `user_id = str(tenant_id)`.
-- **Founder bootstrap**: `backend/cli/bootstrap_admin.py` (no HTTP path). Run it between
-  `alembic upgrade 0002_auth_tenancy` and `alembic upgrade head`.
+- **Founder bootstrap**: `backend/cli/bootstrap_admin.py` (no HTTP path) creates the first
+  platform admin; it must run between `alembic upgrade 0002_auth_tenancy` and `upgrade head`
+  (the `0003` backfill needs the founder). **`backend/cli/init_db.py` orchestrates the whole
+  thing** — `upgrade 0002 → bootstrap (iff no admin) → upgrade head` — idempotently, reading
+  `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD`; this is the one command to run for a
+  fresh/reset DB or any later upgrade.
 - **Link delivery seam** (`services/link_delivery.py`): v1 returns invite/reset links to the
   admin to copy & share (no email); the raw token rides in the URL **fragment**, shown once.
 
 New env vars (also in `.env.example`): `APP_DB_USER`/`APP_DB_PASSWORD` (runtime role),
 `DATABASE_OWNER_URL` (Alembic owner), `SITE_URL`, `SESSION_COOKIE_SECURE`, `SECRET_KEY`.
+
+## 14. Feature 007 — captured-metadata reuse, findings reports & role-aware profiles
+
+Implemented in `specs/007-metadata-reports-profiles/`. All three slices are additive —
+empty metadata store + unset roles reproduce feature-006 behavior byte-for-byte.
+
+- **Captured-metadata reuse (US1)**: new per-tenant tables `known_players` /
+  `known_encounters` (`db/models.py`, migration `0005_known_entities` — RLS mirrors
+  `0004_rls`). `services/known_entities.py` extracts + best-effort upserts them off the
+  existing tool-success hub (`ws._handle_tool_end`) — players from
+  `get_character_{zone,encounter}_rankings` (identity from args; `get_report_master_data`
+  actors are **not** captured, no server/region), encounters from `find_encounter` matches
+  with a numeric id. Captures use a savepoint so a conflict never poisons sibling captures.
+  `profile_context.build_preamble` gained `known_raids/known_players/known_encounters/
+  known_guilds` kwargs and appends a bounded `RECENTLY SEEN (this account)` block (known
+  guilds are **derived** from `tracked_raids.guild` — no table). `ws._handle_turn` fetches
+  the recency-capped lists and passes them in.
+- **Findings reports (US2/US3)**: `services/report_synthesis.synthesize_findings` runs a
+  one-shot, non-web-search `genai` call off the event loop (`to_thread` + `wait_for`
+  timeout, `WCL_REPORT_MODEL`) that turns the in-scope messages into a findings document.
+  `api/reports._synthesize_and_render` is the shared pipeline for both scopes; the result
+  feeds the unchanged `render_report_pdf` as a single synthetic agent message. Fail-closed:
+  synthesis error/timeout/empty output → `500`, no partial file (the model emits its own
+  "no substantive findings" doc for chit-chat).
+- **Role-aware profile (US4)**: nullable `user_characters.raid_role` override column
+  (migration `0006_raid_role`). `wcl_agent/constants.SPEC_ROLES` + `role_for_spec()` are the
+  spec→Tank/Healer/DPS SSOT; `effective_role = raid_role or role_for_spec(active_spec)` is a
+  computed field on `CharacterOut`. New `PATCH /api/profile/friends/{id}` (`FriendPatchIn`)
+  edits a friend's role in place; `PUT /self`/`POST /friends` accept `raid_role`.
+  `profile_context._ident` appends the effective role (unset ⇒ byte-identical). Frontend:
+  a per-character role select (inferred vs set) and a friendly duplicate-friend message.
+
+New env var (also in `.env.example`):
+
+```
+WCL_REPORT_MODEL=gemini-3.6-flash  # non-web-search model for findings-report synthesis
+```

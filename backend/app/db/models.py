@@ -352,6 +352,70 @@ class TrackedRaid(Base):
     encounters: Mapped[list | None] = mapped_column(_JSON, nullable=True)
 
 
+class KnownPlayer(Base):
+    """A WoW character discovered via successful tool results (feature 007 / US1).
+
+    Distinct from a profile ``UserCharacter`` — these are players the user has looked
+    up (character rankings), captured silently so later conversations can resolve a
+    bare name → server/region without re-asking. Identity is ``(name, server, region)``.
+    """
+
+    __tablename__ = "known_players"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "name", "server", "region", name="uq_known_player_identity"
+        ),
+        Index("ix_known_players_tenant_seen", "tenant_id", "last_seen_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    server: Mapped[str] = mapped_column(String(100))
+    region: Mapped[str] = mapped_column(String(8))
+    class_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    spec: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True)  # provenance
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class KnownEncounter(Base):
+    """A raid zone/boss the user has queried or resolved (feature 007 / US1).
+
+    Captured primarily from ``find_encounter`` matches, independent of any report, so
+    later conversations can disambiguate a boss name without re-resolving it. Dedup
+    key is ``(tenant_id, encounter_id)``.
+    """
+
+    __tablename__ = "known_encounters"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "encounter_id", name="uq_known_encounter_identity"),
+        Index("ix_known_encounters_tenant_seen", "tenant_id", "last_seen_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    encounter_id: Mapped[int] = mapped_column(Integer)
+    encounter_name: Mapped[str] = mapped_column(String(120))
+    zone_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    zone_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class CapturedGraph(Base):
     """Graph JSON the agent fetched during a conversation, kept for PDF rendering (US5)."""
 
@@ -400,6 +464,10 @@ class UserCharacter(Base):
     region: Mapped[str] = mapped_column(String(8))
     class_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
     active_spec: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # US4 (feature 007): the user's raid-role override — "tank" | "healer" | "dps" | NULL
+    # (unset). Orthogonal to ``role`` (self/friend). Nullable, no backfill; the effective
+    # role is computed as ``raid_role or role_for_spec(active_spec)``. Added by 0006_raid_role.
+    raid_role: Mapped[str | None] = mapped_column(String(10), nullable=True)
     guide_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
     # "none" | "pending" | "ready" | "failed"
     guide_status: Mapped[str] = mapped_column(String(10), server_default="none", default="none")

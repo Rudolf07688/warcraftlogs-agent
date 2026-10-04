@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  ApiError,
   addFriend,
   deleteFriend,
   deleteGuild,
   getProfile,
   putGuild,
   putSelf,
+  updateFriend,
 } from "../api/restClient";
-import type { Character, GuideStatus, Guild, Profile } from "../types";
+import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../types";
 
 interface Props {
   open: boolean;
@@ -32,6 +34,50 @@ function identityLabel(c: Character): string {
   const spec = [c.class_name, c.active_spec].filter(Boolean).join(" ");
   const base = `${c.name}-${c.server} (${c.region})`;
   return spec ? `${base} — ${spec}` : base;
+}
+
+// US4: raid-role picker. "Auto" (empty value) clears the override so the role falls
+// back to the spec-inferred default; when auto is selected we annotate the inferred role.
+const ROLE_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Auto" },
+  { value: "tank", label: "Tank" },
+  { value: "healer", label: "Healer" },
+  { value: "dps", label: "DPS" },
+];
+
+const ROLE_LABEL: Record<RaidRole, string> = { tank: "Tank", healer: "Healer", dps: "DPS" };
+
+function RoleControl({
+  char,
+  busy,
+  onChange,
+}: {
+  char: Character;
+  busy: boolean;
+  onChange: (role: RaidRole | null) => void;
+}) {
+  const isInferred = char.raid_role == null && char.effective_role != null;
+  return (
+    <span className="profile-role" title="Raid role">
+      <select
+        aria-label="Raid role"
+        value={char.raid_role ?? ""}
+        disabled={busy}
+        onChange={(e) => onChange((e.target.value || null) as RaidRole | null)}
+      >
+        {ROLE_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {isInferred && char.effective_role && (
+        <span className="role-inferred" title="Inferred from spec">
+          {ROLE_LABEL[char.effective_role]} (inferred)
+        </span>
+      )}
+    </span>
+  );
 }
 
 interface FormState {
@@ -128,8 +174,31 @@ export function ProfilePanel({ open, onClose }: Props) {
       try {
         await fn();
         await refresh();
+        setErr(null);
       } catch {
         setErr("That action failed. Check the details and try again.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
+  );
+
+  // Adding a friend has a distinct, expected failure (duplicate) that deserves a
+  // friendly message rather than the generic one (US4 / FR-023).
+  const addFriendHandler = useCallback(
+    async (v: FormState) => {
+      setBusy(true);
+      try {
+        await addFriend(v);
+        await refresh();
+        setErr(null);
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 409 || e.message === "duplicate_friend")) {
+          setErr(`${v.name}-${v.server} (${v.region}) is already added.`);
+        } else {
+          setErr("That action failed. Check the details and try again.");
+        }
       } finally {
         setBusy(false);
       }
@@ -159,6 +228,20 @@ export function ProfilePanel({ open, onClose }: Props) {
           {self && (
             <div className="profile-row">
               <span>{identityLabel(self)}</span>
+              <RoleControl
+                char={self}
+                busy={busy}
+                onChange={(role) =>
+                  run(() =>
+                    putSelf({
+                      name: self.name,
+                      server: self.server,
+                      region: self.region,
+                      raid_role: role,
+                    }),
+                  )
+                }
+              />
               <StatusBadge status={self.guide_status} />
             </div>
           )}
@@ -168,7 +251,7 @@ export function ProfilePanel({ open, onClose }: Props) {
             }
             submitLabel={self ? "Update" : "Set self"}
             busy={busy}
-            onSubmit={(v) => run(() => putSelf(v))}
+            onSubmit={(v) => run(() => putSelf({ ...v, raid_role: self?.raid_role ?? null }))}
           />
         </section>
 
@@ -177,6 +260,11 @@ export function ProfilePanel({ open, onClose }: Props) {
           {profile?.friends.map((f) => (
             <div className="profile-row" key={f.id}>
               <span>{identityLabel(f)}</span>
+              <RoleControl
+                char={f}
+                busy={busy}
+                onChange={(role) => run(() => updateFriend(f.id, role))}
+              />
               <StatusBadge status={f.guide_status} />
               <button
                 className="profile-remove"
@@ -188,7 +276,7 @@ export function ProfilePanel({ open, onClose }: Props) {
               </button>
             </div>
           ))}
-          <IdentityForm initial={EMPTY} submitLabel="Add friend" busy={busy} onSubmit={(v) => run(() => addFriend(v))} />
+          <IdentityForm initial={EMPTY} submitLabel="Add friend" busy={busy} onSubmit={addFriendHandler} />
         </section>
 
         <section className="profile-section">

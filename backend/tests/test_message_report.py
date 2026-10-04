@@ -4,9 +4,21 @@ from __future__ import annotations
 
 import uuid
 
+from backend.app.api import reports as reports_module
 from backend.app.db import repository as repo
 from backend.app.services.artifacts import capture_artifact_from_tool
 from wcl_agent.tools import create_chart
+
+
+def _mock_synthesis(monkeypatch, capture=None):
+    async def fake(messages, *, scope, question=None):
+        if capture is not None:
+            capture["messages"] = messages
+            capture["scope"] = scope
+            capture["question"] = question
+        return "## Findings\n\n- scoped"
+
+    monkeypatch.setattr(reports_module.report_synthesis, "synthesize_findings", fake)
 
 
 async def _seed(session_factory, tid):
@@ -30,13 +42,32 @@ async def _seed(session_factory, tid):
         return str(conv.id), str(a1.id), str(a2.id)
 
 
-async def test_message_report_is_scoped_and_valid(as_user, session_factory):
+async def test_message_report_is_scoped_and_valid(as_user, session_factory, monkeypatch):
+    _mock_synthesis(monkeypatch)
     conv_id, a1_id, _a2_id = await _seed(session_factory, as_user.tenant_id)
     resp = await as_user.client.get(f"/api/conversations/{conv_id}/messages/{a1_id}/report.pdf")
     assert resp.status_code == 200, resp.text
     assert resp.headers["content-type"] == "application/pdf"
     assert "wcl-message-" in resp.headers["content-disposition"]
     assert resp.content[:4] == b"%PDF"
+
+
+async def test_message_report_synthesizes_only_target_reply(as_user, session_factory, monkeypatch):
+    # US3/SC-005: synthesis sees only this reply (+ its originating question), not others.
+    captured: dict = {}
+    _mock_synthesis(monkeypatch, capture=captured)
+    conv_id, a1_id, _a2_id = await _seed(session_factory, as_user.tenant_id)
+
+    resp = await as_user.client.get(f"/api/conversations/{conv_id}/messages/{a1_id}/report.pdf")
+    assert resp.status_code == 200
+    assert captured["scope"] == "message"
+    contents = " ".join(m.get("content", "") for m in captured["messages"])
+    assert "FIRST ANSWER" in contents
+    # Other turns are excluded from the per-message synthesis input.
+    assert "SECOND ANSWER" not in contents
+    assert "SECOND QUESTION" not in contents
+    # The originating user question is supplied as context.
+    assert "FIRST QUESTION" in (captured["question"] or "")
 
 
 async def test_message_report_404_for_unknown_message(as_user, session_factory):

@@ -118,6 +118,10 @@ export interface InvestigateResponse {
 
 export type GuideStatus = "none" | "pending" | "ready" | "failed";
 
+// US4 (feature 007): a character's raid role. `raid_role` is the stored user override
+// (null = unset); `effective_role` is the override or the spec-inferred default.
+export type RaidRole = "tank" | "healer" | "dps";
+
 export interface Character {
   id: string;
   role: "self" | "friend";
@@ -126,6 +130,8 @@ export interface Character {
   region: string;
   class_name: string | null;
   active_spec: string | null;
+  raid_role: RaidRole | null;
+  effective_role: RaidRole | null;
   guide_status: GuideStatus;
   guide_updated_at: string | null;
 }
@@ -148,4 +154,5 @@ export interface CharacterInput {
   name: string;
   server: string;
   region: string;
+  raid_role?: RaidRole | null;
 }

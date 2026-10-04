@@ -32,6 +32,7 @@ from ..schemas import (
 )
 from ..suggestions import generate_followups
 from ..services import graphs as graphs_service
+from ..services import known_entities
 from ..services import raids as raids_service
 from ..services.artifacts import capture_artifact_from_tool
 from ..services.charts import chart_spec_to_plotly
@@ -110,9 +111,35 @@ async def _handle_tool_end(
             title=spec.title,
             spec_json=spec.model_dump(),
         )
+    # US1 (feature 007): silently capture known players/encounters from successful tool
+    # results so later conversations can reuse them. Best-effort — never blocks the turn.
+    captured_players = await known_entities.capture_players_from_tool(
+        session,
+        tenant_id=tenant_id,
+        name=name,
+        ok=ok,
+        args=args,
+        result=result,
+        conversation_id=conv_id,
+    )
+    captured_encounters = await known_entities.capture_encounters_from_tool(
+        session,
+        tenant_id=tenant_id,
+        name=name,
+        ok=ok,
+        args=args,
+        result=result,
+        conversation_id=conv_id,
+    )
     # Commit immediately so a later stream error can't lose what we actually pulled,
     # then re-apply the tenant scope for the rest of the turn (commit drops it).
-    if raid is not None or graph is not None or artifact is not None:
+    if (
+        raid is not None
+        or graph is not None
+        or artifact is not None
+        or captured_players
+        or captured_encounters
+    ):
         await session.commit()
         await apply_tenant_scope(session, identity)
     if raid is not None:
@@ -172,7 +199,22 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
         # US1: build the (non-persisted) KNOWN PLAYER CONTEXT preamble from the tenant's
         # profile. Empty string when no profile exists, so behavior is unchanged (FR-006).
         self_char, friends, guild = await repo.get_profile(session, tenant_id=tenant_id)
-        preamble = build_preamble(self_char, friends, guild)
+        # US1 (feature 007): also surface recency-capped captured metadata so follow-ups
+        # across the user's conversations reuse known raids/players/encounters/guilds
+        # instead of re-querying Warcraft Logs. Empty everywhere ⇒ preamble unchanged.
+        known_raids = await repo.list_tracked_raids(session, tenant_id=tenant_id)
+        known_players = await repo.list_recent_known_players(session, tenant_id=tenant_id)
+        known_encounters = await repo.list_recent_known_encounters(session, tenant_id=tenant_id)
+        known_guilds = await repo.list_recent_known_guilds(session, tenant_id=tenant_id)
+        preamble = build_preamble(
+            self_char,
+            friends,
+            guild,
+            known_raids=known_raids[:10],
+            known_players=known_players,
+            known_encounters=known_encounters,
+            known_guilds=known_guilds,
+        )
 
         # Scope the WCL result cache to this tenant (FR-019) for the turn's tool calls.
         set_cache_scope(str(tenant_id))

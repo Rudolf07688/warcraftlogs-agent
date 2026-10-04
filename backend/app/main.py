@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from google.adk.sessions import DatabaseSessionService
 from sqlalchemy import text
 
+from wcl_agent.genai_compat import ensure_genai_serializers_built
 from wcl_agent.models import discover_models
 
 from .agent_runner import set_session_service
@@ -42,6 +43,11 @@ from .greeting import GREETING_MODEL, get_greeting
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Eagerly build google-genai model serializers (they default to defer_build=True) so ADK
+    # can serialize genai types nested in EventActions.state_delta during parallel tool calls
+    # (the still-deferred "MockValSer" serializer would otherwise crash the turn). Idempotent.
+    ensure_genai_serializers_built()
+
     # feature 006: Alembic is the schema authority — run `alembic upgrade head` before
     # starting (see quickstart.md). The app no longer creates/alters its own tables
     # (the old create_all + idempotent ALTER block was removed); create_all survives

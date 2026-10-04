@@ -108,16 +108,25 @@ run as the owner during `alembic upgrade head`; the owner needs `CREATEROLE`, wh
 compose superuser has). So the flow is: start the DB, run the migrations/bootstrap below
 (which create the role, schema, and RLS), **then** start the app.
 
-**Schema is managed by Alembic** (not `create_all`). First-time / upgrade setup:
+**Schema is managed by Alembic** (not `create_all`). One command does first-time setup
+**and** every later upgrade — migrate, create the founder if there isn't one, migrate the
+rest of the way. It's idempotent, so it's safe to re-run on every deploy:
 
 ```bash
-# 1. Create the auth/tenant tables (not tenant_id yet):
-uv run alembic -c backend/alembic.ini upgrade 0002_auth_tenancy
-# 2. Create the founder (NO HTTP route can do this). Prompts for email + password,
-#    or set BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD:
-uv run python -m backend.cli.bootstrap_admin
-# 3. Add tenant_id to existing tables (backfilled to the founder) + enable RLS:
-uv run alembic -c backend/alembic.ini upgrade head
+# Set the founder credentials once (e.g. in .env) so it runs non-interactively:
+#   BOOTSTRAP_ADMIN_EMAIL=you@example.com
+#   BOOTSTRAP_ADMIN_PASSWORD=<15+ chars>
+uv run python -m backend.cli.init_db   # prompts for founder email/password if unset
+```
+
+Migration `0003` backfills existing rows to the founder tenant, so the founder must exist
+before it runs — which is why setup can't be a single `alembic upgrade head`. `init_db`
+runs the three steps in order; run them by hand if you prefer:
+
+```bash
+uv run alembic -c backend/alembic.ini upgrade 0002_auth_tenancy   # auth/tenant tables
+uv run python -m backend.cli.bootstrap_admin                      # create the founder
+uv run alembic -c backend/alembic.ini upgrade head               # tenant_id backfill + RLS
 ```
 
 Then sign in at `/login`. Admins manage users + invitations at `/admin/users` and copy

@@ -23,6 +23,8 @@ from .models import (
     CapturedGraph,
     Conversation,
     GuildProfile,
+    KnownEncounter,
+    KnownPlayer,
     Message,
     TrackedRaid,
     UserCharacter,
@@ -242,6 +244,143 @@ async def get_tracked_raid(
     return result.scalar_one_or_none()
 
 
+# --- Known entities (feature 007 / US1) ---------------------------------------
+
+
+async def upsert_known_player(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    name: str,
+    server: str,
+    region: str,
+    class_name: str | None = None,
+    spec: str | None = None,
+    source: str | None = None,
+) -> KnownPlayer:
+    """Insert a known player on first sighting (per tenant), or touch recency + backfill.
+
+    Dedup is by ``(tenant_id, name, server, region)``. A re-sighting touches
+    ``last_seen_at`` and fills in a previously-null ``class_name``/``spec``/``source``.
+    Caller wraps this in a savepoint so a unique-violation can't poison sibling captures.
+    """
+    now = datetime.now(timezone.utc)
+    existing = (
+        await session.execute(
+            select(KnownPlayer).where(
+                KnownPlayer.tenant_id == tenant_id,
+                KnownPlayer.name == name,
+                KnownPlayer.server == server,
+                KnownPlayer.region == region,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.last_seen_at = now
+        if class_name and not existing.class_name:
+            existing.class_name = class_name
+        if spec and not existing.spec:
+            existing.spec = spec
+        if source and not existing.source:
+            existing.source = source
+        await session.flush()
+        return existing
+    player = KnownPlayer(
+        tenant_id=tenant_id,
+        name=name,
+        server=server,
+        region=region,
+        class_name=class_name,
+        spec=spec,
+        source=source,
+        last_seen_at=now,
+    )
+    session.add(player)
+    await session.flush()
+    return player
+
+
+async def upsert_known_encounter(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    encounter_id: int,
+    encounter_name: str,
+    zone_id: int | None = None,
+    zone_name: str | None = None,
+) -> KnownEncounter:
+    """Insert a known encounter on first sighting, or touch recency + backfill zone fields.
+
+    Dedup is by ``(tenant_id, encounter_id)``. Caller wraps this in a savepoint.
+    """
+    now = datetime.now(timezone.utc)
+    existing = (
+        await session.execute(
+            select(KnownEncounter).where(
+                KnownEncounter.tenant_id == tenant_id,
+                KnownEncounter.encounter_id == encounter_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.last_seen_at = now
+        if zone_id and not existing.zone_id:
+            existing.zone_id = zone_id
+        if zone_name and not existing.zone_name:
+            existing.zone_name = zone_name
+        await session.flush()
+        return existing
+    encounter = KnownEncounter(
+        tenant_id=tenant_id,
+        encounter_id=encounter_id,
+        encounter_name=encounter_name,
+        zone_id=zone_id,
+        zone_name=zone_name,
+        last_seen_at=now,
+    )
+    session.add(encounter)
+    await session.flush()
+    return encounter
+
+
+async def list_recent_known_players(
+    session: AsyncSession, *, tenant_id: uuid.UUID, limit: int = 15
+) -> list[KnownPlayer]:
+    result = await session.execute(
+        select(KnownPlayer)
+        .where(KnownPlayer.tenant_id == tenant_id)
+        .order_by(KnownPlayer.last_seen_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def list_recent_known_encounters(
+    session: AsyncSession, *, tenant_id: uuid.UUID, limit: int = 10
+) -> list[KnownEncounter]:
+    result = await session.execute(
+        select(KnownEncounter)
+        .where(KnownEncounter.tenant_id == tenant_id)
+        .order_by(KnownEncounter.last_seen_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def list_recent_known_guilds(
+    session: AsyncSession, *, tenant_id: uuid.UUID, limit: int = 10
+) -> list[str]:
+    """Distinct non-null guild names from tracked raids, most-recent first (derived — no table)."""
+    result = await session.execute(
+        select(TrackedRaid.guild, func.max(TrackedRaid.last_asked_at).label("seen"))
+        .where(TrackedRaid.tenant_id == tenant_id, TrackedRaid.guild.isnot(None))
+        .group_by(TrackedRaid.guild)
+        .order_by(func.max(TrackedRaid.last_asked_at).desc())
+        .limit(limit)
+    )
+    return [row[0] for row in result.all()]
+
+
 # --- Captured graphs (US5) ----------------------------------------------------
 
 
@@ -404,9 +543,19 @@ async def get_profile(
 
 
 async def upsert_self(
-    session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    name: str,
+    server: str,
+    region: str,
+    raid_role: str | None = None,
 ) -> UserCharacter:
-    """Create or replace the tenant's single ``self`` character. Resets the guide lifecycle."""
+    """Create or replace the tenant's single ``self`` character. Resets the guide lifecycle.
+
+    ``raid_role`` is the user override (US4); passing ``None`` leaves the role unset so
+    the effective role falls back to the spec-inferred default once the guide resolves.
+    """
     existing = await get_self_character(session, tenant_id=tenant_id)
     if existing is not None:
         existing.name = name
@@ -414,6 +563,7 @@ async def upsert_self(
         existing.region = region
         existing.class_name = None
         existing.active_spec = None
+        existing.raid_role = raid_role
         existing.guide_markdown = None
         existing.guide_status = "pending"
         existing.guide_updated_at = None
@@ -425,6 +575,7 @@ async def upsert_self(
         name=name,
         server=server,
         region=region,
+        raid_role=raid_role,
         guide_status="pending",
     )
     session.add(char)
@@ -433,7 +584,13 @@ async def upsert_self(
 
 
 async def add_friend(
-    session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    name: str,
+    server: str,
+    region: str,
+    raid_role: str | None = None,
 ) -> UserCharacter:
     """Add a friend character. Raises IntegrityError on an identical duplicate (per tenant)."""
     char = UserCharacter(
@@ -442,9 +599,37 @@ async def add_friend(
         name=name,
         server=server,
         region=region,
+        raid_role=raid_role,
         guide_status="pending",
     )
     session.add(char)
+    await session.flush()
+    return char
+
+
+async def update_friend_role(
+    session: AsyncSession,
+    char_id: uuid.UUID,
+    *,
+    tenant_id: uuid.UUID,
+    raid_role: str | None,
+) -> UserCharacter | None:
+    """Set a friend's raid-role override in place (US4 / FR-028). ``None`` clears it.
+
+    Returns the updated character, or ``None`` when the id is not a friend of this tenant
+    (the caller maps that to 404). Never creates a new row.
+    """
+    result = await session.execute(
+        select(UserCharacter).where(
+            UserCharacter.id == char_id,
+            UserCharacter.tenant_id == tenant_id,
+            UserCharacter.role == "friend",
+        )
+    )
+    char = result.scalar_one_or_none()
+    if char is None:
+        return None
+    char.raid_role = raid_role
     await session.flush()
     return char
 

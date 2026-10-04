@@ -10,6 +10,7 @@ import type {
   Invitation,
   InvestigateResponse,
   Profile,
+  RaidRole,
   Raid,
   Role,
 } from "../types";
@@ -261,6 +262,14 @@ export async function addFriend(body: CharacterInput): Promise<Character> {
 
 export async function deleteFriend(id: string): Promise<void> {
   await send("DELETE", `/api/profile/friends/${id}`, undefined, { csrf: true });
+}
+
+// US4: set/clear a friend's raid-role override in place (null reverts to inferred).
+export async function updateFriend(
+  id: string,
+  raidRole: RaidRole | null,
+): Promise<Character> {
+  return send("PATCH", `/api/profile/friends/${id}`, { raid_role: raidRole }, { csrf: true });
 }
 
 export async function putGuild(body: CharacterInput): Promise<Guild> {

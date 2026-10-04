@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     # reflect the current retail patch. Runs over a disposable session like the greeting.
     wcl_guide_model: str = "gemini-3.6-flash"
 
+    # Findings-report synthesis (feature 007 / US2-US3). A plain (non-web-search) model
+    # that summarizes in-scope chat content into an analytic findings document. Runs
+    # off the event loop with a bounded timeout; independent of the user's chat model.
+    wcl_report_model: str = "gemini-3.6-flash"
+
     # WCL query cache TTLs in seconds (US4). Report-scoped data is effectively immutable
     # (~24h); leaderboard/ranking data is volatile (~1h).
     wcl_cache_ttl_report_s: int = 86400

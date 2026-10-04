@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import get_tenant_db, require_session
 from ..db import repository as repo
 from ..db.models import Message, TrackedRaid
+from ..services import report_synthesis
 from ..services.pdf_report import render_report_pdf
 from ..tenancy.context import RequestIdentity
 
@@ -50,8 +51,13 @@ async def download_report(
     ).scalars().first()
     title = raid.label if raid else (conv.title or "WCL Report")
 
-    pdf_bytes = await _render(
-        title=title, messages=messages, graphs=graphs, artifacts=artifacts, ctx=str(conv_id)
+    pdf_bytes = await _synthesize_and_render(
+        title=title,
+        messages=messages,
+        graphs=graphs,
+        artifacts=artifacts,
+        ctx=str(conv_id),
+        scope="conversation",
     )
     short_id = str(conv_id)[:8]
     return Response(
@@ -91,6 +97,40 @@ async def _render(*, title, messages, graphs, artifacts, ctx: str) -> bytes:
     except Exception:  # noqa: BLE001 - never present a partial file as complete
         logger.exception("PDF generation failed for %s", ctx)
         raise HTTPException(status_code=500, detail="pdf_generation_failed")
+
+
+async def _synthesize_and_render(
+    *,
+    title: str,
+    messages: list[dict],
+    graphs: list[dict],
+    artifacts: list[dict],
+    ctx: str,
+    scope: str,
+    question: str | None = None,
+) -> bytes:
+    """Shared findings pipeline for both report scopes (US2/US3, FR-016).
+
+    Synthesizes the in-scope messages into a findings document and renders that as the
+    single-message PDF body (charts/artifacts attached unchanged). Fail-closed (FR-018):
+    a synthesis error, timeout, or empty output yields a clean 500 and no partial file.
+    """
+    try:
+        findings_md = await report_synthesis.synthesize_findings(
+            messages, scope=scope, question=question
+        )
+    except Exception:  # noqa: BLE001 - synthesis failure/timeout → fail closed
+        logger.exception("findings synthesis failed for %s", ctx)
+        raise HTTPException(status_code=500, detail="pdf_generation_failed")
+    if not findings_md.strip():
+        # Empty model output is a malfunction, not a valid "no findings" doc (FR-018);
+        # the prompt makes the model emit its own no-findings document when apt (FR-017).
+        logger.error("findings synthesis produced empty output for %s", ctx)
+        raise HTTPException(status_code=500, detail="pdf_generation_failed")
+    synthetic = [{"role": "agent", "content": findings_md, "status": "complete"}]
+    return await _render(
+        title=title, messages=synthetic, graphs=graphs, artifacts=artifacts, ctx=ctx
+    )
 
 
 @router.get("/{conv_id}/messages/{message_id}/report.pdf")
@@ -136,8 +176,14 @@ async def download_message_report(
     conv = await repo.get_conversation(session, conv_id, tenant_id=tid)
     title = (conv.title if conv else None) or "WCL Report"
 
-    pdf_bytes = await _render(
-        title=title, messages=messages, graphs=graphs, artifacts=artifacts, ctx=str(message_id)
+    pdf_bytes = await _synthesize_and_render(
+        title=title,
+        messages=messages,
+        graphs=graphs,
+        artifacts=artifacts,
+        ctx=str(message_id),
+        scope="message",
+        question=question.content if question is not None else None,
     )
     short_id = str(message_id)[:8]
     return Response(

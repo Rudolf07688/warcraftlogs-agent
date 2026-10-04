@@ -6,7 +6,9 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+
+from wcl_agent.constants import role_for_spec
 
 # --- WebSocket: client -> server ---------------------------------------------
 
@@ -208,10 +210,23 @@ class GreetingResponse(BaseModel):
 # --- Profile (feature 005 / US1) ---------------------------------------------
 
 
+RaidRole = Literal["tank", "healer", "dps"]
+
+
 class CharacterIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     server: str = Field(min_length=1, max_length=100)
     region: str = Field(min_length=1, max_length=8)
+    # US4: optional user override of the raid role; null = unset (inferred from spec).
+    # Any value outside the Literal ⇒ 422 with the character unchanged (FR-027).
+    raid_role: RaidRole | None = None
+
+
+class FriendPatchIn(BaseModel):
+    """PATCH body for updating a friend's raid role in place (US4 / FR-026, FR-028)."""
+
+    # `null` clears the override, reverting the character to its inferred default.
+    raid_role: RaidRole | None = None
 
 
 class CharacterOut(BaseModel):
@@ -223,8 +238,16 @@ class CharacterOut(BaseModel):
     region: str
     class_name: str | None = None
     active_spec: str | None = None
+    # US4: the stored user override, plus the computed effective role (override or
+    # spec-inferred). The UI treats effective_role set + raid_role null as "inferred".
+    raid_role: RaidRole | None = None
     guide_status: str = "none"
     guide_updated_at: datetime | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_role(self) -> RaidRole | None:
+        return self.raid_role or role_for_spec(self.active_spec)
 
 
 class GuildIn(BaseModel):

@@ -17,6 +17,7 @@ from ..db import repository as repo
 from ..schemas import (
     CharacterIn,
     CharacterOut,
+    FriendPatchIn,
     GuildIn,
     GuildOut,
     ProfileOut,
@@ -47,7 +48,12 @@ async def put_self(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> CharacterOut:
     char = await repo.upsert_self(
-        db, tenant_id=identity.tenant_id, name=body.name, server=body.server, region=body.region
+        db,
+        tenant_id=identity.tenant_id,
+        name=body.name,
+        server=body.server,
+        region=body.region,
+        raid_role=body.raid_role,
     )
     await commit_and_rescope(db, identity)
     schedule_character_guide(char.id, identity.tenant_id)
@@ -67,12 +73,30 @@ async def add_friend(
             name=body.name,
             server=body.server,
             region=body.region,
+            raid_role=body.raid_role,
         )
         await commit_and_rescope(db, identity)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="duplicate_friend")
     schedule_character_guide(char.id, identity.tenant_id)
+    return CharacterOut.model_validate(char)
+
+
+@router.patch("/friends/{char_id}", response_model=CharacterOut)
+async def patch_friend(
+    char_id: uuid.UUID,
+    body: FriendPatchIn,
+    identity: RequestIdentity = Depends(require_csrf),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> CharacterOut:
+    """Set a friend's raid-role override in place (US4). ``null`` reverts to inferred."""
+    char = await repo.update_friend_role(
+        db, char_id, tenant_id=identity.tenant_id, raid_role=body.raid_role
+    )
+    if char is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    await commit_and_rescope(db, identity)
     return CharacterOut.model_validate(char)
 
 
