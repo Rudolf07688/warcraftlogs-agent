@@ -125,7 +125,7 @@ Web application: agent package `wcl_agent/`, backend `backend/app/`, tests `back
 - [X] T028 [P] Document the five `WCL_MODEL_RETRY_*` / `WCL_TURN_ROUND_CAP` variables and the rate-limit behaviour (retry, status, plain-language error, per-turn stats log) in `README.md` configuration section; note that runners are cached per model so a policy change needs a backend restart.
 - [X] T029 [P] Add `retry_label`/`model_retry` handling to the frontend status docs if `documentation/` describes the frame protocol (search `documentation/` for `tool_start`); otherwise skip.
 - [X] T030 Run the full verification set: `uv run pytest -q`, `cd frontend && npx tsc -b`, and every quickstart.md section against the running stack; fix anything red.
-- [ ] T031 Run `detect_changes({scope: "all"})` (re-run if `partial` or `truncated`), review affected processes (`_handle_turn`, `greeting`, `_run_spec_guide`, `schedule_guild_summary`, `lifespan`), then commit in scoped commits (foundation; US1; US2; US3; docs) with the attribution trailer.
+- [X] T031 Run `detect_changes({scope: "all"})` (re-run if `partial` or `truncated`), review affected processes (`_handle_turn`, `greeting`, `_run_spec_guide`, `schedule_guild_summary`, `lifespan`), then commit in scoped commits (foundation; US1; US2; US3; docs) with the attribution trailer.
 
 ---
 
@@ -205,10 +205,9 @@ Task: "Forward model_retry + rate_limited error in backend/app/api/ws.py"    # T
 - **T020 / T023 (baseline and re-measurement)**: not run — the raid kickoff needs an
   authenticated browser session. `measurements.md` holds the table and the procedure
   (stash the two prompt edits for the baseline, then restore).
-- **T031**: `detect_changes({scope: "all"})` ran clean (no `partial`/`truncated`),
+- **T031**: `detect_changes({scope: "all"})` ran clean twice (no `partial`/`truncated`),
   `risk_level: critical` as planned; affected processes = greeting, guild summary, spec
-  guide, `_handle_turn`, frontend `App` — all covered by the new/updated tests. **Commits
-  were not made**: the working tree already carried unrelated uncommitted changes (feature
-  009, the boot overlay, the 010 spec) in the same files (`ws.py`, `schemas.py`, `agent.py`,
-  `README.md`), so a clean feature-scoped commit was not possible without hunk-level
-  staging. Commit the earlier work first, then commit 011.
+  guide, `_handle_turn`, frontend `App`, plus `lifespan` for the logging fix — all
+  covered by the new/updated tests. Committed as `1218d5b` (010 spec clarifications) and
+  `2008231` (feature 011) once the earlier 009 / boot-overlay work had been committed
+  separately (`85a9ee7`).
