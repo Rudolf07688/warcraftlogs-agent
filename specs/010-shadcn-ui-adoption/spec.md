@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Use your recommendations above to write the spec for the next update" — the recommendations being the component-by-component comparison of the app's hand-built controls against the project's already-configured shared component library (buttons, form fields, selects, dialogs, confirmations, tabs, tables, status messaging, collapsible sections, chip groups).
+**Input**: User description: "Use your recommendations above to write the spec for the next update" — the recommendations being the component-by-component comparison of the app's hand-built controls against the project's already-configured shared component library (buttons, form fields, selects, dialogs, confirmations, tabs, tables, status messaging).
 
 ## Overview
 
@@ -25,6 +25,15 @@ styling. This update replaces the hand-built controls on the affected screens wi
 shared library's equivalents, keeping the existing dark-gold look and the themed chat
 elements (spell cards, cast bars, rune spinner, ambient effects, message renderer, charts)
 untouched.
+
+## Clarifications
+
+### Session 2026-10-11
+
+- Q: Should the authentication and admin pages keep their separate neutral/indigo palette or adopt the dark-gold chat theme? → A: Re-theme them to the dark-gold theme so the whole app shares one palette.
+- Q: Which destructive actions require the in-app confirmation dialog? → A: Every irreversible delete: disable user, delete conversation, remove friend, remove guild. Revoke invitation stays immediate (re-inviting undoes it).
+- Q: Native dropdowns or the library's custom pop-up list? → A: Native dropdowns with the shared appearance, on every screen; the custom pop-up list is a non-goal.
+- Q: Is the P5 chat-shell polish (collapsible sidebar sections, follow-up and boss-focus chips) in this update? → A: Out of scope; removed from this update and noted as a follow-up.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -70,9 +79,11 @@ completes.
 
 A player opens a class guide from the profile page in a dialog that behaves like a proper
 modal: focus moves into it, Tab stays inside it, Escape closes it, the page behind does not
-scroll, and focus returns to the guide card afterwards. An admin who disables a user sees
-an in-app confirmation dialog with a clear destructive action instead of the browser's
-built-in confirmation box.
+scroll, and focus returns to the guide card afterwards. Every irreversible delete asks
+first through the same in-app confirmation dialog with a clearly destructive action: an
+admin disabling a user (which today uses the browser's built-in confirmation box), and a
+player deleting a conversation, removing a friend or removing their guild (which today
+fire immediately).
 
 **Why this priority**: These are the only two places where the current hand-built
 version is functionally weaker, not just inconsistently styled. They are small, isolated
@@ -80,7 +91,8 @@ changes with high accessibility value.
 
 **Independent Test**: Open a class guide and verify Escape, focus trapping, scroll lock and
 focus return. On the admin page, click Disable on a user and verify an in-app dialog
-appears, Cancel does nothing, and Confirm disables the user.
+appears, Cancel does nothing, and Confirm disables the user. In the sidebar, click a
+conversation's delete control and verify the same dialog guards it.
 
 **Acceptance Scenarios**:
 
@@ -98,6 +110,13 @@ appears, Cancel does nothing, and Confirm disables the user.
 5. **Given** the confirmation dialog, **When** the admin confirms and the request fails,
    **Then** the dialog closes and the page shows the failure in its standard error
    message area; the user remains enabled.
+6. **Given** the sidebar, **When** the user activates a conversation's delete control,
+   **Then** a confirmation names the conversation title, Cancel leaves it in place, and
+   Confirm deletes it (opening a fresh chat if it was the active one, as today).
+7. **Given** the profile Characters tab, **When** the user activates Remove on a friend
+   or on the guild, **Then** the same confirmation appears before anything is removed.
+8. **Given** the admin invitations list, **When** the admin activates Revoke, **Then**
+   the invitation is revoked immediately with no confirmation (re-inviting undoes it).
 
 ---
 
@@ -153,39 +172,14 @@ re-enable still work.
 
 ---
 
-### User Story 5 - Chat-shell chips and collapsible sections (Priority: P5)
-
-In the chat, the sidebar's Raids and Conversations sections expand and collapse with the
-shared collapsible behaviour (including keyboard operation and expanded-state
-announcement); the follow-up question chips and the boss-focus picker chips use the shared
-chip/toggle styling while keeping their current behaviour (follow-ups submit on click,
-boss chips toggle multi-selection and show the kill tick).
-
-**Why this priority**: Pure polish on controls that already work. Deliverable last and
-droppable without affecting the other stories.
-
-**Independent Test**: Collapse and expand both sidebar sections with mouse and keyboard;
-pick two bosses then send a message and confirm the "(Focus on: …)" suffix still appears;
-click a follow-up chip and confirm it is submitted verbatim.
-
-**Acceptance Scenarios**:
-
-1. **Given** the sidebar, **When** the user activates a section header with Space or
-   Enter, **Then** the section toggles and its expanded state is exposed to assistive
-   technology.
-2. **Given** a boss-focus picker with three bosses, **When** the user toggles two of
-   them, **Then** both show selected and the next message carries both names.
-3. **Given** a turn is streaming, **When** rendered, **Then** follow-up and boss chips
-   are disabled.
-
----
-
 ### Edge Cases
 
 - A guide dialog is open when the guide list refreshes in the background: the dialog
   stays open with its current content.
-- Escape is pressed while the disable-user request is in flight: the dialog stays open
+- Escape is pressed while a confirmed delete request is in flight: the dialog stays open
   until the request resolves, then closes.
+- The active conversation is deleted via the confirmation: the app opens a fresh chat,
+  exactly as it does today.
 - The user prefers reduced motion: no dialog, tab or collapsible transition animates.
 - Narrow (phone-width) viewports: the guide dialog fills the width with a 16px gutter,
   admin tables scroll horizontally rather than overflowing the page, and chips wrap.
@@ -207,15 +201,18 @@ click a follow-up chip and confirm it is submitted verbatim.
 - **FR-002**: Buttons MUST express exactly one of a fixed set of emphases (primary,
   secondary, ghost, destructive) and sizes (default, small, icon); no per-screen button
   styling may remain on the pages in FR-001.
-- **FR-003**: Dropdowns MUST keep native keyboard and mobile behaviour (no custom
-  pop-up list) while adopting the shared appearance.
+- **FR-003**: All dropdowns (chat model picker, raid role, admin invite role) MUST keep
+  native keyboard and mobile behaviour while adopting the shared appearance; the
+  library's custom pop-up list MUST NOT be used.
 - **FR-004**: The composer MUST keep Enter-to-send, Shift+Enter for newline, and its
   disabled rules (empty text, streaming, disconnected).
 - **FR-005**: The class-guide viewer MUST be a modal dialog that traps focus, closes on
   Escape, backdrop click and the Close control, locks background scrolling, and returns
   focus to the opening control.
-- **FR-006**: Disabling a user MUST require an in-app confirmation dialog with Cancel and
-  a visibly destructive confirm action; the browser's built-in confirmation box MUST NOT
+- **FR-006**: Every irreversible delete MUST require the shared in-app confirmation
+  dialog, with Cancel and a visibly destructive confirm action that names the affected
+  item: disable user, delete conversation, remove friend, remove guild. Revoke invitation
+  and re-enable user remain immediate. The browser's built-in confirmation box MUST NOT
   be used anywhere in the app.
 - **FR-007**: The profile tabs MUST support arrow-key navigation, expose the selected
   tab to assistive technology, and keep both tabs' in-progress state when switching.
@@ -225,22 +222,21 @@ click a follow-up chip and confirm it is submitted verbatim.
   status badges; load and action failures MUST render in a shared alert component.
 - **FR-010**: Guide status pills on the profile page and the degraded-model warning in
   the chat header MUST use the shared badge treatment and keep their existing tooltips.
-- **FR-011**: Sidebar Raids and Conversations sections MUST be keyboard-operable
-  collapsibles that expose their expanded state.
-- **FR-012**: Follow-up chips and boss-focus chips MUST keep their current behaviour
-  (submit on click; multi-select toggle with kill tick) and disabled-while-streaming rule.
-- **FR-013**: The existing dark-gold theme MUST be preserved: the shared components MUST
-  take their colours, radius and focus ring from the app's existing theme tokens, and any
-  tokens the shared components require that the theme does not yet define MUST be added
-  in the same palette.
-- **FR-014**: The app MUST NOT introduce a second icon library; shared components that
+- **FR-011**: The app MUST use a single palette, the existing dark-gold theme: the shared
+  components MUST take their colours, radius and focus ring from the app's existing theme
+  tokens, and any tokens the shared components require that the theme does not yet define
+  MUST be added in the same palette. The sign-in, accept-invitation, reset-password and
+  admin pages, which today use a separate neutral/indigo palette, MUST be re-themed to
+  the dark-gold theme; the neutral/indigo palette is retired.
+- **FR-012**: The app MUST NOT introduce a second icon library; shared components that
   require icons MUST use the icon set already in use.
-- **FR-015**: Every replaced control MUST retain its existing accessible name and role.
-- **FR-016**: Motion added by the shared components MUST respect the user's
+- **FR-013**: Every replaced control MUST retain its existing accessible name and role.
+- **FR-014**: Motion added by the shared components MUST respect the user's
   reduced-motion preference.
-- **FR-017**: The following MUST remain unchanged: message list and streaming renderer,
+- **FR-015**: The following MUST remain unchanged: message list and streaming renderer,
   spell cards, cast bars, rune spinner, ambient effects, backend boot overlay, chart
-  artifacts, and the sidebar drag-resize handle.
+  artifacts, the sidebar drag-resize handle, the sidebar's collapsible Raids and
+  Conversations sections, the follow-up question chips and the boss-focus picker.
 
 ## Success Criteria *(mandatory)*
 
@@ -254,21 +250,23 @@ click a follow-up chip and confirm it is submitted verbatim.
   alone, and focus returns to the opening control every time.
 - **SC-004**: A keyboard-only user can sign in, switch profile tabs, add a friend,
   and disable a user (with confirmation) without using a pointer.
-- **SC-005**: Side-by-side screenshots of the authentication, admin, profile and chat
-  screens before and after show the same background, accent and text colours (no theme
-  drift), with reviewers unable to spot any regression in the themed chat elements listed
-  in FR-017.
+- **SC-005**: After the change, the authentication, admin, profile and chat screens all
+  use the dark-gold palette (no neutral/indigo surfaces remain). Side-by-side screenshots
+  of the chat and profile screens before and after show the same background, accent and
+  text colours, and reviewers spot no regression in the themed chat elements listed in
+  FR-015.
 - **SC-006**: All existing frontend and backend automated checks pass, and the initial
   page download grows by no more than 10% compared with the current build.
 - **SC-007**: No existing user flow (sign in, invite, reset, profile edit, model pick,
-  send, follow-up, boss focus, admin actions) changes its number of steps.
+  send, follow-up, boss focus, admin actions) changes its number of steps, except the
+  four irreversible deletes in FR-006, which gain exactly one confirmation step.
 
 ## Assumptions
 
 - The shared component library is the one already configured in the project; this
   update adopts it rather than evaluating alternatives. Only components whose
   dependencies are limited to the library's own helper and headless primitives are in
-  scope, so that no second icon library is pulled in (FR-014).
+  scope, so that no second icon library is pulled in (FR-012).
 - Dropdowns keep native behaviour (FR-003) because no screen needs search, grouping or
   rich option rendering; a custom pop-up list is a deliberate non-goal.
 - The sidebar drag-resize handle and its persisted width are kept as-is; moving them to
@@ -279,8 +277,11 @@ click a follow-up chip and confirm it is submitted verbatim.
 - The boot overlay added in the previous update keeps its themed rune spinner rather than
   the library's generic spinner.
 - Visual parity is judged against the current dark-gold theme; no light theme is
-  introduced.
+  introduced. The authentication and admin pages are re-themed to it rather than kept in
+  their current neutral/indigo look (see Clarifications).
 - No data model, backend endpoint or persistence change is required; this is a
   frontend-only update.
-- Stories are independently shippable in priority order; P5 may be dropped without
-  affecting the others.
+- Stories are independently shippable in priority order.
+- Restyling the sidebar's collapsible sections, the follow-up chips and the boss-focus
+  chips with the shared set was considered and deferred to a follow-up update; they work
+  today and are listed as unchanged in FR-015.
