@@ -107,6 +107,15 @@ def _recent_block(
     return _trim("\n".join([_RECENT_HEADER, *lines]), _RECENT_CHARS)
 
 
+def guide_heading_label(game_patch: str | None, freshness: str) -> str:
+    """Provenance label for an injected guide heading (feature 009, contracts/rest-guides.md)."""
+    if freshness == "current" and game_patch:
+        return f"guide for patch {game_patch} · current"
+    if game_patch:
+        return f"guide for patch {game_patch} · may be out of date"
+    return "guide patch unknown · may be out of date"
+
+
 def build_preamble(
     self_character: UserCharacter | None,
     friends: list[UserCharacter],
@@ -117,6 +126,7 @@ def build_preamble(
     known_encounters: list[KnownEncounter] = (),
     known_guilds: list[str] = (),
     spec_guides: dict[tuple[str, str], str] = {},
+    guide_labels: dict[tuple[str, str], str] = {},
 ) -> str:
     """Compose the capped standing-context block, or "" when there's nothing to inject.
 
@@ -126,6 +136,9 @@ def build_preamble(
     ``spec_guides`` maps a resolved ``(class_name, active_spec)`` to that spec's guide markdown
     (from the shared library, feature 008). A character's guide is looked up by its resolved
     pair; an empty map or unresolved specs ⇒ byte-identical to the pre-feature output (FR-016).
+
+    ``guide_labels`` (feature 009 / US5) maps the same pair to a provenance label appended
+    to the guide heading, e.g. ``guide for patch 12.1 · current``; absent ⇒ unchanged.
     """
     profile_chars = ([self_character] if self_character else []) + list(friends)
 
@@ -161,7 +174,8 @@ def build_preamble(
                 if not body:
                     continue
                 spec = c.active_spec or "spec"
-                guide_lines.append(f"  ## {c.name} — {spec}")
+                label = guide_labels.get((c.class_name, c.active_spec))
+                guide_lines.append(f"  ## {c.name} — {spec}" + (f" ({label})" if label else ""))
                 guide_lines.append(f"  {body}")
                 used += len(body)
             if len(guide_lines) > 1:

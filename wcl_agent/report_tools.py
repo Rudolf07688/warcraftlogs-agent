@@ -18,20 +18,24 @@ All return a ``dict`` with a ``"status"`` key.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
 from .constants import METRICS
+from .provenance import Completeness, Provenance, flatten_report_rankings, with_envelope
 from .wcl_client import get_client
 
 # --- Enum whitelists (inlined into queries after validation) ------------------
+# Match the live API enums (feature 009, research R5/R14): ``Resurrections`` is
+# not a valid TableDataType or EventDataType; ``Summons`` is valid for tables.
 TABLE_DATA_TYPES = {
     "Summary", "DamageDone", "DamageTaken", "Healing", "Casts", "Deaths",
     "Debuffs", "Buffs", "Dispels", "Interrupts", "Resources", "Threat",
-    "Survivability", "Resurrections",
+    "Survivability", "Summons",
 }
 EVENT_DATA_TYPES = {
     "All", "DamageDone", "DamageTaken", "Healing", "Casts", "Deaths", "Debuffs",
-    "Buffs", "Dispels", "Interrupts", "Resources", "Threat", "Resurrections",
+    "Buffs", "Dispels", "Interrupts", "Resources", "Threat",
     "CombatantInfo", "Summons",
 }
 GRAPH_DATA_TYPES = TABLE_DATA_TYPES
@@ -138,13 +142,16 @@ def get_report_fights(report_code: str) -> dict[str, Any]:
                 "players": names,
             }
         )
-    return {
-        "status": "success",
-        "title": report.get("title"),
-        "zone": report.get("zone"),
-        "players": players,
-        "fights": _cap(fights),
-    }
+    return with_envelope(
+        {
+            "status": "success",
+            "title": report.get("title"),
+            "zone": report.get("zone"),
+            "players": players,
+            "fights": _cap(fights),
+        },
+        Provenance(report_code=report_code),
+    )
 
 
 def get_report_master_data(report_code: str) -> dict[str, Any]:
@@ -174,7 +181,10 @@ def get_report_master_data(report_code: str) -> dict[str, Any]:
     md = (((data.get("data") or {}).get("reportData") or {}).get("report") or {}).get("masterData")
     if md is None:
         return {"status": "error", "error_message": f"No report '{report_code}'."}
-    return {"status": "success", "actors": _cap(md.get("actors")), "abilities": _cap(md.get("abilities"))}
+    return with_envelope(
+        {"status": "success", "actors": _cap(md.get("actors")), "abilities": _cap(md.get("abilities"))},
+        Provenance(report_code=report_code),
+    )
 
 
 def get_report_metadata(report_code: str) -> dict[str, Any]:
@@ -242,7 +252,7 @@ def get_report_table(
         report_code (str): The report code.
         data_type (str): One of Summary, DamageDone, DamageTaken, Healing, Casts,
             Deaths, Debuffs, Buffs, Dispels, Interrupts, Resources, Threat,
-            Survivability, Resurrections.
+            Survivability, Summons.
         fight_id (int): A single fight id (from get_report_fights). 0 = all fights.
         source_id (int): Filter to one actor id (0 = all). Use this to drill into
             one player's abilities.
@@ -250,7 +260,11 @@ def get_report_table(
         hostility_type (str): 'Friendlies' (players) or 'Enemies' (NPCs/boss).
 
     Returns:
-        dict: {"status": "success", "data_type": ..., "table": {...}} or an error.
+        dict: {"status": "success", "data_type": ..., "table": {...},
+               "provenance": {...}, "completeness": {...}} or an error.
+            ``completeness.truncated`` is true when the table was too large and
+            only a preview is returned — narrow the query before drawing
+            completeness-dependent conclusions.
     """
     if data_type not in TABLE_DATA_TYPES:
         return {"status": "error", "error_message": f"Bad data_type '{data_type}'.",
@@ -274,7 +288,10 @@ def get_report_table(
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if table is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
-    return {"status": "success", "data_type": data_type, "table": _cap(table)}
+    return with_envelope(
+        {"status": "success", "data_type": data_type, "table": _cap(table)},
+        Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
+    )
 
 
 def get_report_events(
@@ -297,7 +314,7 @@ def get_report_events(
         report_code (str): The report code.
         data_type (str): One of All, DamageDone, DamageTaken, Healing, Casts,
             Deaths, Debuffs, Buffs, Dispels, Interrupts, Resources, Threat,
-            Resurrections, CombatantInfo, Summons.
+            CombatantInfo, Summons.
         fight_id (int): Single fight id (0 = all).
         source_id (int): Actor id filter (0 = all).
         ability_id (int): Ability game id filter (0 = all).
@@ -307,7 +324,10 @@ def get_report_events(
             call's nextPageTimestamp to page forward. 0 = fight start.
 
     Returns:
-        dict: {"status": "success", "events": {data:[...], nextPageTimestamp}} or error.
+        dict: {"status": "success", "events": {data:[...], nextPageTimestamp},
+               "provenance": {...}, "completeness": {"has_more": bool, ...}} or
+            error. ``completeness.has_more`` is true when another page exists
+            (pass ``nextPageTimestamp`` as ``start_time`` to continue).
     """
     if data_type not in EVENT_DATA_TYPES:
         return {"status": "error", "error_message": f"Bad data_type '{data_type}'.",
@@ -340,7 +360,12 @@ def get_report_events(
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if events is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
-    return {"status": "success", "data_type": data_type, "events": _cap(events)}
+    has_more = isinstance(events, dict) and events.get("nextPageTimestamp") is not None
+    return with_envelope(
+        {"status": "success", "data_type": data_type, "events": _cap(events)},
+        Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
+        Completeness(has_more=has_more),
+    )
 
 
 def get_report_graph(
@@ -381,20 +406,57 @@ def get_report_graph(
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if graph is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
-    return {"status": "success", "data_type": data_type, "graph": _cap(graph)}
+    return with_envelope(
+        {"status": "success", "data_type": data_type, "graph": _cap(graph)},
+        Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
+    )
 
 
-def get_report_rankings(report_code: str, fight_id: int = 0) -> dict[str, Any]:
-    """Get the parse percentiles for the players in a report's fight(s).
+RANKING_COMPARE_TYPES = {"Rankings", "Parses"}
+RANKING_TIMEFRAMES = {"Historical", "Today"}
+
+
+def get_report_rankings(
+    report_code: str,
+    fight_id: int = 0,
+    compare: str = "Rankings",
+    timeframe: str = "Historical",
+) -> dict[str, Any]:
+    """Get the parse percentiles for the players in a report's fight(s), with context.
+
+    A percentile depends on what it is compared against (feature 009, FR-018):
+    - compare='Rankings' (default): against every character's BEST score for the
+      tier (what the WCL rankings pages show). compare='Parses': against all
+      individual pulls logged in roughly the last two weeks, i.e. typical
+      execution rather than best scores — percentiles are usually higher.
+    - timeframe='Historical' (default): as evaluated at the time of the kill.
+      timeframe='Today': re-evaluated against the current population.
+    Say which pair you used when it matters. The result's `percentiles` list is a
+    flattened row per ranked player with both the overall `rank_percent` and the
+    item-level `bracket_percent`, the population size `total_parses`, partition,
+    and fight context — present overall and bracket together when both exist.
 
     Args:
         report_code (str): The report code.
         fight_id (int): Single fight id (0 = all fights).
+        compare (str): 'Rankings' or 'Parses'.
+        timeframe (str): 'Historical' or 'Today'.
 
     Returns:
-        dict: {"status": "success", "rankings": {...}} or an error.
+        dict: {"status": "success", "rankings": {...raw...}, "percentiles": [
+            {name, server, class_name, spec, role, population, timeframe,
+             rank_percent, bracket_percent, bracket, item_level, total_parses,
+             partition, metric, encounter_id, difficulty, fight_id, kill,
+             duration_s, amount}], "provenance": {...compare, timeframe...},
+            "completeness": {...}} or an error.
     """
-    field = "rankings(fightIDs: $fightIDs)"
+    if compare not in RANKING_COMPARE_TYPES:
+        return {"status": "error", "error_message": f"Bad compare '{compare}'.",
+                "valid": sorted(RANKING_COMPARE_TYPES)}
+    if timeframe not in RANKING_TIMEFRAMES:
+        return {"status": "error", "error_message": f"Bad timeframe '{timeframe}'.",
+                "valid": sorted(RANKING_TIMEFRAMES)}
+    field = f"rankings(fightIDs: $fightIDs, compare: {compare}, timeframe: {timeframe})"
     var_decls = ", $fightIDs: [Int]"
     try:
         rankings = _report_field(
@@ -404,7 +466,14 @@ def get_report_rankings(report_code: str, fight_id: int = 0) -> dict[str, Any]:
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if rankings is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
-    return {"status": "success", "rankings": _cap(rankings)}
+    percentiles = [
+        asdict(p)
+        for p in flatten_report_rankings(rankings, compare=compare, timeframe=timeframe, metric="default")
+    ]
+    return with_envelope(
+        {"status": "success", "rankings": _cap(rankings), "percentiles": _cap(percentiles)},
+        Provenance(report_code=report_code, fight_id=fight_id or None, compare=compare, timeframe=timeframe),
+    )
 
 
 def get_report_player_details(report_code: str, fight_id: int = 0) -> dict[str, Any]:
@@ -427,7 +496,10 @@ def get_report_player_details(report_code: str, fight_id: int = 0) -> dict[str, 
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if details is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
-    return {"status": "success", "playerDetails": _cap(details)}
+    return with_envelope(
+        {"status": "success", "playerDetails": _cap(details)},
+        Provenance(report_code=report_code, fight_id=fight_id or None),
+    )
 
 
 # --- Individual character history ---------------------------------------------
@@ -476,7 +548,10 @@ def get_character_zone_rankings(
     char = ((data.get("data") or {}).get("characterData") or {}).get("character")
     if not char:
         return {"status": "error", "error_message": f"Character '{name}-{server}' ({region}) not found."}
-    return {"status": "success", "name": char.get("name"), "zoneRankings": _cap(char.get("zoneRankings"))}
+    return with_envelope(
+        {"status": "success", "name": char.get("name"), "zoneRankings": _cap(char.get("zoneRankings"))},
+        Provenance(metric=metric, difficulty=difficulty or None),
+    )
 
 
 def get_character_encounter_rankings(
@@ -517,7 +592,10 @@ def get_character_encounter_rankings(
     char = ((data.get("data") or {}).get("characterData") or {}).get("character")
     if not char:
         return {"status": "error", "error_message": f"Character '{name}-{server}' ({region}) not found."}
-    return {"status": "success", "name": char.get("name"), "encounterRankings": _cap(char.get("encounterRankings"))}
+    return with_envelope(
+        {"status": "success", "name": char.get("name"), "encounterRankings": _cap(char.get("encounterRankings"))},
+        Provenance(encounter_id=encounter_id, metric=metric, difficulty=difficulty or None),
+    )
 
 
 # --- Ultimate escape hatch ----------------------------------------------------
@@ -551,4 +629,4 @@ def run_wcl_graphql(query: str, variables_json: str = "") -> dict[str, Any]:
         data = get_client().query(query, variables)
     except Exception as exc:  # noqa: BLE001 - includes GraphQL errors for the model to fix
         return {"status": "error", "error_message": f"Query failed: {exc}"}
-    return {"status": "success", "data": _cap(data.get("data"))}
+    return with_envelope({"status": "success", "data": _cap(data.get("data"))}, Provenance())

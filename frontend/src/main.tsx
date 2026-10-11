@@ -4,6 +4,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom"
 import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./auth/RequireAuth";
+import { BackendBootGate } from "./components/BackendBootGate";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import ForbiddenPage from "./pages/ForbiddenPage";
@@ -48,10 +49,14 @@ const router = createBrowserRouter([
   { path: "*", element: <Navigate to="/app" replace /> },
 ]);
 
+// BackendBootGate sits outermost: nothing (not even the auth rehydrate) talks to the API
+// until the backend reports every startup step done. Shows a boot overlay meanwhile.
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <BackendBootGate>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </BackendBootGate>
   </StrictMode>,
 );

@@ -1,6 +1,6 @@
 // US6 spell registry: one entry per real agent tool, so every tool call feels
 // distinct (icon, magic-school hue, verb, rotating flavor lines). Every tool the
-// agent exposes (16 WCL tools + web_search) MUST be mapped; unknown/new tools fall
+// agent exposes (the `TOOLS` list in wcl_agent/agent.py + web_search) MUST be mapped; unknown/new tools fall
 // back to DEFAULT_SPELL so a card never renders blank or crashes (FR-031).
 // Icons are from react-icons/gi (game-icons.net, CC BY 3.0 — see the app footer).
 
@@ -127,6 +127,19 @@ export const SPELLS: Record<string, Spell> = {
     hue: VERDANT,
     verb: "Recalling the hero's duels",
     flavor: ["Counting old victories…", "Reading parse history…"],
+  },
+  // --- Benchmark (feature 009) ---
+  compare_player_to_cohort: {
+    icon: GiCrossedSwords,
+    hue: GOLD,
+    verb: "Gathering worthy rivals",
+    flavor: ["Matching kills of a like length…", "Weighing the cohort's medians…"],
+  },
+  get_cooldown_usage: {
+    icon: GiHourglass,
+    hue: EMBER,
+    verb: "Counting the cooldowns",
+    flavor: ["Subtracting the time spent dead…", "Tallying uses against chances…"],
   },
   // --- Utility / escape hatch ---
   check_rate_limit: {

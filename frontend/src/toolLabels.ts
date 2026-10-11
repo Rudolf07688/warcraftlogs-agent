@@ -15,6 +15,8 @@ const TOOL_LABELS: Record<string, string> = {
   get_report_master_data: "Resolving names",
   get_character_zone_rankings: "Looking up the character",
   get_character_encounter_rankings: "Looking up the character",
+  compare_player_to_cohort: "Finding comparable players",
+  get_cooldown_usage: "Checking cooldown usage",
   check_rate_limit: "Checking API budget",
   run_wcl_graphql: "Querying Warcraft Logs",
 };

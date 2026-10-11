@@ -868,6 +868,39 @@ body::after {
   background: rgba(255, 90, 90, 0.12);
   color: #ffb3b3;
 }
+/* Feature 009 / US5: guide provenance (patch · date) and the freshness warning. */
+.guide-stale {
+  background: rgba(255, 184, 77, 0.16);
+  color: #ffd08a;
+}
+.guide-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.guide-view-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 0 8px;
+}
+.guide-sources {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.guide-sources h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.guide-sources ul {
+  margin: 0;
+  padding-left: 18px;
+}
 
 /* --- Chart artifacts (feature 005 / US2) ----------------------------------- */
 .chart-artifact {
@@ -1088,4 +1121,151 @@ body::after {
 .guide-view-body {
   font-size: 14px;
   line-height: 1.55;
+}
+
+/* --- Backend boot overlay (BackendBootGate) ------------------------------------ */
+.boot-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(200, 170, 110, 0.08), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  z-index: 1000;
+}
+.boot-card {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elev);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+.boot-spinner {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+.boot-spinner .spell-rune {
+  filter: drop-shadow(0 0 10px currentColor);
+}
+.boot-glyph {
+  position: relative;
+  z-index: 1;
+  font-size: 26px;
+  color: var(--wow-gold-bright);
+  animation: boot-pulse 1.8s ease-in-out infinite;
+}
+.boot-failed .boot-glyph {
+  color: var(--danger);
+  animation: none;
+}
+@keyframes boot-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+.boot-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.boot-sub {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.45;
+  max-width: 44ch;
+}
+.boot-failed .boot-sub {
+  color: var(--danger);
+  word-break: break-word;
+}
+.boot-steps {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  font-size: 14px;
+}
+.boot-step {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--text-dim);
+}
+.boot-step-running {
+  color: var(--text);
+  background: rgba(200, 170, 110, 0.08);
+}
+.boot-step-done {
+  color: var(--text);
+}
+.boot-step-done .boot-step-glyph {
+  color: #6fcf97;
+}
+.boot-step-running .boot-step-glyph {
+  color: var(--wow-gold);
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+.boot-step-skipped {
+  opacity: 0.75;
+}
+.boot-step-failed {
+  color: var(--danger);
+}
+.boot-step-glyph {
+  text-align: center;
+  font-size: 14px;
+}
+.boot-step-detail {
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boot-step-skipped .boot-step-detail,
+.boot-step-failed .boot-step-detail {
+  white-space: normal;
+  max-width: 34ch;
+}
+.boot-elapsed,
+.boot-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-glyph,
+  .boot-step-running .boot-step-glyph {
+    animation: none;
+  }
 }

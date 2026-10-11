@@ -18,6 +18,11 @@ def _clip(text: str) -> str:
     return text if len(text) <= _MAX else text[: _MAX - 1].rstrip() + "…"
 
 
+def _mmss(seconds: float) -> str:
+    total = int(round(seconds))
+    return f"{total // 60}m{total % 60:02d}s"
+
+
 def _count(result: dict, *keys: str) -> int | None:
     for key in keys:
         val = result.get(key)
@@ -34,6 +39,9 @@ def summarize_tool_result(name: str, ok: bool, result: dict[str, Any] | None) ->
     On failure, prefer the tool's own error message so the fizzled card can show why.
     """
     result = result if isinstance(result, dict) else {}
+    if result.get("status") == "limited":
+        # feature 009: a benchmark on a wipe is limited, not failed.
+        return _clip(f"limited: {result.get('reason') or 'no ranked population'}")
     if not ok:
         msg = result.get("error_message") or result.get("error")
         return _clip(str(msg)) if msg else "failed"
@@ -62,6 +70,28 @@ def summarize_tool_result(name: str, ok: bool, result: dict[str, Any] | None) ->
     if name in ("get_rankings_distribution", "compare_specs", "get_report_rankings"):
         n = _count(result, "rankings", "specs", "distribution", "data")
         return _clip(f"{n} ranked entries") if n is not None else "ok"
+
+    if name == "compare_player_to_cohort":
+        cohort = result.get("cohort") or {}
+        size, label = cohort.get("size"), cohort.get("label")
+        if size is None:
+            return "ok"
+        head = f"cohort of {size} ({label})" if label else f"cohort of {size}"
+        window = (cohort.get("criteria") or {}).get("duration_window_pct")
+        return _clip(f"{head} — ±{window}% duration" if window else head)
+
+    if name == "get_cooldown_usage":
+        time_block = result.get("time") or {}
+        eligible, fight = time_block.get("eligible_s"), time_block.get("fight_s")
+        span = (
+            f" · eligible {_mmss(eligible)} of {_mmss(fight)}"
+            if isinstance(eligible, (int, float)) and isinstance(fight, (int, float))
+            else ""
+        )
+        available = bool((result.get("guide") or {}).get("available"))
+        n = len(result.get("cooldowns") or [])
+        head = f"{n} cooldowns" if available else "rates only — no guide cooldowns"
+        return _clip(head + span)
 
     if name == "check_rate_limit":
         pts = result.get("points_spent_this_hour") or result.get("limit_per_hour")

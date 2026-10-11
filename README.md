@@ -179,9 +179,42 @@ CSRF token (sent as `X-CSRF-Token` on unsafe requests). Full verification steps 
   `encounters` frame drives the picker). Icons are from game-icons.net (CC BY 3.0,
   credited in-app); no Blizzard assets.
 
+### Grounded, evidence-based coaching (feature 009)
+
+- **Evidence contract** — Barnaby's instruction is rewritten into tagged sections
+  (`<EVIDENCE_CONTRACT>`, `<VALIDATION_BEFORE_ANALYSIS>`, `<BENCHMARK_POLICY>`,
+  `<COACHING_POLICY>`, `<PERCENTILE_POLICY>`, `<OUTPUT>`, `<PERSONALITY>`, …): every
+  number comes from a tool, inference is worded as inference, and when the log can't
+  answer (positioning, intent) he says so and asks for the smallest missing input.
+  Analytical answers lead with a verdict, then evidence, then ≤3 fixes each with
+  evidence, expected change and confidence; the persona is applied last and may not
+  bend a fact. `backend/tests/test_prompt_contract.py` guards the sections.
+- **Provenance + completeness on every WCL tool result** — `provenance` (report,
+  fight, encounter, difficulty, partition, metric, source, compare/timeframe,
+  fetched_at) and `completeness` (`has_more`, `truncated`, `sample_size`,
+  `sample_scope`), additive to the existing shapes. `get_report_rankings` takes
+  `compare` (Rankings/Parses) and `timeframe` (Historical/Today) and returns a
+  flattened `percentiles` list with overall **and** item-level-bracket percentiles.
+- **`compare_player_to_cohort`** — replaces "compare to the top parse" with a
+  matched cohort: ≤5 kill parses of the same encounter/difficulty/spec/metric/
+  partition from the ~75th–95th percentile band, fight duration ±15%, medians and
+  ranges of casts per minute per ability and throughput, labelled
+  matched/directional/anecdotal; the player's rates are per minute **alive**.
+  Budget-aware (shrinks below 100 / 40 remaining WCL points).
+- **`get_cooldown_usage`** — "N of ~M opportunities" for major cooldowns over
+  eligible time (fight minus time dead and intermissions), using the spec guide's
+  machine-readable cooldowns; rates only (never "missed") when no guide is ready.
+- **Guide freshness** — each shared spec guide now stores the patch it targets, when
+  it was generated, its web sources and its major cooldowns (migration
+  `0009_guide_provenance`; `alembic upgrade head` applies it). The Class Guides page
+  shows "Patch 12.1 · date", a "May be out of date" badge for older/unknown patches,
+  and the sources; the agent sees the same label on injected guides. Pre-existing
+  guides show "Patch unknown" until regenerated.
+
 See `specs/001-streaming-chat-frontend/quickstart.md`,
-`specs/002-agent-enhancements/quickstart.md`, and
-`specs/004-raid-sourcing-ux/quickstart.md` for walkthroughs, and
+`specs/002-agent-enhancements/quickstart.md`,
+`specs/004-raid-sourcing-ux/quickstart.md`, and
+`specs/009-grounded-coaching-prompt/quickstart.md` for walkthroughs, and
 `documentation/deployment.md` for the Cloud Run / Cloud SQL / Secret Manager plan.
 
 Run the backend tests (pytest lives in the `test` extra):

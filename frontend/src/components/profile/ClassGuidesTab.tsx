@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, generateGuide, getGuide, listGuides } from "../../api/restClient";
-import type { Guide, GuideListItem, GuideStatus } from "../../types";
+import type { Guide, GuideFreshness, GuideListItem, GuideStatus } from "../../types";
 import { StreamMarkdown } from "../StreamMarkdown";
 
 // Class Guides tab (feature 008 / US2): the full class/spec roster merged with the shared,
@@ -18,6 +18,43 @@ const POLL_MS = 4000;
 
 function keyOf(it: { class_name: string; spec: string }): string {
   return `${it.class_name}/${it.spec}`;
+}
+
+// Feature 009 / US5: patch + generated date for a ready guide, and a visible
+// "May be out of date" badge when the guide's patch is older than the live one or unknown.
+function fmtDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
+}
+
+function GuideProvenance({
+  it,
+}: {
+  it: { game_patch: string | null; generated_at: string | null; freshness: GuideFreshness | null };
+}) {
+  const date = fmtDate(it.generated_at);
+  const stale = it.freshness === "possibly_stale" || it.freshness === "unknown";
+  return (
+    <>
+      <span className="guide-meta" title="Patch the guide targets · when it was generated">
+        {it.game_patch ? `Patch ${it.game_patch}` : "Patch unknown"}
+        {date ? ` · ${date}` : ""}
+      </span>
+      {stale && (
+        <span
+          className="guide-badge guide-stale"
+          title={
+            it.freshness === "unknown"
+              ? "This guide does not state a patch; regenerate to refresh it."
+              : "This guide targets an older patch; regenerate to refresh it."
+          }
+        >
+          May be out of date
+        </span>
+      )}
+    </>
+  );
 }
 
 export function ClassGuidesTab({ active }: { active: boolean }) {
@@ -113,6 +150,7 @@ export function ClassGuidesTab({ active }: { active: boolean }) {
                     <span className={`guide-badge guide-${it.status}`}>
                       {CHIP_LABEL[it.status]}
                     </span>
+                    {it.status === "ready" && <GuideProvenance it={it} />}
                     <span className="guide-spec-actions">
                       {it.status === "ready" && (
                         <>
@@ -180,11 +218,30 @@ export function ClassGuidesTab({ active }: { active: boolean }) {
                 ✕
               </button>
             </header>
+            {viewing.status === "ready" && (
+              <div className="guide-view-meta">
+                <GuideProvenance it={viewing} />
+              </div>
+            )}
             <div className="guide-view-body">
               {viewing.guide_markdown ? (
                 <StreamMarkdown content={viewing.guide_markdown} />
               ) : (
                 <p className="guide-spec-hint">No content yet.</p>
+              )}
+              {viewing.sources && viewing.sources.length > 0 && (
+                <div className="guide-sources">
+                  <h4>Sources</h4>
+                  <ul>
+                    {viewing.sources.map((s) => (
+                      <li key={s.uri}>
+                        <a href={s.uri} target="_blank" rel="noreferrer">
+                          {s.title || s.uri}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           </div>

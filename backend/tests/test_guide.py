@@ -14,6 +14,18 @@ from backend.app.db import session as db_session
 from backend.app.db import repository as repo
 from backend.app.services import guide
 
+# Feature 009: generation returns GeneratedText; a valid trailing guide-meta block is
+# appended so the stored markdown equals the given text (block stripped, no repair turn).
+_META = (
+    '\n\n```guide-meta\n{"patch": "12.1", "major_cooldowns": '
+    '[{"name": "Combustion", "spell_id": 190319, "cooldown_s": 120}]}\n```'
+)
+
+
+def _gen(text: str) -> guide.GeneratedText:
+    return guide.GeneratedText(text + _META if text else "", [], "sess")
+
+
 
 async def _drain_bg() -> None:
     """Await any background generation tasks spawned by ensure_spec_guide."""
@@ -32,8 +44,8 @@ async def test_character_resolves_spec_and_triggers_shared_guide(
     async def fake_resolve(name, server, region):
         return ("Shaman", "Enhancement")
 
-    async def fake_gen(prompt):
-        return "## Rotation\nStormstrike on cooldown."
+    async def fake_gen(prompt, session_id=None):
+        return _gen("## Rotation\nStormstrike on cooldown.")
 
     monkeypatch.setattr(guide, "resolve_active_spec", fake_resolve)
     monkeypatch.setattr(guide, "_generate_text", fake_gen)
@@ -95,8 +107,8 @@ async def test_empty_generation_marks_spec_guide_failed(
     async def fake_resolve(*a):
         return ("Mage", "Frost")
 
-    async def empty_gen(prompt):
-        return ""
+    async def empty_gen(prompt, session_id=None):
+        return _gen("")
 
     monkeypatch.setattr(guide, "resolve_active_spec", fake_resolve)
     monkeypatch.setattr(guide, "_generate_text", empty_gen)

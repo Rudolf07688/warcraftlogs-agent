@@ -714,6 +714,9 @@ async def get_spec_guide(
     return result.scalar_one_or_none()
 
 
+_UNSET: object = object()  # "leave the column unchanged" sentinel (feature 009)
+
+
 async def upsert_spec_guide(
     session: AsyncSession,
     *,
@@ -721,17 +724,33 @@ async def upsert_spec_guide(
     spec: str,
     status: str,
     guide_markdown: str | None = None,
+    game_patch: str | None | object = _UNSET,
+    generated_at: datetime | None | object = _UNSET,
+    sources: list | None | object = _UNSET,
+    major_cooldowns: list | None | object = _UNSET,
 ) -> SpecGuide:
     """Create or update the ``(class, spec)`` guide. Stamps markdown only when provided.
+
+    The feature-009 provenance columns are stamped only when passed (``None`` clears
+    them); omitted ⇒ unchanged, so status flips never touch them.
 
     Raises ``IntegrityError`` if a concurrent insert wins the unique ``(class, spec)``
     constraint — the caller rolls back and re-reads the winner (contracts: dedup).
     """
+    provenance = {
+        "game_patch": game_patch,
+        "generated_at": generated_at,
+        "sources": sources,
+        "major_cooldowns": major_cooldowns,
+    }
     existing = await get_spec_guide(session, class_name=class_name, spec=spec)
     if existing is not None:
         existing.status = status
         if guide_markdown is not None:
             existing.guide_markdown = guide_markdown
+        for column, value in provenance.items():
+            if value is not _UNSET:
+                setattr(existing, column, value)
         await session.flush()
         return existing
     guide = SpecGuide(
@@ -739,6 +758,7 @@ async def upsert_spec_guide(
         spec=spec,
         status=status,
         guide_markdown=guide_markdown,
+        **{column: value for column, value in provenance.items() if value is not _UNSET},
     )
     session.add(guide)
     await session.flush()

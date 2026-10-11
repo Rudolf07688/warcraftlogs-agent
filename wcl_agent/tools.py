@@ -15,6 +15,7 @@ import pandas as pd
 from google.adk.tools import ToolContext
 
 from .constants import CLASS_SPECS, METRICS, normalize_class_name
+from .provenance import Completeness, Provenance, with_envelope
 from .queries import ENCOUNTER_RANKINGS, MENU_DISCOVERY
 from .wcl_client import check_rate_limit as _check_rate_limit
 from .wcl_client import get_client
@@ -148,7 +149,14 @@ def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
                 "encounter_id and difficulty_id to the ranking tools."
             ),
         }
-    return {"status": "success", "selection": sel}
+    return with_envelope(
+        {"status": "success", "selection": sel},
+        Provenance(
+            encounter_id=sel.get("encounterID"),
+            difficulty=sel.get("difficultyID"),
+            partition=sel.get("partition"),
+        ),
+    )
 
 
 def find_encounter(query: str) -> dict[str, Any]:
@@ -198,7 +206,7 @@ def find_encounter(query: str) -> dict[str, Any]:
                 )
     if not matches:
         return {"status": "error", "error_message": f"No encounter matching '{query}'."}
-    return {"status": "success", "matches": matches[:8]}
+    return with_envelope({"status": "success", "matches": matches[:8]}, Provenance())
 
 
 def get_spec_options(class_name: str) -> dict[str, Any]:
@@ -223,12 +231,15 @@ def get_spec_options(class_name: str) -> dict[str, Any]:
             "error_message": f"Unknown class '{class_name}'.",
             "valid_classes": list(CLASS_SPECS.keys()),
         }
-    return {
-        "status": "success",
-        "class_name": normalized,
-        "display": CLASS_SPECS[normalized]["display"],
-        "specs": CLASS_SPECS[normalized]["specs"],
-    }
+    return with_envelope(
+        {
+            "status": "success",
+            "class_name": normalized,
+            "display": CLASS_SPECS[normalized]["display"],
+            "specs": CLASS_SPECS[normalized]["specs"],
+        },
+        Provenance(),
+    )
 
 
 def get_rankings_distribution(
@@ -262,7 +273,11 @@ def get_rankings_distribution(
 
     Returns:
         dict: {"status": "success", ...summary...} including sample_size,
-            amount_percentiles, spec_breakdown, and top_parses; or an error.
+            amount_percentiles, spec_breakdown, top_parses, and a
+            ``completeness`` block whose ``sample_scope`` is
+            "top_of_leaderboard" when lower-ranked parses were not fetched
+            (so the percentiles describe the top of the leaderboard, not the
+            whole population); or an error.
     """
     sel = _selection(tool_context)
     if encounter_id:
@@ -308,32 +323,52 @@ def get_rankings_distribution(
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
 
     summary = _summarize(entries)
-    if summary.get("sample_size", 0) == 0:
-        return {
+    provenance = Provenance(
+        encounter_id=sel["encounterID"],
+        difficulty=sel["difficultyID"],
+        partition=sel.get("partition"),
+        metric=metric,
+    )
+    sample_size = int(summary.get("sample_size", 0))
+    completeness = Completeness(
+        has_more=has_more,
+        sample_size=sample_size,
+        sample_scope="top_of_leaderboard" if has_more else "full",
+    )
+    if sample_size == 0:
+        return with_envelope(
+            {
+                "status": "success",
+                "note": "No ranking entries found for these filters.",
+                "encounter": sel["encounterName"],
+                "difficulty": sel["difficultyName"],
+                "filters": {"class": class_name, "spec": spec_name, "metric": metric},
+                **summary,
+            },
+            provenance,
+            completeness,
+        )
+
+    return with_envelope(
+        {
             "status": "success",
-            "note": "No ranking entries found for these filters.",
             "encounter": sel["encounterName"],
             "difficulty": sel["difficultyName"],
+            "season_partition": sel["partition"],
             "filters": {"class": class_name, "spec": spec_name, "metric": metric},
+            "pages_fetched": pages,
+            "more_pages_available": has_more,
+            "sample_note": (
+                "Percentiles are computed over the fetched sample of {n} parses, "
+                "which are the TOP scorers (leaderboard sorted by score descending)."
+                + (" More lower-ranked parses exist; fetch more pages to reach "
+                   "lower percentiles." if has_more else "")
+            ).format(n=sample_size),
             **summary,
-        }
-
-    return {
-        "status": "success",
-        "encounter": sel["encounterName"],
-        "difficulty": sel["difficultyName"],
-        "season_partition": sel["partition"],
-        "filters": {"class": class_name, "spec": spec_name, "metric": metric},
-        "pages_fetched": pages,
-        "more_pages_available": has_more,
-        "sample_note": (
-            "Percentiles are computed over the fetched sample of {n} parses, "
-            "which are the TOP scorers (leaderboard sorted by score descending)."
-            + (" More lower-ranked parses exist; fetch more pages to reach "
-               "lower percentiles." if has_more else "")
-        ).format(n=summary.get("sample_size", 0)),
-        **summary,
-    }
+        },
+        provenance,
+        completeness,
+    )
 
 
 def compare_specs(
@@ -371,6 +406,9 @@ def compare_specs(
         }
 
     comparison = []
+    any_more = False
+    total_sample = 0
+    provenance: dict[str, Any] = {}
     for spec in CLASS_SPECS[normalized]["specs"]:
         result = get_rankings_distribution(
             class_name=normalized,
@@ -384,6 +422,9 @@ def compare_specs(
         if result.get("status") != "success" or result.get("sample_size", 0) == 0:
             comparison.append({"spec": spec, "sample_size": 0})
             continue
+        provenance = provenance or (result.get("provenance") or {})
+        any_more = any_more or bool(result.get("more_pages_available"))
+        total_sample += int(result.get("sample_size") or 0)
         pcts = result.get("amount_percentiles", {})
         comparison.append(
             {
@@ -396,12 +437,25 @@ def compare_specs(
         )
 
     comparison.sort(key=lambda c: (c.get("median") or 0), reverse=True)
-    return {
-        "status": "success",
-        "class_name": normalized,
-        "metric": metric,
-        "comparison": comparison,
-    }
+    return with_envelope(
+        {
+            "status": "success",
+            "class_name": normalized,
+            "metric": metric,
+            "comparison": comparison,
+        },
+        Provenance(
+            encounter_id=provenance.get("encounter_id") or (encounter_id or None),
+            difficulty=provenance.get("difficulty") or (difficulty_id or None),
+            partition=provenance.get("partition"),
+            metric=metric,
+        ),
+        Completeness(
+            has_more=any_more,
+            sample_size=total_sample,
+            sample_scope="top_of_leaderboard" if any_more else "full",
+        ),
+    )
 
 
 def check_rate_limit() -> dict[str, Any]:

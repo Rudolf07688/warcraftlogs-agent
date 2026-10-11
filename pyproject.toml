@@ -43,3 +43,4 @@ packages = ["wcl_agent", "backend"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["backend/tests"]

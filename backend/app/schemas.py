@@ -298,6 +298,39 @@ class ProfileOut(BaseModel):
 # "none" = no row (not downloaded); the others mirror SpecGuide.status.
 GuideStatus = Literal["none", "pending", "ready", "failed"]
 
+# Feature 009 / US5: read-time freshness vs the current raid patch (None unless ready).
+GuideFreshness = Literal["current", "possibly_stale", "unknown"]
+
+
+class GuideSource(BaseModel):
+    title: str | None = None
+    uri: str
+
+
+class GuideCooldownIn(BaseModel):
+    """One major cooldown as stated by the guide generator (data-model §2)."""
+
+    name: str = Field(min_length=1, max_length=80)
+    spell_id: int | None = Field(default=None, gt=0)
+    cooldown_s: float = Field(ge=1, le=600)
+    charges: int = Field(default=1, ge=1, le=5)
+    talent_modified: bool = False
+
+
+class GuideMetaBlock(BaseModel):
+    """The fenced ``guide-meta`` JSON block parsed off the end of a generated guide."""
+
+    patch: str | None = Field(default=None, max_length=20)
+    major_cooldowns: list[GuideCooldownIn] = Field(default_factory=list, max_length=15)
+
+    @field_validator("patch", mode="before")
+    @classmethod
+    def _strip_patch(cls, v):
+        if v is None:
+            return None
+        v = str(v).strip()
+        return v or None
+
 
 class GuideListItem(BaseModel):
     class_name: str  # WCL filter value, e.g. "Paladin"
@@ -305,6 +338,9 @@ class GuideListItem(BaseModel):
     spec: str  # e.g. "Protection"
     status: GuideStatus
     updated_at: datetime | None = None
+    game_patch: str | None = None  # patch the guide targets (None = unknown)
+    generated_at: datetime | None = None
+    freshness: GuideFreshness | None = None  # None unless status == "ready"
 
 
 class GuideListOut(BaseModel):
@@ -315,8 +351,12 @@ class GuideOut(BaseModel):
     class_name: str
     spec: str
     status: GuideStatus
-    guide_markdown: str | None = None  # present only when status == "ready"
+    guide_markdown: str | None = None  # present only when status == "ready"; meta block stripped
     updated_at: datetime | None = None
+    game_patch: str | None = None
+    generated_at: datetime | None = None
+    freshness: GuideFreshness | None = None
+    sources: list[GuideSource] = []
 
 
 class GuideGenerateIn(BaseModel):

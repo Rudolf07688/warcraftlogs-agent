@@ -1,5 +1,6 @@
 import type {
   AdminUser,
+  BackendHealth,
   CharacterInput,
   Character,
   ChartArtifact,
@@ -307,4 +308,17 @@ export async function generateGuide(
     { force },
     { csrf: true },
   );
+}
+
+// --- Backend readiness ----------------------------------------------------------
+
+/**
+ * Boot-time readiness probe. Unlike `send`, a 503 here is data (the backend is still
+ * starting and the body carries its step progress), so the body is returned whatever
+ * the status. A non-JSON body (Vite's proxy error page when the backend port is not
+ * open yet) rejects, which the caller treats as "unreachable".
+ */
+export async function getBackendHealth(): Promise<BackendHealth> {
+  const res = await fetch("/api/health", { cache: "no-store", credentials: "include" });
+  return (await res.json()) as BackendHealth;
 }

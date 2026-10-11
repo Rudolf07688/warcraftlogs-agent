@@ -530,6 +530,12 @@ class SpecGuide(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # Feature 009 / US5 provenance (migration 0009). All nullable; NULL ⇒ unknown
+    # freshness / no machine-readable cooldowns (pre-feature rows).
+    game_patch: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sources: Mapped[list | None] = mapped_column(_JSON, nullable=True)  # [{title, uri}]
+    major_cooldowns: Mapped[list | None] = mapped_column(_JSON, nullable=True)  # [GuideCooldown]
 
 
 class Artifact(Base):

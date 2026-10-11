@@ -160,12 +160,23 @@ export interface CharacterInput {
 // --- Class guides (feature 008 / US2) — the shared, global spec-guide library --
 
 // One roster entry per class+spec, merged with the library's status.
+// Feature 009: read-time freshness vs the current raid patch (null unless ready).
+export type GuideFreshness = "current" | "possibly_stale" | "unknown";
+
+export interface GuideSource {
+  title: string | null;
+  uri: string;
+}
+
 export interface GuideListItem {
   class_name: string; // WCL filter value, e.g. "Paladin"
   class_display: string; // display name, e.g. "Death Knight"
   spec: string; // e.g. "Protection"
   status: GuideStatus;
   updated_at: string | null;
+  game_patch: string | null; // patch the guide targets, e.g. "12.1" (null = unknown)
+  generated_at: string | null; // when the current content was generated
+  freshness: GuideFreshness | null;
 }
 
 export interface GuideListResponse {
@@ -178,4 +189,34 @@ export interface Guide {
   status: GuideStatus;
   guide_markdown: string | null; // present only when status === "ready"
   updated_at: string | null;
+  game_patch: string | null;
+  generated_at: string | null;
+  freshness: GuideFreshness | null;
+  sources: GuideSource[]; // web sources used during generation ([] when none)
+}
+
+// --- Backend boot / readiness (GET /api/health) -------------------------------
+
+export interface StartupStep {
+  key: string;
+  label: string;
+  status: "pending" | "running" | "done" | "skipped" | "failed";
+  detail: string | null;
+  ms: number | null;
+}
+
+export interface StartupSnapshot {
+  phase: "booting" | "ready" | "failed";
+  ready: boolean;
+  error: string | null;
+  elapsed_ms: number;
+  current_step: string | null;
+  steps: StartupStep[];
+}
+
+export interface BackendHealth {
+  status: "ok" | "booting" | "error";
+  db: "ok" | "error";
+  /** null when the app runs without a lifespan (tests) — treated as ready. */
+  startup: StartupSnapshot | null;
 }

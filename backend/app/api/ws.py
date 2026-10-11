@@ -7,6 +7,8 @@ racing.
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
@@ -37,8 +39,9 @@ from ..services import raids as raids_service
 from ..services.artifacts import capture_artifact_from_tool
 from ..services.charts import chart_spec_to_plotly
 from ..services.encounters import encounters_from_tool
-from ..services.profile_context import build_preamble
+from ..services.profile_context import build_preamble, guide_heading_label
 from ..services.tool_summary import summarize_tool_result
+from wcl_agent.patch import current_patch, guide_freshness
 
 router = APIRouter()
 
@@ -217,11 +220,19 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
             if c.class_name and c.active_spec
         ]
         guide_rows = await repo.get_spec_guides_for(session, spec_pairs)
-        spec_guides = {
-            key: g.guide_markdown
-            for key, g in guide_rows.items()
-            if g.status == "ready" and g.guide_markdown
+        ready_guides = {
+            key: g for key, g in guide_rows.items() if g.status == "ready" and g.guide_markdown
         }
+        spec_guides = {key: g.guide_markdown for key, g in ready_guides.items()}
+        # Feature 009 / US5: label each injected guide with its patch + freshness
+        # (current patch via the cached WCL client, off the loop; None ⇒ unknown).
+        guide_labels: dict[tuple[str, str], str] = {}
+        if ready_guides:
+            live_patch = await asyncio.to_thread(current_patch)
+            guide_labels = {
+                key: guide_heading_label(g.game_patch, guide_freshness(g.game_patch, live_patch))
+                for key, g in ready_guides.items()
+            }
         preamble = build_preamble(
             self_char,
             friends,
@@ -231,6 +242,7 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
             known_encounters=known_encounters,
             known_guilds=known_guilds,
             spec_guides=spec_guides,
+            guide_labels=guide_labels,
         )
 
         # Scope the WCL result cache to this tenant (FR-019) for the turn's tool calls.
