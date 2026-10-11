@@ -62,5 +62,6 @@
 # ----- Phase X ----- #
 - Deployment / Hosting Plan
 - Implement redis - confirm browser cache usage. 
-- Rate limit llm for 429s
+- ~~Rate limit llm for 429s (Done: 011)~~
   - Also catch 429 timeouts as tool errors so it doesn't break the agent loop
+- [Small] Add option to add a second character
