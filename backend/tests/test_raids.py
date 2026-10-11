@@ -104,6 +104,9 @@ async def test_investigate_creates_empty_conversation_without_persisting(as_user
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert "RRRR" in body["kickoff_prompt"]
+    # feature 011: the kickoff asks for a bounded per-boss overview, not an open hunt
+    assert "headline finding" in body["kickoff_prompt"]
+    assert "for each boss" in body["kickoff_prompt"]
     assert body["model"]
     conv_id = body["conversation_id"]
 

@@ -21,6 +21,7 @@ export type Frame =
       figure: { data: unknown[]; layout: Record<string, unknown> };
     }
   | { type: "suggestions"; suggestions: string[] }
+  | { type: "model_retry"; attempt: number; max_attempts: number; wait_s: number }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };
 

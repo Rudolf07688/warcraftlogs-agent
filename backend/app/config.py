@@ -85,7 +85,7 @@ class Settings(BaseSettings):
 
     # Background spec-guide generation (US6). A web-search-capable model so guides
     # reflect the current retail patch. Runs over a disposable session like the greeting.
-    wcl_guide_model: str = "gemini-3.6-flash"
+    wcl_guide_model: str = "gemini-3.7-flash"
 
     # Per-user cap on manual spec-guide generation requests (feature 008 / US2, FR-014).
     # Bounds user-initiated generation so a burst can't cascade into WCL/model rate limits.
@@ -95,6 +95,18 @@ class Settings(BaseSettings):
     # that summarizes in-scope chat content into an analytic findings document. Runs
     # off the event loop with a bounded timeout; independent of the user's chat model.
     wcl_report_model: str = "gemini-3.6-flash"
+
+    # Feature 011: model rate-limit relief. Rate-limited / overloaded model refusals are
+    # retried with exponential backoff (initial → max, base 2, jitter) until the attempt
+    # count or the total wait budget per model request is spent; other errors fail fast.
+    # The round cap is the number of lookup rounds a turn may use before the agent is
+    # told to wrap up with the evidence it has. Runners are cached per model, so a change
+    # needs a backend restart. See wcl_agent/model_retry.py.
+    wcl_model_retry_attempts: int = 5
+    wcl_model_retry_initial_s: float = 2.0
+    wcl_model_retry_max_s: float = 30.0
+    wcl_model_retry_budget_s: float = 90.0
+    wcl_turn_round_cap: int = 6
 
     # WCL query cache TTLs in seconds (US4). Report-scoped data is effectively immutable
     # (~24h); leaderboard/ranking data is volatile (~1h).

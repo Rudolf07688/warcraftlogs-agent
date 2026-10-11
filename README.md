@@ -223,6 +223,36 @@ Run the backend tests (pytest lives in the `test` extra):
 uv run --extra test pytest -q
 ```
 
+### Model rate-limit relief (feature 011)
+
+Broad first questions and the one-click raid investigation make the agent do several
+lookup rounds, each another model request, which can exhaust the provider's per-minute
+allowance. The app now:
+
+- **Retries rate-limited model calls** (HTTP 429 / 503 / 529, `RESOURCE_EXHAUSTED`) with
+  exponential backoff inside one shared loop (`wcl_agent/model_retry.py`); the SDKs' own
+  retries are disabled so waits never nest. While waiting, the chat status reads
+  *"Model busy — retrying (n of N)…"*. When the budget is spent the turn ends with a
+  plain-language `rate_limited` error and no partial reply is saved; just resend.
+- **Needs fewer requests** for broad questions: the agent instruction's `<EVIDENCE_PLAN>`
+  asks for staged, batched lookups, the raid kickoff asks for a bounded per-boss
+  overview, and a per-turn **round cap** tells the model to wrap up with what it has.
+- **Keeps helper calls out of it**: the greeting and follow-up suggestions fail fast and
+  silently when rate-limited.
+
+Tuning (env / `.env`; runners are cached per model, so restart the backend after a change):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WCL_MODEL_RETRY_ATTEMPTS` | `5` | attempts per model request, including the first |
+| `WCL_MODEL_RETRY_INITIAL_S` | `2.0` | first retry delay (doubles each retry, plus jitter) |
+| `WCL_MODEL_RETRY_MAX_S` | `30.0` | delay ceiling |
+| `WCL_MODEL_RETRY_BUDGET_S` | `90.0` | total wait per model request before giving up |
+| `WCL_TURN_ROUND_CAP` | `6` | lookup rounds before the wrap-up instruction |
+
+Every turn logs one line you can grep to verify the effect, e.g.
+`turn stats model=gemini-3.6-flash requests=4 rounds=3 retries=1 waited_s=4.3 outcome=answered`.
+
 ## Quick checks
 
 ```bash

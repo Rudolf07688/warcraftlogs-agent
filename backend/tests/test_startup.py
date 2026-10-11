@@ -162,3 +162,17 @@ def test_app_exposes_health_under_api_prefix_and_gate():
     paths = {getattr(r, "path", None) for r in app.routes}
     assert {"/health", "/api/health"} <= paths
     assert any(m.cls is ReadinessGate for m in app.user_middleware)
+
+
+def test_app_info_logging_is_visible(caplog):
+    """Feature 011 / FR-013: the per-turn stats INFO line must actually reach a handler."""
+    import logging
+
+    from backend.app import main  # noqa: F401 - importing installs app logging
+
+    assert logging.getLogger("backend.app").getEffectiveLevel() <= logging.INFO
+    assert logging.getLogger("wcl_agent").getEffectiveLevel() <= logging.INFO
+    assert logging.getLogger().handlers, "root logger needs a handler for INFO to be emitted"
+    with caplog.at_level(logging.INFO, logger="backend.app.agent_runner"):
+        logging.getLogger("backend.app.agent_runner").info("turn stats model=m requests=1")
+    assert any("turn stats" in r.getMessage() for r in caplog.records)

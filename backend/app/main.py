@@ -50,7 +50,25 @@ def _install_log_redaction() -> None:
         logging.getLogger(name).addFilter(f)
 
 
-_install_log_redaction()
+def _install_app_logging() -> None:
+    """Make the app's own INFO lines visible under uvicorn (feature 011, FR-013).
+
+    uvicorn configures only its own loggers; the root logger has no handler, so INFO
+    records from ``backend.app.*`` / ``wcl_agent.*`` (per-turn ``turn stats``, boot steps,
+    round-cap notices) were silently dropped. Attach one root handler (if none) and set
+    just the app namespaces to INFO — third-party libraries keep their defaults.
+    """
+    root = logging.getLogger()
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        root.addHandler(handler)
+    for name in ("backend.app", "wcl_agent"):
+        logging.getLogger(name).setLevel(logging.INFO)
+
+
+_install_app_logging()
+_install_log_redaction()  # after: the redaction filter attaches to the handler above too
 from .db.session import engine
 from .greeting import GREETING_MODEL, get_greeting
 from .services.guide import load_guide_registry

@@ -33,11 +33,15 @@ def _get_cache(app) -> dict[str, str]:
 
 
 async def _generate_greeting(model: str) -> str:
-    """Run the hidden kickoff once and collect the streamed reply text."""
+    """Run the hidden kickoff once and collect the streamed reply text.
+
+    ``retry=False`` (feature 011 / FR-012): a rate-limited greeting fails fast and yields
+    ``""`` instead of waiting out a backoff — it must never compete with a player's turn.
+    """
     session_id = f"greeting-{model}"
     tokens: list[str] = []
     try:
-        async for record in stream_response(model, session_id, GREETING_KICKOFF):
+        async for record in stream_response(model, session_id, GREETING_KICKOFF, retry=False):
             if record.get("type") == "token":
                 tokens.append(record["text"])
     except Exception:  # noqa: BLE001 - greeting is best-effort; never break a new chat

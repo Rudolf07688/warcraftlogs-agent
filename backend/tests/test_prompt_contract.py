@@ -17,6 +17,7 @@ SECTIONS = [
     "EVIDENCE_CONTRACT",
     "SOURCE_AUTHORITY",
     "TOOLS",
+    "EVIDENCE_PLAN",
     "CONTEXT_RESOLUTION",
     "VALIDATION_BEFORE_ANALYSIS",
     "ANALYSIS_ROUTING",
@@ -47,6 +48,12 @@ KEY_CLAUSES = [
     "write a class/spec guide",
     "correctness over personality",
     "never conceal",
+    # feature 011: fewer model requests on broad questions
+    "well-batched rounds",
+    "ONE parallel round",
+    "Reuse evidence already in this conversation",
+    "the question asked is answerable",
+    "single lookup",
 ]
 
 

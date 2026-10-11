@@ -18,7 +18,7 @@ import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
-import { THINKING_DEFAULT, toolLabel } from "./toolLabels";
+import { THINKING_DEFAULT, retryLabel, toolLabel } from "./toolLabels";
 import type {
   ChartArtifact,
   Conversation,
@@ -121,6 +121,11 @@ export default function App() {
           }
           break;
         }
+        case "model_retry":
+          // Feature 011: the backend is waiting out a model rate limit; the next
+          // tool_start/token replaces this status as usual.
+          setStatus(retryLabel(f.attempt, f.max_attempts));
+          break;
         case "grounding":
           if (f.used) {
             groundedRef.current = true;

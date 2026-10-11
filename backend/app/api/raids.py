@@ -25,9 +25,13 @@ def kickoff_prompt_for(report_code: str) -> str:
     The frontend never hardcodes this — the server is the single source of truth
     for the report-code → prompt mapping.
     """
+    # Feature 011 / FR-010: a bounded per-boss overview, so the first turn's evidence
+    # gathering is naturally limited (one report-level round + one per-boss round).
     return (
-        f"Please investigate this raid (report {report_code}) and highlight any "
-        "important findings."
+        f"Give me a bounded overview of this raid (report {report_code}): for each boss, "
+        "one headline finding and the single biggest improvement opportunity, noting "
+        "kills versus wipes. Stay at the report and per-boss level; go into cast-level "
+        "detail only where a boss clearly warrants it."
     )
 
 

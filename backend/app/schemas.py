@@ -71,6 +71,19 @@ class ErrorFrame(BaseModel):
     message: str
 
 
+class ModelRetryFrame(BaseModel):
+    """Feature 011: the model is rate-limited and the backend is about to retry.
+
+    Sent immediately before each backoff sleep (see contracts/websocket-and-config.md).
+    Additive — clients that do not know the type ignore it.
+    """
+
+    type: Literal["model_retry"] = "model_retry"
+    attempt: int  # 1-based retry about to be made
+    max_attempts: int
+    wait_s: float
+
+
 class RaidTrackedFrame(BaseModel):
     """Emitted after a raid is upserted so the UI can refresh its Raids list."""
 

@@ -40,6 +40,13 @@ from .report_tools import (
     run_wcl_graphql,
 )
 from .genai_compat import ensure_genai_serializers_built
+from .model_retry import (
+    RetryingClaude,
+    RetryingGemini,
+    RetryPolicy,
+    is_anthropic_model,
+    make_before_model_callback,
+)
 from .tools import (
     check_rate_limit,
     compare_specs,
@@ -150,6 +157,20 @@ External knowledge:
   this session; then answer from the data you have and say that current-patch
   verification was not possible.
 </TOOLS>
+
+<EVIDENCE_PLAN>
+Plan the evidence before the first lookup and gather it in few, well-batched rounds:
+1. Report-level data first, in one round: the fights, plus master data or rankings only
+   if the question needs names or parses.
+2. Detail for the bosses or players that matter, together in ONE parallel round (one
+   table or rankings call per boss or player — never one round per boss).
+3. Cast-level detail (events, graphs, cooldown usage) only when the question asks for
+   execution detail or a stage-2 finding clearly warrants it.
+Reuse evidence already in this conversation instead of re-fetching it. Answer as soon as
+the question asked is answerable; do not keep gathering supporting detail nobody asked
+for. A short, specific question still takes a single lookup. If told the lookup budget
+for this turn is spent, answer with what you have and name the gaps.
+</EVIDENCE_PLAN>
 
 <CONTEXT_RESOLUTION>
 Resolve only what the question needs: subject (raid, player, friend, guild), encounter
@@ -379,8 +400,8 @@ TOOLS = [
 
 
 def _is_anthropic(model: str) -> bool:
-    """Anthropic-on-Vertex ids (Claude) vs Gemini ids."""
-    return "claude" in model.lower()
+    """Anthropic-on-Vertex ids (Claude) vs Gemini ids (single definition in model_retry)."""
+    return is_anthropic_model(model)
 
 
 def _build_web_search_tool(model: str) -> AgentTool:
@@ -408,13 +429,30 @@ def _build_web_search_tool(model: str) -> AgentTool:
     return AgentTool(agent=search_agent, propagate_grounding_metadata=True)
 
 
-def build_agent(model: str = DEFAULT_MODEL) -> Agent:
+def _retrying_model(model: str, policy: RetryPolicy):
+    """Wrap the model id in the rate-limit-retrying ADK model class (feature 011).
+
+    Falls back to the bare id (today's behaviour) only if the Anthropic provider is not
+    installed and a Claude id was requested.
+    """
+    if _is_anthropic(model):
+        if RetryingClaude is None:  # pragma: no cover - optional dependency missing
+            return model
+        return RetryingClaude(model=model, policy=policy)
+    return RetryingGemini(model=model, policy=policy)
+
+
+def build_agent(model: str = DEFAULT_MODEL, retry: RetryPolicy | None = None) -> Agent:
     """Build the WCL analyst agent for a given model id (DRY factory).
 
     Gemini models get web grounding (via the `web_search` sub-agent tool);
     Anthropic-on-Vertex (and any non-grounding) models run with the WCL tools only
     and degrade gracefully without web access (US3/FR-012).
+
+    ``retry`` (feature 011) is the rate-limit retry + round-cap policy; ``None`` means
+    the dataclass defaults (the CLI path). The backend passes one built from settings.
     """
+    policy = retry or RetryPolicy()
     # Eagerly build google-genai model serializers (they default to defer_build=True) so ADK
     # can serialize genai types nested in EventActions.state_delta during parallel tool calls
     # (otherwise the still-deferred "MockValSer" serializer aborts the turn). Idempotent.
@@ -424,10 +462,12 @@ def build_agent(model: str = DEFAULT_MODEL) -> Agent:
         tools.append(_build_web_search_tool(model))
     return Agent(
         name="wcl_agent",
-        model=model,
+        model=_retrying_model(model, policy),
         description="Analyzes Warcraft Logs ranking and report data for any question.",
         instruction=INSTRUCTION,
         tools=tools,
+        # Feature 011: count model requests per turn and enforce the lookup-round cap.
+        before_model_callback=make_before_model_callback(policy),
         # Native thinking planner — fits Gemini 3.x thinking models (unlike the
         # ReAct text planner, which fights them). Reasoning is returned as separate
         # `thought` parts that the backend filters out of the streamed answer.

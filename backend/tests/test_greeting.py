@@ -37,7 +37,7 @@ async def test_get_greeting_generation_failure_returns_empty(monkeypatch):
 async def test_get_greeting_generates_and_caches(monkeypatch):
     app = _make_app()
 
-    async def _gen(model, session_id, text, scratch=None):
+    async def _gen(model, session_id, text, scratch=None, **_kw):
         assert text == greeting_mod.GREETING_KICKOFF
         yield {"type": "token", "text": "Well "}
         yield {"type": "tool_start", "name": "noise"}  # ignored
@@ -46,3 +46,31 @@ async def test_get_greeting_generates_and_caches(monkeypatch):
     monkeypatch.setattr(greeting_mod, "stream_response", _gen)
     assert await greeting_mod.get_greeting(app, "m") == "Well met!"
     assert app.state.greeting_cache["m"] == "Well met!"
+
+
+# --- feature 011 / FR-012: the greeting never waits out a rate limit ----------------------
+
+from wcl_agent.model_retry import ModelRateLimited  # noqa: E402
+
+
+async def test_generate_greeting_disables_retry(monkeypatch):
+    seen: dict = {}
+
+    async def _gen(model, session_id, text, *a, **kwargs):
+        seen.update(kwargs)
+        yield {"type": "token", "text": "Well met!"}
+
+    monkeypatch.setattr(greeting_mod, "stream_response", _gen)
+    assert await greeting_mod._generate_greeting("m") == "Well met!"
+    assert seen.get("retry") is False
+
+
+async def test_generate_greeting_rate_limited_returns_empty(monkeypatch):
+    async def _limited(*a, **k):
+        raise ModelRateLimited(1, 0.0, RuntimeError("429"))
+        yield  # pragma: no cover - makes this an async generator
+
+    monkeypatch.setattr(greeting_mod, "stream_response", _limited)
+    app = _make_app()
+    assert await greeting_mod.get_greeting(app, "m") == ""
+    assert "m" not in app.state.greeting_cache

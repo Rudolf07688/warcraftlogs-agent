@@ -94,6 +94,8 @@ async def generate_followups(model: str | None, question: str, answer: str) -> l
     try:
         from google import genai
 
+        # Feature 011 / FR-012: deliberately no retry_options and no backoff here — a
+        # rate-limited suggestion call must fail fast and silently, never delay the answer.
         client = genai.Client()
         resp = await asyncio.to_thread(
             client.models.generate_content, model=effective, contents=prompt

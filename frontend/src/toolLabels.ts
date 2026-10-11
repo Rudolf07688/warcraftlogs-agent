@@ -26,3 +26,9 @@ export const THINKING_DEFAULT = "Thinking";
 export function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? "Searching Warcraft Logs";
 }
+
+// Feature 011: shown in the thinking indicator while the backend waits out a model
+// rate limit before retrying (the `model_retry` frame).
+export function retryLabel(attempt: number, max: number): string {
+  return `Model busy — retrying (${attempt} of ${max})…`;
+}

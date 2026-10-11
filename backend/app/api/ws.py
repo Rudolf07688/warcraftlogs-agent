@@ -8,11 +8,14 @@ racing.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from wcl_agent.cache import set_scope_prefix as set_cache_scope
+
+from wcl_agent.model_retry import ModelRateLimited
 
 from ..agent_runner import stream_response
 from ..auth.csrf import origin_matches
@@ -29,6 +32,7 @@ from ..schemas import (
     EncountersFrame,
     ErrorFrame,
     MetaFrame,
+    ModelRetryFrame,
     RaidTrackedFrame,
     SuggestionsFrame,
 )
@@ -44,6 +48,12 @@ from ..services.tool_summary import summarize_tool_result
 from wcl_agent.patch import current_patch, guide_freshness
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Feature 011 / FR-004: the only wording a player sees for an exhausted retry budget.
+RATE_LIMITED_MESSAGE = (
+    "The model is rate-limited right now. Please try again in about a minute."
+)
 
 
 async def _send(ws: WebSocket, frame) -> None:
@@ -273,10 +283,23 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
                     await _handle_tool_end(ws, session, record, conv_id, identity)
                 elif kind == "grounding":
                     await ws.send_json(record)
+                elif kind == "model_retry":
+                    # Feature 011 / FR-003: the model is rate-limited; show "retrying".
+                    await _send(ws, ModelRetryFrame(**record))
         except WebSocketDisconnect:
             # Client vanished mid-reply: keep what we have, can't send anything.
             await _persist_partial(session, conv_id, tokens, tenant_id)
             raise
+        except ModelRateLimited as exc:
+            # Feature 011 / FR-004, FR-005: the retry budget is spent. Plain-language error,
+            # no provider wording, and no partial reply persisted (the user message stays,
+            # so the player can simply resend).
+            logger.warning("turn failed on model rate limit: %s", exc)
+            try:
+                await _send(ws, ErrorFrame(code="rate_limited", message=RATE_LIMITED_MESSAGE))
+            except Exception:  # noqa: BLE001 - socket may already be gone
+                pass
+            return
         except Exception as exc:  # noqa: BLE001 - surface failure to the client
             await _persist_partial(session, conv_id, tokens, tenant_id)
             try:

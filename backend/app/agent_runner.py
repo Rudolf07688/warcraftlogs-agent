@@ -18,6 +18,9 @@ loop. (Native async I/O via httpx is a documented later improvement.)
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -28,8 +31,12 @@ from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
+from wcl_agent.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
 
+from .config import settings
 from .scratch import TurnScratch
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "wcl_app"
 USER_ID = "local_user"
@@ -59,8 +66,17 @@ def _get_session_service() -> BaseSessionService:
 def _get_runner(model: str) -> Runner:
     runner = _runners.get(model)
     if runner is None:
+        # Feature 011: rate-limit retry + round cap are operator-tunable (FR-006). Runners
+        # are cached per model, so a settings change takes effect on the next restart.
+        policy = RetryPolicy(
+            attempts=settings.wcl_model_retry_attempts,
+            initial_s=settings.wcl_model_retry_initial_s,
+            max_s=settings.wcl_model_retry_max_s,
+            budget_s=settings.wcl_model_retry_budget_s,
+            round_cap=settings.wcl_turn_round_cap,
+        )
         runner = Runner(
-            agent=build_agent(model),
+            agent=build_agent(model, retry=policy),
             app_name=APP_NAME,
             session_service=_get_session_service(),
         )
@@ -111,7 +127,99 @@ async def _ensure_session(session_id: str, user_id: str = USER_ID) -> None:
         )
 
 
+_DONE = object()  # producer -> consumer sentinel (feature 011)
+
+
+class _Failure:
+    """Carries a producer exception across the queue so the consumer re-raises it."""
+
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+
 async def stream_response(
+    model: str,
+    session_id: str,
+    user_text: str,
+    scratch: TurnScratch | None = None,
+    context_preamble: str | None = None,
+    *,
+    user_id: str = USER_ID,
+    retry: bool = True,
+) -> AsyncIterator[dict]:
+    """Run one turn and yield stream records (see ``_run_turn`` for the record shapes).
+
+    Feature 011: the ADK iteration runs in a producer task that feeds an ``asyncio.Queue``;
+    this generator drains it. The model wrapper (``wcl_agent.model_retry``) pushes
+    ``{"type": "model_retry", ...}`` records into the same queue via the per-turn
+    ``TurnStats`` installed in ``current_turn``, so a retry status reaches the client while
+    the producer is asleep in a backoff. ``retry=False`` makes rate limits fail fast
+    (helper calls such as the greeting, FR-012). One ``turn stats`` INFO line is logged
+    when the turn ends, whatever the outcome (FR-013).
+    """
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+    stats = TurnStats(model=model, retry_enabled=retry, notify=queue.put_nowait)
+    token = current_turn.set(stats)
+
+    async def produce() -> None:
+        try:
+            async for record in _run_turn(
+                model,
+                session_id,
+                user_text,
+                scratch,
+                context_preamble=context_preamble,
+                user_id=user_id,
+            ):
+                queue.put_nowait(record)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - re-raised by the consumer
+            queue.put_nowait(_Failure(exc))
+        else:
+            queue.put_nowait(_DONE)
+
+    producer = asyncio.create_task(produce())
+    try:
+        while True:
+            item = await queue.get()
+            if item is _DONE:
+                break
+            if isinstance(item, _Failure):
+                raise item.exc
+            yield item
+        stats.outcome = "answered"
+    except ModelRateLimited:
+        stats.outcome = "rate_limited"
+        raise
+    except Exception:
+        stats.outcome = "error"
+        raise
+    finally:
+        if not producer.done():
+            producer.cancel()  # consumer went away mid-turn (e.g. WebSocket closed)
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await producer
+        if stats.outcome is None:
+            stats.outcome = "abandoned"
+        try:
+            current_turn.reset(token)
+        except ValueError:  # finalised from another context (GC); just clear it
+            current_turn.set(None)
+        logger.info(
+            "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s",
+            stats.model,
+            stats.model_requests,
+            stats.tool_rounds,
+            stats.retries,
+            stats.waited_s,
+            stats.outcome,
+        )
+
+
+async def _run_turn(
     model: str,
     session_id: str,
     user_text: str,
