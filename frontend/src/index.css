@@ -8,16 +8,38 @@
 @import "tailwindcss";
 @import "streamdown/styles.css";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-muted: var(--muted);
   --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  /* Feature 010: shadcn's "muted"/"accent" are surfaces; the legacy --muted/--accent
+     variables below are a text colour and the primary alias, so they get distinct sources. */
+  --color-muted: var(--surface-muted);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--surface-accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border-token);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --color-glow: var(--glow);
   --font-display: var(--font-display);
   --font-body: var(--font-body);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 /* ---- The one fixed theme: Tavern Hearth — ember gold over dark oak ---- */
@@ -29,6 +51,23 @@
   --primary: oklch(0.76 0.15 75);
   --glow: oklch(0.84 0.16 82);
   --border-token: oklch(0.52 0.08 70 / 0.5);
+
+  /* Feature 010: tokens read by the shared components (src/components/ui). Same palette. */
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.19 0.025 58);
+  --popover-foreground: var(--foreground);
+  --primary-foreground: oklch(0.17 0.03 60);
+  --secondary: oklch(0.24 0.03 58);
+  --secondary-foreground: var(--foreground);
+  --surface-muted: oklch(0.24 0.03 58);
+  --surface-accent: oklch(0.3 0.05 68);
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.64 0.2 25);
+  --success: oklch(0.72 0.17 150);
+  --warning: oklch(0.8 0.15 80);
+  --input: var(--border-token);
+  --ring: var(--glow);
+  --radius: 0.5rem;
   --font-display: "Cinzel", Georgia, serif;
   --font-body: "Alegreya Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 

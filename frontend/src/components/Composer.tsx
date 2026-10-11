@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Button } from "./ui/button";
+import { Textarea } from "./ui/textarea";
 
 interface Props {
   disabled?: boolean;
@@ -17,8 +19,9 @@ export function Composer({ disabled, onSend }: Props) {
 
   return (
     <div className="composer">
-      <textarea
-        className="composer-input"
+      <Textarea
+        className="flex-1 min-h-0 max-h-40 resize-none bg-secondary/60"
+        aria-label="Message"
         placeholder="Ask about Warcraft Logs… (e.g. How are hunters performing on Heroic Ula'tek?)"
         value={text}
         rows={2}
@@ -30,9 +33,9 @@ export function Composer({ disabled, onSend }: Props) {
           }
         }}
       />
-      <button className="composer-send" onClick={submit} disabled={disabled || !text.trim()}>
+      <Button className="self-stretch h-auto px-5" onClick={submit} disabled={disabled || !text.trim()}>
         Send
-      </button>
+      </Button>
     </div>
   );
 }

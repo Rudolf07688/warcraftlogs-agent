@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { CharactersTab } from "../components/profile/CharactersTab";
 import { ClassGuidesTab } from "../components/profile/ClassGuidesTab";
+import { Button } from "../components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 // Dedicated, Warcraft-themed profile page (feature 008 / US1): promotes the former in-chat
-// profile modal to a routed page with two tabs — Characters and Class Guides. Both tabs stay
-// mounted and are toggled with `hidden`, so switching tabs preserves each tab's in-progress
-// state (quickstart US1 step 3).
+// profile modal to a routed page with two tabs — Characters and Class Guides. Feature 010:
+// the tabs are the shared Radix-based Tabs (arrow keys, aria-selected); both panels are
+// `forceMount`ed and hidden via data-state so switching preserves in-progress state (FR-007).
 
 type Tab = "characters" | "guides";
 
@@ -20,37 +22,24 @@ export default function ProfilePage() {
           <h1>Your Profile</h1>
           <p className="profile-page-sub">Characters, raid roles, and the class-guide library.</p>
         </div>
-        <Link className="profile-back" to="/app">
-          ← Back to chat
-        </Link>
+        <Button asChild variant="secondary">
+          <Link to="/app">← Back to chat</Link>
+        </Button>
       </header>
 
-      <nav className="profile-tabs" role="tablist" aria-label="Profile sections">
-        <button
-          role="tab"
-          aria-selected={tab === "characters"}
-          className={`profile-tab${tab === "characters" ? " is-active" : ""}`}
-          onClick={() => setTab("characters")}
-        >
-          Characters
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "guides"}
-          className={`profile-tab${tab === "guides" ? " is-active" : ""}`}
-          onClick={() => setTab("guides")}
-        >
-          Class Guides
-        </button>
-      </nav>
-
       <div className="profile-page-body">
-        <div hidden={tab !== "characters"}>
-          <CharactersTab />
-        </div>
-        <div hidden={tab !== "guides"}>
-          <ClassGuidesTab active={tab === "guides"} />
-        </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+          <TabsList aria-label="Profile sections" className="mb-3">
+            <TabsTrigger value="characters">Characters</TabsTrigger>
+            <TabsTrigger value="guides">Class Guides</TabsTrigger>
+          </TabsList>
+          <TabsContent value="characters" forceMount className="data-[state=inactive]:hidden">
+            <CharactersTab />
+          </TabsContent>
+          <TabsContent value="guides" forceMount className="data-[state=inactive]:hidden">
+            <ClassGuidesTab active={tab === "guides"} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

@@ -10,6 +10,12 @@ import {
   updateFriend,
 } from "../../api/restClient";
 import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../../types";
+import { ConfirmDialog } from "../ConfirmDialog";
+import { StatusAlert } from "../StatusAlert";
+import { GUIDE_LABEL_SHORT, GUIDE_TONE, StatusBadge } from "../StatusBadge";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { NativeSelect, NativeSelectOption } from "../ui/native-select";
 
 // Characters tab (feature 008 / US1): self, friends (unlimited), raid roles, and the single
 // main guild. Extracted verbatim-in-behavior from the former ProfilePanel modal — same
@@ -17,16 +23,9 @@ import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../../typ
 
 const REGIONS = ["US", "EU", "KR", "TW", "CN"];
 
-const STATUS_LABEL: Record<GuideStatus, string> = {
-  none: "",
-  pending: "guide loading…",
-  ready: "guide ready",
-  failed: "guide unavailable",
-};
-
-function StatusBadge({ status }: { status: GuideStatus }) {
+function GuideBadge({ status }: { status: GuideStatus }) {
   if (status === "none") return null;
-  return <span className={`guide-badge guide-${status}`}>{STATUS_LABEL[status]}</span>;
+  return <StatusBadge tone={GUIDE_TONE[status]}>{GUIDE_LABEL_SHORT[status]}</StatusBadge>;
 }
 
 function identityLabel(c: Character): string {
@@ -58,18 +57,19 @@ function RoleControl({
   const isInferred = char.raid_role == null && char.effective_role != null;
   return (
     <span className="profile-role" title="Raid role">
-      <select
+      <NativeSelect
+        size="sm"
         aria-label="Raid role"
         value={char.raid_role ?? ""}
         disabled={busy}
         onChange={(e) => onChange((e.target.value || null) as RaidRole | null)}
       >
         {ROLE_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
+          <NativeSelectOption key={o.value} value={o.value}>
             {o.label}
-          </option>
+          </NativeSelectOption>
         ))}
-      </select>
+      </NativeSelect>
       {isInferred && char.effective_role && (
         <span className="role-inferred" title="Inferred from spec">
           {ROLE_LABEL[char.effective_role]} (inferred)
@@ -110,29 +110,34 @@ function IdentityForm({
         if (canSubmit) onSubmit({ ...form, name: form.name.trim(), server: form.server.trim() });
       }}
     >
-      <input
+      <Input
+        className="flex-1 min-w-[90px]"
+        aria-label="Name"
         placeholder="Name"
         value={form.name}
         onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
       />
-      <input
+      <Input
+        className="flex-1 min-w-[90px]"
+        aria-label="Server"
         placeholder="Server"
         value={form.server}
         onChange={(e) => setForm((f) => ({ ...f, server: e.target.value }))}
       />
-      <select
+      <NativeSelect
+        aria-label="Region"
         value={form.region}
         onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
       >
         {REGIONS.map((r) => (
-          <option key={r} value={r}>
+          <NativeSelectOption key={r} value={r}>
             {r}
-          </option>
+          </NativeSelectOption>
         ))}
-      </select>
-      <button type="submit" disabled={!canSubmit}>
+      </NativeSelect>
+      <Button type="submit" disabled={!canSubmit}>
         {submitLabel}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -141,6 +146,10 @@ export function CharactersTab() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Feature 010 / FR-006: the friend or guild awaiting the in-app remove confirmation.
+  const [pendingRemove, setPendingRemove] = useState<
+    { kind: "friend"; friend: Character } | { kind: "guild"; guild: Guild } | null
+  >(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -210,7 +219,7 @@ export function CharactersTab() {
 
   return (
     <div className="profile-tabpanel">
-      {err && <div className="profile-error">{err}</div>}
+      {err && <StatusAlert tone="error">{err}</StatusAlert>}
 
       <section className="profile-section">
         <h3>You</h3>
@@ -231,7 +240,7 @@ export function CharactersTab() {
                 )
               }
             />
-            <StatusBadge status={self.guide_status} />
+            <GuideBadge status={self.guide_status} />
           </div>
         )}
         <IdentityForm
@@ -252,15 +261,18 @@ export function CharactersTab() {
               busy={busy}
               onChange={(role) => run(() => updateFriend(f.id, role))}
             />
-            <StatusBadge status={f.guide_status} />
-            <button
-              className="profile-remove"
+            <GuideBadge status={f.guide_status} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
               disabled={busy}
-              onClick={() => run(() => deleteFriend(f.id))}
+              onClick={() => setPendingRemove({ kind: "friend", friend: f })}
+              aria-label="Remove friend"
               title="Remove friend"
             >
               ✕
-            </button>
+            </Button>
           </div>
         ))}
         <IdentityForm initial={EMPTY} submitLabel="Add friend" busy={busy} onSubmit={addFriendHandler} />
@@ -273,15 +285,18 @@ export function CharactersTab() {
             <span>
               {guild.name}-{guild.server} ({guild.region})
             </span>
-            <StatusBadge status={guild.summary_status} />
-            <button
-              className="profile-remove"
+            <GuideBadge status={guild.summary_status} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
               disabled={busy}
-              onClick={() => run(() => deleteGuild())}
+              onClick={() => setPendingRemove({ kind: "guild", guild })}
+              aria-label="Remove guild"
               title="Remove guild"
             >
               ✕
-            </button>
+            </Button>
           </div>
         )}
         <IdentityForm
@@ -291,6 +306,27 @@ export function CharactersTab() {
           onSubmit={(v) => run(() => putGuild(v))}
         />
       </section>
+
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        title={pendingRemove?.kind === "guild" ? "Remove guild?" : "Remove friend?"}
+        description={
+          pendingRemove?.kind === "guild"
+            ? `${pendingRemove.guild.name}-${pendingRemove.guild.server} (${pendingRemove.guild.region}) will be removed as your main guild.`
+            : pendingRemove
+              ? `${identityLabel(pendingRemove.friend)} will be removed from your friends.`
+              : ""
+        }
+        confirmLabel="Remove"
+        busy={busy}
+        onConfirm={async () => {
+          const target = pendingRemove;
+          if (!target) return;
+          await run(() => (target.kind === "guild" ? deleteGuild() : deleteFriend(target.friend.id)));
+          setPendingRemove(null);
+        }}
+        onCancel={() => setPendingRemove(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { acceptInvitation, ApiError } from "../api/restClient";
+import { AuthShell } from "../components/AuthShell";
+import { Button } from "../components/ui/button";
+import { Field, FieldError, FieldLabel } from "../components/ui/field";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 
 /**
  * Invitation acceptance (feature 006, US1).
@@ -13,6 +18,7 @@ import { acceptInvitation, ApiError } from "../api/restClient";
 export default function AcceptInvitePage() {
   // Capture the token exactly once, on mount, then scrub the fragment.
   const tokenRef = useRef<string | null>(null);
+  const ids = { password: useId(), confirm: useId() };
   const [ready, setReady] = useState(false);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -57,58 +63,56 @@ export default function AcceptInvitePage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-neutral-100 p-4">
+    <AuthShell>
       <meta name="referrer" content="no-referrer" />
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-2xl bg-neutral-900/80 p-6 shadow-xl"
-      >
+      <form onSubmit={onSubmit} className="space-y-4">
         <h1 className="text-xl font-semibold">Set your password</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-muted-foreground">
           Choose a password to activate your workspace.
         </p>
 
-        <label className="block text-sm">
-          <span className="mb-1 block text-neutral-300">New password</span>
-          <input
+        <Field>
+          <FieldLabel htmlFor={ids.password}>New password</FieldLabel>
+          <Input
+            id={ids.password}
             type={show ? "text" : "password"}
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={15}
-            className="w-full rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
           />
-        </label>
+        </Field>
 
-        <label className="block text-sm">
-          <span className="mb-1 block text-neutral-300">Confirm password</span>
-          <input
+        <Field>
+          <FieldLabel htmlFor={ids.confirm}>Confirm password</FieldLabel>
+          <Input
+            id={ids.confirm}
             type={show ? "text" : "password"}
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required
             minLength={15}
-            className="w-full rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
           />
-        </label>
+        </Field>
 
-        <label className="flex items-center gap-2 text-xs text-neutral-400">
-          <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
+        <Label className="text-xs font-normal text-muted-foreground">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={show}
+            onChange={(e) => setShow(e.target.checked)}
+          />
           Show password
-        </label>
+        </Label>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        <FieldError>{error}</FieldError>
 
-        <button
-          type="submit"
-          disabled={submitting || !ready}
-          className="w-full rounded-lg bg-indigo-600 px-3 py-2 font-medium hover:bg-indigo-500 disabled:opacity-50"
-        >
+        <Button type="submit" className="w-full" disabled={submitting || !ready}>
           {submitting ? "Activating…" : "Activate account"}
-        </button>
+        </Button>
       </form>
-    </div>
+    </AuthShell>
   );
 }

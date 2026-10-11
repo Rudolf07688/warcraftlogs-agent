@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { Conversation, Raid } from "../types";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { Button } from "./ui/button";
 
 interface Props {
   conversations: Conversation[];
@@ -7,7 +9,7 @@ interface Props {
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
   onInvestigateRaid: (reportCode: string) => void;
   onOpenProfile: () => void;
 }
@@ -52,15 +54,27 @@ export function Sidebar({
 }: Props) {
   const [raidsOpen, setRaidsOpen] = useState(true);
   const [convsOpen, setConvsOpen] = useState(true);
+  // Feature 010 / FR-006: the conversation awaiting the in-app delete confirmation.
+  const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete(pendingDelete.id);
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
+    }
+  }
 
   return (
     <aside className="sidebar">
-      <button className="new-chat" onClick={onNew}>
-        + New chat
-      </button>
-      <button className="profile-open" onClick={onOpenProfile} title="Edit your profile">
+      <Button onClick={onNew}>+ New chat</Button>
+      <Button variant="secondary" onClick={onOpenProfile} title="Edit your profile">
         ⚑ Profile
-      </button>
+      </Button>
 
       <button
         className="sidebar-section-label"
@@ -106,24 +120,37 @@ export function Sidebar({
           {conversations.map((c) => (
             <div
               key={c.id}
-              className={`conversation-item ${c.id === activeId ? "active" : ""}`}
+              className={`conversation-item group ${c.id === activeId ? "active" : ""}`}
               onClick={() => onSelect(c.id)}
             >
               <span className="conversation-title">{c.title || "Untitled"}</span>
-              <button
-                className="conversation-delete"
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                aria-label="Delete conversation"
                 title="Delete"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete(c.id);
+                  setPendingDelete(c);
                 }}
               >
                 ✕
-              </button>
+              </Button>
             </div>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete conversation?"
+        description={`"${pendingDelete?.title || "Untitled"}" will be deleted permanently.`}
+        confirmLabel="Delete"
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </aside>
   );
 }

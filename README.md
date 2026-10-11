@@ -276,3 +276,35 @@ from wcl_agent.wcl_client import check_rate_limit; print(check_rate_limit())"
   web app's selectable list comes from `WCL_GEMINI_MODELS` / `WCL_ANTHROPIC_MODELS`
   probed at startup. ADK drives Claude on Vertex natively (registered in
   `wcl_agent/agent.py`).
+
+## Feature 010 — shared UI components (shadcn/ui)
+
+The frontend's forms, buttons, dropdowns, dialogs, tabs, tables, badges and alerts are
+built from shadcn/ui primitives generated into `frontend/src/components/ui/` (new-york
+style, Tailwind v4 CSS variables, `react-icons` as the icon set, `radix-ui` as the only
+added runtime dependency). Three thin app wrappers live beside them:
+`ConfirmDialog` (every irreversible delete), `StatusAlert` (error/notice strips) and
+`StatusBadge` (status → colour maps). The theme tokens the primitives read are defined in
+`frontend/src/index.css` next to the existing Tavern Hearth palette; `styles.css` keeps
+only layout and the themed chat elements.
+
+Adding another primitive:
+
+```sh
+cd frontend
+npx shadcn@latest add <component>
+# The CLI mis-resolves this project's aliases: fix `from "cn"` → `from "../../lib/utils"`,
+# `from "src/components/ui/x"` → `from "./x"`, drop any `cn` npm package it installed,
+# and swap lucide imports for the same-named icon in `react-icons/lu`.
+```
+
+Local edits to keep when regenerating a file: `button.tsx` variants are trimmed to
+`default | secondary | ghost | destructive` and sizes `default | sm | icon`; `badge.tsx`
+has extra `success` / `warning` variants; `dialog.tsx` / `alert-dialog.tsx` have their
+`tw-animate-css` classes removed (no animation library) and use `secondary` where the
+registry used `outline`.
+
+Audits (from `frontend/`): no hand-styled native controls outside the allowlist in
+`specs/010-shadcn-ui-adoption/contracts/ui-components.md`
+(`grep -rnE '<(button|input|select|textarea)\b|confirm\(' src --include='*.tsx' --exclude-dir=ui`),
+no neutral/indigo utilities (`grep -rnE 'neutral-|indigo-|red-[0-9]' src`), no `lucide-react`.

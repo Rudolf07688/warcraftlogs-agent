@@ -1,13 +1,19 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/restClient";
 import { useAuth } from "../auth/useAuth";
+import { AuthShell } from "../components/AuthShell";
+import { Button } from "../components/ui/button";
+import { Field, FieldError, FieldLabel } from "../components/ui/field";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? "/app";
+  const ids = { email: useId(), password: useId() };
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,52 +41,50 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-neutral-100 p-4">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-2xl bg-neutral-900/80 p-6 shadow-xl"
-      >
+    <AuthShell>
+      <form onSubmit={onSubmit} className="space-y-4">
         <h1 className="text-xl font-semibold">Sign in</h1>
 
-        <label className="block text-sm">
-          <span className="mb-1 block text-neutral-300">Email</span>
-          <input
+        <Field>
+          <FieldLabel htmlFor={ids.email}>Email</FieldLabel>
+          <Input
+            id={ids.email}
             type="email"
             autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
           />
-        </label>
+        </Field>
 
-        <label className="block text-sm">
-          <span className="mb-1 block text-neutral-300">Password</span>
-          <input
+        <Field>
+          <FieldLabel htmlFor={ids.password}>Password</FieldLabel>
+          <Input
+            id={ids.password}
             type={show ? "text" : "password"}
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
           />
-        </label>
+        </Field>
 
-        <label className="flex items-center gap-2 text-xs text-neutral-400">
-          <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
+        <Label className="text-xs font-normal text-muted-foreground">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={show}
+            onChange={(e) => setShow(e.target.checked)}
+          />
           Show password
-        </label>
+        </Label>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        <FieldError>{error}</FieldError>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-lg bg-indigo-600 px-3 py-2 font-medium hover:bg-indigo-500 disabled:opacity-50"
-        >
+        <Button type="submit" className="w-full" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
-        </button>
+        </Button>
       </form>
-    </div>
+    </AuthShell>
   );
 }

@@ -18,6 +18,7 @@ import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
+import { Button } from "./components/ui/button";
 import { THINKING_DEFAULT, retryLabel, toolLabel } from "./toolLabels";
 import type {
   ChartArtifact,
@@ -429,26 +430,29 @@ export default function App() {
             degraded={modelsDegraded}
           />
           {activeId && messages.length > 0 && (
-            <button
-              className="download-pdf"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={handleDownloadPdf}
               disabled={streaming}
               title="Download this conversation as a PDF report"
             >
               ⬇ PDF
-            </button>
+            </Button>
           )}
           <span className={`conn ${connected ? "online" : "offline"}`}>
             {connected ? "● connected" : "● disconnected"}
           </span>
           {identity?.is_platform_admin && (
-            <a className="download-pdf" href="/admin/users" title="Manage users & invitations">
-              Admin
-            </a>
+            <Button asChild variant="secondary" size="sm">
+              <a href="/admin/users" title="Manage users & invitations">
+                Admin
+              </a>
+            </Button>
           )}
-          <button className="download-pdf" onClick={() => void logout()} title="Sign out">
+          <Button variant="secondary" size="sm" onClick={() => void logout()} title="Sign out">
             Sign out
-          </button>
+          </Button>
         </header>
         <MessageList
           messages={messages}

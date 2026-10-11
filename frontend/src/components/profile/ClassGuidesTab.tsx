@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, generateGuide, getGuide, listGuides } from "../../api/restClient";
-import type { Guide, GuideFreshness, GuideListItem, GuideStatus } from "../../types";
+import type { Guide, GuideFreshness, GuideListItem } from "../../types";
+import { StatusAlert } from "../StatusAlert";
+import { GUIDE_LABEL_LIBRARY, GUIDE_TONE, StatusBadge } from "../StatusBadge";
 import { StreamMarkdown } from "../StreamMarkdown";
+import { Button } from "../ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 // Class Guides tab (feature 008 / US2): the full class/spec roster merged with the shared,
 // global library's status. Any signed-in user can request, retry, or refresh a guide, and
 // view its content. Generation is best-effort/non-blocking and rate-limited (429 → slow down).
-
-const CHIP_LABEL: Record<GuideStatus, string> = {
-  ready: "Downloaded",
-  pending: "Generating…",
-  failed: "Failed",
-  none: "Not downloaded",
-};
 
 const POLL_MS = 4000;
 
@@ -42,8 +39,8 @@ function GuideProvenance({
         {date ? ` · ${date}` : ""}
       </span>
       {stale && (
-        <span
-          className="guide-badge guide-stale"
+        <StatusBadge
+          tone="warn"
           title={
             it.freshness === "unknown"
               ? "This guide does not state a patch; regenerate to refresh it."
@@ -51,7 +48,7 @@ function GuideProvenance({
           }
         >
           May be out of date
-        </span>
+        </StatusBadge>
       )}
     </>
   );
@@ -133,8 +130,8 @@ export function ClassGuidesTab({ active }: { active: boolean }) {
 
   return (
     <div className="profile-tabpanel">
-      {err && <div className="profile-error">{err}</div>}
-      {notice && <div className="profile-notice">{notice}</div>}
+      {err && <StatusAlert tone="error">{err}</StatusAlert>}
+      {notice && <StatusAlert tone="notice">{notice}</StatusAlert>}
 
       <div className="guide-grid">
         {groups.map(([display, specs]) => (
@@ -147,47 +144,34 @@ export function ClassGuidesTab({ active }: { active: boolean }) {
                 return (
                   <li className="guide-spec-row" key={key}>
                     <span className="guide-spec-name">{it.spec}</span>
-                    <span className={`guide-badge guide-${it.status}`}>
-                      {CHIP_LABEL[it.status]}
-                    </span>
+                    <StatusBadge tone={GUIDE_TONE[it.status]}>{GUIDE_LABEL_LIBRARY[it.status]}</StatusBadge>
                     {it.status === "ready" && <GuideProvenance it={it} />}
                     <span className="guide-spec-actions">
                       {it.status === "ready" && (
                         <>
-                          <button
-                            className="guide-btn"
-                            disabled={viewBusy}
-                            onClick={() => void onView(it)}
-                          >
+                          <Button size="sm" disabled={viewBusy} onClick={() => void onView(it)}>
                             View
-                          </button>
-                          <button
-                            className="guide-btn guide-btn-ghost"
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             disabled={busy}
                             onClick={() => void onGenerate(it, true)}
                             title="Regenerate this guide"
                           >
                             {busy ? "…" : "Refresh"}
-                          </button>
+                          </Button>
                         </>
                       )}
                       {it.status === "failed" && (
-                        <button
-                          className="guide-btn"
-                          disabled={busy}
-                          onClick={() => void onGenerate(it, true)}
-                        >
+                        <Button size="sm" disabled={busy} onClick={() => void onGenerate(it, true)}>
                           {busy ? "…" : "Retry"}
-                        </button>
+                        </Button>
                       )}
                       {it.status === "none" && (
-                        <button
-                          className="guide-btn"
-                          disabled={busy}
-                          onClick={() => void onGenerate(it, false)}
-                        >
+                        <Button size="sm" disabled={busy} onClick={() => void onGenerate(it, false)}>
                           {busy ? "…" : "Generate"}
-                        </button>
+                        </Button>
                       )}
                       {it.status === "pending" && (
                         <span className="guide-spec-hint">working…</span>
@@ -201,52 +185,56 @@ export function ClassGuidesTab({ active }: { active: boolean }) {
         ))}
       </div>
 
-      {viewing && (
-        <div
-          className="profile-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${viewing.class_name} ${viewing.spec} guide`}
-          onClick={() => setViewing(null)}
+      <Dialog
+        open={viewing !== null}
+        onOpenChange={(open) => {
+          if (!open) setViewing(null);
+        }}
+      >
+        {/* Radix supplies focus trap, Escape, backdrop close, scroll lock and focus return
+            (FR-005). `viewing` is independent of `items`, so a background poll never
+            disturbs an open guide. */}
+        <DialogContent
+          className="max-h-[86vh] overflow-y-auto sm:max-w-3xl"
+          aria-describedby={undefined}
         >
-          <div className="guide-view-panel" onClick={(e) => e.stopPropagation()}>
-            <header className="profile-header">
-              <h2>
-                {viewing.class_name} — {viewing.spec}
-              </h2>
-              <button className="profile-close" onClick={() => setViewing(null)} title="Close">
-                ✕
-              </button>
-            </header>
-            {viewing.status === "ready" && (
-              <div className="guide-view-meta">
-                <GuideProvenance it={viewing} />
-              </div>
-            )}
-            <div className="guide-view-body">
-              {viewing.guide_markdown ? (
-                <StreamMarkdown content={viewing.guide_markdown} />
-              ) : (
-                <p className="guide-spec-hint">No content yet.</p>
-              )}
-              {viewing.sources && viewing.sources.length > 0 && (
-                <div className="guide-sources">
-                  <h4>Sources</h4>
-                  <ul>
-                    {viewing.sources.map((s) => (
-                      <li key={s.uri}>
-                        <a href={s.uri} target="_blank" rel="noreferrer">
-                          {s.title || s.uri}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
+          {viewing && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {viewing.class_name} — {viewing.spec}
+                </DialogTitle>
+              </DialogHeader>
+              {viewing.status === "ready" && (
+                <div className="guide-view-meta">
+                  <GuideProvenance it={viewing} />
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
+              <div className="guide-view-body">
+                {viewing.guide_markdown ? (
+                  <StreamMarkdown content={viewing.guide_markdown} />
+                ) : (
+                  <p className="guide-spec-hint">No content yet.</p>
+                )}
+                {viewing.sources && viewing.sources.length > 0 && (
+                  <div className="guide-sources">
+                    <h4>Sources</h4>
+                    <ul>
+                      {viewing.sources.map((s) => (
+                        <li key={s.uri}>
+                          <a href={s.uri} target="_blank" rel="noreferrer">
+                            {s.title || s.uri}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

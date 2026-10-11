@@ -1,3 +1,6 @@
+import { StatusBadge } from "./StatusBadge";
+import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+
 interface Props {
   models: string[];
   value: string;
@@ -8,27 +11,28 @@ interface Props {
 
 export function ModelSelect({ models, value, onChange, disabled, degraded }: Props) {
   return (
-    <span className="model-select-wrap">
-      <select
-        className="model-select"
+    <span className="ml-auto inline-flex items-center gap-1.5">
+      <NativeSelect
+        size="sm"
+        aria-label="Model"
+        title="Model"
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        title="Model"
       >
         {models.map((m) => (
-          <option key={m} value={m}>
+          <NativeSelectOption key={m} value={m}>
             {m}
-          </option>
+          </NativeSelectOption>
         ))}
-      </select>
+      </NativeSelect>
       {degraded && (
-        <span
-          className="model-degraded"
+        <StatusBadge
+          tone="warn"
           title="Model discovery could not reach Vertex; showing a fallback list."
         >
           ⚠️ fallback list
-        </span>
+        </StatusBadge>
       )}
     </span>
   );
