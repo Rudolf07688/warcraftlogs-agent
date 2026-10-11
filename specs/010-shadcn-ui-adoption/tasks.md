@@ -140,7 +140,7 @@ description: "Task list for feature 010 — Shared UI Component Adoption"
 - [x] T045 [P] Run the backend suite `uv run pytest -q` from the repo root to confirm nothing outside `frontend/` changed behaviour
 - [x] T046 [P] Add a short "Feature 010 — shared UI components" section to `README.md` (how to add another shadcn component, the three recorded local edits in `frontend/src/components/ui/`, the token block in `frontend/src/index.css`, the audit greps)
 - [x] T047 (sweep found only pre-existing orphans: boot-step-* state classes built from template strings, chat-main-area, font-display, scroll-viewport, streaming-body, tool-activity, tool-chip — none introduced here, nothing removed) Final sweep of `frontend/src/styles.css` for selectors no longer referenced by any TSX (`for s in $(grep -oE '^\.[a-zA-Z0-9_-]+' frontend/src/styles.css | sort -u); do grep -rq "${s#.}" frontend/src --include='*.tsx' || echo "$s"; done`) and remove orphans introduced by this feature only
-- [ ] T048 (detect_changes run during /speckit-implement; commit left to `/speckit-git-commit`) Run `detect_changes({scope: "all"})`, commit per story or as one feature commit, then `node .gitnexus/run.cjs analyze --index-only`
+- [x] T048 (detect_changes clean; committed as c69b66e docs(010) + 4982bae feat(010); index refreshed) Run `detect_changes({scope: "all"})`, commit per story or as one feature commit, then `node .gitnexus/run.cjs analyze --index-only`
 
 ---
 
