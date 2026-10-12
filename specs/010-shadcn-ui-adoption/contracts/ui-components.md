@@ -22,6 +22,14 @@ contracts below are what the rest of the app (and the audit checks) may rely on.
 | `badge.tsx` | `Badge`, `badgeVariants` | + `success`, `warning` variants |
 | `alert.tsx` | `Alert`, `AlertTitle`, `AlertDescription` | none |
 | `separator.tsx` | (none directly; imported by `field.tsx`) | none |
+| `card.tsx` | `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardAction`, `CardContent`, `CardFooter` (profile revamp) | none |
+| `item.tsx` | `Item`, `ItemGroup`, `ItemMedia`, `ItemContent`, `ItemTitle`, `ItemDescription`, `ItemActions` (profile revamp) | none |
+| `empty.tsx` | `Empty`, `EmptyHeader`, `EmptyMedia`, `EmptyTitle`, `EmptyDescription`, `EmptyContent` (profile revamp) | none |
+| `avatar.tsx` | `Avatar`, `AvatarFallback` (profile revamp) | none |
+| `toggle.tsx` / `toggle-group.tsx` | `ToggleGroup`, `ToggleGroupItem` (profile revamp) | none |
+| `skeleton.tsx` | `Skeleton` (profile revamp) | none |
+| `spinner.tsx` | `Spinner` (profile revamp) | lucide `Loader2Icon` → `LuLoaderCircle` |
+| `input-group.tsx` | `InputGroup`, `InputGroupInput`, `InputGroupAddon` (profile revamp) | none |
 
 All files: imports rewritten from the CLI's `"cn"` / `"src/components/ui/…"` to `"../../lib/utils"` / `"./…"` (the CLI mis-resolved the aliases, research R1). `alert-dialog.tsx` / `dialog.tsx`: `variant="outline"` defaults changed to `secondary` because `outline` was trimmed from Button.
 
@@ -96,12 +104,18 @@ Legacy variables consumed by `styles.css` keep their names and meanings.
 | Sidebar | delete conversation | `title="Delete"` | `aria-label="Delete conversation"` + `title="Delete"` |
 | Sidebar | raid item | `title="Investigate {label}"` | unchanged (FR-015) |
 | Profile | raid role select | `aria-label="Raid role"` | same |
+| Profile (revamp) | self raid role | — | `ToggleGroup aria-label="Raid role"`; friend rows keep the select |
+| Profile (revamp) | identity dialog fields | `aria-label` Name / Server / Region | visible `FieldLabel`s Name / Server / Region |
+| Profile (revamp) | add friend | button text "Add friend" | same text, opens the identity dialog |
+| Class Guides (revamp) | search | — | `aria-label="Search classes and specs"` |
+| Class Guides (revamp) | status filter | — | `ToggleGroup aria-label="Filter by status"` |
+| Class Guides (revamp) | refresh | button text "Refresh" | icon button, `aria-label="Refresh {spec} {class} guide"` + `title="Regenerate this guide"` |
 | Profile | remove friend / guild | `title="Remove friend"` / `title="Remove guild"` | same + `aria-label` |
 | Profile tabs | tablist | `aria-label="Profile sections"` | same on `TabsList` |
 | Class Guides | refresh | `title="Regenerate this guide"` | same |
 | Class Guides | provenance | `title="Patch the guide targets · when it was generated"` | unchanged |
 | Class Guides | stale badge | freshness-specific `title` | same on `StatusBadge` |
-| Guide dialog | dialog | `aria-label="{class} {spec} guide"` | `DialogTitle` "{class} — {spec}" (labelled-by) |
+| Guide dialog | dialog | `aria-label="{class} {spec} guide"` | `DialogTitle` "{class} — {spec}" (labelled-by); revamp: "{spec} {class}" + provenance as `DialogDescription` |
 | Guide dialog | close | `title="Close"` | `DialogClose` with visually hidden "Close" text |
 | Admin | status alert | (none) | `role="alert"` from `Alert` |
 | Composer | textarea | placeholder only | add `aria-label="Message"` |

@@ -292,6 +292,12 @@ Constitution Principle VII makes this the default for all frontend work: search 
 registry through the shadcn MCP server before building a component, use a fitting item,
 run the MCP audit checklist afterwards, and record any hand-built exception in the plan.
 
+The profile page (`/profile`) is the reference layout for this: section `Card`s, friend
+and spec rows as `Item`s, `Empty` states, `Skeleton` loading, `Spinner` busy buttons, a
+`ToggleGroup` raid-role picker and one `Dialog` form for self / friend / guild. Class
+accents come from `frontend/src/lib/classColors.ts` (official WoW class colours keyed by
+the normalised `CLASS_SPECS` name), the one hand-built piece, since no registry item covers it.
+
 Adding another primitive:
 
 ```sh
