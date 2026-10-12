@@ -1,36 +1,38 @@
 <!--
 SYNC IMPACT REPORT
-Version change: (unratified template) → 1.0.0
-Bump rationale: Initial ratification — placeholders replaced with concrete,
-  project-specific principles and governance. MAJOR baseline (1.0.0).
+Version change: 1.0.0 → 1.1.0
+Bump rationale: MINOR — a new principle (VII) is added and the stack/workflow sections gain
+  matching guidance. No existing principle is removed or redefined.
 
-Principles defined:
-  I.   Strict DRY & Reuse-First
-  II.  Methodical, Step-Wise Delivery
-  III. Simplicity First (YAGNI) — NON-NEGOTIABLE
-  IV.  Typed Data Contracts (Pydantic & Dataclasses)
-  V.   Async Python Backend (FastAPI + asyncio)
-  VI.  Repo Awareness via GitNexus
+Modified principles: none (I–VI unchanged)
 
-Added sections:
-  - Technology Stack & Standards
-  - Development Workflow & Quality Gates
+Added principles:
+  - VII. Shared UI Components via the shadcn/ui MCP
 
-Removed sections: none (template placeholders replaced in place)
+Modified sections:
+  - Technology Stack & Standards: Frontend line now names React + Tailwind CSS v4 +
+    shadcn/ui and where generated components live.
+  - Development Workflow & Quality Gates: new "UI reuse check" gate.
+
+Removed sections: none
 
 Templates reviewed for consistency:
-  ✅ .specify/templates/plan-template.md  — Constitution Check gate is generic; aligns
-  ✅ .specify/templates/spec-template.md  — no constitution-mandated sections added; aligns
-  ✅ .specify/templates/tasks-template.md — task categories already cover these principles; aligns
-  ✅ README.md / documentation/ai_guide.md — runtime guidance consistent with stack
+  ✅ .specify/templates/plan-template.md  — Constitution Check gate is generic ("gates
+     determined based on constitution file"); Principle VII is picked up from here. No edit.
+  ✅ .specify/templates/spec-template.md  — specs stay technology-agnostic; the principle
+     applies at plan/implement time. No edit.
+  ✅ .specify/templates/tasks-template.md — generic task categories; no principle-specific
+     task type required. No edit.
+  ✅ .specify/templates/checklist-template.md — generic. No edit.
+  ⚠ .specify/templates/commands/ — directory does not exist in this repo; nothing to check.
+  ✅ README.md — Feature 010 section now points at Principle VII and the MCP workflow.
+  ✅ documentation/ai_guide.md — §2 Tech stack gains a Frontend row naming the rule; the
+     Python row is corrected from 3.13 to the pinned 3.14.
 
 Deferred / follow-up TODOs:
-  - Python version: constitution mandates 3.14; repo currently pins 3.13
-    (.python-version) due to earlier dependency-wheel caution. Reconcile by
-    upgrading the pin to 3.14 (and verifying `uv sync`) or recording an
-    explicit, time-boxed exception in Complexity Tracking.
-  - FastAPI backend and React frontend are target architecture; the current
-    terminal app (`wcl`) is the seed. No exception needed until endpoints/UI exist.
+  - RESOLVED: Python version — `.python-version` now pins 3.14, matching the stack.
+  - RESOLVED: FastAPI backend and React frontend now exist (no longer target-only).
+  - None open.
 -->
 
 # WCL Agent App Constitution
@@ -118,6 +120,32 @@ not permitted.
 **Rationale**: Understanding the real call graph before editing prevents breakage
 and is the prerequisite for safe DRY reuse (Principle I).
 
+### VII. Shared UI Components via the shadcn/ui MCP
+
+Frontend components are built from the shadcn/ui registry, discovered through the
+**shadcn MCP server**, whenever the server is available and a registry item fits. Hand-built
+UI is the exception, not the default.
+
+- Before building or restyling a frontend component, authors MUST search the registry
+  through the shadcn MCP (search, view and example lookups) for a component or block
+  that covers the need, and MUST use it when one fits.
+- Registry components are added with the add command the MCP reports, into
+  `frontend/src/components/ui/`. Generated files stay as generated except for edits
+  recorded in the feature's contract or the README; app-specific wrappers live outside
+  `ui/`.
+- After adding components, authors MUST run the MCP's audit checklist and fix what it
+  flags.
+- A hand-built component is permitted only when the MCP is unavailable or no registry
+  item fits (for example the themed spell cards, cast bars and rune spinner). The plan's
+  Constitution Check MUST name the component and the reason.
+- Registry components follow the project's existing constraints: one icon library
+  (`react-icons`), colours and radius from the theme tokens in `frontend/src/index.css`,
+  and no added dependency without a Complexity Tracking entry.
+
+**Rationale**: This is Principle I applied to the UI. One registry-backed implementation
+per control keeps screens consistent and accessible, and the MCP makes the reuse check
+fast enough to do every time instead of re-inventing controls per screen.
+
 ## Technology Stack & Standards
 
 The project standardizes on the following stack; deviations require a recorded
@@ -129,7 +157,8 @@ exception (see Governance).
 - **Backend**: **FastAPI** + **asyncio** for all endpoints.
 - **Data modeling**: **Pydantic** (boundary/validated data) and **dataclasses**
   (internal config/value objects).
-- **Frontend**: **React**.
+- **Frontend**: **React** + **Tailwind CSS v4** + **shadcn/ui** (generated components in
+  `frontend/src/components/ui/`, discovered via the shadcn MCP; see Principle VII).
 - **Secrets**: never committed; provided via environment / `.env` (gitignored),
   with a tracked `.env.example` template.
 - **Best practices**: code is formatted, linted, and type-checked; follows
@@ -146,6 +175,9 @@ exception (see Governance).
   Complexity Tracking table.
 - **Reuse check**: before adding code, confirm no existing implementation covers
   the need (Principle I).
+- **UI reuse check**: before building a frontend component, search the shadcn registry
+  through the shadcn MCP and use a fitting item; record any hand-built exception in the
+  plan (Principle VII).
 - **Verification**: each increment is run/tested/demonstrated before it is
   considered done.
 - **Commit discipline**: commits are scoped and descriptive; secrets are never
@@ -167,4 +199,4 @@ reviews, and implementations MUST verify compliance with these principles.
 - **Runtime guidance**: `documentation/ai_guide.md` and `README.md` provide
   operational guidance and MUST stay consistent with this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-01 | **Last Amended**: 2026-10-01
+**Version**: 1.1.0 | **Ratified**: 2026-10-01 | **Last Amended**: 2026-10-12

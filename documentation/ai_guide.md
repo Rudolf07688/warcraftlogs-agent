@@ -34,13 +34,14 @@ Agent: On Heroic Ula'tek this season, Marksmanship leads (median ~306k dps, p95 
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Language | Python `>=3.10` | Pinned to `3.13` via `.python-version`. |
+| Language | Python `>=3.10` | Pinned to `3.14` via `.python-version`. |
 | Dependency mgmt | **uv** | `uv sync` to install; `uv run …` to execute. |
 | Agent framework | **Google ADK** (`google-adk`, installed 2.10.0) | Docs: <https://adk.dev> |
 | LLM | **Gemini** (`gemini-3.6-flash`) via **Vertex AI** | Auth = gcloud **ADC**, global endpoint. |
 | Data source | **Warcraft Logs v2 GraphQL API** | OAuth2 client-credentials. |
 | Analysis | **pandas** (3.x) | Percentile/quantile math + groupby. |
 | Packaging | hatchling; console script `wcl` | `uv run wcl` or activate venv then `wcl`. |
+| Frontend | **React** + **Tailwind CSS v4** + **shadcn/ui** | Build UI from shadcn registry items found via the shadcn MCP; hand-built only when none fits (constitution Principle VII). Generated files in `frontend/src/components/ui/`. |
 
 ---
 

@@ -288,6 +288,10 @@ added runtime dependency). Three thin app wrappers live beside them:
 `frontend/src/index.css` next to the existing Tavern Hearth palette; `styles.css` keeps
 only layout and the themed chat elements.
 
+Constitution Principle VII makes this the default for all frontend work: search the
+registry through the shadcn MCP server before building a component, use a fitting item,
+run the MCP audit checklist afterwards, and record any hand-built exception in the plan.
+
 Adding another primitive:
 
 ```sh
