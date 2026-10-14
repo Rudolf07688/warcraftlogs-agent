@@ -171,12 +171,15 @@ export default function App() {
           streamStore.set(streamRef.current);
           break;
         case "suggestions": {
-          // US1: arrives just after `done` (PERF-005), so the composer is already free;
-          // attach the follow-ups to the message they belong to (or the latest agent reply).
+          // US1: arrives just after `done` (PERF-005), so the composer is already free.
+          // Attach the follow-ups to the message they belong to. If that message isn't in
+          // the open chat (the user switched chats meanwhile), drop them (PERF-104); only an
+          // older backend without `message_id` falls back to the latest agent reply.
           const suggestions = f.suggestions.slice(0, 3);
           setMessages((m) => {
-            let idx = f.message_id ? m.findIndex((x) => x.id === f.message_id) : -1;
-            if (idx < 0) idx = m.map((x) => x.role).lastIndexOf("agent");
+            const idx = f.message_id
+              ? m.findIndex((x) => x.id === f.message_id)
+              : m.map((x) => x.role).lastIndexOf("agent");
             if (idx < 0) return m;
             const next = m.slice();
             next[idx] = { ...next[idx], suggestions };

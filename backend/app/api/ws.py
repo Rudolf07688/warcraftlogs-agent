@@ -57,6 +57,29 @@ RATE_LIMITED_MESSAGE = (
 )
 
 
+class _TurnSocket:
+    """Per-socket state for the receive loop (PERF-102).
+
+    Follow-up suggestions are produced by a background task after ``done``, so they can
+    overlap the next turn's sends. ``send_json`` serializes all sends on the socket, and the
+    pending suggestions task is cancelled when the next turn starts.
+    """
+
+    def __init__(self, ws: WebSocket) -> None:
+        self.ws = ws
+        self._lock = asyncio.Lock()
+        self.suggestions: asyncio.Task | None = None
+
+    async def send_json(self, payload) -> None:
+        async with self._lock:
+            await self.ws.send_json(payload)
+
+    def cancel_suggestions(self) -> None:
+        if self.suggestions is not None and not self.suggestions.done():
+            self.suggestions.cancel()
+        self.suggestions = None
+
+
 async def _send(ws: WebSocket, frame) -> None:
     payload = frame.model_dump(mode="json") if hasattr(frame, "model_dump") else frame
     await ws.send_json(payload)
@@ -189,7 +212,11 @@ async def _persist_partial(conv_id, tokens: list[str], identity: RequestIdentity
         )
 
 
-async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity) -> None:
+async def _handle_turn(
+    ws: WebSocket, turn: ChatTurn, identity: RequestIdentity
+) -> asyncio.Task | None:
+    """Run one chat turn. Returns the follow-up suggestions task when the turn finished,
+    else ``None``; the caller owns it (and cancels it when the next turn starts)."""
     tenant_id = identity.tenant_id
     # PERF-006: one short tenant-scoped transaction to set the turn up. It closes (commits
     # and returns its connection to the pool) before the model streams; captures and the
@@ -202,7 +229,7 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
             )
             if conv is None:
                 await _send(ws, ErrorFrame(code="not_found", message="Conversation not found."))
-                return
+                return None
         else:
             conv = await repo.create_conversation(session, model=turn.model, tenant_id=tenant_id)
         conv_id = conv.id
@@ -261,14 +288,14 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
             await _send(ws, ErrorFrame(code="rate_limited", message=RATE_LIMITED_MESSAGE))
         except Exception:  # noqa: BLE001 - socket may already be gone
             pass
-        return
+        return None
     except Exception as exc:  # noqa: BLE001 - surface failure to the client
         await _persist_partial(conv_id, tokens, identity)
         try:
             await _send(ws, ErrorFrame(code="agent_error", message=str(exc)))
         except Exception:  # noqa: BLE001 - socket may already be gone
             pass
-        return
+        return None
     finally:
         scratch.cleanup()
 
@@ -287,11 +314,27 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
     # PERF-005: the turn is done as soon as the answer is saved; the composer unlocks now.
     await _send(ws, DoneFrame(message_id=agent_msg_id))
 
-    # US1: predict up to 3 follow-up questions and attach them to the finished message.
-    # Best-effort and time-boxed — never block or fail the turn over suggestions.
-    suggestions = await generate_followups(turn.model, turn.content, final_text)
-    if suggestions:
-        await _send(ws, SuggestionsFrame(message_id=agent_msg_id, suggestions=suggestions))
+    # US1: predict up to 3 follow-up questions in the background (PERF-102), so the socket
+    # can read the player's next message straight away; that next turn cancels this task.
+    return asyncio.create_task(_send_suggestions(ws, turn, final_text, agent_msg_id))
+
+
+async def _send_suggestions(ws, turn: ChatTurn, final_text: str, message_id) -> None:
+    """Best-effort and time-boxed: never fail anything over suggestions."""
+    try:
+        suggestions = await generate_followups(turn.model, turn.content, final_text)
+        if suggestions:
+            await _send(ws, SuggestionsFrame(message_id=message_id, suggestions=suggestions))
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 - e.g. the socket closed meanwhile
+        logger.debug("follow-up suggestions not sent", exc_info=True)
+
+
+async def _start_turn(sock: _TurnSocket, turn: ChatTurn, identity: RequestIdentity) -> None:
+    """Start a turn on this socket: drop the previous turn's pending suggestions first."""
+    sock.cancel_suggestions()
+    sock.suggestions = await _handle_turn(sock, turn, identity)
 
 
 async def _build_turn_preamble(session, tenant_id) -> str:
@@ -358,6 +401,7 @@ async def chat(ws: WebSocket) -> None:
         return
 
     await ws.accept()
+    sock = _TurnSocket(ws)
     try:
         while True:
             raw = await ws.receive_json()
@@ -365,17 +409,19 @@ async def chat(ws: WebSocket) -> None:
             # effect mid-connection (FR-023). Cheap: one indexed session lookup.
             identity = await authenticate_session(ws.cookies.get(settings.session_cookie_name))
             if identity is None or identity.tenant_id is None:
-                await _send(ws, ErrorFrame(code="unauthorized", message="Session is no longer valid."))
+                await _send(sock, ErrorFrame(code="unauthorized", message="Session is no longer valid."))
                 await ws.close(code=1008)
                 return
             try:
                 turn = ChatTurn(**raw)
             except ValidationError:
-                await _send(ws, ErrorFrame(code="empty_message", message="Invalid or empty message."))
+                await _send(sock, ErrorFrame(code="empty_message", message="Invalid or empty message."))
                 continue
             if not is_valid_model(ws.app, turn.model):
-                await _send(ws, ErrorFrame(code="invalid_model", message=f"Unknown model '{turn.model}'."))
+                await _send(sock, ErrorFrame(code="invalid_model", message=f"Unknown model '{turn.model}'."))
                 continue
-            await _handle_turn(ws, turn, identity)
+            await _start_turn(sock, turn, identity)
     except WebSocketDisconnect:
         return
+    finally:
+        sock.cancel_suggestions()

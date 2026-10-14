@@ -62,7 +62,11 @@ async def test_no_transaction_is_open_while_the_model_streams(as_user, patched_d
     monkeypatch.setattr(ws_mod, "set_cache_scope", lambda *_: None)
     sock = _FakeSocket()
 
-    await ws_mod._handle_turn(sock, ChatTurn(model="gemini-3.6-flash", content="hi"), _identity(as_user.tenant_id))
+    task = await ws_mod._handle_turn(
+        sock, ChatTurn(model="gemini-3.6-flash", content="hi"), _identity(as_user.tenant_id)
+    )
+    assert [f["type"] for f in sock.frames][-1] == "done"  # PERF-102: returns before suggestions
+    await task
 
     assert seen_during_stream == [0, 0, 0]  # PERF-006: no connection held across the stream
     types = [f["type"] for f in sock.frames]
@@ -139,3 +143,57 @@ async def test_ensure_session_checks_existence_without_loading_events(monkeypatc
     monkeypatch.setattr(agent_runner, "_get_session_service", lambda: _Service())
     await agent_runner._ensure_session("s1", "u1")
     assert seen["config"] is not None and seen["config"].num_recent_events == 0  # PERF-008
+
+
+# --- PERF-102: suggestions run in the background and the next turn cancels them ---------
+
+
+async def test_next_turn_cancels_pending_suggestions(as_user, patched_db, monkeypatch):
+    import asyncio
+
+    started = asyncio.Event()
+
+    async def slow_suggestions(*args, **kwargs):
+        started.set()
+        await asyncio.sleep(10)
+        return ["Too late"]
+
+    async def stream(*args, **kwargs):
+        yield {"type": "token", "text": "Answer"}
+
+    monkeypatch.setattr(ws_mod, "stream_response", stream)
+    monkeypatch.setattr(ws_mod, "generate_followups", slow_suggestions)
+    monkeypatch.setattr(ws_mod, "set_cache_scope", lambda *_: None)
+    raw = _FakeSocket()
+    sock = ws_mod._TurnSocket(raw)
+    identity = _identity(as_user.tenant_id)
+
+    await ws_mod._start_turn(sock, ChatTurn(model="gemini-3.6-flash", content="q1"), identity)
+    first_task = sock.suggestions
+    await started.wait()  # the first turn's suggestions are in flight
+    conv_id = raw.frames[0]["conversation_id"]
+
+    await ws_mod._start_turn(
+        sock, ChatTurn(conversation_id=conv_id, model="gemini-3.6-flash", content="q2"), identity
+    )
+    await asyncio.sleep(0)
+    assert first_task.cancelled()
+    assert not any(f["type"] == "suggestions" for f in raw.frames)
+    sock.cancel_suggestions()
+
+
+async def test_turn_socket_serializes_sends():
+    import asyncio
+
+    log: list[str] = []
+
+    class _SlowSocket:
+        async def send_json(self, payload):
+            log.append(f"start {payload['n']}")
+            await asyncio.sleep(0.01)
+            log.append(f"end {payload['n']}")
+
+    sock = ws_mod._TurnSocket(_SlowSocket())
+    await asyncio.gather(*(sock.send_json({"n": i}) for i in range(3)))
+    # Each send finishes before the next starts (no interleaved frames).
+    assert log == ["start 0", "end 0", "start 1", "end 1", "start 2", "end 2"]

@@ -92,9 +92,10 @@ async def test_next_turn_after_rate_limit_is_processed_normally(as_user, patched
     conv_id = uuid.UUID(first.frames[0]["conversation_id"])
 
     second = _FakeSocket()
-    await ws_mod._handle_turn(
+    task = await ws_mod._handle_turn(
         second, ChatTurn(conversation_id=conv_id, model="gemini-3.6-flash", content="q2"), identity
     )
+    await task  # the background suggestions (none here) finish without a frame
     assert [f["type"] for f in second.frames] == ["meta", "token", "done"]
     msgs = await _messages(patched_db, conv_id, as_user.tenant_id)
     assert [(m.role, m.content) for m in msgs] == [
