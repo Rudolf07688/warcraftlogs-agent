@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     # Per-user cap on manual spec-guide generation requests (feature 008 / US2, FR-014).
     # Bounds user-initiated generation so a burst can't cascade into WCL/model rate limits.
     wcl_guide_generate_per_minute: int = 10
+    # PERF-012: at most this many background guide/guild-summary generations run at once,
+    # so filling in a profile can't flood the model quota the player's chat depends on.
+    wcl_guide_max_concurrency: int = 2
 
     # Findings-report synthesis (feature 007 / US2-US3). A plain (non-web-search) model
     # that summarizes in-scope chat content into an analytic findings document. Runs

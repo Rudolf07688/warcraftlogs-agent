@@ -133,13 +133,32 @@ class GeneratedText:
     session_id: str
 
 
+# PERF-012: one semaphore per event loop (tests run several loops) caps how many
+# background generations run at once.
+_generation_slots: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+
+
+def _generation_slot() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    slot = _generation_slots.get(loop)
+    if slot is None:
+        slot = _generation_slots[loop] = asyncio.Semaphore(max(1, settings.wcl_guide_max_concurrency))
+    return slot
+
+
 async def _generate_text(prompt: str, session_id: str | None = None) -> GeneratedText:
     """Run ``prompt`` through the guide model over a disposable session; collect text.
 
     ``session_id`` is reused when given (the guide-meta repair turn), else a fresh
     disposable session is created. Sources come from the ``grounding`` records
-    ``stream_response`` emits (empty when the model has no web search).
+    ``stream_response`` emits (empty when the model has no web search). At most
+    ``wcl_guide_max_concurrency`` generations run at once (PERF-012).
     """
+    async with _generation_slot():
+        return await _stream_text(prompt, session_id)
+
+
+async def _stream_text(prompt: str, session_id: str | None) -> GeneratedText:
     from ..agent_runner import stream_response
 
     session_id = session_id or f"guide-{uuid.uuid4().hex}"

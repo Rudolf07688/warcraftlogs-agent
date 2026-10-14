@@ -18,6 +18,8 @@ import logging
 import os
 from typing import Any
 
+from .threading_utils import gather_threads
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +49,10 @@ def _make_anthropic_client() -> Any | None:
         return None
 
 
+# PERF-015: a probe that hangs must not hold up startup (readiness waits on discovery).
+PROBE_TIMEOUT_S = 10
+
+
 def _probe_gemini(client: Any, model_id: str) -> bool:
     try:
         from google.genai import types
@@ -54,7 +60,10 @@ def _probe_gemini(client: Any, model_id: str) -> bool:
         client.models.generate_content(
             model=model_id,
             contents="hello",
-            config=types.GenerateContentConfig(max_output_tokens=1),
+            config=types.GenerateContentConfig(
+                max_output_tokens=1,
+                http_options=types.HttpOptions(timeout=PROBE_TIMEOUT_S * 1000),
+            ),
         )
         return True
     except Exception as exc:  # noqa: BLE001
@@ -68,6 +77,7 @@ def _probe_anthropic(client: Any, model_id: str) -> bool:
             model=model_id,
             max_tokens=1,
             messages=[{"role": "user", "content": "hello"}],
+            timeout=PROBE_TIMEOUT_S,
         )
         return True
     except Exception as exc:  # noqa: BLE001
@@ -89,20 +99,25 @@ def discover_models(
     - ``degraded``: True when probing couldn't run (or found nothing) and the
       fallback set is being served instead.
     """
-    validated: list[str] = []
     infra_ran = False
+    # PERF-015: probe every candidate concurrently instead of one after another; results
+    # keep the configured order (Gemini first, then Anthropic).
+    probes: list[tuple[str, Any]] = []
 
     if gemini_ids:
         gclient = _make_gemini_client()
         if gclient is not None:
             infra_ran = True
-            validated.extend(m for m in gemini_ids if _probe_gemini(gclient, m))
+            probes += [(m, lambda m=m: _probe_gemini(gclient, m)) for m in gemini_ids]
 
     if anthropic_ids:
         aclient = _make_anthropic_client()
         if aclient is not None:
             infra_ran = True
-            validated.extend(m for m in anthropic_ids if _probe_anthropic(aclient, m))
+            probes += [(m, lambda m=m: _probe_anthropic(aclient, m)) for m in anthropic_ids]
+
+    results = gather_threads([probe for _, probe in probes], max_workers=8)
+    validated = [m for (m, _), ok in zip(probes, results) if ok is True]
 
     if not infra_ran or not validated:
         models = fallback_models or [configured_default]

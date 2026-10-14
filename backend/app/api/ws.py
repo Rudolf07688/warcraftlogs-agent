@@ -316,7 +316,7 @@ async def _build_turn_preamble(session, tenant_id) -> str:
         for c in profile_chars
         if c.class_name and c.active_spec
     ]
-    guide_rows = await repo.get_spec_guides_for(session, spec_pairs)
+    guide_rows = await repo.get_spec_guides_for(session, spec_pairs, ready_only=True)
     ready_guides = {
         key: g for key, g in guide_rows.items() if g.status == "ready" and g.guide_markdown
     }

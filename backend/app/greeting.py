@@ -9,7 +9,9 @@ empty string (never raises) so a new chat just opens clean.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
 
 from .agent_runner import stream_response
 
@@ -22,6 +24,12 @@ GREETING_KICKOFF = "Greetings, Barnaby!"
 # single fixed, fast model — primed once at startup — rather than per chat model. This
 # keeps it a cache hit regardless of which model the user has selected.
 GREETING_MODEL = "gemini-3.5-flash-lite"
+
+# PERF-015: one greeting session per process run, so the durable session store doesn't
+# accumulate another kickoff + reply on the same session at every restart.
+_BOOT_ID = uuid.uuid4().hex[:12]
+# Concurrent cache misses (startup priming + an early request) share one generation.
+_locks: dict[tuple[asyncio.AbstractEventLoop, str], asyncio.Lock] = {}
 
 
 def _get_cache(app) -> dict[str, str]:
@@ -38,7 +46,7 @@ async def _generate_greeting(model: str) -> str:
     ``retry=False`` (feature 011 / FR-012): a rate-limited greeting fails fast and yields
     ``""`` instead of waiting out a backoff — it must never compete with a player's turn.
     """
-    session_id = f"greeting-{model}"
+    session_id = f"greeting-{model}-{_BOOT_ID}"
     tokens: list[str] = []
     try:
         async for record in stream_response(model, session_id, GREETING_KICKOFF, retry=False):
@@ -60,7 +68,11 @@ async def get_greeting(app, model: str) -> str:
     cached = cache.get(model)
     if cached is not None:
         return cached
-    greeting = await _generate_greeting(model)
-    if greeting:
-        cache[model] = greeting
-    return greeting
+    async with _locks.setdefault((asyncio.get_running_loop(), model), asyncio.Lock()):
+        cached = cache.get(model)  # another caller may have generated it while we waited
+        if cached is not None:
+            return cached
+        greeting = await _generate_greeting(model)
+        if greeting:
+            cache[model] = greeting
+        return greeting

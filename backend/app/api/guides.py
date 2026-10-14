@@ -76,7 +76,7 @@ async def list_guides(
     db: AsyncSession = Depends(get_session),
 ) -> GuideListOut:
     """Full class/spec roster (from CLASS_SPECS) merged with library status (SC-002)."""
-    rows = await repo.list_spec_guides(db)
+    rows = await repo.list_spec_guides(db, with_text=False)  # status only (PERF-014)
     live = await _live_patch() if any(r.status == "ready" for r in rows) else None
     return GuideListOut(guides=[GuideListItem(**item) for item in build_guide_roster(rows, live)])
 

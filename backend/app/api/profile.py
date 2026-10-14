@@ -105,7 +105,7 @@ async def get_profile(
     own, friends, guild = await repo.get_profile(db, tenant_id=identity.tenant_id)
     chars = list(own) + list(friends)
     pairs = [(c.class_name, c.active_spec) for c in chars if c.class_name and c.active_spec]
-    guides = await repo.get_spec_guides_for(db, pairs)
+    guides = await repo.get_spec_guides_for(db, pairs, with_text=False)  # status only
 
     def out(c) -> CharacterOut:
         guide = guides.get((c.class_name, c.active_spec)) if c.class_name and c.active_spec else None

@@ -12,10 +12,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import load_only, selectinload
 
 from ..services.encounters import merge_encounters
 from .models import (
@@ -805,31 +805,49 @@ async def upsert_spec_guide(
     return guide
 
 
-async def list_spec_guides(session: AsyncSession) -> list[SpecGuide]:
-    """All guide rows (global library)."""
-    result = await session.execute(select(SpecGuide))
+# The SpecGuide columns that describe a guide's status, without its text (PERF-014).
+_GUIDE_STATUS_COLUMNS = (
+    SpecGuide.class_name,
+    SpecGuide.spec,
+    SpecGuide.status,
+    SpecGuide.updated_at,
+    SpecGuide.game_patch,
+    SpecGuide.generated_at,
+)
+
+
+async def list_spec_guides(session: AsyncSession, *, with_text: bool = True) -> list[SpecGuide]:
+    """All guide rows (global library). ``with_text=False`` skips the markdown, sources and
+    cooldowns (the roster needs only status columns — PERF-014)."""
+    stmt = select(SpecGuide)
+    if not with_text:
+        stmt = stmt.options(load_only(*_GUIDE_STATUS_COLUMNS))
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
 async def get_spec_guides_for(
-    session: AsyncSession, pairs: list[tuple[str, str]]
+    session: AsyncSession,
+    pairs: list[tuple[str, str]],
+    *,
+    with_text: bool = True,
+    ready_only: bool = False,
 ) -> dict[tuple[str, str], SpecGuide]:
-    """Batch-load guides for the given ``(class_name, spec)`` pairs → keyed map."""
-    wanted = {(c, s) for c, s in pairs if c and s}
+    """Batch-load guides for the given ``(class_name, spec)`` pairs → keyed map.
+
+    Matches the exact pairs (not the class × spec cross product). ``with_text=False``
+    loads status columns only; ``ready_only`` filters to ready guides in SQL (PERF-014).
+    """
+    wanted = sorted({(c, s) for c, s in pairs if c and s})
     if not wanted:
         return {}
-    classes = {c for c, _ in wanted}
-    specs = {s for _, s in wanted}
-    result = await session.execute(
-        select(SpecGuide).where(
-            SpecGuide.class_name.in_(classes), SpecGuide.spec.in_(specs)
-        )
-    )
-    return {
-        (g.class_name, g.spec): g
-        for g in result.scalars().all()
-        if (g.class_name, g.spec) in wanted
-    }
+    stmt = select(SpecGuide).where(tuple_(SpecGuide.class_name, SpecGuide.spec).in_(wanted))
+    if ready_only:
+        stmt = stmt.where(SpecGuide.status == "ready")
+    if not with_text:
+        stmt = stmt.options(load_only(*_GUIDE_STATUS_COLUMNS))
+    result = await session.execute(stmt)
+    return {(g.class_name, g.spec): g for g in result.scalars().all()}
 
 
 async def set_guild_summary(
