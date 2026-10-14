@@ -21,3 +21,6 @@ frontend/dist/
 
 # Local Google Cloud SDK download (not part of the project)
 google-cloud-cli-linux-x86_64*
+
+# My stuff
+qa-reports/
