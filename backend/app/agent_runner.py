@@ -167,7 +167,14 @@ async def stream_response(
     when the turn ends, whatever the outcome (FR-013).
     """
     queue: asyncio.Queue[Any] = asyncio.Queue()
-    stats = TurnStats(model=model, retry_enabled=retry, notify=queue.put_nowait)
+    # PERF-004: the preamble rides on the turn and is injected per model request by the
+    # agent's before-model callback, so it is never stored in the ADK session history.
+    stats = TurnStats(
+        model=model,
+        retry_enabled=retry,
+        notify=queue.put_nowait,
+        preamble=context_preamble or None,
+    )
     token = current_turn.set(stats)
 
     async def produce() -> None:
@@ -177,7 +184,6 @@ async def stream_response(
                 session_id,
                 user_text,
                 scratch,
-                context_preamble=context_preamble,
                 user_id=user_id,
             ):
                 queue.put_nowait(record)
@@ -216,13 +222,16 @@ async def stream_response(
         except ValueError:  # finalised from another context (GC); just clear it
             current_turn.set(None)
         logger.info(
-            "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s",
+            "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
+            "prompt_tokens=%s max_prompt_tokens=%s",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
             stats.retries,
             stats.waited_s,
             stats.outcome,
+            stats.last_prompt_tokens,
+            stats.max_prompt_tokens,
         )
 
 
@@ -231,7 +240,6 @@ async def _run_turn(
     session_id: str,
     user_text: str,
     scratch: TurnScratch | None = None,
-    context_preamble: str | None = None,
     *,
     user_id: str = USER_ID,
 ) -> AsyncIterator[dict]:
@@ -254,10 +262,11 @@ async def _run_turn(
     runner = _get_runner(model)
     await _ensure_session(session_id, user_id)
 
-    # US1: prepend the (non-persisted) KNOWN PLAYER CONTEXT preamble to the model
-    # input only. The stored user message (ws layer) remains just `user_text`.
-    model_text = f"{context_preamble}\n\n{user_text}" if context_preamble else user_text
-    message = types.Content(role="user", parts=[types.Part(text=model_text)])
+    # US1: the KNOWN PLAYER CONTEXT preamble is not part of this message. It travels on the
+    # turn's TurnStats and is injected per model request (PERF-004), so the ADK history
+    # stores only what the user typed.
+    message = types.Content(role="user", parts=[types.Part(text=user_text)])
+    stats = current_turn.get()
     streamed_any = False
     final_text = ""
     grounding_emitted = False
@@ -273,6 +282,9 @@ async def _run_turn(
         new_message=message,
         run_config=_RUN_CONFIG,
     ):
+        usage = getattr(event, "usage_metadata", None)
+        if stats is not None and usage is not None:
+            stats.record_prompt_tokens(getattr(usage, "prompt_token_count", None))
         # US3: surface native web grounding once per turn. The grounding sub-agent
         # propagates its grounding_metadata to the parent event stream.
         if not grounding_emitted:

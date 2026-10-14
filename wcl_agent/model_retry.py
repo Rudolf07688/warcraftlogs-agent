@@ -72,6 +72,18 @@ class TurnStats:
     retries: int = 0
     waited_s: float = 0.0
     outcome: str | None = None  # answered | rate_limited | error | abandoned
+    # PERF-004: per-turn standing context (KNOWN PLAYER CONTEXT), injected into each model
+    # request by the before-model callback so it is never stored in the session history.
+    preamble: str | None = None
+    # PERF-004: prompt size of the turn's model requests, for the turn stats log line.
+    last_prompt_tokens: int | None = None
+    max_prompt_tokens: int | None = None
+
+    def record_prompt_tokens(self, count: int | None) -> None:
+        if count is None:
+            return
+        self.last_prompt_tokens = count
+        self.max_prompt_tokens = max(self.max_prompt_tokens or 0, count)
 
     @property
     def tool_rounds(self) -> int:
@@ -281,6 +293,28 @@ WRAP_UP_INSTRUCTION = (
 )
 
 
+def inject_preamble(llm_request: LlmRequest, preamble: str) -> None:
+    """Prepend ``preamble`` to the turn's user message in this request only (PERF-004).
+
+    The turn's user message is the last user content with text and no function response
+    (tool results also travel as user contents). It is replaced by a *new* Content with
+    the preamble as its first part; the original belongs to the stored session events and
+    is never mutated, so the preamble reaches the model without entering the history.
+    """
+    contents = llm_request.contents
+    for i in range(len(contents) - 1, -1, -1):
+        content = contents[i]
+        parts = content.parts or []
+        if content.role != "user" or any(getattr(p, "function_response", None) for p in parts):
+            continue
+        if not any(getattr(p, "text", None) for p in parts):
+            continue
+        contents[i] = genai_types.Content(
+            role="user", parts=[genai_types.Part(text=f"{preamble}\n\n"), *parts]
+        )
+        return
+
+
 def make_before_model_callback(policy: RetryPolicy):
     """ADK ``before_model_callback`` that counts model requests and enforces the round cap.
 
@@ -297,6 +331,8 @@ def make_before_model_callback(policy: RetryPolicy):
         if stats is None:
             return None
         stats.model_requests += 1
+        if stats.preamble:
+            inject_preamble(llm_request, stats.preamble)
         if not stats.cap_reached(policy):
             return None
         logger.info(
