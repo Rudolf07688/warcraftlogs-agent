@@ -235,8 +235,8 @@ class CharacterIn(BaseModel):
     raid_role: RaidRole | None = None
 
 
-class FriendPatchIn(BaseModel):
-    """PATCH body for updating a friend's raid role in place (US4 / FR-026, FR-028)."""
+class CharacterPatchIn(BaseModel):
+    """PATCH body for updating an own or friend character's raid role in place (US4, feature 012)."""
 
     # `null` clears the override, reverting the character to its inferred default.
     raid_role: RaidRole | None = None
@@ -298,12 +298,11 @@ class GuildOut(BaseModel):
 
 
 class ProfileOut(BaseModel):
-    # Field name intentionally "self" (the user's own character); not a method arg here.
-    self_character: CharacterOut | None = Field(default=None, serialization_alias="self")
+    # Feature 012: the user's own characters (0..own_limit), ordered by creation time.
+    own: list[CharacterOut] = []
+    own_limit: int
     friends: list[CharacterOut] = []
     guild: GuildOut | None = None
-
-    model_config = ConfigDict(populate_by_name=True)
 
 
 # --- Spec guides (feature 008 / US2) — the GLOBAL shared library ---------------

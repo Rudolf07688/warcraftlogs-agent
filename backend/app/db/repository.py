@@ -501,15 +501,44 @@ async def assign_message_seq_to_turn_captures(
 # --- Profile (feature 005 / US1) ---------------------------------------------
 
 
-async def get_self_character(
-    session: AsyncSession, *, tenant_id: uuid.UUID
+# Feature 012: a tenant may register several characters as its own (``role == "self"``).
+# The limit lives here only; the API exposes it as ``ProfileOut.own_limit``.
+MAX_OWN_CHARACTERS = 10
+
+
+class CharacterConflict(Exception):
+    """A character add was refused. ``code`` is the API ``detail``: ``duplicate_character``,
+    ``duplicate_friend``, ``already_friend``, ``already_own`` or ``character_limit``."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+async def find_character_identity(
+    session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
 ) -> UserCharacter | None:
+    """Return the tenant's character with this identity in either role (case-insensitive)."""
     result = await session.execute(
         select(UserCharacter).where(
-            UserCharacter.tenant_id == tenant_id, UserCharacter.role == "self"
+            UserCharacter.tenant_id == tenant_id,
+            func.lower(UserCharacter.name) == name.lower(),
+            func.lower(UserCharacter.server) == server.lower(),
+            func.lower(UserCharacter.region) == region.lower(),
         )
     )
     return result.scalars().first()
+
+
+async def list_own_characters(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> list[UserCharacter]:
+    result = await session.execute(
+        select(UserCharacter)
+        .where(UserCharacter.tenant_id == tenant_id, UserCharacter.role == "self")
+        .order_by(UserCharacter.created_at)
+    )
+    return list(result.scalars().all())
 
 
 async def list_friend_characters(
@@ -534,44 +563,51 @@ async def get_guild_profile(
 
 async def get_profile(
     session: AsyncSession, *, tenant_id: uuid.UUID
-) -> tuple[UserCharacter | None, list[UserCharacter], GuildProfile | None]:
-    """Return the tenant's profile: (self, friends, guild)."""
+) -> tuple[list[UserCharacter], list[UserCharacter], GuildProfile | None]:
+    """Return the tenant's profile: (own characters, friends, guild)."""
     return (
-        await get_self_character(session, tenant_id=tenant_id),
+        await list_own_characters(session, tenant_id=tenant_id),
         await list_friend_characters(session, tenant_id=tenant_id),
         await get_guild_profile(session, tenant_id=tenant_id),
     )
 
 
-async def upsert_self(
+async def add_character(
     session: AsyncSession,
     *,
     tenant_id: uuid.UUID,
+    role: str,
     name: str,
     server: str,
     region: str,
     raid_role: str | None = None,
 ) -> UserCharacter:
-    """Create or replace the tenant's single ``self`` character. Resets the guide lifecycle.
+    """Add an own (``role="self"``) or friend character.
 
-    ``raid_role`` is the user override (US4); passing ``None`` leaves the role unset so
-    the effective role falls back to the spec-inferred default once the guide resolves.
+    Raises ``CharacterConflict`` when the identity is already saved in either role, or when
+    the own-character limit is reached. ``IntegrityError`` remains the backstop for a
+    same-role race on the DB unique constraint.
     """
-    existing = await get_self_character(session, tenant_id=tenant_id)
+    existing = await find_character_identity(
+        session, tenant_id=tenant_id, name=name, server=server, region=region
+    )
     if existing is not None:
-        existing.name = name
-        existing.server = server
-        existing.region = region
-        # Reset the resolved spec; the background task re-resolves it and (re)points the
-        # character at the shared spec guide (feature 008 / US3).
-        existing.class_name = None
-        existing.active_spec = None
-        existing.raid_role = raid_role
-        await session.flush()
-        return existing
+        if existing.role == role:
+            raise CharacterConflict(
+                "duplicate_character" if role == "self" else "duplicate_friend"
+            )
+        raise CharacterConflict("already_friend" if role == "self" else "already_own")
+    if role == "self":
+        count = await session.scalar(
+            select(func.count())
+            .select_from(UserCharacter)
+            .where(UserCharacter.tenant_id == tenant_id, UserCharacter.role == "self")
+        )
+        if (count or 0) >= MAX_OWN_CHARACTERS:
+            raise CharacterConflict("character_limit")
     char = UserCharacter(
         tenant_id=tenant_id,
-        role="self",
+        role=role,
         name=name,
         server=server,
         region=region,
@@ -582,46 +618,24 @@ async def upsert_self(
     return char
 
 
-async def add_friend(
-    session: AsyncSession,
-    *,
-    tenant_id: uuid.UUID,
-    name: str,
-    server: str,
-    region: str,
-    raid_role: str | None = None,
-) -> UserCharacter:
-    """Add a friend character. Raises IntegrityError on an identical duplicate (per tenant)."""
-    char = UserCharacter(
-        tenant_id=tenant_id,
-        role="friend",
-        name=name,
-        server=server,
-        region=region,
-        raid_role=raid_role,
-    )
-    session.add(char)
-    await session.flush()
-    return char
-
-
-async def update_friend_role(
+async def update_character_role(
     session: AsyncSession,
     char_id: uuid.UUID,
     *,
     tenant_id: uuid.UUID,
+    role: str,
     raid_role: str | None,
 ) -> UserCharacter | None:
-    """Set a friend's raid-role override in place (US4 / FR-028). ``None`` clears it.
+    """Set a character's raid-role override in place (US4 / FR-028). ``None`` clears it.
 
-    Returns the updated character, or ``None`` when the id is not a friend of this tenant
-    (the caller maps that to 404). Never creates a new row.
+    Returns the updated character, or ``None`` when the id is not a ``role`` character of
+    this tenant (the caller maps that to 404). Never creates a new row.
     """
     result = await session.execute(
         select(UserCharacter).where(
             UserCharacter.id == char_id,
             UserCharacter.tenant_id == tenant_id,
-            UserCharacter.role == "friend",
+            UserCharacter.role == role,
         )
     )
     char = result.scalar_one_or_none()
@@ -632,14 +646,14 @@ async def update_friend_role(
     return char
 
 
-async def delete_friend(
-    session: AsyncSession, char_id: uuid.UUID, *, tenant_id: uuid.UUID
+async def delete_character(
+    session: AsyncSession, char_id: uuid.UUID, *, tenant_id: uuid.UUID, role: str
 ) -> bool:
     result = await session.execute(
         delete(UserCharacter).where(
             UserCharacter.id == char_id,
             UserCharacter.tenant_id == tenant_id,
-            UserCharacter.role == "friend",
+            UserCharacter.role == role,
         )
     )
     return result.rowcount > 0

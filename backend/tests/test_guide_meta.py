@@ -165,11 +165,11 @@ def test_preamble_guide_heading_gets_label_only_when_given():
         class_name="Shaman", active_spec="Enhancement",
     )
     guides = {("Shaman", "Enhancement"): "Stormstrike on cooldown."}
-    plain = build_preamble(self_char, [], None, spec_guides=guides)
+    plain = build_preamble([self_char], [], None, spec_guides=guides)
     assert "## Thrall — Enhancement\n" in plain
     labelled = build_preamble(
-        self_char, [], None, spec_guides=guides,
+        [self_char], [], None, spec_guides=guides,
         guide_labels={("Shaman", "Enhancement"): "guide for patch 12.1 · current"},
     )
     assert "## Thrall — Enhancement (guide for patch 12.1 · current)" in labelled
-    assert build_preamble(self_char, [], None, spec_guides=guides, guide_labels={}) == plain
+    assert build_preamble([self_char], [], None, spec_guides=guides, guide_labels={}) == plain

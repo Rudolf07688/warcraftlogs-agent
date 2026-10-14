@@ -54,6 +54,8 @@ KEY_CLAUSES = [
     "Reuse evidence already in this conversation",
     "the question asked is answerable",
     "single lookup",
+    # feature 012: "I/me" resolves across all of the user's own characters
+    "never silently pick one",
 ]
 
 

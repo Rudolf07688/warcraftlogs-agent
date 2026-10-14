@@ -484,3 +484,29 @@ New env var (also in `.env.example`):
 ```
 WCL_GUIDE_GENERATE_PER_MINUTE=10   # per-user cap on manual spec-guide generation (feature 008)
 ```
+
+## 16. Feature 012 — multiple own characters
+
+Implemented in `specs/012-multi-character-profile/`. Summary for future agents:
+
+- **Storage**: own characters are `user_characters` rows with `role="self"`, at most
+  `repo.MAX_OWN_CHARACTERS` (10) per tenant. No migration: the unique key already includes `role`.
+  The old single self row is simply the first own character.
+- **Repository**: `add_character(role=…)`, `update_character_role(role=…)`, `delete_character(role=…)`
+  serve both own characters and friends. `find_character_identity` does a case-insensitive lookup
+  across both roles, and `add_character` raises `CharacterConflict(code)` with one of
+  `duplicate_character`, `duplicate_friend`, `already_friend`, `already_own` or `character_limit`.
+  `get_profile` returns `(own: list, friends, guild)`. `upsert_self` and `get_self_character` are gone.
+- **API**: `POST /api/profile/self`, `PATCH /api/profile/self/{id}` and `DELETE /api/profile/self/{id}`
+  mirror the friends endpoints. A conflict returns 409 with the code as `detail`. `PUT /self` was removed.
+  `ProfileOut` is `{own, own_limit, friends, guild}`.
+- **Prompt**: `build_preamble(own_characters, friends, guild, …)`. With 0 or 1 own character the
+  output is byte-identical to before. With 2 or more, the "You (self)" line lists them all and says
+  "I/me/my" can mean any of them. Spec guides are grouped per `(class, spec)`, with a heading that
+  names every character on that spec. The `<CONTEXT_RESOLUTION>` bullet in `wcl_agent/agent.py`
+  tells the model to:
+  - check which own characters appear in a report;
+  - when several appear, cover each one or ask which is meant, and "never silently pick one";
+  - when none appear, say so.
+- **UI**: `CharactersTab.tsx` renders "Your characters" and "Friends" with one `CharacterList`.
+  The Add button is disabled at `own_limit`, and the 409 codes map to friendly messages.

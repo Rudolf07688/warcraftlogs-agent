@@ -88,13 +88,13 @@ async def test_raids_isolated(as_user, tenant_b, session_factory):
 async def test_profile_isolated(as_user, tenant_b, session_factory, monkeypatch):
     monkeypatch.setattr("backend.app.api.profile.schedule_character_guide", lambda *_: None)
     async with session_factory() as s:
-        await repo.upsert_self(s, tenant_id=as_user.tenant_id, name="ASelf", server="S", region="US")
+        await repo.add_character(s, tenant_id=as_user.tenant_id, role="self", name="ASelf", server="S", region="US")
         await s.commit()
 
     a_prof = (await as_user.client.get("/api/profile")).json()
     b_prof = (await tenant_b.client.get("/api/profile")).json()
-    assert a_prof["self"]["name"] == "ASelf"
-    assert b_prof["self"] is None  # B sees nothing of A's
+    assert [c["name"] for c in a_prof["own"]] == ["ASelf"]
+    assert b_prof["own"] == []  # B sees nothing of A's
 
 
 # --- WCL cache scope (FR-019) -------------------------------------------------

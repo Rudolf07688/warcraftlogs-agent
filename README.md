@@ -294,7 +294,8 @@ run the MCP audit checklist afterwards, and record any hand-built exception in t
 
 The profile page (`/profile`) is the reference layout for this: section `Card`s, friend
 and spec rows as `Item`s, `Empty` states, `Skeleton` loading, `Spinner` busy buttons, a
-`ToggleGroup` raid-role picker and one `Dialog` form for self / friend / guild. Class
+per-row raid-role selects (one shared `CharacterList` for your characters and friends) and
+one `Dialog` form for own character / friend / guild. Class
 accents come from `frontend/src/lib/classColors.ts` (official WoW class colours keyed by
 the normalised `CLASS_SPECS` name), the one hand-built piece, since no registry item covers it.
 

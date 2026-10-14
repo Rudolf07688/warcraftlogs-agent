@@ -1,4 +1,7 @@
-"""REST: the per-tenant profile — self character, friends, main guild (US1, tenant-scoped US3).
+"""REST: the per-tenant profile — own characters, friends, main guild (US1, tenant-scoped US3).
+
+Feature 012: a tenant registers up to ``repo.MAX_OWN_CHARACTERS`` own characters (``/self``),
+managed exactly like friends (``/friends``) through the same repository functions.
 
 Locking a character or guild schedules a non-blocking background guide task (US6, scoped to
 the tenant) and returns immediately with a ``pending`` status.
@@ -17,7 +20,7 @@ from ..db import repository as repo
 from ..schemas import (
     CharacterIn,
     CharacterOut,
-    FriendPatchIn,
+    CharacterPatchIn,
     GuildIn,
     GuildOut,
     ProfileOut,
@@ -41,13 +44,66 @@ async def _char_out(db: AsyncSession, char) -> CharacterOut:
     return CharacterOut.from_character(char, guide)
 
 
+def _conflict(exc: repo.CharacterConflict) -> HTTPException:
+    return HTTPException(status_code=409, detail=exc.code)
+
+
+async def _add(
+    db: AsyncSession, identity: RequestIdentity, body: CharacterIn, role: str
+) -> CharacterOut:
+    """Add an own or friend character, then schedule its background guide task."""
+    try:
+        char = await repo.add_character(
+            db,
+            tenant_id=identity.tenant_id,
+            role=role,
+            name=body.name,
+            server=body.server,
+            region=body.region,
+            raid_role=body.raid_role,
+        )
+        await commit_and_rescope(db, identity)
+    except repo.CharacterConflict as exc:
+        await db.rollback()
+        raise _conflict(exc)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="duplicate_character" if role == "self" else "duplicate_friend",
+        )
+    schedule_character_guide(char.id, identity.tenant_id)
+    return await _char_out(db, char)
+
+
+async def _patch(
+    db: AsyncSession, identity: RequestIdentity, char_id: uuid.UUID, body: CharacterPatchIn, role: str
+) -> CharacterOut:
+    """Set a character's raid-role override in place (US4). ``null`` reverts to inferred."""
+    char = await repo.update_character_role(
+        db, char_id, tenant_id=identity.tenant_id, role=role, raid_role=body.raid_role
+    )
+    if char is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    await commit_and_rescope(db, identity)
+    return await _char_out(db, char)
+
+
+async def _delete(
+    db: AsyncSession, identity: RequestIdentity, char_id: uuid.UUID, role: str
+) -> None:
+    deleted = await repo.delete_character(db, char_id, tenant_id=identity.tenant_id, role=role)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="not_found")
+
+
 @router.get("", response_model=ProfileOut)
 async def get_profile(
     identity: RequestIdentity = Depends(require_session),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> ProfileOut:
-    self_char, friends, guild = await repo.get_profile(db, tenant_id=identity.tenant_id)
-    chars = ([self_char] if self_char else []) + list(friends)
+    own, friends, guild = await repo.get_profile(db, tenant_id=identity.tenant_id)
+    chars = list(own) + list(friends)
     pairs = [(c.class_name, c.active_spec) for c in chars if c.class_name and c.active_spec]
     guides = await repo.get_spec_guides_for(db, pairs)
 
@@ -56,29 +112,39 @@ async def get_profile(
         return CharacterOut.from_character(c, guide)
 
     return ProfileOut(
-        self_character=out(self_char) if self_char else None,
+        own=[out(c) for c in own],
+        own_limit=repo.MAX_OWN_CHARACTERS,
         friends=[out(f) for f in friends],
         guild=GuildOut.model_validate(guild) if guild else None,
     )
 
 
-@router.put("/self", response_model=CharacterOut)
-async def put_self(
+@router.post("/self", response_model=CharacterOut, status_code=201)
+async def add_own_character(
     body: CharacterIn,
     identity: RequestIdentity = Depends(require_csrf),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> CharacterOut:
-    char = await repo.upsert_self(
-        db,
-        tenant_id=identity.tenant_id,
-        name=body.name,
-        server=body.server,
-        region=body.region,
-        raid_role=body.raid_role,
-    )
-    await commit_and_rescope(db, identity)
-    schedule_character_guide(char.id, identity.tenant_id)
-    return await _char_out(db, char)
+    return await _add(db, identity, body, "self")
+
+
+@router.patch("/self/{char_id}", response_model=CharacterOut)
+async def patch_own_character(
+    char_id: uuid.UUID,
+    body: CharacterPatchIn,
+    identity: RequestIdentity = Depends(require_csrf),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> CharacterOut:
+    return await _patch(db, identity, char_id, body, "self")
+
+
+@router.delete("/self/{char_id}", status_code=204)
+async def delete_own_character(
+    char_id: uuid.UUID,
+    identity: RequestIdentity = Depends(require_csrf),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> None:
+    await _delete(db, identity, char_id, "self")
 
 
 @router.post("/friends", response_model=CharacterOut, status_code=201)
@@ -87,38 +153,17 @@ async def add_friend(
     identity: RequestIdentity = Depends(require_csrf),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> CharacterOut:
-    try:
-        char = await repo.add_friend(
-            db,
-            tenant_id=identity.tenant_id,
-            name=body.name,
-            server=body.server,
-            region=body.region,
-            raid_role=body.raid_role,
-        )
-        await commit_and_rescope(db, identity)
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail="duplicate_friend")
-    schedule_character_guide(char.id, identity.tenant_id)
-    return await _char_out(db, char)
+    return await _add(db, identity, body, "friend")
 
 
 @router.patch("/friends/{char_id}", response_model=CharacterOut)
 async def patch_friend(
     char_id: uuid.UUID,
-    body: FriendPatchIn,
+    body: CharacterPatchIn,
     identity: RequestIdentity = Depends(require_csrf),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> CharacterOut:
-    """Set a friend's raid-role override in place (US4). ``null`` reverts to inferred."""
-    char = await repo.update_friend_role(
-        db, char_id, tenant_id=identity.tenant_id, raid_role=body.raid_role
-    )
-    if char is None:
-        raise HTTPException(status_code=404, detail="not_found")
-    await commit_and_rescope(db, identity)
-    return await _char_out(db, char)
+    return await _patch(db, identity, char_id, body, "friend")
 
 
 @router.delete("/friends/{char_id}", status_code=204)
@@ -127,9 +172,7 @@ async def delete_friend(
     identity: RequestIdentity = Depends(require_csrf),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> None:
-    deleted = await repo.delete_friend(db, char_id, tenant_id=identity.tenant_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="not_found")
+    await _delete(db, identity, char_id, "friend")
 
 
 @router.put("/guild", response_model=GuildOut)

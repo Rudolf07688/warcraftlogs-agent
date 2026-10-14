@@ -11,6 +11,11 @@ Feature 007 extends the single preamble (Constitution Principle I — no second 
   conversations reuse it instead of re-querying Warcraft Logs.
 - US4 appends each character's effective raid role (override or spec-inferred).
 
+Feature 012 lets the user register several characters as their own. With one own character
+the "You" line is byte-identical to before; with several it lists them all so "I/me/my"
+can resolve to any of them. Spec guides are grouped by (class, spec) so characters that
+share a spec inject its guide once.
+
 When the profile is empty AND no captured metadata is supplied, the preamble is ""
 so behavior is identical to having no profile at all (FR-006, FR-011, SC-003, SC-008).
 """
@@ -116,8 +121,18 @@ def guide_heading_label(game_patch: str | None, freshness: str) -> str:
     return "guide patch unknown · may be out of date"
 
 
+def _you_line(own_characters: list[UserCharacter]) -> str:
+    """The "You" line: unchanged for one own character, a labelled list for several."""
+    if len(own_characters) == 1:
+        return f"- You (self): {_ident(own_characters[0])}"
+    return (
+        '- You (self) — the user plays all of these characters; "I/me/my" can mean any '
+        "of them: " + "; ".join(_ident(c) for c in own_characters)
+    )
+
+
 def build_preamble(
-    self_character: UserCharacter | None,
+    own_characters: list[UserCharacter],
     friends: list[UserCharacter],
     guild: GuildProfile | None,
     *,
@@ -130,6 +145,8 @@ def build_preamble(
 ) -> str:
     """Compose the capped standing-context block, or "" when there's nothing to inject.
 
+    ``own_characters`` are the user's own characters (feature 012), in display order.
+
     The profile portion is byte-identical to pre-feature output; the captured-metadata
     block is appended only when non-empty (FR-005, FR-011).
 
@@ -140,42 +157,41 @@ def build_preamble(
     ``guide_labels`` (feature 009 / US5) maps the same pair to a provenance label appended
     to the guide heading, e.g. ``guide for patch 12.1 · current``; absent ⇒ unchanged.
     """
-    profile_chars = ([self_character] if self_character else []) + list(friends)
+    own_characters = list(own_characters)
+    profile_chars = own_characters + list(friends)
 
     # --- Profile block (unchanged output shape) -------------------------------
     profile_lines: list[str] = []
-    if self_character is not None or friends or guild is not None:
+    if own_characters or friends or guild is not None:
         profile_lines.append(_HEADER)
-        if self_character is not None:
-            profile_lines.append(f"- You (self): {_ident(self_character)}")
+        if own_characters:
+            profile_lines.append(_you_line(own_characters))
         if friends:
             profile_lines.append("- Friends: " + "; ".join(_ident(f) for f in friends))
         if guild is not None:
             profile_lines.append(f"- Main guild: {guild.name}-{guild.server} ({guild.region})")
 
-        # Append each character's shared spec guide (looked up by its resolved
-        # (class, spec) pair), bounded in total. Empty map / unresolved ⇒ nothing added.
-        guided = [
-            (c, spec_guides[(c.class_name, c.active_spec)])
-            for c in profile_chars
-            if c is not None
-            and c.class_name
-            and c.active_spec
-            and spec_guides.get((c.class_name, c.active_spec))
-        ]
+        # Append each shared spec guide once per resolved (class, spec) pair, headed by the
+        # names of every profile character on that spec (feature 012), bounded in total.
+        # Empty map / unresolved ⇒ nothing added; one character per pair ⇒ unchanged.
+        guided: dict[tuple[str, str], list[str]] = {}
+        for c in profile_chars:
+            key = (c.class_name, c.active_spec)
+            if c.class_name and c.active_spec and spec_guides.get(key):
+                guided.setdefault(key, []).append(c.name)
         if guided:
             guide_lines: list[str] = ["- Spec guides:"]
             used = 0
-            for c, markdown in guided:
+            for key, names in guided.items():
                 if used >= _TOTAL_GUIDE_CHARS:
                     break
                 remaining = _TOTAL_GUIDE_CHARS - used
-                body = _trim(markdown or "", min(_PER_GUIDE_CHARS, remaining))
+                body = _trim(spec_guides[key] or "", min(_PER_GUIDE_CHARS, remaining))
                 if not body:
                     continue
-                spec = c.active_spec or "spec"
-                label = guide_labels.get((c.class_name, c.active_spec))
-                guide_lines.append(f"  ## {c.name} — {spec}" + (f" ({label})" if label else ""))
+                label = guide_labels.get(key)
+                heading = f"  ## {', '.join(names)} — {key[1]}"
+                guide_lines.append(heading + (f" ({label})" if label else ""))
                 guide_lines.append(f"  {body}")
                 used += len(body)
             if len(guide_lines) > 1:

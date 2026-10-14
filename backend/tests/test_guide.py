@@ -51,8 +51,8 @@ async def test_character_resolves_spec_and_triggers_shared_guide(
     monkeypatch.setattr(guide, "_generate_text", fake_gen)
 
     async with session_factory() as s:
-        char = await repo.upsert_self(
-            s, tenant_id=tenant_id, name="Thrall", server="Stormrage", region="US"
+        char = await repo.add_character(
+            s, tenant_id=tenant_id, role="self", name="Thrall", server="Stormrage", region="US"
         )
         await s.commit()
         cid = char.id
@@ -83,8 +83,8 @@ async def test_unresolvable_character_gets_no_spec_or_guide(
     monkeypatch.setattr(guide, "resolve_active_spec", fake_resolve)
 
     async with session_factory() as s:
-        char = await repo.add_friend(
-            s, tenant_id=tenant_id, name="Bogus", server="Nowhere", region="US"
+        char = await repo.add_character(
+            s, tenant_id=tenant_id, role="friend", name="Bogus", server="Nowhere", region="US"
         )
         await s.commit()
         cid = char.id
@@ -114,8 +114,8 @@ async def test_empty_generation_marks_spec_guide_failed(
     monkeypatch.setattr(guide, "_generate_text", empty_gen)
 
     async with session_factory() as s:
-        char = await repo.upsert_self(
-            s, tenant_id=tenant_id, name="Jaina", server="Proudmoore", region="US"
+        char = await repo.add_character(
+            s, tenant_id=tenant_id, role="self", name="Jaina", server="Proudmoore", region="US"
         )
         await s.commit()
         cid = char.id

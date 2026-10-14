@@ -1,11 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useId, useState } from "react";
 import {
   LuCastle,
-  LuHeart,
-  LuPencil,
-  LuShield,
-  LuSparkles,
-  LuSword,
   LuTrash2,
   LuUser,
   LuUserPlus,
@@ -14,12 +9,14 @@ import {
 import {
   ApiError,
   addFriend,
+  addOwnCharacter,
   deleteFriend,
   deleteGuild,
+  deleteOwnCharacter,
   getProfile,
   putGuild,
-  putSelf,
   updateFriend,
+  updateOwnCharacter,
 } from "../../api/restClient";
 import { classColor, classDisplayName, initials } from "../../lib/classColors";
 import { cn } from "../../lib/utils";
@@ -43,13 +40,11 @@ import { Field, FieldGroup, FieldLabel } from "../ui/field";
 import { Input } from "../ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../ui/item";
 import { NativeSelect, NativeSelectOption } from "../ui/native-select";
-import { Separator } from "../ui/separator";
 import { Skeleton } from "../ui/skeleton";
 import { Spinner } from "../ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 
-// Characters tab (feature 008 / US1): self, friends (unlimited), raid roles, and the single
-// main guild. Extracted verbatim-in-behavior from the former ProfilePanel modal — same
+// Characters tab (feature 008 / US1): your own characters (feature 012: several, up to the
+// server's limit), friends (unlimited), raid roles, and the single main guild. Extracted verbatim-in-behavior from the former ProfilePanel modal — same
 // endpoints, same friendly duplicate message. Profile revamp: one card per section, friends
 // as a list of items, and a single dialog for setting/editing an identity.
 
@@ -92,67 +87,7 @@ function ClassAvatar({ char, className }: { char: Character; className?: string 
 
 // US4: raid roles. "Auto" (no override) falls back to the spec-inferred default.
 const ROLE_LABEL: Record<RaidRole, string> = { tank: "Tank", healer: "Healer", dps: "DPS" };
-const ROLE_ICON = { tank: LuShield, healer: LuHeart, dps: LuSword } as const;
-const AUTO = "auto";
-
-// The self card's segmented control. Radix single toggle groups allow deselecting the
-// active item (value ""); that is ignored so exactly one option stays selected.
-function RoleToggle({
-  char,
-  busy,
-  onChange,
-}: {
-  char: Character;
-  busy: boolean;
-  onChange: (role: RaidRole | null) => void;
-}) {
-  const isInferred = char.raid_role == null && char.effective_role != null;
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm font-medium">Raid role</span>
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        aria-label="Raid role"
-        disabled={busy}
-        value={char.raid_role ?? AUTO}
-        onValueChange={(v) => {
-          if (!v) return;
-          onChange(v === AUTO ? null : (v as RaidRole));
-        }}
-        className="flex-wrap"
-      >
-        <ToggleGroupItem
-          value={AUTO}
-          className="dark:data-[state=on]:bg-primary/15 dark:data-[state=on]:text-glow"
-        >
-          <LuSparkles />
-          Auto
-        </ToggleGroupItem>
-        {(Object.keys(ROLE_LABEL) as RaidRole[]).map((r) => {
-          const Icon = ROLE_ICON[r];
-          return (
-            <ToggleGroupItem
-              key={r}
-              value={r}
-              className="dark:data-[state=on]:bg-primary/15 dark:data-[state=on]:text-glow"
-            >
-              <Icon />
-              {ROLE_LABEL[r]}
-            </ToggleGroupItem>
-          );
-        })}
-      </ToggleGroup>
-      {isInferred && char.effective_role && (
-        <span className="text-xs text-muted-foreground">
-          Inferred from your spec: {ROLE_LABEL[char.effective_role]}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// Friend rows keep a compact select; "Auto" shows the inferred role when there is one.
+// Character rows use a compact select; "Auto" shows the inferred role when there is one.
 function RoleSelect({
   char,
   busy,
@@ -182,6 +117,63 @@ function RoleSelect({
   );
 }
 
+// One list for your own characters and your friends (feature 012): avatar, name, guide
+// status, realm and spec, raid role, and a remove button per character.
+function CharacterList({
+  chars,
+  busy,
+  removeLabel,
+  onRoleChange,
+  onRemove,
+}: {
+  chars: Character[];
+  busy: boolean;
+  removeLabel: string;
+  onRoleChange: (c: Character, role: RaidRole | null) => void;
+  onRemove: (c: Character) => void;
+}) {
+  return (
+    <ItemGroup className="grid gap-3 md:grid-cols-2">
+      {chars.map((c) => (
+        <Item key={c.id} role="listitem" variant="outline" size="sm" className="bg-background/30">
+          <ItemMedia>
+            <ClassAvatar char={c} className="size-10" />
+          </ItemMedia>
+          <ItemContent className="min-w-0">
+            <ItemTitle className="flex-wrap">
+              {c.name}
+              <GuideBadge status={c.guide_status} />
+            </ItemTitle>
+            <ItemDescription className="truncate">
+              {realmLabel(c)}
+              {specLabel(c) && (
+                <>
+                  {" · "}
+                  <span style={{ color: classColor(c.class_name) ?? undefined }}>{specLabel(c)}</span>
+                </>
+              )}
+            </ItemDescription>
+          </ItemContent>
+          <ItemActions>
+            <RoleSelect char={c} busy={busy} onChange={(role) => onRoleChange(c, role)} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 text-muted-foreground hover:text-destructive"
+              disabled={busy}
+              onClick={() => onRemove(c)}
+              aria-label={removeLabel}
+              title={removeLabel}
+            >
+              <LuTrash2 />
+            </Button>
+          </ItemActions>
+        </Item>
+      ))}
+    </ItemGroup>
+  );
+}
+
 interface FormState {
   name: string;
   server: string;
@@ -190,9 +182,9 @@ interface FormState {
 
 const EMPTY: FormState = { name: "", server: "", region: "US" };
 
-type DialogKind = "self" | "friend" | "guild";
+type DialogKind = "own" | "friend" | "guild";
 
-// One dialog for setting/editing self, adding a friend, and setting/replacing the guild.
+// One dialog for adding an own character or a friend, and setting/replacing the guild.
 // It stays open (showing the error) until the submit succeeds.
 function IdentityDialog({
   open,
@@ -332,7 +324,10 @@ export function CharactersTab() {
   const [dialogErr, setDialogErr] = useState<string | null>(null);
   // Feature 010 / FR-006: the friend or guild awaiting the in-app remove confirmation.
   const [pendingRemove, setPendingRemove] = useState<
-    { kind: "friend"; friend: Character } | { kind: "guild"; guild: Guild } | null
+    | { kind: "own"; char: Character }
+    | { kind: "friend"; char: Character }
+    | { kind: "guild"; guild: Guild }
+    | null
   >(null);
 
   const refresh = useCallback(async () => {
@@ -352,7 +347,7 @@ export function CharactersTab() {
   useEffect(() => {
     if (!profile) return;
     const pending =
-      profile.self?.guide_status === "pending" ||
+      profile.own.some((c) => c.guide_status === "pending") ||
       profile.friends.some((f) => f.guide_status === "pending") ||
       profile.guild?.summary_status === "pending";
     if (!pending) return;
@@ -386,7 +381,9 @@ export function CharactersTab() {
     [run],
   );
 
-  const self = profile?.self ?? null;
+  const own = profile?.own ?? [];
+  const ownLimit = profile?.own_limit ?? 0;
+  const ownFull = own.length >= ownLimit;
   const guild: Guild | null = profile?.guild ?? null;
   const friends = profile?.friends ?? [];
 
@@ -395,33 +392,46 @@ export function CharactersTab() {
     setDialog(kind);
   };
 
+  // Adding a character has distinct, expected failures (duplicate, saved in the other list,
+  // limit reached) that deserve friendly messages rather than the generic one.
+  const describeAddError = (v: FormState) => (e: unknown) => {
+    const who = `${v.name}-${v.server} (${v.region})`;
+    if (!(e instanceof ApiError)) return GENERIC_ERROR;
+    switch (e.message) {
+      case "duplicate_character":
+      case "duplicate_friend":
+        return `${who} is already added.`;
+      case "already_friend":
+        return `${who} is saved as a friend — remove it there first.`;
+      case "already_own":
+        return `${who} is one of your characters.`;
+      case "character_limit":
+        return `You can register up to ${ownLimit} characters.`;
+      default:
+        return e.status === 409 ? `${who} is already added.` : GENERIC_ERROR;
+    }
+  };
+
   const submitDialog = async (v: FormState) => {
     let msg: string | null = null;
-    if (dialog === "self") {
-      msg = await run(() => putSelf({ ...v, raid_role: self?.raid_role ?? null }));
+    if (dialog === "own") {
+      msg = await run(() => addOwnCharacter(v), describeAddError(v));
     } else if (dialog === "guild") {
       msg = await run(() => putGuild(v));
     } else if (dialog === "friend") {
-      // Adding a friend has a distinct, expected failure (duplicate) that deserves a
-      // friendly message rather than the generic one (US4 / FR-023).
-      msg = await run(
-        () => addFriend(v),
-        (e) =>
-          e instanceof ApiError && (e.status === 409 || e.message === "duplicate_friend")
-            ? `${v.name}-${v.server} (${v.region}) is already added.`
-            : GENERIC_ERROR,
-      );
+      msg = await run(() => addFriend(v), describeAddError(v));
     }
     setDialogErr(msg);
     if (msg === null) setDialog(null);
   };
 
   const dialogCopy: Record<DialogKind, { title: string; description: string; submit: string; initial: FormState }> = {
-    self: {
-      title: self ? "Edit your character" : "Set your character",
-      description: "Your main, as it appears on Warcraft Logs. The agent uses it to tailor answers.",
-      submit: self ? "Save" : "Set character",
-      initial: self ? { name: self.name, server: self.server, region: self.region } : EMPTY,
+    own: {
+      title: "Add your character",
+      description:
+        "A character you play, as it appears on Warcraft Logs. The agent treats all your characters as you.",
+      submit: "Add character",
+      initial: EMPTY,
     },
     friend: {
       title: "Add a friend",
@@ -436,7 +446,7 @@ export function CharactersTab() {
       initial: guild ? { name: guild.name, server: guild.server, region: guild.region } : EMPTY,
     },
   };
-  const copy = dialogCopy[dialog ?? "self"];
+  const copy = dialogCopy[dialog ?? "own"];
 
   if (!profile && !err) return <CardsSkeleton />;
 
@@ -451,62 +461,46 @@ export function CharactersTab() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className={SECTION_TITLE}>Your character</CardTitle>
-            <CardDescription>Your main, its raid role, and its class guide.</CardDescription>
-            {self && (
+            <CardTitle className={SECTION_TITLE}>Your characters</CardTitle>
+            <CardDescription>
+              {ownFull
+                ? `Maximum of ${ownLimit} characters.`
+                : "Every character you play. The agent treats all of them as you."}
+            </CardDescription>
+            {own.length > 0 && (
               <CardAction>
-                <Button variant="secondary" size="sm" disabled={busy} onClick={() => openDialog("self")}>
-                  <LuPencil />
-                  Edit
+                <Button size="sm" disabled={busy || ownFull} onClick={() => openDialog("own")}>
+                  <LuUserPlus />
+                  Add character
                 </Button>
               </CardAction>
             )}
           </CardHeader>
           <CardContent>
-            {self ? (
-              <div className="flex flex-col gap-5">
-                <div className="flex items-center gap-4">
-                  <ClassAvatar char={self} className="size-16 text-xl" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-xl font-semibold">{self.name}</span>
-                      <GuideBadge status={self.guide_status} />
-                    </div>
-                    <span className="text-sm text-muted-foreground">{realmLabel(self)}</span>
-                    {specLabel(self) && (
-                      <span
-                        className="text-sm font-medium"
-                        style={{ color: classColor(self.class_name) ?? undefined }}
-                      >
-                        {specLabel(self)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <Separator />
-                <RoleToggle
-                  char={self}
-                  busy={busy}
-                  onChange={(role) =>
-                    void runInline(() =>
-                      putSelf({ name: self.name, server: self.server, region: self.region, raid_role: role }),
-                    )
-                  }
-                />
-              </div>
+            {own.length > 0 ? (
+              <CharacterList
+                chars={own}
+                busy={busy}
+                removeLabel="Remove character"
+                onRoleChange={(c, role) => void runInline(() => updateOwnCharacter(c.id, role))}
+                onRemove={(c) => setPendingRemove({ kind: "own", char: c })}
+              />
             ) : (
               <Empty className="border border-dashed p-6 md:p-8">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
                     <LuUser />
                   </EmptyMedia>
-                  <EmptyTitle>No character set</EmptyTitle>
+                  <EmptyTitle>No characters yet</EmptyTitle>
                   <EmptyDescription>
-                    Tell the agent who you play so it can tailor answers and fetch your class guide.
+                    Tell the agent who you play so it can tailor answers and fetch your class guides.
                   </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                  <Button onClick={() => openDialog("self")}>Set your character</Button>
+                  <Button onClick={() => openDialog("own")}>
+                    <LuUserPlus />
+                    Add your character
+                  </Button>
                 </EmptyContent>
               </Empty>
             )}
@@ -585,44 +579,13 @@ export function CharactersTab() {
           </CardHeader>
           <CardContent>
             {friends.length > 0 ? (
-              <ItemGroup className="grid gap-3 md:grid-cols-2">
-                {friends.map((f) => (
-                  <Item key={f.id} role="listitem" variant="outline" size="sm" className="bg-background/30">
-                    <ItemMedia>
-                      <ClassAvatar char={f} className="size-10" />
-                    </ItemMedia>
-                    <ItemContent className="min-w-0">
-                      <ItemTitle className="flex-wrap">
-                        {f.name}
-                        <GuideBadge status={f.guide_status} />
-                      </ItemTitle>
-                      <ItemDescription className="truncate">
-                        {realmLabel(f)}
-                        {specLabel(f) && (
-                          <>
-                            {" · "}
-                            <span style={{ color: classColor(f.class_name) ?? undefined }}>{specLabel(f)}</span>
-                          </>
-                        )}
-                      </ItemDescription>
-                    </ItemContent>
-                    <ItemActions>
-                      <RoleSelect char={f} busy={busy} onChange={(role) => void runInline(() => updateFriend(f.id, role))} />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-muted-foreground hover:text-destructive"
-                        disabled={busy}
-                        onClick={() => setPendingRemove({ kind: "friend", friend: f })}
-                        aria-label="Remove friend"
-                        title="Remove friend"
-                      >
-                        <LuTrash2 />
-                      </Button>
-                    </ItemActions>
-                  </Item>
-                ))}
-              </ItemGroup>
+              <CharacterList
+                chars={friends}
+                busy={busy}
+                removeLabel="Remove friend"
+                onRoleChange={(c, role) => void runInline(() => updateFriend(c.id, role))}
+                onRemove={(c) => setPendingRemove({ kind: "friend", char: c })}
+              />
             ) : (
               <Empty className="border border-dashed p-6 md:p-8">
                 <EmptyHeader>
@@ -658,12 +621,20 @@ export function CharactersTab() {
 
       <ConfirmDialog
         open={pendingRemove !== null}
-        title={pendingRemove?.kind === "guild" ? "Remove guild?" : "Remove friend?"}
+        title={
+          pendingRemove?.kind === "guild"
+            ? "Remove guild?"
+            : pendingRemove?.kind === "own"
+              ? "Remove character?"
+              : "Remove friend?"
+        }
         description={
           pendingRemove?.kind === "guild"
             ? `${pendingRemove.guild.name}-${pendingRemove.guild.server} (${pendingRemove.guild.region}) will be removed as your main guild.`
             : pendingRemove
-              ? `${identityLabel(pendingRemove.friend)} will be removed from your friends.`
+              ? `${identityLabel(pendingRemove.char)} will be removed from your ${
+                  pendingRemove.kind === "own" ? "characters" : "friends"
+                }.`
               : ""
         }
         confirmLabel="Remove"
@@ -671,7 +642,13 @@ export function CharactersTab() {
         onConfirm={async () => {
           const target = pendingRemove;
           if (!target) return;
-          await runInline(() => (target.kind === "guild" ? deleteGuild() : deleteFriend(target.friend.id)));
+          await runInline(() =>
+            target.kind === "guild"
+              ? deleteGuild()
+              : target.kind === "own"
+                ? deleteOwnCharacter(target.char.id)
+                : deleteFriend(target.char.id),
+          );
           setPendingRemove(null);
         }}
         onCancel={() => setPendingRemove(null)}

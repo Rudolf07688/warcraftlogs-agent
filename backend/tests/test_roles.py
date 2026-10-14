@@ -38,18 +38,18 @@ def test_role_for_spec_unknown_or_unset_is_none():
     assert role_for_spec("NotASpec") is None
 
 
-# --- repository update_friend_role --------------------------------------------
+# --- repository update_character_role --------------------------------------------
 
 
 async def test_update_friend_role_in_place(session, tenant_id):
-    f = await repo.add_friend(session, tenant_id=tenant_id, name="Thrall", server="S", region="US")
+    f = await repo.add_character(session, tenant_id=tenant_id, role="friend", name="Thrall", server="S", region="US")
     await session.commit()
-    updated = await repo.update_friend_role(
-        session, f.id, tenant_id=tenant_id, raid_role="tank"
+    updated = await repo.update_character_role(
+        session, f.id, tenant_id=tenant_id, role="friend", raid_role="tank"
     )
     assert updated is not None and updated.id == f.id and updated.raid_role == "tank"
     # Clear back to inferred (null).
-    cleared = await repo.update_friend_role(session, f.id, tenant_id=tenant_id, raid_role=None)
+    cleared = await repo.update_character_role(session, f.id, tenant_id=tenant_id, role="friend", raid_role=None)
     assert cleared.raid_role is None
     # Still a single friend row (in-place, FR-028).
     assert len(await repo.list_friend_characters(session, tenant_id=tenant_id)) == 1
@@ -58,16 +58,16 @@ async def test_update_friend_role_in_place(session, tenant_id):
 async def test_update_friend_role_unknown_is_none(session, tenant_id, other_tenant_id):
     import uuid
 
-    assert await repo.update_friend_role(
-        session, uuid.uuid4(), tenant_id=tenant_id, raid_role="dps"
+    assert await repo.update_character_role(
+        session, uuid.uuid4(), tenant_id=tenant_id, role="friend", raid_role="dps"
     ) is None
     # A friend of another tenant is not updatable here (404 path).
-    other = await repo.add_friend(
-        session, tenant_id=other_tenant_id, name="X", server="S", region="US"
+    other = await repo.add_character(
+        session, tenant_id=other_tenant_id, role="friend", name="X", server="S", region="US"
     )
     await session.commit()
-    assert await repo.update_friend_role(
-        session, other.id, tenant_id=tenant_id, raid_role="dps"
+    assert await repo.update_character_role(
+        session, other.id, tenant_id=tenant_id, role="friend", raid_role="dps"
     ) is None
 
 
@@ -153,10 +153,14 @@ async def test_duplicate_friend_still_409(as_user):
 
 
 async def test_self_accepts_raid_role_override(as_user):
-    r = await as_user.client.put(
+    r = await as_user.client.post(
         "/api/profile/self",
         json={"name": "Me", "server": "S", "region": "US", "raid_role": "dps"},
     )
-    assert r.status_code == 200, r.text
+    assert r.status_code == 201, r.text
     assert r.json()["raid_role"] == "dps"
     assert r.json()["effective_role"] == "dps"
+    # Feature 012: an own character's role is changed in place via PATCH.
+    p = await as_user.client.patch(f"/api/profile/self/{r.json()['id']}", json={"raid_role": "tank"})
+    assert p.status_code == 200, p.text
+    assert p.json()["id"] == r.json()["id"] and p.json()["effective_role"] == "tank"

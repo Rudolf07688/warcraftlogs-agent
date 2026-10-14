@@ -42,8 +42,8 @@ async def test_autofetch_reuses_ready_guide_with_zero_regeneration(
         await repo.upsert_spec_guide(
             s, class_name="Shaman", spec="Enhancement", status="ready", guide_markdown="existing"
         )
-        char = await repo.add_friend(
-            s, tenant_id=tenant_id, name="Thrall", server="Stormrage", region="US"
+        char = await repo.add_character(
+            s, tenant_id=tenant_id, role="friend", name="Thrall", server="Stormrage", region="US"
         )
         await s.commit()
         cid = char.id
@@ -64,8 +64,8 @@ async def test_removing_character_keeps_shared_guide(session_factory, tenant_id)
         await repo.upsert_spec_guide(
             s, class_name="Mage", spec="Fire", status="ready", guide_markdown="g"
         )
-        f = await repo.add_friend(
-            s, tenant_id=tenant_id, name="Jaina", server="Proudmoore", region="US"
+        f = await repo.add_character(
+            s, tenant_id=tenant_id, role="friend", name="Jaina", server="Proudmoore", region="US"
         )
         await repo.set_character_spec(
             s, f.id, tenant_id=tenant_id, class_name="Mage", active_spec="Fire"
@@ -74,7 +74,7 @@ async def test_removing_character_keeps_shared_guide(session_factory, tenant_id)
         fid = f.id
 
     async with session_factory() as s:
-        assert await repo.delete_friend(s, fid, tenant_id=tenant_id) is True
+        assert await repo.delete_character(s, fid, tenant_id=tenant_id, role="friend") is True
         await s.commit()
 
     async with session_factory() as s:
@@ -87,8 +87,8 @@ async def test_character_out_guide_status_is_derived(as_user, session_factory, m
     tenant = as_user.tenant_id
 
     async with session_factory() as s:
-        f = await repo.add_friend(
-            s, tenant_id=tenant, name="Khadgar", server="Dalaran", region="US"
+        f = await repo.add_character(
+            s, tenant_id=tenant, role="friend", name="Khadgar", server="Dalaran", region="US"
         )
         await repo.set_character_spec(
             s, f.id, tenant_id=tenant, class_name="Mage", active_spec="Arcane"
@@ -109,8 +109,8 @@ async def test_unresolved_character_guide_status_none(as_user, session_factory, 
     tenant = as_user.tenant_id
 
     async with session_factory() as s:
-        await repo.add_friend(
-            s, tenant_id=tenant, name="Mystery", server="Server", region="US"
+        await repo.add_character(
+            s, tenant_id=tenant, role="friend", name="Mystery", server="Server", region="US"
         )
         await s.commit()
 

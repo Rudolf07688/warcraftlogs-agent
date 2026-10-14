@@ -255,8 +255,20 @@ export async function getProfile(): Promise<Profile> {
   return send("GET", "/api/profile");
 }
 
-export async function putSelf(body: CharacterInput): Promise<Character> {
-  return send("PUT", "/api/profile/self", body, { csrf: true });
+// Feature 012: own characters are managed like friends (add, set role, remove).
+export async function addOwnCharacter(body: CharacterInput): Promise<Character> {
+  return send("POST", "/api/profile/self", body, { csrf: true });
+}
+
+export async function updateOwnCharacter(
+  id: string,
+  raidRole: RaidRole | null,
+): Promise<Character> {
+  return send("PATCH", `/api/profile/self/${id}`, { raid_role: raidRole }, { csrf: true });
+}
+
+export async function deleteOwnCharacter(id: string): Promise<void> {
+  await send("DELETE", `/api/profile/self/${id}`, undefined, { csrf: true });
 }
 
 export async function addFriend(body: CharacterInput): Promise<Character> {

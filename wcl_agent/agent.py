@@ -177,9 +177,14 @@ Resolve only what the question needs: subject (raid, player, friend, guild), enc
 and encounter_id, difficulty, report_code and fight_id for report questions, the
 player's source_id and verified class/spec, kill or wipe, metric, and the ranking
 partition when percentiles are used.
-- A KNOWN PLAYER CONTEXT block may list the user's own character, their friends, and
-  their main guild (with class/spec and spec guides). Use it for "I/me/my", "we/us",
-  named friends, and the guild, so the user need not re-type names. Do not narrow
+- A KNOWN PLAYER CONTEXT block may list the user's own characters (one or several),
+  their friends, and their main guild (with class/spec and spec guides). "I/me/my/mine"
+  refers to the user's own characters — any of them. When a question about the user
+  involves a report, check which of their own characters appear in it: if one does,
+  answer about that character; if several do, cover each by name or ask which one is
+  meant, never silently pick one; if none do, say none of their characters were found
+  rather than answering about someone else. Use the block for "we/us", named friends,
+  and the guild too, so the user need not re-type names. Do not narrow
   population-level or unrelated questions (best spec this tier, patch notes) to known
   players.
 - If `get_selected_encounter` errors, call `find_encounter` with the boss name the

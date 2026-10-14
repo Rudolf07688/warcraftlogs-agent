@@ -145,7 +145,9 @@ export interface Guild {
 }
 
 export interface Profile {
-  self: Character | null;
+  // Feature 012: the user's own characters (0..own_limit), in creation order.
+  own: Character[];
+  own_limit: number;
   friends: Character[];
   guild: Guild | null;
 }

@@ -211,7 +211,7 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
 
         # US1: build the (non-persisted) KNOWN PLAYER CONTEXT preamble from the tenant's
         # profile. Empty string when no profile exists, so behavior is unchanged (FR-006).
-        self_char, friends, guild = await repo.get_profile(session, tenant_id=tenant_id)
+        own, friends, guild = await repo.get_profile(session, tenant_id=tenant_id)
         # US1 (feature 007): also surface recency-capped captured metadata so follow-ups
         # across the user's conversations reuse known raids/players/encounters/guilds
         # instead of re-querying Warcraft Logs. Empty everywhere ⇒ preamble unchanged.
@@ -223,7 +223,7 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
         # spec_guides library, keyed by its resolved (class, spec). Fetch the ready guides
         # for the profile's specs and pass a (class, spec) → markdown map to the preamble.
         # (spec_guides has no RLS, so reading it on the tenant session is fine.)
-        profile_chars = ([self_char] if self_char else []) + list(friends)
+        profile_chars = list(own) + list(friends)
         spec_pairs = [
             (c.class_name, c.active_spec)
             for c in profile_chars
@@ -244,7 +244,7 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
                 for key, g in ready_guides.items()
             }
         preamble = build_preamble(
-            self_char,
+            own,
             friends,
             guild,
             known_raids=known_raids[:10],

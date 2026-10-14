@@ -439,7 +439,8 @@ class CapturedGraph(Base):
 
 
 class UserCharacter(Base):
-    """A self or friend character in the single global profile (feature 005 / US1).
+    """One of the user's own characters (``role="self"``, up to ``MAX_OWN_CHARACTERS`` per tenant
+    since feature 012) or a friend character in the tenant's profile (feature 005 / US1).
 
     Each character carries a resolved active spec and a persisted spec guide fetched
     by the background guide task (US6). Identity is ``(name, server, region)``.
@@ -458,7 +459,7 @@ class UserCharacter(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
-    role: Mapped[str] = mapped_column(String(10))  # "self" | "friend"
+    role: Mapped[str] = mapped_column(String(10))  # "self" (an own character) | "friend"
     name: Mapped[str] = mapped_column(String(100))
     server: Mapped[str] = mapped_column(String(100))
     region: Mapped[str] = mapped_column(String(8))
