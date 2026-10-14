@@ -529,7 +529,13 @@ Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future age
   across `stream_response`. `DoneFrame` precedes `SuggestionsFrame(message_id=…)`.
 - **Preamble**: it rides on `TurnStats.preamble` and `model_retry.inject_preamble` adds it to
   each `LlmRequest` (never stored in ADK history). The turn stats line logs
-  `prompt_tokens` / `max_prompt_tokens`.
+  `prompt_tokens` / `max_prompt_tokens` / `cached_tokens` / `trimmed`.
+- **Old tool results** (`wcl_agent/context_trim.py`): the before-model callback replaces
+  large results older than `WCL_CONTEXT_KEEP_TURNS` turns with deterministic `_elided` stubs
+  in the request only (new Content/Part objects; ADK's request copy shares nested objects with
+  stored events, so never mutate in place). The prompt tells the model to re-fetch elided data.
+- **Suggestions** (`api/ws.py`): `_handle_turn` returns the suggestions task; `_TurnSocket`
+  serializes sends and the next turn cancels it.
 - **Guides/boot**: `_generate_text` is capped by `WCL_GUIDE_MAX_CONCURRENCY`; roster and
   profile reads use `with_text=False`; model probes run concurrently with a 10 s timeout;
   the greeting session id is per process.
@@ -538,7 +544,7 @@ Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future age
   callbacks; `useSmoothText` commits at ~30 Hz; KaTeX (`lib/mathPlugin.ts`), the particle
   engine and non-chat pages are lazy chunks. `frontend/Dockerfile` has `dev` and `prod`
   (nginx) targets.
-- **Deliberately not changed**: per-tenant WCL cache scoping (FR-019), the raw `rankings`
-  blob in `get_report_rankings` (feature 009 contract), and old tool results in the history
-  (feature 011 relies on evidence reuse).
+- **Deliberately not changed**: per-tenant WCL cache scoping (FR-019) and the raw `rankings`
+  blob in `get_report_rankings` (feature 009 contract; trimmed from older turns anyway).
+  Explicit context caching waits on the `cached_tokens` measurements.
 

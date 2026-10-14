@@ -30,6 +30,8 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types as genai_types
 
+from .context_trim import trim_old_tool_results, user_turn_indices
+
 logger = logging.getLogger(__name__)
 
 # Statuses that mean "try again shortly" rather than "this request is wrong".
@@ -78,12 +80,17 @@ class TurnStats:
     # PERF-004: prompt size of the turn's model requests, for the turn stats log line.
     last_prompt_tokens: int | None = None
     max_prompt_tokens: int | None = None
+    # How much of the last prompt the provider served from its cache (implicit caching).
+    last_cached_tokens: int | None = None
+    # Old tool results replaced by stubs across the turn's requests (context_trim).
+    trimmed_results: int = 0
 
-    def record_prompt_tokens(self, count: int | None) -> None:
+    def record_prompt_tokens(self, count: int | None, cached: int | None = None) -> None:
         if count is None:
             return
         self.last_prompt_tokens = count
         self.max_prompt_tokens = max(self.max_prompt_tokens or 0, count)
+        self.last_cached_tokens = cached
 
     @property
     def tool_rounds(self) -> int:
@@ -302,17 +309,13 @@ def inject_preamble(llm_request: LlmRequest, preamble: str) -> None:
     is never mutated, so the preamble reaches the model without entering the history.
     """
     contents = llm_request.contents
-    for i in range(len(contents) - 1, -1, -1):
-        content = contents[i]
-        parts = content.parts or []
-        if content.role != "user" or any(getattr(p, "function_response", None) for p in parts):
-            continue
-        if not any(getattr(p, "text", None) for p in parts):
-            continue
-        contents[i] = genai_types.Content(
-            role="user", parts=[genai_types.Part(text=f"{preamble}\n\n"), *parts]
-        )
+    starts = user_turn_indices(contents)
+    if not starts:
         return
+    i = starts[-1]
+    contents[i] = genai_types.Content(
+        role="user", parts=[genai_types.Part(text=f"{preamble}\n\n"), *(contents[i].parts or [])]
+    )
 
 
 def make_before_model_callback(policy: RetryPolicy):
@@ -323,14 +326,20 @@ def make_before_model_callback(policy: RetryPolicy):
     it appends ``WRAP_UP_INSTRUCTION`` to the request's system instruction (FR-011) and,
     for Gemini, disables function calling for that request as a hard stop. The Anthropic
     adapter does not map ``tool_config``, so Claude relies on the instruction. Without a
-    turn (CLI, tests) it is a no-op. Always returns ``None`` so the request proceeds.
+    turn (CLI, tests) only the trimming below applies. Always returns ``None`` so the
+    request proceeds.
+
+    On every request it first replaces large tool results from older turns with compact
+    stubs (``context_trim``, PERF-004), then injects the turn's preamble.
     """
 
     def before_model(callback_context, llm_request: LlmRequest):  # noqa: ARG001 - ADK shape
+        trimmed = trim_old_tool_results(llm_request)
         stats = current_turn.get()
         if stats is None:
             return None
         stats.model_requests += 1
+        stats.trimmed_results += trimmed
         if stats.preamble:
             inject_preamble(llm_request, stats.preamble)
         if not stats.cap_reached(policy):

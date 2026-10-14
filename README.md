@@ -251,7 +251,7 @@ Tuning (env / `.env`; runners are cached per model, so restart the backend after
 | `WCL_TURN_ROUND_CAP` | `6` | lookup rounds before the wrap-up instruction |
 
 Every turn logs one line you can grep to verify the effect, e.g.
-`turn stats model=gemini-3.6-flash requests=4 rounds=3 retries=1 waited_s=4.3 outcome=answered prompt_tokens=18234 max_prompt_tokens=18234`.
+`turn stats model=gemini-3.6-flash requests=4 rounds=3 retries=1 waited_s=4.3 outcome=answered prompt_tokens=18234 max_prompt_tokens=18234 cached_tokens=8120 trimmed=3`.
 
 ### Performance (QA sweep, 2026-10-14)
 
@@ -267,6 +267,10 @@ The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours wor
   answer is saved; suggestions arrive as a separate frame keyed by `message_id`.
 - **The KNOWN PLAYER CONTEXT is injected per model request** and no longer stored in the
   ADK history.
+- **Old tool results are trimmed from each model request**: results from turns before the
+  previous one are replaced by a compact stub (status, provenance, completeness, a preview).
+  The stored history keeps the full data, and the model re-fetches (from cache) if needed.
+- **Follow-up suggestions run in the background** and the next message cancels them.
 - **Frontend:** a token re-renders only the live message; non-chat pages, KaTeX and the
   particle engine load as separate chunks.
 
@@ -274,6 +278,8 @@ The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours wor
 |---|---|---|
 | `WCL_MAX_CONCURRENCY` | `6` | WCL requests in flight at once, process-wide |
 | `WCL_TOOL_THREADS` | `32` | dedicated worker threads for WCL tool calls (not asyncio's default executor) |
+| `WCL_CONTEXT_KEEP_TURNS` | `2` | turns (current included) whose tool results reach the model in full |
+| `WCL_CONTEXT_STUB_MIN_CHARS` | `1500` | older tool results larger than this are stubbed |
 | `WCL_CACHE_MAX_BYTES` | `134217728` | byte bound on the WCL result cache (128 MB) |
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `10` / `20` / `10` | DB connection pool (shared with the ADK session store) |
 | `WCL_GUIDE_MAX_CONCURRENCY` | `2` | background guide / guild-summary generations at once |

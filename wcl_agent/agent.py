@@ -167,9 +167,10 @@ Plan the evidence before the first lookup and gather it in few, well-batched rou
    table or rankings call per boss or player — never one round per boss).
 3. Cast-level detail (events, graphs, cooldown usage) only when the question asks for
    execution detail or a stage-2 finding clearly warrants it.
-Reuse evidence already in this conversation instead of re-fetching it. Answer as soon as
-the question asked is answerable; do not keep gathering supporting detail nobody asked
-for. A short, specific question still takes a single lookup. If told the lookup budget
+Reuse evidence already in this conversation instead of re-fetching it. Results from older
+turns may be shortened (marked `_elided`); if you need their detail, call the tool again —
+lookups are cached. Answer as soon as the question asked is answerable; do not keep
+gathering supporting detail nobody asked for. A short, specific question still takes a single lookup. If told the lookup budget
 for this turn is spent, answer with what you have and name the gaps.
 </EVIDENCE_PLAN>
 

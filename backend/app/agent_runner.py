@@ -223,7 +223,7 @@ async def stream_response(
             current_turn.set(None)
         logger.info(
             "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
-            "prompt_tokens=%s max_prompt_tokens=%s",
+            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
@@ -232,6 +232,8 @@ async def stream_response(
             stats.outcome,
             stats.last_prompt_tokens,
             stats.max_prompt_tokens,
+            stats.last_cached_tokens,
+            stats.trimmed_results,
         )
 
 
@@ -284,7 +286,10 @@ async def _run_turn(
     ):
         usage = getattr(event, "usage_metadata", None)
         if stats is not None and usage is not None:
-            stats.record_prompt_tokens(getattr(usage, "prompt_token_count", None))
+            stats.record_prompt_tokens(
+                getattr(usage, "prompt_token_count", None),
+                getattr(usage, "cached_content_token_count", None),
+            )
         # US3: surface native web grounding once per turn. The grounding sub-agent
         # propagates its grounding_metadata to the parent event stream.
         if not grounding_emitted:

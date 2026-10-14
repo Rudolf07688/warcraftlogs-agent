@@ -56,6 +56,8 @@ KEY_CLAUSES = [
     "single lookup",
     # feature 012: "I/me" resolves across all of the user's own characters
     "never silently pick one",
+    # PERF-004: older tool results may be stubbed; the model re-fetches if it needs detail
+    "marked `_elided`",
 ]
 
 
