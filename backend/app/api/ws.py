@@ -209,6 +209,10 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
         await apply_tenant_scope(session, identity)  # re-scope after commit
         await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_msg.seq))
 
+        # Scope the WCL result cache to this tenant (FR-019) for everything this turn fetches,
+        # including current_patch() while building the preamble below (PERF-009).
+        set_cache_scope(str(tenant_id))
+
         # US1: build the (non-persisted) KNOWN PLAYER CONTEXT preamble from the tenant's
         # profile. Empty string when no profile exists, so behavior is unchanged (FR-006).
         own, friends, guild = await repo.get_profile(session, tenant_id=tenant_id)
@@ -254,9 +258,6 @@ async def _handle_turn(ws: WebSocket, turn: ChatTurn, identity: RequestIdentity)
             spec_guides=spec_guides,
             guide_labels=guide_labels,
         )
-
-        # Scope the WCL result cache to this tenant (FR-019) for the turn's tool calls.
-        set_cache_scope(str(tenant_id))
 
         # Stream the agent response, accumulating tokens into the final content.
         # US2: a per-turn scratch store holds each tool's full output on disk so large

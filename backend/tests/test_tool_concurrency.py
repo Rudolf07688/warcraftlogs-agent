@@ -147,13 +147,15 @@ def test_wcl_requests_respect_the_concurrency_cap(monkeypatch):
     lock = threading.Lock()
 
     class Resp:
+        content = b"{}"
+
         def raise_for_status(self):
             pass
 
         def json(self):
             return {"data": {"rateLimitData": {}}}
 
-    def fake_post(*_args, **_kwargs):
+    def fake_post(_self, *_args, **_kwargs):
         nonlocal inflight, peak
         with lock:
             inflight += 1
@@ -163,7 +165,7 @@ def test_wcl_requests_respect_the_concurrency_cap(monkeypatch):
             inflight -= 1
         return Resp()
 
-    monkeypatch.setattr(wcl_client.requests, "post", fake_post)
+    monkeypatch.setattr(wcl_client.requests.Session, "post", fake_post)
     monkeypatch.setattr(wcl_client, "_inflight", threading.BoundedSemaphore(2))
     client = wcl_client.WCLClient("id", "secret", access_token="token")
     # rateLimitData bypasses the cache, so every call reaches requests.post.

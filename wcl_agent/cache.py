@@ -26,6 +26,8 @@ from copy import deepcopy
 from typing import Any, Callable
 
 DEFAULT_MAXSIZE = 512
+# PERF-009: entries are raw GraphQL payloads (some are MBs), so bound the cache by bytes too.
+DEFAULT_MAXBYTES = 128 * 1024 * 1024
 
 # feature 006: a caller-supplied scope prefix (e.g. the tenant id) folded into every cache
 # key so cached lookups never cross scopes (FR-019). The backend sets this per chat turn;
@@ -64,6 +66,10 @@ def leaderboard_ttl() -> int:
     return _env_int("WCL_CACHE_TTL_LEADERBOARD_S", DEFAULT_TTL_LEADERBOARD_S)
 
 
+def max_bytes() -> int:
+    return _env_int("WCL_CACHE_MAX_BYTES", DEFAULT_MAXBYTES)
+
+
 def cache_key(query: str, variables: dict[str, Any] | None, prefix: str | None = None) -> str:
     """Stable key over the scope prefix + full query + all variables (sorted), per FR-020.
 
@@ -92,16 +98,24 @@ def ttl_for(query: str, variables: dict[str, Any] | None) -> int:
 
 
 class TTLCache:
-    """A small LRU cache with per-entry TTL and lazy expiry on read.
+    """A small LRU cache with per-entry TTL, lazy expiry on read, and an entry and byte bound.
 
     Thread-safe: tools run in worker threads concurrently (PERF-001), and the OrderedDict's
     ``move_to_end`` / ``popitem`` / lazy ``del`` must not interleave. Deep copies happen
     outside the lock; stored values are never mutated, so copying them unlocked is safe.
     """
 
-    def __init__(self, maxsize: int = DEFAULT_MAXSIZE, clock: Callable[[], float] = time.monotonic):
-        self._data: "OrderedDict[str, tuple[Any, float]]" = OrderedDict()
+    def __init__(
+        self,
+        maxsize: int = DEFAULT_MAXSIZE,
+        clock: Callable[[], float] = time.monotonic,
+        maxbytes: int | None = None,
+    ):
+        # value, expires_at, size in bytes (as reported by the caller)
+        self._data: "OrderedDict[str, tuple[Any, float, int]]" = OrderedDict()
         self.maxsize = maxsize
+        self.maxbytes = maxbytes if maxbytes is not None else max_bytes()
+        self._bytes = 0
         self._clock = clock
         self._lock = threading.Lock()
 
@@ -110,24 +124,38 @@ class TTLCache:
             item = self._data.get(key)
             if item is None:
                 return None
-            value, expires_at = item
+            value, expires_at, size = item
             if self._clock() >= expires_at:
                 del self._data[key]  # lazy expiry
+                self._bytes -= size
                 return None
             self._data.move_to_end(key)
         return deepcopy(value)  # callers can't mutate the stored entry
 
-    def set(self, key: str, value: Any, ttl: int) -> None:
+    def set(self, key: str, value: Any, ttl: int, size: int = 0) -> None:
+        """Store ``value``; ``size`` is its approximate size in bytes (0 = unknown)."""
         stored = deepcopy(value)
         with self._lock:
-            self._data[key] = (stored, self._clock() + ttl)
-            self._data.move_to_end(key)
-            while len(self._data) > self.maxsize:
-                self._data.popitem(last=False)  # evict least-recently-used
+            old = self._data.pop(key, None)
+            if old is not None:
+                self._bytes -= old[2]
+            self._data[key] = (stored, self._clock() + ttl, size)
+            self._bytes += size
+            # Evict least-recently-used entries until both bounds hold. An entry larger than
+            # the byte bound on its own evicts itself, so it is simply not cached.
+            while self._data and (len(self._data) > self.maxsize or self._bytes > self.maxbytes):
+                _, (_, _, evicted) = self._data.popitem(last=False)
+                self._bytes -= evicted
+
+    @property
+    def bytes(self) -> int:
+        with self._lock:
+            return self._bytes
 
     def clear(self) -> None:
         with self._lock:
             self._data.clear()
+            self._bytes = 0
 
     def __len__(self) -> int:
         with self._lock:

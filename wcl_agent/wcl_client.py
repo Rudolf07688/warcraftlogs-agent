@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from .cache import _env_int, cache_key, get_cache, is_rate_limit, ttl_for
 
@@ -26,6 +27,20 @@ GRAPHQL_URL = "https://www.warcraftlogs.com/api/v2/client"
 DEFAULT_MAX_CONCURRENCY = 6
 _inflight = threading.BoundedSemaphore(max(1, _env_int("WCL_MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY)))
 
+# PERF-003: (connect, read) timeouts. A hung connect fails fast; slow queries keep 60 s.
+QUERY_TIMEOUT = (5, 60)
+AUTH_TIMEOUT = (5, 30)
+# How long a caller waits for another thread's identical in-flight query (PERF-009).
+_FLIGHT_WAIT_S = 90
+
+
+def _make_session() -> requests.Session:
+    """One pooled HTTP session per client: reuses TCP+TLS connections across queries."""
+    session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=2, pool_maxsize=16)
+    session.mount("https://", adapter)
+    return session
+
 
 @dataclass
 class WCLClient:
@@ -35,13 +50,17 @@ class WCLClient:
     client_secret: str
     access_token: str | None = None
     _auth_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    _http: requests.Session = field(default_factory=_make_session, repr=False, compare=False)
+    # PERF-009 single-flight: cache key -> event set when the leading fetch finishes.
+    _flights: dict[str, threading.Event] = field(default_factory=dict, repr=False, compare=False)
+    _flights_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def authenticate(self) -> str:
-        resp = requests.post(
+        resp = self._http.post(
             TOKEN_URL,
             data={"grant_type": "client_credentials"},
             auth=(self.client_id, self.client_secret),
-            timeout=30,
+            timeout=AUTH_TIMEOUT,
         )
         resp.raise_for_status()
         self.access_token = resp.json()["access_token"]
@@ -53,30 +72,52 @@ class WCLClient:
         # On a miss behavior is identical to an uncached call.
         variables = variables or {}
         cache = get_cache()
-        key: str | None = None
-        if not is_rate_limit(query):
-            key = cache_key(query, variables)
+        if is_rate_limit(query):
+            return self._fetch(query, variables, None)
+        key = cache_key(query, variables)
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+
+        # Single-flight: concurrent identical queries (now common, with tools running in
+        # parallel) wait for the first one and read its cached result instead of refetching.
+        with self._flights_lock:
+            event = self._flights.get(key)
+            leader = event is None
+            if leader:
+                event = self._flights[key] = threading.Event()
+        if not leader:
+            event.wait(_FLIGHT_WAIT_S)
             hit = cache.get(key)
             if hit is not None:
                 return hit
+            return self._fetch(query, variables, key)  # the leader failed: fetch ourselves
+        try:
+            return self._fetch(query, variables, key)
+        finally:
+            with self._flights_lock:
+                self._flights.pop(key, None)
+            event.set()
 
+    def _fetch(self, query: str, variables: dict[str, Any], key: str | None) -> dict[str, Any]:
+        cache = get_cache()
         if not self.access_token:
             with self._auth_lock:  # concurrent first calls fetch one token
                 if not self.access_token:
                     self.authenticate()
         with _inflight:
-            resp = requests.post(
+            resp = self._http.post(
                 GRAPHQL_URL,
                 json={"query": query, "variables": variables},
                 headers={"Authorization": f"Bearer {self.access_token}"},
-                timeout=60,
+                timeout=QUERY_TIMEOUT,
             )
         resp.raise_for_status()
         payload = resp.json()
         if "errors" in payload:
             raise RuntimeError(json.dumps(payload["errors"], indent=2))
         if key is not None:
-            cache.set(key, payload, ttl_for(query, variables))
+            cache.set(key, payload, ttl_for(query, variables), size=len(resp.content or b""))
         return payload
 
 

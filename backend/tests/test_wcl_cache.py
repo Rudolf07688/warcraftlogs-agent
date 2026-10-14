@@ -19,6 +19,7 @@ from wcl_agent.cache import (
 class _FakeResp:
     def __init__(self, payload):
         self._payload = payload
+        self.content = b"{}"
 
     def raise_for_status(self):
         pass
@@ -32,11 +33,12 @@ def counting_post(monkeypatch):
     """Count network calls; return a fresh payload each call so hits are detectable."""
     calls = {"n": 0}
 
-    def fake_post(url, json=None, headers=None, timeout=None):
+    def fake_post(self, url, json=None, headers=None, timeout=None):
         calls["n"] += 1
         return _FakeResp({"data": {"value": calls["n"]}})
 
-    monkeypatch.setattr(wcl_client.requests, "post", fake_post)
+    # PERF-003: the client posts through its pooled requests.Session.
+    monkeypatch.setattr(wcl_client.requests.Session, "post", fake_post)
     get_cache().clear()
     return calls
 
@@ -98,3 +100,74 @@ def test_cache_key_stable_and_order_independent():
     b = cache_key("q", {"a": 2, "b": 1})
     assert a == b
     assert cache_key("q", {"a": 1}) != cache_key("q", {"a": 2})
+
+
+# --- PERF-009: byte bound and single-flight ------------------------------------------------
+
+
+def test_cache_evicts_by_bytes():
+    from wcl_agent.cache import TTLCache
+
+    cache = TTLCache(maxsize=100, maxbytes=1000)
+    cache.set("a", {"v": 1}, ttl=60, size=400)
+    cache.set("b", {"v": 2}, ttl=60, size=400)
+    cache.get("a")  # a is now most recently used
+    cache.set("c", {"v": 3}, ttl=60, size=400)  # 1200 > 1000: evicts b (LRU)
+    assert cache.get("b") is None and cache.get("a") == {"v": 1} and cache.get("c") == {"v": 3}
+    assert cache.bytes == 800
+    cache.set("huge", {"v": 4}, ttl=60, size=5000)  # bigger than the bound on its own
+    assert cache.get("huge") is None and cache.bytes <= 1000
+    cache.set("a", {"v": 5}, ttl=60, size=100)  # replacing an entry updates the byte count
+    assert cache.bytes <= 1000 and cache.get("a") == {"v": 5}
+
+
+def test_concurrent_identical_queries_fetch_once(monkeypatch):
+    import threading
+    import time
+
+    from wcl_agent.threading_utils import gather_threads
+
+    calls = {"n": 0}
+    lock = threading.Lock()
+
+    def slow_post(self, url, json=None, headers=None, timeout=None):
+        with lock:
+            calls["n"] += 1
+        time.sleep(0.2)
+        return _FakeResp({"data": {"value": 1}})
+
+    monkeypatch.setattr(wcl_client.requests.Session, "post", slow_post)
+    get_cache().clear()
+    c = _client()
+    q = "query { reportData { report(code: $code) { title } } }"
+    results = gather_threads([lambda: c.query(q, {"code": "SF"})] * 8, max_workers=8)
+    assert calls["n"] == 1
+    assert all(r == {"data": {"value": 1}} for r in results)
+
+
+def test_waiters_fetch_themselves_when_the_leader_fails(monkeypatch):
+    import threading
+    import time
+
+    from wcl_agent.threading_utils import gather_threads
+
+    calls = {"n": 0}
+    lock = threading.Lock()
+
+    def flaky_post(self, url, json=None, headers=None, timeout=None):
+        with lock:
+            calls["n"] += 1
+            n = calls["n"]
+        time.sleep(0.1)
+        if n == 1:
+            raise RuntimeError("leader failed")
+        return _FakeResp({"data": {"value": n}})
+
+    monkeypatch.setattr(wcl_client.requests.Session, "post", flaky_post)
+    get_cache().clear()
+    c = _client()
+    q = "query { reportData { report(code: $code) { title } } }"
+    results = gather_threads([lambda: c.query(q, {"code": "FL"})] * 3, max_workers=3)
+    assert sum(isinstance(r, RuntimeError) for r in results) == 1  # only the leader's call failed
+    assert all(not isinstance(r, Exception) for r in results if not isinstance(r, RuntimeError))
+    assert get_cache().get(cache_key(q, {"code": "FL"})) is not None  # a waiter filled the cache
