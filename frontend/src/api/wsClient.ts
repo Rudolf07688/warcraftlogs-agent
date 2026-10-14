@@ -20,7 +20,8 @@ export type Frame =
       title: string;
       figure: { data: unknown[]; layout: Record<string, unknown> };
     }
-  | { type: "suggestions"; suggestions: string[] }
+  // US1: sent just after `done` (PERF-005), keyed by the finished agent message.
+  | { type: "suggestions"; message_id?: string; suggestions: string[] }
   | { type: "model_retry"; attempt: number; max_attempts: number; wait_s: number }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };

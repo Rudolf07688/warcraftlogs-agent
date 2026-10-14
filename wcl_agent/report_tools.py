@@ -98,8 +98,8 @@ def get_report_fights(report_code: str) -> dict[str, Any]:
         report_code (str): The report code.
 
     Returns:
-        dict: {"status": "success", "title": ..., "zone": ...,
-               "players": {id: {"name", "class"}},
+        dict: {"status": "success", "title": ..., "zone": ..., "guild": ...,
+               "start_time_ms": ..., "players": {id: {"name", "class"}},
                "fights": [{id, name, encounterID, difficulty, kill,
                            averageItemLevel, players:[names]}]} or an error.
     """
@@ -107,7 +107,9 @@ def get_report_fights(report_code: str) -> dict[str, Any]:
     query ReportFights($code: String!) {
       reportData { report(code: $code) {
         title
+        startTime
         zone { id name }
+        guild { name }
         masterData { actors(type: "Player") { id name subType } }
         fights {
           id name encounterID difficulty kill
@@ -147,6 +149,9 @@ def get_report_fights(report_code: str) -> dict[str, Any]:
             "status": "success",
             "title": report.get("title"),
             "zone": report.get("zone"),
+            # Also lets the backend label a tracked raid without a second query (PERF-016).
+            "guild": (report.get("guild") or {}).get("name"),
+            "start_time_ms": report.get("startTime"),
             "players": players,
             "fights": _cap(fights),
         },

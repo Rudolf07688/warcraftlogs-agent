@@ -58,7 +58,6 @@ export default function App() {
   const streamRef = useRef("");
   const modelRef = useRef("");
   const groundedRef = useRef(false);
-  const suggestionsRef = useRef<string[]>([]);
   const streamCardsRef = useRef<SpellCardState[]>([]);
   const pendingEncountersRef = useRef<Encounter[]>([]); // bosses surfaced this turn
   const pendingArtifactsRef = useRef<ChartArtifact[]>([]); // charts produced this turn
@@ -162,14 +161,23 @@ export default function App() {
           streamRef.current += f.text;
           setStreamText(streamRef.current);
           break;
-        case "suggestions":
-          // US1: arrives just before `done`; attached to the agent message there.
-          suggestionsRef.current = f.suggestions.slice(0, 3);
+        case "suggestions": {
+          // US1: arrives just after `done` (PERF-005), so the composer is already free;
+          // attach the follow-ups to the message they belong to (or the latest agent reply).
+          const suggestions = f.suggestions.slice(0, 3);
+          setMessages((m) => {
+            let idx = f.message_id ? m.findIndex((x) => x.id === f.message_id) : -1;
+            if (idx < 0) idx = m.map((x) => x.role).lastIndexOf("agent");
+            if (idx < 0) return m;
+            const next = m.slice();
+            next[idx] = { ...next[idx], suggestions };
+            return next;
+          });
           break;
+        }
         case "done": {
           const text = streamRef.current || "(no response)";
           const grounded = groundedRef.current;
-          const suggestions = suggestionsRef.current;
           const tools = streamCardsRef.current;
           const encounters = pendingEncountersRef.current;
           const artifacts = pendingArtifactsRef.current;
@@ -181,7 +189,6 @@ export default function App() {
               role: "agent",
               content: text,
               grounded,
-              suggestions,
               tools,
               encounters,
               artifacts,
@@ -192,7 +199,6 @@ export default function App() {
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
-          suggestionsRef.current = [];
           setCards([]);
           pendingEncountersRef.current = [];
           pendingArtifactsRef.current = [];
@@ -208,7 +214,6 @@ export default function App() {
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
-          suggestionsRef.current = [];
           setCards([]);
           pendingEncountersRef.current = [];
           pendingArtifactsRef.current = [];
@@ -325,7 +330,6 @@ export default function App() {
     setMessages((m) => [...m, { role: "user", content: text }]);
     streamRef.current = "";
     groundedRef.current = false;
-    suggestionsRef.current = [];
     setCards([]);
     pendingEncountersRef.current = [];
     pendingArtifactsRef.current = [];

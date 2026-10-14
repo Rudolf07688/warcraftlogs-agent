@@ -30,6 +30,7 @@ from typing import Any
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
+from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
@@ -120,8 +121,12 @@ async def _ensure_session(session_id: str, user_id: str = USER_ID) -> None:
     legacy ``USER_ID`` for the disposable greeting session (no tenant).
     """
     service = _get_session_service()
+    # Existence check only: load no events (PERF-008). The runner loads the history itself.
     existing = await service.get_session(
-        app_name=APP_NAME, user_id=user_id, session_id=session_id
+        app_name=APP_NAME,
+        user_id=user_id,
+        session_id=session_id,
+        config=GetSessionConfig(num_recent_events=0),
     )
     if existing is None:
         await service.create_session(
@@ -314,7 +319,8 @@ async def _run_turn(
                 if scratch is not None:
                     key = call_id or f"{response.name}-{len(pending_args)}"
                     try:
-                        record["result_path"] = scratch.write(key, record)
+                        # Off the event loop: results can be tens of KB (PERF-016).
+                        record["result_path"] = await asyncio.to_thread(scratch.write, key, record)
                     except OSError:
                         pass  # scratch is a durability aid; never fail the turn over it
                 yield record

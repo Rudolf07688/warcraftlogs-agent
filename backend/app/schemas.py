@@ -106,12 +106,14 @@ class GroundingFrame(BaseModel):
 
 
 class SuggestionsFrame(BaseModel):
-    """Up to 3 predicted follow-up questions, emitted just before `done` (US1).
+    """Up to 3 predicted follow-up questions for a finished answer (US1).
 
-    Omitted entirely when there are no useful suggestions.
+    Sent just *after* `done` (PERF-005), so the composer is never held up by it, and keyed
+    by the agent message it belongs to. Omitted entirely when there are no suggestions.
     """
 
     type: Literal["suggestions"] = "suggestions"
+    message_id: uuid.UUID | None = None
     suggestions: list[str] = Field(default_factory=list, max_length=3)
 
 

@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # setups; production MUST set a distinct owner URL (research R4). (feature 006)
     database_url: str = "postgresql+asyncpg://wcl:wcl@localhost:5432/wcl"
     database_owner_url: str = ""
+    # Connection pool (PERF-006). Shared by the app and ADK's session store. A chat turn
+    # now holds a connection only for short transactions, never across the model stream.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout: float = 10.0
 
     # --- Auth / session / tenancy (feature 006) -------------------------------
     # Session cookie. `__Host-` prefix REQUIRES Secure + Path=/ + no Domain, so the

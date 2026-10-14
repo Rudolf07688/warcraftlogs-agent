@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -48,6 +48,17 @@ async def get_conversation(
         select(Conversation)
         .where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
         .options(selectinload(Conversation.messages))
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_conversation_row(
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> Conversation | None:
+    """The conversation alone, without loading its messages (PERF-007: the chat turn and
+    ``add_message`` only need the row; ``get_conversation`` loads the full transcript)."""
+    result = await session.execute(
+        select(Conversation).where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
     )
     return result.scalar_one_or_none()
 
@@ -102,11 +113,19 @@ async def add_message(
         tenant_id=tenant_id,
     )
     session.add(msg)
-    # Touch the conversation so the sidebar re-orders and title can be set.
-    conv = await get_conversation(session, conv_id, tenant_id=tenant_id)
-    if conv is not None:
-        if role == "user" and (conv.title in (None, "", "New chat")):
-            conv.title = content[:60]
+    # Title the conversation from its first user message with one targeted UPDATE; the
+    # transcript is never loaded here (PERF-007). ``onupdate`` bumps updated_at as before.
+    if role == "user":
+        await session.execute(
+            update(Conversation)
+            .where(
+                Conversation.id == conv_id,
+                Conversation.tenant_id == tenant_id,
+                or_(Conversation.title.is_(None), Conversation.title.in_(("", "New chat"))),
+            )
+            .values(title=content[:60])
+            .execution_options(synchronize_session="fetch")
+        )
     await session.flush()
     return msg
 
@@ -199,12 +218,13 @@ async def upsert_tracked_raid(
         last_conversation_id=conversation_id,
         encounters=encounters or None,
     )
-    session.add(raid)
+    # A savepoint, so a lost insert race rolls back only this insert — not the caller's
+    # transaction (which would also drop its transaction-local tenant scope).
     try:
-        await session.flush()
+        async with session.begin_nested():
+            session.add(raid)
         return raid
     except IntegrityError:
-        await session.rollback()
         raid = (
             await session.execute(
                 select(TrackedRaid).where(
@@ -225,12 +245,18 @@ async def upsert_tracked_raid(
         return raid
 
 
-async def list_tracked_raids(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[TrackedRaid]:
-    result = await session.execute(
+async def list_tracked_raids(
+    session: AsyncSession, *, tenant_id: uuid.UUID, limit: int | None = None
+) -> list[TrackedRaid]:
+    """Most recently asked-about raids first; ``limit`` bounds the read (PERF-013)."""
+    stmt = (
         select(TrackedRaid)
         .where(TrackedRaid.tenant_id == tenant_id)
         .order_by(TrackedRaid.last_asked_at.desc())
     )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 

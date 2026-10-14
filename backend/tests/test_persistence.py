@@ -33,10 +33,23 @@ async def test_add_message_status_default_and_partial(session, tenant_id):
     assert part.status == "partial"
 
 
-async def test_persist_partial_writes_partial_message(session, tenant_id):
+def _identity(tenant_id):
+    from backend.app.tenancy.context import RequestIdentity
+
+    return RequestIdentity(
+        user_id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        membership_role="tenant_admin",
+        is_platform_admin=False,
+        session_id=uuid.uuid4(),
+    )
+
+
+async def test_persist_partial_writes_partial_message(session, patched_db, tenant_id):
     conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
     await session.commit()
-    await ws_module._persist_partial(session, conv.id, ["chunk one ", "chunk two"], tenant_id)
+    # PERF-006: the partial reply is saved in its own short tenant-scoped transaction.
+    await ws_module._persist_partial(conv.id, ["chunk one ", "chunk two"], _identity(tenant_id))
     msgs = await repo.list_messages(session, conv.id, tenant_id=tenant_id)
     assert len(msgs) == 1
     assert msgs[0].role == "agent"
@@ -44,10 +57,10 @@ async def test_persist_partial_writes_partial_message(session, tenant_id):
     assert msgs[0].content == "chunk one chunk two"
 
 
-async def test_persist_partial_noop_when_empty(session, tenant_id):
+async def test_persist_partial_noop_when_empty(session, patched_db, tenant_id):
     conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
     await session.commit()
-    await ws_module._persist_partial(session, conv.id, [], tenant_id)
+    await ws_module._persist_partial(conv.id, [], _identity(tenant_id))
     assert (await repo.list_messages(session, conv.id, tenant_id=tenant_id)) == []
 
 

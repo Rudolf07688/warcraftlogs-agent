@@ -66,17 +66,69 @@ def test_suggestions_frame_valid():
 async def test_generate_followups_rate_limited_returns_empty_without_waiting(monkeypatch):
     from google.genai import errors as genai_errors
 
+    calls = {"n": 0}
+
     class _Models:
-        def generate_content(self, **kwargs):
+        async def generate_content(self, **kwargs):
+            calls["n"] += 1
             raise genai_errors.APIError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}})
 
+    class _Aio:
+        models = _Models()
+
     class _Client:
-        def __init__(self, *a, **k):
-            self.models = _Models()
+        aio = _Aio()
 
     async def _no_sleep(*a, **k):  # any backoff here would delay the player's answer
         raise AssertionError("suggestions must not sleep/retry")
 
-    monkeypatch.setattr("google.genai.Client", _Client)
+    monkeypatch.setattr("backend.app.suggestions._client", _Client())
     monkeypatch.setattr("backend.app.suggestions.asyncio.sleep", _no_sleep)
+    assert await generate_followups("gemini-3.6-flash", "q", "a real answer") == []
+    assert calls["n"] == 1  # one attempt, no retry
+
+
+# --- PERF-005: fixed cheap model, thinking off, time-boxed --------------------------------
+
+
+async def test_generate_followups_uses_suggest_model_without_thinking(monkeypatch):
+    from backend.app import suggestions
+
+    seen = {}
+
+    class _Models:
+        async def generate_content(self, *, model, contents, config):
+            seen.update(model=model, config=config)
+
+            class R:
+                text = '["What about my healers?"]'
+
+            return R()
+
+    class _Client:
+        class aio:
+            models = _Models()
+
+    monkeypatch.setattr(suggestions, "_client", _Client())
+    out = await generate_followups("gemini-3.1-pro-preview", "q", "a real answer")
+    assert out == ["What about my healers?"]
+    assert seen["model"] == suggestions._SUGGEST_MODEL  # never the (slow) chat model
+    assert seen["config"].thinking_config.thinking_budget == 0
+
+
+async def test_generate_followups_times_out_to_empty(monkeypatch):
+    import asyncio
+
+    from backend.app import suggestions
+
+    class _Models:
+        async def generate_content(self, **kwargs):
+            await asyncio.sleep(10)
+
+    class _Client:
+        class aio:
+            models = _Models()
+
+    monkeypatch.setattr(suggestions, "_client", _Client())
+    monkeypatch.setattr(suggestions, "SUGGEST_TIMEOUT_S", 0.05)
     assert await generate_followups("gemini-3.6-flash", "q", "a real answer") == []
