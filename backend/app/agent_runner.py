@@ -11,9 +11,11 @@ and each `tool_end` carries the correlated `args` plus the full tool `result`
 layer forwards a user-safe subset to the client and routes the full record to the
 raid- and graph-capture services (see services/raids.py, services/graphs.py).
 
-Sync Warcraft Logs tools are executed by ADK's own worker thread, so several
-tool calls issued by the model in one turn overlap without blocking the event
-loop. (Native async I/O via httpx is a documented later improvement.)
+The sync Warcraft Logs tools are wrapped with ``wcl_agent.threading_utils.off_loop`` in
+``build_agent``, so each runs in a worker thread. ADK itself runs sync tools inline on the
+event loop in SSE mode. As a result, several tool calls issued by the model in one turn
+overlap without blocking the event loop. (Native async I/O via httpx is a documented later
+improvement.)
 """
 
 from __future__ import annotations

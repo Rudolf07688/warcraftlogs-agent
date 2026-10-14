@@ -40,6 +40,7 @@ from .report_tools import (
     run_wcl_graphql,
 )
 from .genai_compat import ensure_genai_serializers_built
+from .threading_utils import off_loop
 from .model_retry import (
     RetryingClaude,
     RetryingGemini,
@@ -462,7 +463,9 @@ def build_agent(model: str = DEFAULT_MODEL, retry: RetryPolicy | None = None) ->
     # can serialize genai types nested in EventActions.state_delta during parallel tool calls
     # (otherwise the still-deferred "MockValSer" serializer aborts the turn). Idempotent.
     ensure_genai_serializers_built()
-    tools = list(TOOLS)
+    # PERF-001: ADK runs sync tools inline on the event loop in SSE mode, so each WCL tool
+    # is wrapped to run in a worker thread. TOOLS itself stays sync for direct callers.
+    tools: list = [off_loop(fn) for fn in TOOLS]
     if not _is_anthropic(model):
         tools.append(_build_web_search_tool(model))
     return Agent(

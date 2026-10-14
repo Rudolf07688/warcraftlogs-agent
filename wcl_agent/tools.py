@@ -17,6 +17,7 @@ from google.adk.tools import ToolContext
 from .constants import CLASS_SPECS, METRICS, normalize_class_name
 from .provenance import Completeness, Provenance, with_envelope
 from .queries import ENCOUNTER_RANKINGS, MENU_DISCOVERY
+from .threading_utils import gather_threads, unwrap
 from .wcl_client import check_rate_limit as _check_rate_limit
 from .wcl_client import get_client
 
@@ -409,16 +410,25 @@ def compare_specs(
     any_more = False
     total_sample = 0
     provenance: dict[str, Any] = {}
-    for spec in CLASS_SPECS[normalized]["specs"]:
-        result = get_rankings_distribution(
-            class_name=normalized,
-            spec_name=spec,
-            metric=metric,
-            num_pages=num_pages,
-            tool_context=tool_context,
-            encounter_id=encounter_id,
-            difficulty_id=difficulty_id,
-        )
+    specs = CLASS_SPECS[normalized]["specs"]
+    # Specs are independent: fetch them concurrently, then read results in spec order
+    # (PERF-002). Pages within one spec stay sequential (they stop at hasMorePages).
+    results = gather_threads(
+        [
+            lambda spec=spec: get_rankings_distribution(
+                class_name=normalized,
+                spec_name=spec,
+                metric=metric,
+                num_pages=num_pages,
+                tool_context=tool_context,
+                encounter_id=encounter_id,
+                difficulty_id=difficulty_id,
+            )
+            for spec in specs
+        ]
+    )
+    for spec, raw in zip(specs, results):
+        result = unwrap(raw)
         if result.get("status") != "success" or result.get("sample_size", 0) == 0:
             comparison.append({"spec": spec, "sample_size": 0})
             continue

@@ -22,6 +22,7 @@ from .fight_time import PlayerResolutionError, fetch_dead_windows, resolve_playe
 from .provenance import Completeness, PercentileContext, Provenance, flatten_report_rankings, with_envelope
 from .queries import ENCOUNTER_RANKINGS
 from .report_tools import _report_field
+from .threading_utils import gather_threads, unwrap
 
 BENCHMARK_METRICS = ("dps", "hps", "bossdps")
 MAX_SIZE = 5
@@ -361,48 +362,89 @@ def compare_player_to_cohort(
     provenance.encounter_id = row.encounter_id or provenance.encounter_id
     provenance.difficulty = row.difficulty or provenance.difficulty
 
-    # Budget → size (research R4).
-    remaining: float | None = None
-    try:
-        rl = wcl_client.check_rate_limit()
-        remaining = float(rl["limitPerHour"]) - float(rl["pointsSpentThisHour"])
-    except Exception:  # noqa: BLE001 - budget unknown ⇒ no shrink
-        remaining = None
-    size_now = budget_size(requested_size, remaining)
+    # PERF-002: after the report context, three independent branches run concurrently:
+    # (1) budget + leaderboard pages → cohort → members' casts, (2) the player's casts,
+    # (3) the player's death windows. Results are read back in the original order, so the
+    # error precedence and messages are unchanged.
+    band = band_pages(row.total_parses)
+
+    def leaderboard_page(page: int) -> list[dict[str, Any]]:
+        data = wcl_client.get_client().query(
+            ENCOUNTER_RANKINGS,
+            {
+                "encounterID": row.encounter_id,
+                "difficulty": row.difficulty,
+                "metric": metric,
+                "className": row.class_name,
+                "specName": row.spec,
+                "page": page,
+                "partition": row.partition,
+            },
+        )
+        blob = (((data.get("data") or {}).get("worldData") or {}).get("encounter") or {}).get(
+            "characterRankings"
+        ) or {}
+        return blob.get("rankings") or []
+
+    def cohort_branch() -> dict[str, Any]:
+        rl_res, *page_res = gather_threads(
+            [wcl_client.check_rate_limit] + [lambda p=p: leaderboard_page(p) for p in band.pages]
+        )
+        # Budget → size (research R4). Budget unknown ⇒ no shrink.
+        remaining: float | None = None
+        if not isinstance(rl_res, BaseException):
+            try:
+                remaining = float(rl_res["limitPerHour"]) - float(rl_res["pointsSpentThisHour"])
+            except Exception:  # noqa: BLE001
+                remaining = None
+        size_now = budget_size(requested_size, remaining)
+        out: dict[str, Any] = {"remaining": remaining, "size_now": size_now}
+        # Band pages (research R1), appended in page order (select_cohort depends on it).
+        entries: list[dict[str, Any]] = []
+        for res in page_res:
+            if isinstance(res, BaseException):
+                out["page_error"] = res
+                return out
+            entries.extend(res)
+        selection = select_cohort(entries, resolved.name, duration_ms, size_now)
+        out["selection"] = selection
+        # Members' casts tables, concurrently; one member failing must not sink the benchmark.
+        fetchable = [
+            e for e in selection.members
+            if (e.get("report") or {}).get("code") and (e.get("report") or {}).get("fightID")
+        ]
+        casts = gather_threads(
+            [
+                lambda e=e: _casts_table(e["report"]["code"], int(e["report"]["fightID"]))
+                for e in fetchable
+            ]
+        )
+        out["member_casts"] = {id(e): c for e, c in zip(fetchable, casts)}
+        return out
+
+    cohort_res, casts_res, dead_res = gather_threads(
+        [
+            cohort_branch,
+            lambda: _casts_table(report_code, fight_id),
+            lambda: fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end),
+        ]
+    )
+    if isinstance(cohort_res, BaseException):  # an unexpected failure outside the WCL calls
+        return {"status": "error", "error_message": f"WCL request failed (leaderboard): {cohort_res}"}
+
+    remaining = cohort_res["remaining"]
+    size_now = cohort_res["size_now"]
     unmet: list[str] = []
     if size_now < requested_size:
         unmet.append(f"WCL budget low ({remaining:.0f} points left): cohort shrunk to {size_now}")
-
-    # Band pages (research R1).
-    band = band_pages(row.total_parses)
     if row.total_parses is None:
         unmet.append("population size unknown; sampled the top leaderboard page")
     if band.clipped:
         unmet.append("band clipped: the 75th–95th percentile band lies beyond page 20; sampled pages 18–20")
-    entries: list[dict[str, Any]] = []
-    try:
-        client = wcl_client.get_client()
-        for page in band.pages:
-            data = client.query(
-                ENCOUNTER_RANKINGS,
-                {
-                    "encounterID": row.encounter_id,
-                    "difficulty": row.difficulty,
-                    "metric": metric,
-                    "className": row.class_name,
-                    "specName": row.spec,
-                    "page": page,
-                    "partition": row.partition,
-                },
-            )
-            blob = (((data.get("data") or {}).get("worldData") or {}).get("encounter") or {}).get(
-                "characterRankings"
-            ) or {}
-            entries.extend(blob.get("rankings") or [])
-    except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "error_message": f"WCL request failed (leaderboard): {exc}"}
+    if "page_error" in cohort_res:
+        return {"status": "error", "error_message": f"WCL request failed (leaderboard): {cohort_res['page_error']}"}
 
-    selection = select_cohort(entries, resolved.name, duration_ms, size_now)
+    selection = cohort_res["selection"]
     if selection.widened:
         unmet.append(f"duration window widened to ±{selection.window_pct}%")
     if len(selection.members) < size_now:
@@ -410,8 +452,8 @@ def compare_player_to_cohort(
 
     # Player's own casts (entry by source id) and time alive (FR-015a).
     try:
-        player_entry = reduce_casts_entry(_casts_table(report_code, fight_id), source_id=resolved.source_id)
-        dead = fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end)
+        player_entry = reduce_casts_entry(unwrap(casts_res), source_id=resolved.source_id)
+        dead = unwrap(dead_res)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed (player casts): {exc}"}
     dead_s = windows_seconds([(max(s, fight_start), min(e, fight_end)) for s, e in dead])
@@ -420,6 +462,7 @@ def compare_player_to_cohort(
     # Members' casts (entry by name), rates per minute of their own fight.
     members_out: list[dict[str, Any]] = []
     member_entries: list[tuple[CastsEntry, float]] = []
+    member_casts = cohort_res["member_casts"]
     for e in selection.members:
         rep = e.get("report") or {}
         code, fid = rep.get("code"), rep.get("fightID")
@@ -440,7 +483,7 @@ def compare_player_to_cohort(
         if not code or not fid:
             continue
         try:
-            entry = reduce_casts_entry(_casts_table(code, int(fid)), name=e.get("name"))
+            entry = reduce_casts_entry(unwrap(member_casts[id(e)]), name=e.get("name"))
         except Exception:  # noqa: BLE001 - one member failing must not sink the benchmark
             entry = None
         if entry is not None:

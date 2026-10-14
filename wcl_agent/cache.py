@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from collections import OrderedDict
 from contextvars import ContextVar
@@ -28,8 +29,9 @@ DEFAULT_MAXSIZE = 512
 
 # feature 006: a caller-supplied scope prefix (e.g. the tenant id) folded into every cache
 # key so cached lookups never cross scopes (FR-019). The backend sets this per chat turn;
-# wcl_agent stays standalone (no DB import) — it only reads a string. Propagates into ADK's
-# sync tool worker because asyncio.to_thread copies the context.
+# wcl_agent stays standalone (no DB import) — it only reads a string. Propagates into tool
+# threads because ``threading_utils.off_loop`` (asyncio.to_thread) and ``gather_threads``
+# copy the context.
 _scope_prefix: ContextVar[str] = ContextVar("wcl_cache_scope_prefix", default="")
 
 
@@ -90,35 +92,46 @@ def ttl_for(query: str, variables: dict[str, Any] | None) -> int:
 
 
 class TTLCache:
-    """A small LRU cache with per-entry TTL and lazy expiry on read."""
+    """A small LRU cache with per-entry TTL and lazy expiry on read.
+
+    Thread-safe: tools run in worker threads concurrently (PERF-001), and the OrderedDict's
+    ``move_to_end`` / ``popitem`` / lazy ``del`` must not interleave. Deep copies happen
+    outside the lock; stored values are never mutated, so copying them unlocked is safe.
+    """
 
     def __init__(self, maxsize: int = DEFAULT_MAXSIZE, clock: Callable[[], float] = time.monotonic):
         self._data: "OrderedDict[str, tuple[Any, float]]" = OrderedDict()
         self.maxsize = maxsize
         self._clock = clock
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> Any | None:
-        item = self._data.get(key)
-        if item is None:
-            return None
-        value, expires_at = item
-        if self._clock() >= expires_at:
-            del self._data[key]  # lazy expiry
-            return None
-        self._data.move_to_end(key)
+        with self._lock:
+            item = self._data.get(key)
+            if item is None:
+                return None
+            value, expires_at = item
+            if self._clock() >= expires_at:
+                del self._data[key]  # lazy expiry
+                return None
+            self._data.move_to_end(key)
         return deepcopy(value)  # callers can't mutate the stored entry
 
     def set(self, key: str, value: Any, ttl: int) -> None:
-        self._data[key] = (deepcopy(value), self._clock() + ttl)
-        self._data.move_to_end(key)
-        while len(self._data) > self.maxsize:
-            self._data.popitem(last=False)  # evict least-recently-used
+        stored = deepcopy(value)
+        with self._lock:
+            self._data[key] = (stored, self._clock() + ttl)
+            self._data.move_to_end(key)
+            while len(self._data) > self.maxsize:
+                self._data.popitem(last=False)  # evict least-recently-used
 
     def clear(self) -> None:
-        self._data.clear()
+        with self._lock:
+            self._data.clear()
 
     def __len__(self) -> int:
-        return len(self._data)
+        with self._lock:
+            return len(self._data)
 
 
 _cache = TTLCache()

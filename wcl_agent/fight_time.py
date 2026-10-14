@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .report_tools import _report_field
+from .threading_utils import gather_threads, unwrap
 
 Interval = tuple[float, float]
 
@@ -163,8 +164,8 @@ def fetch_dead_windows(
 ) -> list[Interval]:
     """Deaths table → the player's death timestamps; one next-cast event per death.
 
-    Costs 1 call + 1 per death (all through the cached client). Raises on WCL
-    errors so the calling tool can report them.
+    Costs 1 call + 1 per death (all through the cached client); the per-death calls run
+    concurrently (PERF-002). Raises on WCL errors so the calling tool can report them.
     """
     table = _report_field(
         report_code,
@@ -182,8 +183,7 @@ def fetch_dead_windows(
             and (e.get("id") in (None, source_id))
         ]
     )
-    next_casts: list[float | None] = []
-    for death in deaths:
+    def next_cast(death: float) -> float | None:
         events = _report_field(
             report_code,
             "events(dataType: Casts, fightIDs: $fightIDs, sourceID: $sourceID, "
@@ -195,7 +195,10 @@ def fetch_dead_windows(
         data = (events or {}).get("data") or []
         first = data[0] if data and isinstance(data[0], dict) else None
         ts = first.get("timestamp") if first else None
-        next_casts.append(float(ts) if ts is not None else None)
+        return float(ts) if ts is not None else None
+
+    results = gather_threads([lambda d=d: next_cast(d) for d in deaths])
+    next_casts = [unwrap(r) for r in results]  # first failure (in death order) is raised
     return dead_windows(deaths, next_casts, fight_end)
 
 

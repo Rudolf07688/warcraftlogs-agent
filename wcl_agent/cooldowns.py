@@ -27,6 +27,7 @@ from .fight_time import (
 from .guide_meta import GuideCooldown, get_guide_meta
 from .patch import current_patch, guide_freshness
 from .provenance import Completeness, Provenance, with_envelope
+from .threading_utils import gather_threads, unwrap
 
 EXCLUDED_WINDOWS_UNKNOWN = ["target immunity outside intermissions"]
 
@@ -146,9 +147,16 @@ def get_cooldown_usage(
 
     fight_start, fight_end = float(fight.get("startTime") or 0), float(fight.get("endTime") or 0)
     fight_s = round(max(0.0, fight_end - fight_start) / 1000, 1)
+    # The casts table and the death windows are independent: fetch them together (PERF-002).
+    casts_res, dead_res = gather_threads(
+        [
+            lambda: _casts_table(report_code, fight_id),
+            lambda: fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end),
+        ]
+    )
     try:
-        entry = reduce_casts_entry(_casts_table(report_code, fight_id), source_id=resolved.source_id)
-        dead = fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end)
+        entry = reduce_casts_entry(unwrap(casts_res), source_id=resolved.source_id)
+        dead = unwrap(dead_res)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     inter = intermission_windows(

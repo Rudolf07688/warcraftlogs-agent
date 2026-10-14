@@ -10,15 +10,21 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from typing import Any
 
 import requests
 
-from .cache import cache_key, get_cache, is_rate_limit, ttl_for
+from .cache import _env_int, cache_key, get_cache, is_rate_limit, ttl_for
 
 TOKEN_URL = "https://www.warcraftlogs.com/oauth/token"
 GRAPHQL_URL = "https://www.warcraftlogs.com/api/v2/client"
+
+# PERF-001/002: tools now run in threads and fan out inside a tool, so cap how many WCL
+# requests are in flight at once across the whole process (one cap for both sources).
+DEFAULT_MAX_CONCURRENCY = 6
+_inflight = threading.BoundedSemaphore(max(1, _env_int("WCL_MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY)))
 
 
 @dataclass
@@ -28,6 +34,7 @@ class WCLClient:
     client_id: str
     client_secret: str
     access_token: str | None = None
+    _auth_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def authenticate(self) -> str:
         resp = requests.post(
@@ -54,13 +61,16 @@ class WCLClient:
                 return hit
 
         if not self.access_token:
-            self.authenticate()
-        resp = requests.post(
-            GRAPHQL_URL,
-            json={"query": query, "variables": variables},
-            headers={"Authorization": f"Bearer {self.access_token}"},
-            timeout=60,
-        )
+            with self._auth_lock:  # concurrent first calls fetch one token
+                if not self.access_token:
+                    self.authenticate()
+        with _inflight:
+            resp = requests.post(
+                GRAPHQL_URL,
+                json={"query": query, "variables": variables},
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                timeout=60,
+            )
         resp.raise_for_status()
         payload = resp.json()
         if "errors" in payload:
@@ -71,6 +81,7 @@ class WCLClient:
 
 
 _client: WCLClient | None = None
+_client_lock = threading.Lock()
 
 
 def get_client() -> WCLClient:
@@ -80,14 +91,16 @@ def get_client() -> WCLClient:
     """
     global _client
     if _client is None:
-        client_id = os.getenv("WCL_CLIENT_ID")
-        client_secret = os.getenv("WCL_CLIENT_SECRET")
-        if not client_id or not client_secret:
-            raise RuntimeError(
-                "WCL_CLIENT_ID and WCL_CLIENT_SECRET must be set "
-                "(create an API client at https://www.warcraftlogs.com/api/clients/)."
-            )
-        _client = WCLClient(client_id, client_secret)
+        with _client_lock:  # tools call this from several threads at once
+            if _client is None:
+                client_id = os.getenv("WCL_CLIENT_ID")
+                client_secret = os.getenv("WCL_CLIENT_SECRET")
+                if not client_id or not client_secret:
+                    raise RuntimeError(
+                        "WCL_CLIENT_ID and WCL_CLIENT_SECRET must be set "
+                        "(create an API client at https://www.warcraftlogs.com/api/clients/)."
+                    )
+                _client = WCLClient(client_id, client_secret)
     return _client
 
 
