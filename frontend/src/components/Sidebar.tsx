@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { Conversation, Raid } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Button } from "./ui/button";
@@ -42,7 +42,7 @@ function bossSummary(r: Raid): string {
   return names.length > 3 ? `${shown} +${names.length - 3}` : shown;
 }
 
-export function Sidebar({
+function SidebarImpl({
   conversations,
   raids,
   activeId,
@@ -154,3 +154,6 @@ export function Sidebar({
     </aside>
   );
 }
+
+// PERF-010: skip re-rendering while a reply streams (its props don't change per token).
+export const Sidebar = memo(SidebarImpl);

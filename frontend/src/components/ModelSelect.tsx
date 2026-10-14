@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StatusBadge } from "./StatusBadge";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 
@@ -9,7 +10,7 @@ interface Props {
   degraded?: boolean;
 }
 
-export function ModelSelect({ models, value, onChange, disabled, degraded }: Props) {
+function ModelSelectImpl({ models, value, onChange, disabled, degraded }: Props) {
   return (
     <span className="ml-auto inline-flex items-center gap-1.5">
       <NativeSelect
@@ -37,3 +38,6 @@ export function ModelSelect({ models, value, onChange, disabled, degraded }: Pro
     </span>
   );
 }
+
+// PERF-010: skip re-rendering while a reply streams (its props don't change per token).
+export const ModelSelect = memo(ModelSelectImpl);

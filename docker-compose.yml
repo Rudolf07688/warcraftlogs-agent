@@ -46,6 +46,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # Local development: Vite dev server with hot reload. For a production-like build,
+      # use `target: prod` (nginx on port 80) — see README.
+      target: dev
     environment:
       VITE_BACKEND_URL: http://backend:8000
     depends_on:

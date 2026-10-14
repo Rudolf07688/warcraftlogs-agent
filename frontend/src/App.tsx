@@ -18,6 +18,7 @@ import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
+import { streamStore } from "./lib/streamStore";
 import { Button } from "./components/ui/button";
 import { THINKING_DEFAULT, retryLabel, toolLabel } from "./toolLabels";
 import type {
@@ -42,8 +43,9 @@ export default function App() {
   const { identity, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [streaming, setStreaming] = useState(false);
-  const [streamText, setStreamText] = useState("");
+  const [streaming, setStreamingState] = useState(false);
+  // PERF-010: the streaming text lives in `streamStore`, not here, so a token never
+  // re-renders the app; only the live message subscribes to it.
   const [status, setStatus] = useState(THINKING_DEFAULT);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +66,13 @@ export default function App() {
   const activeEncountersRef = useRef<Encounter[]>([]); // bosses shown by the live picker
   const selectedBossesRef = useRef<number[]>([]);
   const greetingReqId = useRef(0); // invalidates a late greeting if a turn/chat starts first
+  // Mirrors `streaming` synchronously, so the stable callbacks below can read it.
+  const streamingRef = useRef(false);
+
+  const setStreaming = useCallback((value: boolean) => {
+    streamingRef.current = value;
+    setStreamingState(value);
+  }, []);
 
   // Keep refs in sync for use inside imperative handlers.
   useEffect(() => {
@@ -159,7 +168,7 @@ export default function App() {
           break;
         case "token":
           streamRef.current += f.text;
-          setStreamText(streamRef.current);
+          streamStore.set(streamRef.current);
           break;
         case "suggestions": {
           // US1: arrives just after `done` (PERF-005), so the composer is already free;
@@ -195,7 +204,7 @@ export default function App() {
             },
           ]);
           setStreaming(false);
-          setStreamText("");
+          streamStore.set("");
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
@@ -210,7 +219,7 @@ export default function App() {
         case "error":
           setError(f.message);
           setStreaming(false);
-          setStreamText("");
+          streamStore.set("");
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
@@ -220,7 +229,7 @@ export default function App() {
           break;
       }
     },
-    [refreshConversations, refreshRaids, setCards],
+    [refreshConversations, refreshRaids, setCards, setStreaming],
   );
 
   // Keep a ref of the selected model so imperative sends never read a stale value.
@@ -274,7 +283,9 @@ export default function App() {
     return () => socket.close();
   }, [handleFrame, refreshConversations, refreshRaids]);
 
-  async function selectConversation(id: string) {
+  // PERF-010: the handlers below are stable (useCallback + refs), so the memoized
+  // Sidebar, Composer and MessageList don't re-render when App does.
+  const selectConversation = useCallback(async (id: string) => {
     greetingReqId.current++; // a late greeting must not land in another chat
     const detail = await getConversation(id);
     activeIdRef.current = id;
@@ -284,11 +295,11 @@ export default function App() {
     setError(null);
     setSelectedBosses([]);
     activeEncountersRef.current = [];
-  }
+  }, []);
 
   // US5: open a clean chat and (best-effort) inject a warm Barnaby greeting, unless
   // the user starts typing/sends or switches chats first (then a late greeting is ignored).
-  function newChat() {
+  const newChat = useCallback(() => {
     activeIdRef.current = null;
     setActiveId(null);
     setMessages([]);
@@ -309,44 +320,47 @@ export default function App() {
       .catch(() => {
         /* no greeting — a clean chat is fine */
       });
-  }
+  }, [setCards]);
 
-  async function removeConversation(id: string) {
-    await deleteConversation(id);
-    if (id === activeIdRef.current) newChat();
-    await refreshConversations();
-  }
+  const removeConversation = useCallback(
+    async (id: string) => {
+      await deleteConversation(id);
+      if (id === activeIdRef.current) newChat();
+      await refreshConversations();
+    },
+    [newChat, refreshConversations],
+  );
 
-  function sendText(
-    text: string,
-    opts?: { conversationId?: string | null; model?: string },
-  ): boolean {
-    if (streaming) return false;
-    greetingReqId.current++; // a real turn started — drop any in-flight greeting
-    const useModel = opts?.model ?? modelRef.current;
-    const convId =
-      opts && "conversationId" in opts ? opts.conversationId ?? null : activeIdRef.current;
-    setError(null);
-    setMessages((m) => [...m, { role: "user", content: text }]);
-    streamRef.current = "";
-    groundedRef.current = false;
-    setCards([]);
-    pendingEncountersRef.current = [];
-    pendingArtifactsRef.current = [];
-    setStreamText("");
-    setStatus(THINKING_DEFAULT);
-    setStreaming(true);
-    const ok = socketRef.current?.send({
-      conversation_id: convId,
-      model: useModel,
-      content: text,
-    });
-    if (!ok) {
-      setStreaming(false);
-      setError("Not connected to the server. Retrying…");
-    }
-    return !!ok;
-  }
+  const sendText = useCallback(
+    (text: string, opts?: { conversationId?: string | null; model?: string }): boolean => {
+      if (streamingRef.current) return false;
+      greetingReqId.current++; // a real turn started — drop any in-flight greeting
+      const useModel = opts?.model ?? modelRef.current;
+      const convId =
+        opts && "conversationId" in opts ? opts.conversationId ?? null : activeIdRef.current;
+      setError(null);
+      setMessages((m) => [...m, { role: "user", content: text }]);
+      streamRef.current = "";
+      groundedRef.current = false;
+      setCards([]);
+      pendingEncountersRef.current = [];
+      pendingArtifactsRef.current = [];
+      streamStore.set("");
+      setStatus(THINKING_DEFAULT);
+      setStreaming(true);
+      const ok = socketRef.current?.send({
+        conversation_id: convId,
+        model: useModel,
+        content: text,
+      });
+      if (!ok) {
+        setStreaming(false);
+        setError("Not connected to the server. Retrying…");
+      }
+      return !!ok;
+    },
+    [setCards, setStreaming],
+  );
 
   // US4: fold the ticked bosses into the next message text (visible), then clear the
   // selection so it never reapplies to a later turn (FR-020).
@@ -358,34 +372,37 @@ export default function App() {
     return names.length ? `${text}\n\n(Focus on: ${names.join(", ")})` : text;
   }
 
-  function send(text: string) {
-    const ok = sendText(composeWithFocus(text));
-    if (ok) setSelectedBosses([]);
-  }
+  const send = useCallback(
+    (text: string) => {
+      const ok = sendText(composeWithFocus(text));
+      if (ok) setSelectedBosses([]);
+    },
+    [sendText],
+  );
 
-  async function handleDownloadPdf() {
-    if (!activeId) return;
+  const handleDownloadPdf = useCallback(async () => {
+    if (!activeIdRef.current) return;
     try {
-      await downloadReport(activeId);
+      await downloadReport(activeIdRef.current);
     } catch {
       setError("Could not generate the PDF report.");
     }
-  }
+  }, []);
 
   // US5: export a single agent reply (its question + its charts) as a PDF.
-  async function handleDownloadMessage(messageId: string) {
+  const handleDownloadMessage = useCallback(async (messageId: string) => {
     if (!activeIdRef.current) return;
     try {
       await downloadMessageReport(activeIdRef.current, messageId);
     } catch {
       setError("Could not generate the per-message PDF report.");
     }
-  }
+  }, []);
 
   // One-click raid investigation (US1): the server creates an empty conversation
   // and owns the kickoff wording; we send it as a normal first turn.
-  async function handleInvestigateRaid(reportCode: string) {
-    if (streaming) return;
+  const handleInvestigateRaid = useCallback(async (reportCode: string) => {
+    if (streamingRef.current) return;
     setError(null);
     try {
       const resp = await investigateRaid(reportCode, modelRef.current || undefined);
@@ -401,11 +418,13 @@ export default function App() {
     } catch {
       setError("Could not start the investigation. Is the backend up?");
     }
-  }
+  }, [sendText]);
+
+  const openProfile = useCallback(() => navigate("/profile"), [navigate]);
 
   return (
     <div className="app">
-      <Ambient />
+      <Ambient paused={streaming} />
       <Sidebar
         conversations={conversations}
         raids={raids}
@@ -414,7 +433,7 @@ export default function App() {
         onNew={newChat}
         onDelete={removeConversation}
         onInvestigateRaid={handleInvestigateRaid}
-        onOpenProfile={() => navigate("/profile")}
+        onOpenProfile={openProfile}
       />
       <div
         className="resizer"
@@ -460,7 +479,6 @@ export default function App() {
         </header>
         <MessageList
           messages={messages}
-          streamingText={streamText}
           streaming={streaming}
           status={status}
           error={error}

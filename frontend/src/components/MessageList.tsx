@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { Message, SpellCardState } from "../types";
 import { StickToBottom } from "use-stick-to-bottom";
 import { FollowUps } from "./FollowUps";
@@ -6,10 +6,10 @@ import { StreamMarkdown } from "./StreamMarkdown";
 import { SpellCard } from "./SpellCard";
 import { EncounterPicker } from "./EncounterPicker";
 import { PlotlyArtifact } from "./PlotlyArtifact";
+import { useStreamText } from "../lib/streamStore";
 
 interface Props {
   messages: Message[];
-  streamingText: string;
   streaming: boolean;
   status: string;
   error: string | null;
@@ -58,9 +58,37 @@ function Spellbook({ cards, instant }: { cards: SpellCardState[]; instant?: bool
   );
 }
 
-export function MessageList({
+// PERF-010: the in-flight reply. It is the only component that subscribes to the token
+// stream, so a token re-renders this message alone, not the list or the app.
+function LiveMessage({ status, streamCards }: { status: string; streamCards: SpellCardState[] }) {
+  const streamingText = useStreamText();
+  return (
+    <div className="message agent arcane-border">
+      <div className="message-role">Barnaby</div>
+      {/* US6: live spellcasting cards for the in-flight turn. */}
+      <Spellbook cards={streamCards} />
+      {streamingText ? (
+        <StreamMarkdown content={streamingText} streaming />
+      ) : (
+        streamCards.length === 0 && (
+          <div className="thinking" aria-label={status}>
+            <span key={status} className="thinking-text">
+              {status}
+            </span>
+            <span className="thinking-dots">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+function MessageListImpl({
   messages,
-  streamingText,
   streaming,
   status,
   error,
@@ -148,29 +176,7 @@ export function MessageList({
               );
             })}
 
-            {streaming && (
-              <div className="message agent arcane-border">
-                <div className="message-role">Barnaby</div>
-                {/* US6: live spellcasting cards for the in-flight turn. */}
-                <Spellbook cards={streamCards} />
-                {streamingText ? (
-                  <StreamMarkdown content={streamingText} streaming />
-                ) : (
-                  streamCards.length === 0 && (
-                    <div className="thinking" aria-label={status}>
-                      <span key={status} className="thinking-text">
-                        {status}
-                      </span>
-                      <span className="thinking-dots">
-                        <i />
-                        <i />
-                        <i />
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
+            {streaming && <LiveMessage status={status} streamCards={streamCards} />}
 
             {error && <div className="message error">⚠️ {error}</div>}
           </StickToBottom.Content>
@@ -189,3 +195,7 @@ export function MessageList({
     </StickToBottom>
   );
 }
+
+// Re-renders only when its props change: new messages, turn start/end, tool cards or
+// status, never per token (PERF-010).
+export const MessageList = memo(MessageListImpl);

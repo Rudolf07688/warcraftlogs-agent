@@ -251,7 +251,42 @@ Tuning (env / `.env`; runners are cached per model, so restart the backend after
 | `WCL_TURN_ROUND_CAP` | `6` | lookup rounds before the wrap-up instruction |
 
 Every turn logs one line you can grep to verify the effect, e.g.
-`turn stats model=gemini-3.6-flash requests=4 rounds=3 retries=1 waited_s=4.3 outcome=answered`.
+`turn stats model=gemini-3.6-flash requests=4 rounds=3 retries=1 waited_s=4.3 outcome=answered prompt_tokens=18234 max_prompt_tokens=18234`.
+
+### Performance (QA sweep, 2026-10-14)
+
+The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours worth knowing:
+
+- **Tools run concurrently, off the event loop.** `build_agent` wraps every sync WCL tool
+  with `threading_utils.off_loop`; the heavy tools fan out their independent requests.
+- **One pooled WCL session** with (connect, read) timeouts, an in-flight request cap,
+  identical-query dedupe and a byte-bounded result cache (still per tenant, FR-019).
+- **No DB connection is held while the model streams**: each capture and the final save use
+  short transactions.
+- **`done` comes before follow-up suggestions**, so the composer unlocks as soon as the
+  answer is saved; suggestions arrive as a separate frame keyed by `message_id`.
+- **The KNOWN PLAYER CONTEXT is injected per model request** and no longer stored in the
+  ADK history.
+- **Frontend:** a token re-renders only the live message; non-chat pages, KaTeX and the
+  particle engine load as separate chunks.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WCL_MAX_CONCURRENCY` | `6` | WCL requests in flight at once, process-wide |
+| `WCL_CACHE_MAX_BYTES` | `134217728` | byte bound on the WCL result cache (128 MB) |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `10` / `20` / `10` | DB connection pool (shared with the ADK session store) |
+| `WCL_GUIDE_MAX_CONCURRENCY` | `2` | background guide / guild-summary generations at once |
+
+**Production frontend.** `docker compose` runs the Vite dev server (`target: dev`, hot
+reload). For a production build, build the `prod` target, which serves the minified bundle
+with nginx and proxies `/api` and `/ws` to the `backend` service (`frontend/nginx.conf`):
+
+```bash
+docker build --target prod -t wcl-frontend frontend/
+```
+
+Or set `target: prod` and `ports: ["8080:80"]` on the `frontend` service in
+`docker-compose.yml`.
 
 ## Quick checks
 

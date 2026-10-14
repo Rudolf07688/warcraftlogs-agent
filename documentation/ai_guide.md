@@ -510,3 +510,33 @@ Implemented in `specs/012-multi-character-profile/`. Summary for future agents:
   - when none appear, say so.
 - **UI**: `CharactersTab.tsx` renders "Your characters" and "Friends" with one `CharacterList`.
   The Add button is disabled at `own_limit`, and the 409 codes map to friendly messages.
+
+## 17. Performance fixes (QA sweep 2026-10-14)
+
+Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future agents must know:
+
+- **Tools run in threads.** `build_agent` wraps `TOOLS` with `threading_utils.off_loop`
+  (ADK runs sync tools inline on the loop in SSE mode). `TOOLS` itself stays sync for direct
+  callers. Use `gather_threads` for fan-out inside a tool: ordered results, per-item errors,
+  contextvars copied (the tenant cache scope must reach workers).
+- **WCL client** (`wcl_client.py`): pooled `requests.Session`, `WCL_MAX_CONCURRENCY` cap,
+  single-flight per cache key. The cache (`cache.py`) is locked and bounded by entries and
+  bytes. Tests patch `requests.Session.post`, not `requests.post`.
+- **Chat turn** (`api/ws.py`): the setup transaction closes before streaming. Captures,
+  partial replies and the final save open their own `tenant_scope`. Never hold a session
+  across `stream_response`. `DoneFrame` precedes `SuggestionsFrame(message_id=…)`.
+- **Preamble**: it rides on `TurnStats.preamble` and `model_retry.inject_preamble` adds it to
+  each `LlmRequest` (never stored in ADK history). The turn stats line logs
+  `prompt_tokens` / `max_prompt_tokens`.
+- **Guides/boot**: `_generate_text` is capped by `WCL_GUIDE_MAX_CONCURRENCY`; roster and
+  profile reads use `with_text=False`; model probes run concurrently with a 10 s timeout;
+  the greeting session id is per process.
+- **Frontend**: streaming text lives in `lib/streamStore.ts` (only `LiveMessage` subscribes);
+  `Sidebar`, `Composer`, `ModelSelect`, `MessageList` and `Ambient` are memoized with stable
+  callbacks; `useSmoothText` commits at ~30 Hz; KaTeX (`lib/mathPlugin.ts`), the particle
+  engine and non-chat pages are lazy chunks. `frontend/Dockerfile` has `dev` and `prod`
+  (nginx) targets.
+- **Deliberately not changed**: per-tenant WCL cache scoping (FR-019), the raw `rankings`
+  blob in `get_report_rankings` (feature 009 contract), and old tool results in the history
+  (feature 011 relies on evidence reuse).
+

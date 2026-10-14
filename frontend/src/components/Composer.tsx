@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 
@@ -7,7 +7,7 @@ interface Props {
   onSend: (text: string) => void;
 }
 
-export function Composer({ disabled, onSend }: Props) {
+function ComposerImpl({ disabled, onSend }: Props) {
   const [text, setText] = useState("");
 
   function submit() {
@@ -39,3 +39,6 @@ export function Composer({ disabled, onSend }: Props) {
     </div>
   );
 }
+
+// PERF-010: skip re-rendering while a reply streams (its props don't change per token).
+export const Composer = memo(ComposerImpl);
