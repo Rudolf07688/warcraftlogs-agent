@@ -32,8 +32,8 @@ DEFAULT_MAXBYTES = 128 * 1024 * 1024
 # feature 006: a caller-supplied scope prefix (e.g. the tenant id) folded into every cache
 # key so cached lookups never cross scopes (FR-019). The backend sets this per chat turn;
 # wcl_agent stays standalone (no DB import) — it only reads a string. Propagates into tool
-# threads because ``threading_utils.off_loop`` (asyncio.to_thread) and ``gather_threads``
-# copy the context.
+# threads because ``threading_utils.run_in_tool_pool`` (behind ``off_loop``) and
+# ``gather_threads`` copy the context.
 _scope_prefix: ContextVar[str] = ContextVar("wcl_cache_scope_prefix", default="")
 
 

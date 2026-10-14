@@ -10,13 +10,13 @@ tool never needs the extra call (PERF-016).
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.report_tools import get_report_metadata
+from wcl_agent.threading_utils import run_in_tool_pool
 
 from ..db import repository as repo
 from ..db.models import TrackedRaid
@@ -138,7 +138,7 @@ async def capture_raid(
         meta = _metadata_from_fights(result or {})
     else:
         try:
-            meta = await asyncio.to_thread(get_report_metadata, report_code)
+            meta = await run_in_tool_pool(get_report_metadata, report_code)
         except Exception:  # noqa: BLE001 - metadata is best-effort; fall back to the code
             meta = {"status": "error"}
     label, zone, guild, started = _build_label(report_code, meta)

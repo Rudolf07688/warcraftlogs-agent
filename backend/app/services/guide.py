@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from wcl_agent.constants import CLASS_SPECS
 from wcl_agent.guide_meta import GuideCooldown, GuideMeta, set_guide_meta
 from wcl_agent.patch import guide_freshness
+from wcl_agent.threading_utils import run_in_tool_pool
 
 from ..config import settings
 from ..db import repository as repo
@@ -115,7 +116,7 @@ async def resolve_active_spec(
 ) -> tuple[str | None, str | None] | None:
     """Async wrapper — the WCL client is blocking, so run it off the event loop."""
     try:
-        return await asyncio.to_thread(_resolve_active_spec_sync, name, server, region)
+        return await run_in_tool_pool(_resolve_active_spec_sync, name, server, region)
     except Exception:  # noqa: BLE001 - resolution is best-effort
         logger.exception("Active-spec resolution failed for %s-%s (%s)", name, server, region)
         return None

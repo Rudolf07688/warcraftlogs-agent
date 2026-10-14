@@ -516,7 +516,9 @@ Implemented in `specs/012-multi-character-profile/`. Summary for future agents:
 Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future agents must know:
 
 - **Tools run in threads.** `build_agent` wraps `TOOLS` with `threading_utils.off_loop`
-  (ADK runs sync tools inline on the loop in SSE mode). `TOOLS` itself stays sync for direct
+  (ADK runs sync tools inline on the loop in SSE mode). They run on a dedicated pool
+  (`WCL_TOOL_THREADS`); call other WCL functions from async code with `run_in_tool_pool`,
+  never `asyncio.to_thread` (PERF-101). `TOOLS` itself stays sync for direct
   callers. Use `gather_threads` for fan-out inside a tool: ordered results, per-item errors,
   contextvars copied (the tenant cache scope must reach workers).
 - **WCL client** (`wcl_client.py`): pooled `requests.Session`, `WCL_MAX_CONCURRENCY` cap,

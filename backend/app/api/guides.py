@@ -8,13 +8,12 @@ but they still require authentication, and mutations require CSRF and are rate-l
 
 from __future__ import annotations
 
-import asyncio
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.constants import CLASS_SPECS
 from wcl_agent.patch import current_patch, guide_freshness
+from wcl_agent.threading_utils import run_in_tool_pool
 
 from ..auth.dependencies import require_csrf, require_session
 from ..auth.rate_limit import guide_limiter
@@ -43,7 +42,7 @@ def _validate_spec(class_name: str, spec: str) -> None:
 
 async def _live_patch() -> str | None:
     """The current raid patch (blocking WCL lookup, cached by the client) off the loop."""
-    return await asyncio.to_thread(current_patch)
+    return await run_in_tool_pool(current_patch)  # WCL call: tool pool (PERF-101)
 
 
 async def _guide_out(class_name: str, spec: str, guide: SpecGuide | None) -> GuideOut:

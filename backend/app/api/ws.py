@@ -46,6 +46,7 @@ from ..services.encounters import encounters_from_tool
 from ..services.profile_context import build_preamble, guide_heading_label
 from ..services.tool_summary import summarize_tool_result
 from wcl_agent.patch import current_patch, guide_freshness
+from wcl_agent.threading_utils import run_in_tool_pool
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -325,7 +326,7 @@ async def _build_turn_preamble(session, tenant_id) -> str:
     # (current patch via the cached WCL client, off the loop; None ⇒ unknown).
     guide_labels: dict[tuple[str, str], str] = {}
     if ready_guides:
-        live_patch = await asyncio.to_thread(current_patch)
+        live_patch = await run_in_tool_pool(current_patch)
         guide_labels = {
             key: guide_heading_label(g.game_patch, guide_freshness(g.game_patch, live_patch))
             for key, g in ready_guides.items()

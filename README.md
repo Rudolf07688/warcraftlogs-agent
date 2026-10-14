@@ -273,6 +273,7 @@ The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours wor
 | Variable | Default | Meaning |
 |---|---|---|
 | `WCL_MAX_CONCURRENCY` | `6` | WCL requests in flight at once, process-wide |
+| `WCL_TOOL_THREADS` | `32` | dedicated worker threads for WCL tool calls (not asyncio's default executor) |
 | `WCL_CACHE_MAX_BYTES` | `134217728` | byte bound on the WCL result cache (128 MB) |
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `10` / `20` / `10` | DB connection pool (shared with the ADK session store) |
 | `WCL_GUIDE_MAX_CONCURRENCY` | `2` | background guide / guild-summary generations at once |

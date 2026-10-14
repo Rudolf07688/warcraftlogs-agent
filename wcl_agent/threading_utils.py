@@ -5,6 +5,11 @@ calls sync tools inline on the event loop in SSE mode: its thread pool is live-m
 Without the wrapper, "parallel" tool calls would run one after another and block every
 other request while waiting on WCL.
 
+Tool calls run on a dedicated pool (``WCL_TOOL_THREADS``, default 32), not asyncio's shared
+default executor: a slow WCL call must not hold a worker that short jobs on the chat path
+(scratch writes, PDF rendering, DNS lookups) are waiting for (PERF-101). Other WCL calls
+made from async code use ``run_in_tool_pool`` for the same reason.
+
 ``gather_threads`` runs independent WCL requests inside one tool concurrently. Total HTTP
 concurrency is capped separately by the client (``WCL_MAX_CONCURRENCY``).
 
@@ -17,11 +22,39 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import functools
+import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, TypeVar
 
+from .cache import _env_int
+
 T = TypeVar("T")
+
+# Comfortably above WCL_MAX_CONCURRENCY: workers waiting on the HTTP cap or on another
+# thread's identical query (single-flight) must not starve each other.
+DEFAULT_TOOL_THREADS = 32
+_tool_pool: ThreadPoolExecutor | None = None
+_tool_pool_lock = threading.Lock()
+
+
+def _get_tool_pool() -> ThreadPoolExecutor:
+    global _tool_pool
+    if _tool_pool is None:
+        with _tool_pool_lock:
+            if _tool_pool is None:
+                _tool_pool = ThreadPoolExecutor(
+                    max_workers=max(1, _env_int("WCL_TOOL_THREADS", DEFAULT_TOOL_THREADS)),
+                    thread_name_prefix="wcl-tool",
+                )
+    return _tool_pool
+
+
+async def run_in_tool_pool(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Run ``fn`` on the dedicated WCL thread pool with the caller's contextvars."""
+    loop = asyncio.get_running_loop()
+    call = functools.partial(fn, *args, **kwargs)
+    return await loop.run_in_executor(_get_tool_pool(), contextvars.copy_context().run, call)
 
 
 def off_loop(fn: Callable[..., T]) -> Callable[..., Awaitable[T]]:
@@ -29,12 +62,12 @@ def off_loop(fn: Callable[..., T]) -> Callable[..., Awaitable[T]]:
 
     ``functools.wraps`` keeps ``__name__``, ``__doc__``, annotations and ``__wrapped__``, so
     ADK builds the same tool declaration (and finds ``ToolContext``) as for ``fn`` itself.
-    ``asyncio.to_thread`` copies the current contextvars into the thread.
+    The call runs on the dedicated tool pool with the current contextvars copied in.
     """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> T:
-        return await asyncio.to_thread(fn, *args, **kwargs)
+        return await run_in_tool_pool(fn, *args, **kwargs)
 
     return wrapper
 

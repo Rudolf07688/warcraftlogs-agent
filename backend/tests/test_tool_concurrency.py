@@ -200,3 +200,34 @@ def test_compare_player_to_cohort_fans_out_and_keeps_tenant_scope(monkeypatch):
     assert len(fake.calls) >= 10
     assert elapsed < serial * 0.6, (elapsed, serial)
     assert scopes and all(s == "tenant-b" for s in scopes)  # no cross-tenant cache keys
+
+
+# --- PERF-101: tools have their own thread pool -----------------------------------
+
+
+async def test_tools_do_not_queue_behind_a_busy_default_executor():
+    from concurrent.futures import ThreadPoolExecutor
+
+    loop = asyncio.get_running_loop()
+    busy = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(busy)
+    try:
+        blocker = asyncio.to_thread(time.sleep, 1.0)  # occupies the only default worker
+        blocker_task = asyncio.ensure_future(blocker)
+        await asyncio.sleep(0.05)
+
+        def tool() -> tuple[str, str]:
+            return threading.current_thread().name, get_scope_prefix()
+
+        set_scope_prefix("tenant-c")
+        start = time.monotonic()
+        name, scope = await off_loop(tool)()
+        elapsed = time.monotonic() - start
+        set_scope_prefix("")
+
+        assert elapsed < 0.3  # not stuck behind the 1 s default-executor job
+        assert name.startswith("wcl-tool")
+        assert scope == "tenant-c"
+        await blocker_task
+    finally:
+        busy.shutdown(wait=False)
