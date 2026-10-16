@@ -82,3 +82,8 @@
   - Make tabs instead of dropdown
   - Show previously pulled data from that raid (participents, duration, my character's parse etc)
   - Add button to start a new chat with the current "analyze this raid" message
+- Agent skills for how to assess WoW numbers in terms of performance
+- Select which character this chat is about ("filter") with checkboxes on every chat
+  - Default is no filter - all characters - more general overview unless asked specifically in chat
+    - e.g. "How did my mage do on ..."
+      - Bonus premium goal: the ai is able to change the UI filter button (as if the user clicked the filters in the UI) when a user asks a targeted question.

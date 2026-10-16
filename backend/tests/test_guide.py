@@ -12,7 +12,7 @@ import uuid
 
 from backend.app.db import session as db_session
 from backend.app.db import repository as repo
-from backend.app.services import guide
+from backend.app.services import background, guide
 
 # Feature 009: generation returns GeneratedText; a valid trailing guide-meta block is
 # appended so the stored markdown equals the given text (block stripped, no repair turn).
@@ -30,7 +30,7 @@ def _gen(text: str) -> guide.GeneratedText:
 async def _drain_bg() -> None:
     """Await any background generation tasks spawned by ensure_spec_guide."""
     for _ in range(100):
-        tasks = [t for t in list(guide._bg_tasks) if not t.done()]
+        tasks = [t for t in list(background._bg_tasks) if not t.done()]
         if not tasks:
             return
         await asyncio.gather(*tasks)
@@ -145,8 +145,8 @@ async def test_schedule_is_idempotent_while_in_flight(monkeypatch, tenant_id):
     await asyncio.sleep(0.01)
     try:
         assert calls["n"] == 1
-        assert cid in guide._inflight
+        assert cid in background._inflight
     finally:
         release.set()
         await asyncio.sleep(0.01)
-    assert cid not in guide._inflight
+    assert cid not in background._inflight

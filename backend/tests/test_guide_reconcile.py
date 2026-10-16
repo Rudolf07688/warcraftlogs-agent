@@ -11,12 +11,12 @@ import asyncio
 
 from backend.app.db import repository as repo
 from backend.app.db import session as db_session
-from backend.app.services import guide
+from backend.app.services import background, guide
 
 
 async def _drain_bg() -> None:
     for _ in range(100):
-        tasks = [t for t in list(guide._bg_tasks) if not t.done()]
+        tasks = [t for t in list(background._bg_tasks) if not t.done()]
         if not tasks:
             return
         await asyncio.gather(*tasks)

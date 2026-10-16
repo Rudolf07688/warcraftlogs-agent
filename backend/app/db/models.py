@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -558,3 +559,95 @@ class Artifact(Base):
     title: Mapped[str] = mapped_column(String(200))
     spec_json: Mapped[dict] = mapped_column(_JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RecentRaid(Base):
+    """A Warcraft Logs report at least one own character was logged in (feature 013).
+
+    Stored for good: once ``is_final`` (the report ended over 2 h before the detail fetch)
+    its details are never fetched again. Non-raid reports (``is_raid=False``) are kept too,
+    so they are not re-examined, but the welcome list leaves them out.
+    """
+
+    __tablename__ = "recent_raids"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "report_code", name="uq_recent_raid_tenant_code"),
+        Index("ix_recent_raids_tenant_started", "tenant_id", "started_at"),
+        CheckConstraint(
+            "difficulty IS NULL OR difficulty IN (1, 3, 4, 5)", name="ck_recent_raid_difficulty"
+        ),
+        CheckConstraint(
+            "bosses_killed IS NULL OR bosses_pulled IS NULL OR bosses_killed <= bosses_pulled",
+            name="ck_recent_raid_kills",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    report_code: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(200))
+    zone_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    zone_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    guild_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # WCL difficulty ids: 1 LFR, 3 Normal, 4 Heroic, 5 Mythic. NULL until details arrive.
+    difficulty: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    bosses_pulled: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    bosses_killed: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    is_raid: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
+    is_final: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
+    details_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class RecentRaidCharacter(Base):
+    """Links a recent raid to an own character that took part (feature 013).
+
+    Deleting the character cascades the link away, so the welcome list stops showing raids
+    no remaining own character attended (FR-016).
+    """
+
+    __tablename__ = "recent_raid_characters"
+    __table_args__ = (
+        Index("ix_recent_raid_characters_tenant_char", "tenant_id", "character_id"),
+    )
+
+    raid_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("recent_raids.id", ondelete="CASCADE"), primary_key=True
+    )
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_characters.id", ondelete="CASCADE"), primary_key=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+
+
+class RecentRaidRefresh(Base):
+    """Per-tenant recent-raids refresh state and the cross-instance claim (feature 013, R4).
+
+    ``status`` is ``idle`` | ``running`` | ``succeeded`` | ``failed``. Each claim sets a new
+    ``run_id``; only the run holding it may record an outcome.
+    """
+
+    __tablename__ = "recent_raid_refresh"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String(10), server_default="idle", default="idle")
+    run_id: Mapped[uuid.UUID | None] = mapped_column(_UUID, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    character_set: Mapped[str | None] = mapped_column(String(64), nullable=True)

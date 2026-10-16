@@ -1,8 +1,11 @@
 """In-process TTL + LRU cache for Warcraft Logs queries (feature 005 / US4).
 
-Sits behind the single ``WCLClient.query`` chokepoint, so every tool (and
+Sits behind the single ``AsyncWCLClient.query`` chokepoint, so every tool (and
 ``run_wcl_graphql``) is cached transparently — one integration point, no per-tool
 changes (DRY). A cache hit performs no network I/O and spends zero WCL API points.
+
+Values are the raw GraphQL response ``bytes`` (feature 013, PERF-105). Bytes are
+immutable, so nothing is copied on get or set; the client parses a fresh object per hit.
 
 Two freshness tiers (see contracts/caching.md):
 * report-scoped queries are effectively immutable → long TTL (~24h),
@@ -22,7 +25,6 @@ import threading
 import time
 from collections import OrderedDict
 from contextvars import ContextVar
-from copy import deepcopy
 from typing import Any, Callable
 
 DEFAULT_MAXSIZE = 512
@@ -100,9 +102,9 @@ def ttl_for(query: str, variables: dict[str, Any] | None) -> int:
 class TTLCache:
     """A small LRU cache with per-entry TTL, lazy expiry on read, and an entry and byte bound.
 
-    Thread-safe: tools run in worker threads concurrently (PERF-001), and the OrderedDict's
-    ``move_to_end`` / ``popitem`` / lazy ``del`` must not interleave. Deep copies happen
-    outside the lock; stored values are never mutated, so copying them unlocked is safe.
+    Values are stored as given; the WCL client stores immutable ``bytes`` and parses them
+    on read, so no copy is needed. Thread-safe: the ``OrderedDict``'s ``move_to_end`` /
+    ``popitem`` / lazy ``del`` must not interleave with callers on other threads.
     """
 
     def __init__(
@@ -130,16 +132,15 @@ class TTLCache:
                 self._bytes -= size
                 return None
             self._data.move_to_end(key)
-        return deepcopy(value)  # callers can't mutate the stored entry
+            return value
 
     def set(self, key: str, value: Any, ttl: int, size: int = 0) -> None:
         """Store ``value``; ``size`` is its approximate size in bytes (0 = unknown)."""
-        stored = deepcopy(value)
         with self._lock:
             old = self._data.pop(key, None)
             if old is not None:
                 self._bytes -= old[2]
-            self._data[key] = (stored, self._clock() + ttl, size)
+            self._data[key] = (value, self._clock() + ttl, size)
             self._bytes += size
             # Evict least-recently-used entries until both bounds hold. An entry larger than
             # the byte bound on its own evicts itself, so it is simply not cached.

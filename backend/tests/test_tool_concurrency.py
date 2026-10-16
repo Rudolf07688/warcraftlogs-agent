@@ -12,7 +12,6 @@ from google.adk.tools.function_tool import FunctionTool
 
 from backend.tests.test_benchmark import FIGHT, PLAYER_CODE, make_responder
 from backend.tests.wcl_fakes import install
-from wcl_agent import wcl_client
 from wcl_agent.agent import TOOLS, build_agent
 from wcl_agent.benchmark import compare_player_to_cohort
 from wcl_agent.cache import TTLCache, get_scope_prefix, set_scope_prefix
@@ -128,7 +127,7 @@ def test_ttl_cache_survives_concurrent_access():
         try:
             for i in range(2000):
                 key = f"k{(n + i) % 20}"
-                cache.set(key, {"v": i}, ttl=60)
+                cache.set(key, f"v{i}".encode(), ttl=60)  # values are raw bytes
                 cache.get(key)
         except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
@@ -142,35 +141,8 @@ def test_ttl_cache_survives_concurrent_access():
     assert len(cache) <= 8
 
 
-def test_wcl_requests_respect_the_concurrency_cap(monkeypatch):
-    inflight = peak = 0
-    lock = threading.Lock()
-
-    class Resp:
-        content = b"{}"
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"data": {"rateLimitData": {}}}
-
-    def fake_post(_self, *_args, **_kwargs):
-        nonlocal inflight, peak
-        with lock:
-            inflight += 1
-            peak = max(peak, inflight)
-        time.sleep(0.05)
-        with lock:
-            inflight -= 1
-        return Resp()
-
-    monkeypatch.setattr(wcl_client.requests.Session, "post", fake_post)
-    monkeypatch.setattr(wcl_client, "_inflight", threading.BoundedSemaphore(2))
-    client = wcl_client.WCLClient("id", "secret", access_token="token")
-    # rateLimitData bypasses the cache, so every call reaches requests.post.
-    gather_threads([lambda: client.query("{ rateLimitData { limitPerHour } }")] * 8, max_workers=8)
-    assert peak == 2
+# The WCL concurrency cap is covered against the async client's lane limiter in
+# test_wcl_async.py (feature 013).
 
 
 # --- PERF-002: compare_player_to_cohort fans out ---------------------------------

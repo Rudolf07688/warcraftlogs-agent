@@ -216,6 +216,41 @@ class InvestigateResponse(BaseModel):
     kickoff_prompt: str
 
 
+# --- Recent raids (feature 013, contracts/rest-recent-raids.md) -------------------------
+
+
+class RecentRaidCharacterOut(BaseModel):
+    name: str
+    server: str
+    region: str
+
+
+class RecentRaidOut(BaseModel):
+    report_code: str
+    title: str
+    zone_name: str | None
+    started_at: datetime
+    # WCL difficulty ids: 1 LFR, 3 Normal, 4 Heroic, 5 Mythic.
+    difficulty: int | None
+    bosses_pulled: int | None
+    bosses_killed: int | None
+    is_final: bool
+    characters: list[RecentRaidCharacterOut]
+
+
+class RecentRaidsRefreshOut(BaseModel):
+    status: Literal["idle", "running", "succeeded", "failed"]
+    last_success_at: datetime | None
+    # Short user-safe code: wcl_unavailable | rate_limited | timeout | unknown.
+    last_error: str | None
+
+
+class RecentRaidsResponse(BaseModel):
+    has_characters: bool
+    raids: list[RecentRaidOut]  # newest first, raids only
+    refresh: RecentRaidsRefreshOut
+
+
 class GreetingResponse(BaseModel):
     """Warm Barnaby greeting for a new chat (US5). Empty string on generation failure."""
 

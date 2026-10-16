@@ -35,13 +35,9 @@ from ..db import repository as repo
 from ..db import session as db_session
 from ..schemas import GuideMetaBlock
 from ..tenancy.context import tenant_scope
+from .background import spawn
 
 logger = logging.getLogger(__name__)
-
-# Keep references to in-flight tasks so they aren't garbage-collected mid-run, and
-# a simple in-flight id set so a rapid re-lock doesn't run two tasks for one entry.
-_bg_tasks: set[asyncio.Task] = set()
-_inflight: set[uuid.UUID] = set()
 
 # Feature 009 / US5 (research R15): an explicit *authoring* task, so the agent's
 # evidence contract (which governs claims about logged play) does not starve the
@@ -268,7 +264,7 @@ async def load_guide_registry() -> int:
 # --- Shared spec-guide library (feature 008 / US2) ----------------------------
 # One guide per (class, spec) in the GLOBAL ``spec_guides`` table, shared by all users.
 # Reuses the same off-loop generation path as the per-character guide (Principle I —
-# no second generation path) and the same ``_spawn`` dedup/GC machinery, re-keyed to
+# no second generation path) and the same ``background.spawn`` dedup/GC machinery, re-keyed to
 # the ``(class, spec)`` pair. Uses a plain (non-tenant) session: the table is global.
 
 
@@ -304,7 +300,7 @@ async def ensure_spec_guide(class_name: str, spec: str, *, force: bool = False) 
         logger.exception("ensure_spec_guide bookkeeping failed for %s %s", class_name, spec)
         return
 
-    _spawn(_run_spec_guide(class_name, spec), (class_name, spec))
+    spawn(_run_spec_guide(class_name, spec), (class_name, spec))
 
 
 async def _run_spec_guide(class_name: str, spec: str) -> None:
@@ -440,34 +436,9 @@ async def run_guild_summary(guild_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
 # --- Scheduling (called from the profile router) ------------------------------
 
 
-def _spawn(coro, key: uuid.UUID) -> None:
-    """Fire-and-forget a background task with GC-safe referencing + idempotency.
-
-    No-op when there's no running loop (e.g. a sync unit test that isn't exercising
-    the lifecycle) so scheduling never raises into the request path.
-    """
-    if key in _inflight:
-        coro.close()  # discard the duplicate coroutine so it isn't left un-awaited
-        return
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        coro.close()
-        return
-    _inflight.add(key)
-    task = loop.create_task(coro)
-    _bg_tasks.add(task)
-
-    def _done(t: asyncio.Task) -> None:
-        _bg_tasks.discard(t)
-        _inflight.discard(key)
-
-    task.add_done_callback(_done)
-
-
 def schedule_character_guide(char_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
-    _spawn(run_character_guide(char_id, tenant_id), char_id)
+    spawn(run_character_guide(char_id, tenant_id), char_id)
 
 
 def schedule_guild_summary(guild_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
-    _spawn(run_guild_summary(guild_id, tenant_id), guild_id)
+    spawn(run_guild_summary(guild_id, tenant_id), guild_id)

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
+import httpx
 import pytest
 
-from wcl_agent import wcl_client
+from backend.tests.wcl_fakes import gql_response, mock_async_client
 from wcl_agent.cache import (
     cache_key,
     get_cache,
@@ -16,60 +19,43 @@ from wcl_agent.cache import (
 )
 
 
-class _FakeResp:
-    def __init__(self, payload):
-        self._payload = payload
-        self.content = b"{}"
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return self._payload
-
-
 @pytest.fixture
-def counting_post(monkeypatch):
-    """Count network calls; return a fresh payload each call so hits are detectable."""
+def counting_client():
+    """A client over a mock transport that counts GraphQL posts and returns a fresh payload
+    each call, so hits are detectable (feature 013: httpx replaces requests)."""
     calls = {"n": 0}
 
-    def fake_post(self, url, json=None, headers=None, timeout=None):
+    def handler(request):
         calls["n"] += 1
-        return _FakeResp({"data": {"value": calls["n"]}})
+        return gql_response({"data": {"value": calls["n"]}})
 
-    # PERF-003: the client posts through its pooled requests.Session.
-    monkeypatch.setattr(wcl_client.requests.Session, "post", fake_post)
     get_cache().clear()
-    return calls
+    return mock_async_client(handler), calls
 
 
-def _client() -> wcl_client.WCLClient:
-    return wcl_client.WCLClient("id", "secret", access_token="tok")
-
-
-def test_identical_query_hits_cache(counting_post):
-    c = _client()
+async def test_identical_query_hits_cache(counting_client):
+    c, calls = counting_client
     q = "query { reportData { report(code: $code) { title } } }"
-    first = c.query(q, {"code": "ABC"})
-    second = c.query(q, {"code": "ABC"})
-    assert counting_post["n"] == 1  # one network call
+    first = await c.query(q, {"code": "ABC"})
+    second = await c.query(q, {"code": "ABC"})
+    assert calls["n"] == 1  # one network call
     assert first == second  # same payload on the hit
 
 
-def test_different_variables_miss(counting_post):
-    c = _client()
+async def test_different_variables_miss(counting_client):
+    c, calls = counting_client
     q = "query { reportData { report(code: $code) { title } } }"
-    c.query(q, {"code": "ABC"})
-    c.query(q, {"code": "XYZ"})
-    assert counting_post["n"] == 2  # distinct keys → two calls
+    await c.query(q, {"code": "ABC"})
+    await c.query(q, {"code": "XYZ"})
+    assert calls["n"] == 2  # distinct keys → two calls
 
 
-def test_rate_limit_always_bypasses(counting_post):
-    c = _client()
+async def test_rate_limit_always_bypasses(counting_client):
+    c, calls = counting_client
     q = "{ rateLimitData { pointsSpentThisHour } }"
-    c.query(q)
-    c.query(q)
-    assert counting_post["n"] == 2  # never cached
+    await c.query(q)
+    await c.query(q)
+    assert calls["n"] == 2  # never cached
 
 
 def test_tier_classification():
@@ -85,14 +71,14 @@ def test_report_ttl_is_longer_than_leaderboard():
     assert report_ttl() > leaderboard_ttl()
 
 
-def test_deep_copy_isolation(counting_post):
-    c = _client()
+async def test_hits_are_isolated_copies(counting_client):
+    c, calls = counting_client
     q = "query { reportData { report(code:$code){x} } }"
-    first = c.query(q, {"code": "ABC"})
+    first = await c.query(q, {"code": "ABC"})
     first["data"]["value"] = "MUTATED"  # caller mutates the returned dict
-    second = c.query(q, {"code": "ABC"})
-    assert counting_post["n"] == 1  # still a hit
-    assert second["data"]["value"] != "MUTATED"  # stored entry uncorrupted
+    second = await c.query(q, {"code": "ABC"})
+    assert calls["n"] == 1  # still a hit
+    assert second["data"]["value"] != "MUTATED"  # stored bytes uncorrupted
 
 
 def test_cache_key_stable_and_order_independent():
@@ -121,53 +107,36 @@ def test_cache_evicts_by_bytes():
     assert cache.bytes <= 1000 and cache.get("a") == {"v": 5}
 
 
-def test_concurrent_identical_queries_fetch_once(monkeypatch):
-    import threading
-    import time
-
-    from wcl_agent.threading_utils import gather_threads
-
+async def test_concurrent_identical_queries_fetch_once():
     calls = {"n": 0}
-    lock = threading.Lock()
 
-    def slow_post(self, url, json=None, headers=None, timeout=None):
-        with lock:
-            calls["n"] += 1
-        time.sleep(0.2)
-        return _FakeResp({"data": {"value": 1}})
+    async def slow(request):
+        calls["n"] += 1
+        await asyncio.sleep(0.2)
+        return gql_response({"data": {"value": 1}})
 
-    monkeypatch.setattr(wcl_client.requests.Session, "post", slow_post)
     get_cache().clear()
-    c = _client()
+    c = mock_async_client(slow)
     q = "query { reportData { report(code: $code) { title } } }"
-    results = gather_threads([lambda: c.query(q, {"code": "SF"})] * 8, max_workers=8)
+    results = await asyncio.gather(*(c.query(q, {"code": "SF"}) for _ in range(8)))
     assert calls["n"] == 1
     assert all(r == {"data": {"value": 1}} for r in results)
 
 
-def test_waiters_fetch_themselves_when_the_leader_fails(monkeypatch):
-    import threading
-    import time
-
-    from wcl_agent.threading_utils import gather_threads
-
+async def test_a_failed_fetch_fails_its_waiters_and_is_not_cached():
     calls = {"n": 0}
-    lock = threading.Lock()
 
-    def flaky_post(self, url, json=None, headers=None, timeout=None):
-        with lock:
-            calls["n"] += 1
-            n = calls["n"]
-        time.sleep(0.1)
-        if n == 1:
-            raise RuntimeError("leader failed")
-        return _FakeResp({"data": {"value": n}})
+    async def flaky(request):
+        calls["n"] += 1
+        await asyncio.sleep(0.1)
+        if calls["n"] == 1:
+            return httpx.Response(503, content=b"down")
+        return gql_response({"data": {"value": calls["n"]}})
 
-    monkeypatch.setattr(wcl_client.requests.Session, "post", flaky_post)
     get_cache().clear()
-    c = _client()
+    c = mock_async_client(flaky)
     q = "query { reportData { report(code: $code) { title } } }"
-    results = gather_threads([lambda: c.query(q, {"code": "FL"})] * 3, max_workers=3)
-    assert sum(isinstance(r, RuntimeError) for r in results) == 1  # only the leader's call failed
-    assert all(not isinstance(r, Exception) for r in results if not isinstance(r, RuntimeError))
-    assert get_cache().get(cache_key(q, {"code": "FL"})) is not None  # a waiter filled the cache
+    results = await asyncio.gather(*(c.query(q, {"code": "FL"}) for _ in range(3)), return_exceptions=True)
+    assert calls["n"] == 1 and all(isinstance(r, httpx.HTTPStatusError) for r in results)
+    assert get_cache().get(cache_key(q, {"code": "FL"})) is None  # errors are never cached
+    assert await c.query(q, {"code": "FL"}) == {"data": {"value": 2}}  # the next call refetches

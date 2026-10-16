@@ -15,6 +15,11 @@ concurrency is capped separately by the client (``WCL_MAX_CONCURRENCY``).
 
 Both carry the caller's contextvars into the worker thread, because the per-tenant WCL cache
 scope lives in one (``cache._scope_prefix``).
+
+Feature 013 (PERF-201) moves WCL to a native async client. Until every tool is async, this
+module is a temporary bridge: ``run_in_tool_pool`` records the event loop it was called from,
+and ``run_sync`` lets sync code on a tool thread run a coroutine on that loop. The whole
+module is deleted once the tools are converted (tasks.md Phase C).
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, TypeVar
 
+from .aio import unwrap  # noqa: F401 - re-exported for existing imports
 from .cache import _env_int
 
 T = TypeVar("T")
@@ -36,6 +42,11 @@ T = TypeVar("T")
 DEFAULT_TOOL_THREADS = 32
 _tool_pool: ThreadPoolExecutor | None = None
 _tool_pool_lock = threading.Lock()
+
+# The loop that handed work to the tool pool; run_sync schedules coroutines back onto it.
+_bridge_loop: contextvars.ContextVar[asyncio.AbstractEventLoop | None] = contextvars.ContextVar(
+    "wcl_bridge_loop", default=None
+)
 
 
 def _get_tool_pool() -> ThreadPoolExecutor:
@@ -54,7 +65,40 @@ async def run_in_tool_pool(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T
     """Run ``fn`` on the dedicated WCL thread pool with the caller's contextvars."""
     loop = asyncio.get_running_loop()
     call = functools.partial(fn, *args, **kwargs)
-    return await loop.run_in_executor(_get_tool_pool(), contextvars.copy_context().run, call)
+    ctx = contextvars.copy_context()
+    ctx.run(_bridge_loop.set, loop)  # only the worker's copy sees it
+    return await loop.run_in_executor(_get_tool_pool(), ctx.run, call)
+
+
+def run_sync(
+    coro_factory: Callable[[], Awaitable[T]],
+    cleanup: Callable[[], Awaitable[None]] | None = None,
+) -> T:
+    """Run ``coro_factory()`` to completion from sync code (temporary bridge, Phase A-B).
+
+    On a tool-pool thread the coroutine runs on the event loop that dispatched the tool, so it
+    shares that loop's WCL client, single-flight and lane limiter. With no such loop (CLI,
+    sync unit tests) it runs in a fresh ``asyncio.run``; ``cleanup`` then runs on that
+    short-lived loop before it closes (to close loop-bound HTTP clients).
+    """
+    loop = _bridge_loop.get()
+    if loop is not None and not loop.is_closed():
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            raise RuntimeError("run_sync called on the event loop thread; await the coroutine")
+        return asyncio.run_coroutine_threadsafe(coro_factory(), loop).result()
+
+    async def _main() -> T:
+        try:
+            return await coro_factory()
+        finally:
+            if cleanup is not None:
+                await cleanup()
+
+    return asyncio.run(_main())
 
 
 def off_loop(fn: Callable[..., T]) -> Callable[..., Awaitable[T]]:
@@ -88,13 +132,6 @@ def gather_threads(
     with ThreadPoolExecutor(max_workers=min(max_workers, len(calls))) as pool:
         futures = [pool.submit(contextvars.copy_context().run, _capture, c) for c in calls]
         return [f.result() for f in futures]
-
-
-def unwrap(result: T | BaseException) -> T:
-    """Re-raise a result captured by ``gather_threads``, or return it unchanged."""
-    if isinstance(result, BaseException):
-        raise result
-    return result
 
 
 def _capture(call: Callable[[], T]) -> T | BaseException:

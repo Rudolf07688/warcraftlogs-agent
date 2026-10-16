@@ -10,7 +10,8 @@ receive ``tenant_id`` from the parent at insert time.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
 from ..services.encounters import merge_encounters
+from ..services.recent_raid_types import ListedReport, ReportDetails
 from .models import (
     Artifact,
     CapturedGraph,
@@ -26,6 +28,9 @@ from .models import (
     KnownEncounter,
     KnownPlayer,
     Message,
+    RecentRaid,
+    RecentRaidCharacter,
+    RecentRaidRefresh,
     SpecGuide,
     TrackedRaid,
     UserCharacter,
@@ -269,6 +274,279 @@ async def get_tracked_raid(
         )
     )
     return result.scalar_one_or_none()
+
+
+# --- Recent raids (feature 013) ------------------------------------------------
+
+
+def _insert(session: AsyncSession, model):
+    """A dialect ``INSERT`` that supports ``on_conflict_do_nothing`` (Postgres or SQLite)."""
+    if session.bind.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    return insert(model)
+
+
+def _own_character_link():
+    """Links whose character still exists as an own character (FR-016)."""
+    return select(RecentRaidCharacter.raid_id).join(
+        UserCharacter,
+        (UserCharacter.id == RecentRaidCharacter.character_id) & (UserCharacter.role == "self"),
+    )
+
+
+async def list_recent_raids(
+    session: AsyncSession, *, tenant_id: uuid.UUID, limit: int
+) -> list[tuple[RecentRaid, list[UserCharacter]]]:
+    """Newest raids first, each with the own characters that took part (two queries).
+
+    Only ``is_raid`` rows with at least one link to an existing own character are listed.
+    """
+    linked = _own_character_link().where(RecentRaidCharacter.tenant_id == tenant_id)
+    raids = list(
+        (
+            await session.execute(
+                select(RecentRaid)
+                .where(
+                    RecentRaid.tenant_id == tenant_id,
+                    RecentRaid.is_raid.is_(True),
+                    RecentRaid.id.in_(linked),
+                )
+                .order_by(RecentRaid.started_at.desc())
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    if not raids:
+        return []
+    rows = await session.execute(
+        select(RecentRaidCharacter.raid_id, UserCharacter)
+        .join(UserCharacter, UserCharacter.id == RecentRaidCharacter.character_id)
+        .where(
+            RecentRaidCharacter.tenant_id == tenant_id,
+            RecentRaidCharacter.raid_id.in_([r.id for r in raids]),
+            UserCharacter.role == "self",
+        )
+        .order_by(UserCharacter.created_at, UserCharacter.name)
+    )
+    chars: dict[uuid.UUID, list[UserCharacter]] = {}
+    for raid_id, char in rows:
+        chars.setdefault(raid_id, []).append(char)
+    return [(r, chars.get(r.id, [])) for r in raids]
+
+
+async def upsert_listed_reports(
+    session: AsyncSession, *, tenant_id: uuid.UUID, reports: list[ListedReport]
+) -> list[str]:
+    """Store reports from the list step and link their characters; return codes needing details.
+
+    New codes are inserted; rows that aren't final get the latest ``ended_at``/title/zone/guild
+    (a live log keeps growing). Final rows are left alone (FR-012). Race-safe: inserts and
+    links use ``ON CONFLICT DO NOTHING``.
+    """
+    if not reports:
+        return []
+    merged: dict[str, ListedReport] = {}
+    for r in reports:  # one entry per code; links are the union
+        prev = merged.get(r.code)
+        merged[r.code] = (
+            r if prev is None else replace(r, character_ids=prev.character_ids | r.character_ids)
+        )
+    reports = list(merged.values())
+    codes = list(merged)
+    existing = {
+        row.report_code: row
+        for row in (
+            await session.execute(
+                select(RecentRaid).where(
+                    RecentRaid.tenant_id == tenant_id, RecentRaid.report_code.in_(codes)
+                )
+            )
+        ).scalars()
+    }
+    new = [r for r in reports if r.code not in existing]
+    if new:
+        await session.execute(
+            _insert(session, RecentRaid)
+            .values(
+                [
+                    {
+                        "id": uuid.uuid4(),
+                        "tenant_id": tenant_id,
+                        "report_code": r.code,
+                        "title": r.title[:200],
+                        "zone_id": r.zone_id,
+                        "zone_name": r.zone_name,
+                        "guild_name": r.guild_name,
+                        "started_at": r.started_at,
+                        "ended_at": r.ended_at,
+                        "is_raid": r.is_raid,
+                        "is_final": False,
+                    }
+                    for r in new
+                ]
+            )
+            .on_conflict_do_nothing(index_elements=["tenant_id", "report_code"])
+        )
+    for r in reports:
+        row = existing.get(r.code)
+        if row is not None and not row.is_final:
+            row.title = r.title[:200]
+            row.zone_id, row.zone_name, row.guild_name = r.zone_id, r.zone_name, r.guild_name
+            row.ended_at = r.ended_at
+            row.is_raid = row.is_raid or r.is_raid
+    await session.flush()
+
+    ids = dict(
+        (
+            await session.execute(
+                select(RecentRaid.report_code, RecentRaid.id).where(
+                    RecentRaid.tenant_id == tenant_id, RecentRaid.report_code.in_(codes)
+                )
+            )
+        ).all()
+    )
+    # Only link characters that still exist (one may be removed mid-refresh).
+    wanted = {c for r in reports for c in r.character_ids}
+    live = set(
+        (
+            await session.execute(
+                select(UserCharacter.id).where(
+                    UserCharacter.tenant_id == tenant_id,
+                    UserCharacter.role == "self",
+                    UserCharacter.id.in_(wanted),
+                )
+            )
+        ).scalars()
+    )
+    links = [
+        {"raid_id": ids[r.code], "character_id": c, "tenant_id": tenant_id}
+        for r in reports
+        if r.code in ids
+        for c in r.character_ids
+        if c in live
+    ]
+    if links:
+        await session.execute(
+            _insert(session, RecentRaidCharacter)
+            .values(links)
+            .on_conflict_do_nothing(index_elements=["raid_id", "character_id"])
+        )
+    return [r.code for r in reports if r.code not in existing or not existing[r.code].is_final]
+
+
+async def set_report_details(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    code: str,
+    details: ReportDetails,
+    final_before: datetime,
+) -> None:
+    """Record the detail step's findings; a report that ended before ``final_before`` is final."""
+    await session.execute(
+        update(RecentRaid)
+        .where(RecentRaid.tenant_id == tenant_id, RecentRaid.report_code == code)
+        .values(
+            ended_at=details.ended_at,
+            difficulty=details.difficulty,
+            bosses_pulled=details.bosses_pulled,
+            bosses_killed=details.bosses_killed,
+            is_raid=details.is_raid,
+            is_final=details.ended_at < final_before,
+            details_fetched_at=datetime.now(timezone.utc),
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def get_recent_raid(
+    session: AsyncSession, report_code: str, *, tenant_id: uuid.UUID
+) -> RecentRaid | None:
+    result = await session.execute(
+        select(RecentRaid).where(
+            RecentRaid.tenant_id == tenant_id, RecentRaid.report_code == report_code
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_refresh(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> RecentRaidRefresh | None:
+    result = await session.execute(
+        select(RecentRaidRefresh).where(RecentRaidRefresh.tenant_id == tenant_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def claim_refresh(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    character_set: str,
+    force: bool,
+    min_gap_s: int,
+    stale_s: int,
+) -> uuid.UUID | None:
+    """Atomically claim this tenant's refresh; return the new ``run_id``, or ``None``.
+
+    One conditional ``UPDATE … RETURNING`` is the lock across instances (research R4). The
+    gate (data-model §3): not running (or running but stale), and one of: never finished,
+    finished over ``min_gap_s`` ago, the own-character set changed, or ``force`` after a
+    failure.
+    """
+    now = datetime.now(timezone.utc)
+    await session.execute(
+        _insert(session, RecentRaidRefresh)
+        .values(tenant_id=tenant_id, status="idle")
+        .on_conflict_do_nothing(index_elements=["tenant_id"])
+    )
+    R = RecentRaidRefresh
+    not_running = or_(R.status != "running", R.started_at < now - timedelta(seconds=stale_s))
+    due = [
+        R.finished_at.is_(None),
+        R.finished_at < now - timedelta(seconds=min_gap_s),
+        R.character_set.is_(None),
+        R.character_set != character_set,
+    ]
+    if force:
+        due.append(R.status == "failed")
+    run_id = uuid.uuid4()
+    result = await session.execute(
+        update(R)
+        .where(R.tenant_id == tenant_id, not_running, or_(*due))
+        .values(status="running", run_id=run_id, started_at=now, character_set=character_set)
+        .returning(R.run_id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none()
+
+
+async def finish_refresh(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    run_id: uuid.UUID,
+    ok: bool,
+    error: str | None,
+) -> None:
+    """Record a run's outcome. A run whose claim was taken over (stale ``run_id``) is a no-op."""
+    now = datetime.now(timezone.utc)
+    values: dict = {
+        "status": "succeeded" if ok else "failed",
+        "finished_at": now,
+        "last_error": None if ok else error,
+    }
+    if ok:
+        values["last_success_at"] = now
+    await session.execute(
+        update(RecentRaidRefresh)
+        .where(RecentRaidRefresh.tenant_id == tenant_id, RecentRaidRefresh.run_id == run_id)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
 
 
 # --- Known entities (feature 007 / US1) ---------------------------------------

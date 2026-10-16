@@ -4,12 +4,19 @@
 module that binds it, so a tool under test never touches the network. The
 ``responder(query, variables)`` callable returns the JSON payload for a query —
 tests dispatch on the GraphQL text.
+
+``mock_async_client(handler)`` builds a real ``AsyncWCLClient`` over an
+``httpx.MockTransport`` (feature 013), for tests of the client itself. The token
+endpoint is answered automatically; ``handler(request)`` sees only GraphQL posts.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import json
+from collections.abc import Awaitable, Callable
 from typing import Any
+
+import httpx
 
 from wcl_agent import report_tools, tools, wcl_client
 
@@ -47,3 +54,28 @@ def rate_limit_payload(remaining: float, limit: int = 720) -> dict[str, Any]:
             }
         }
     }
+
+
+def gql_response(payload: dict[str, Any], status: int = 200) -> httpx.Response:
+    return httpx.Response(status, content=json.dumps(payload).encode())
+
+
+def mock_async_client(
+    handler: Callable[[httpx.Request], httpx.Response | Awaitable[httpx.Response]],
+    *,
+    client_id: str = "test-client",
+    tokens: list[str] | None = None,
+) -> wcl_client.AsyncWCLClient:
+    """An ``AsyncWCLClient`` whose HTTP goes to ``handler``; tokens come from ``tokens``."""
+    issued = iter(tokens or [f"tok{i}" for i in range(1, 100)])
+
+    async def route(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == wcl_client.TOKEN_URL:
+            return httpx.Response(200, json={"access_token": next(issued)})
+        result = handler(request)
+        if isinstance(result, Awaitable):
+            result = await result
+        return result
+
+    wcl_client._tokens.pop(client_id, None)
+    return wcl_client.AsyncWCLClient(client_id, "secret", transport=httpx.MockTransport(route))

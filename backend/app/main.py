@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from wcl_agent.genai_compat import ensure_genai_serializers_built
 from wcl_agent.models import discover_models
+from wcl_agent.wcl_client import aclose_clients
 
 from .agent_runner import set_session_service
 from .api import (
@@ -175,6 +176,8 @@ async def lifespan(app: FastAPI):
         boot_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await boot_task
+    with contextlib.suppress(Exception):
+        await aclose_clients()  # WCL HTTP pools (feature 013)
     await engine.dispose()
 
 

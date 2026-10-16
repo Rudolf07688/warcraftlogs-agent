@@ -121,6 +121,19 @@ class Settings(BaseSettings):
     wcl_cache_ttl_report_s: int = 86400
     wcl_cache_ttl_leaderboard_s: int = 3600
 
+    # feature 013: WCL lanes and timeouts (also read by wcl_agent.wcl_client via os.getenv).
+    # Background work (guides, patch lookup, recent raids) holds at most this many of the
+    # WCL_MAX_CONCURRENCY slots; one query (slot wait + request) is bounded by the timeout.
+    wcl_background_concurrency: int = 2
+    wcl_query_timeout_s: int = 75
+
+    # feature 013: welcome-page recent raids. A refresh starts at most every
+    # `refresh_min_s`; a `running` claim older than `stale_s` is reclaimable (crash/restart).
+    recent_raids_refresh_min_s: int = 900
+    recent_raids_stale_s: int = 300
+    recent_raids_limit: int = 20
+    recent_raids_refresh_timeout_s: int = 120
+
     @property
     def model_list(self) -> list[str]:
         return [m.strip() for m in self.wcl_models.split(",") if m.strip()]
