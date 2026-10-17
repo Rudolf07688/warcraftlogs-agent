@@ -298,34 +298,3 @@ async def test_background_lane_context_reaches_the_limiter():
     assert lane == "background"
     limiter.release(lane)
     assert await limiter.acquire() == "interactive"
-
-
-# --- Sync bridge (Phase A-B) ----------------------------------------------------------
-
-
-async def test_sync_facade_on_tool_threads_shares_the_loop_client(monkeypatch):
-    from wcl_agent.threading_utils import run_in_tool_pool
-
-    calls = {"n": 0}
-
-    async def handler(request):
-        calls["n"] += 1
-        await asyncio.sleep(0.05)
-        return gql_response({"data": {"value": 1}})
-
-    client = mock_async_client(handler)
-    monkeypatch.setattr(wcl_client, "get_async_client", lambda: client)
-    sync = wcl_client.get_client()
-    results = await asyncio.gather(
-        *(run_in_tool_pool(sync.query, REPORT_Q, {"code": "BR"}) for _ in range(4))
-    )
-    assert calls["n"] == 1 and all(r == {"data": {"value": 1}} for r in results)
-    await client.aclose()
-
-
-def test_sync_facade_without_a_loop_runs_its_own(monkeypatch):
-    def factory():
-        return mock_async_client(lambda r: gql_response({"data": {"rateLimitData": {"x": 1}}}))
-
-    monkeypatch.setattr(wcl_client, "get_async_client", factory)
-    assert wcl_client.check_rate_limit() == {"x": 1}

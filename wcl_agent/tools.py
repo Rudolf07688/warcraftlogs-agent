@@ -17,9 +17,8 @@ from google.adk.tools import ToolContext
 from .constants import CLASS_SPECS, METRICS, normalize_class_name
 from .provenance import Completeness, Provenance, with_envelope
 from .queries import ENCOUNTER_RANKINGS, MENU_DISCOVERY
-from .threading_utils import gather_threads, unwrap
-from .wcl_client import check_rate_limit as _check_rate_limit
-from .wcl_client import get_client
+from . import wcl_client
+from .aio import gather_settled, unwrap
 
 MAX_PAGES = 10  # hard cap to protect the API points budget
 
@@ -38,7 +37,7 @@ def _selection(tool_context: ToolContext) -> dict[str, Any]:
     }
 
 
-def _fetch_rankings(
+async def _fetch_rankings(
     sel: dict[str, Any],
     metric: str,
     class_name: str | None,
@@ -51,7 +50,7 @@ def _fetch_rankings(
     the top ``num_pages * 100`` parses. ``more_pages_available`` is True when
     lower-ranked parses remain beyond what was fetched.
     """
-    client = get_client()
+    client = wcl_client.get_async_client()
     entries: list[dict[str, Any]] = []
     has_more = False
     for page in range(1, num_pages + 1):
@@ -64,7 +63,7 @@ def _fetch_rankings(
             "page": page,
             "partition": sel["partition"],
         }
-        data = client.query(ENCOUNTER_RANKINGS, variables)
+        data = await client.query(ENCOUNTER_RANKINGS, variables)
         blob = data["data"]["worldData"]["encounter"]["characterRankings"] or {}
         entries.extend(blob.get("rankings", []))
         has_more = bool(blob.get("hasMorePages"))
@@ -131,7 +130,7 @@ def _summarize(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
+async def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
     """Return the encounter, difficulty, and season the user chose at startup.
 
     Call this first to confirm what you are analyzing before fetching rankings.
@@ -160,7 +159,7 @@ def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
     )
 
 
-def find_encounter(query: str) -> dict[str, Any]:
+async def find_encounter(query: str) -> dict[str, Any]:
     """Resolve a raid boss/encounter by name to its id, zone, and difficulties.
 
     Use this when no encounter is pre-selected (e.g. the web app) to turn a name
@@ -175,7 +174,7 @@ def find_encounter(query: str) -> dict[str, Any]:
             zone_id, difficulties:[{id,name}], default_partition} ]} or an error.
     """
     try:
-        data = get_client().query(MENU_DISCOVERY)
+        data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
 
@@ -210,7 +209,7 @@ def find_encounter(query: str) -> dict[str, Any]:
     return with_envelope({"status": "success", "matches": matches[:8]}, Provenance())
 
 
-def get_spec_options(class_name: str) -> dict[str, Any]:
+async def get_spec_options(class_name: str) -> dict[str, Any]:
     """List the valid API spec-filter values for a WoW class.
 
     Warcraft Logs expects PascalCase, space-free class/spec names (e.g.
@@ -243,7 +242,7 @@ def get_spec_options(class_name: str) -> dict[str, Any]:
     )
 
 
-def get_rankings_distribution(
+async def get_rankings_distribution(
     class_name: str,
     spec_name: str,
     metric: str,
@@ -313,7 +312,7 @@ def get_rankings_distribution(
 
     pages = max(1, min(int(num_pages or 1), MAX_PAGES))
     try:
-        entries, has_more = _fetch_rankings(
+        entries, has_more = await _fetch_rankings(
             sel,
             metric=metric,
             class_name=class_name or None,
@@ -372,7 +371,7 @@ def get_rankings_distribution(
     )
 
 
-def compare_specs(
+async def compare_specs(
     class_name: str,
     metric: str,
     num_pages: int,
@@ -413,9 +412,9 @@ def compare_specs(
     specs = CLASS_SPECS[normalized]["specs"]
     # Specs are independent: fetch them concurrently, then read results in spec order
     # (PERF-002). Pages within one spec stay sequential (they stop at hasMorePages).
-    results = gather_threads(
-        [
-            lambda spec=spec: get_rankings_distribution(
+    results = await gather_settled(
+        *(
+            get_rankings_distribution(
                 class_name=normalized,
                 spec_name=spec,
                 metric=metric,
@@ -425,7 +424,7 @@ def compare_specs(
                 difficulty_id=difficulty_id,
             )
             for spec in specs
-        ]
+        )
     )
     for spec, raw in zip(specs, results):
         result = unwrap(raw)
@@ -468,7 +467,7 @@ def compare_specs(
     )
 
 
-def check_rate_limit() -> dict[str, Any]:
+async def check_rate_limit() -> dict[str, Any]:
     """Report the remaining Warcraft Logs API points for this hour.
 
     Returns:
@@ -476,7 +475,7 @@ def check_rate_limit() -> dict[str, Any]:
             ..., "pointsRemaining": ..., "pointsResetIn": ...} or an error.
     """
     try:
-        rl = _check_rate_limit()
+        rl = await wcl_client.acheck_rate_limit()
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     remaining = rl["limitPerHour"] - rl["pointsSpentThisHour"]
@@ -496,7 +495,7 @@ _MAX_SERIES = 12
 _MAX_POINTS = 500
 
 
-def create_chart(
+async def create_chart(
     kind: str,
     title: str,
     series_json: str,

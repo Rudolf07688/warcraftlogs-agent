@@ -69,7 +69,7 @@ async def _main() -> None:
     from wcl_agent.agent import root_agent
     from wcl_agent.menu import select_encounter
 
-    context = select_encounter()
+    context = await select_encounter()
 
     session_service = InMemorySessionService()
     await session_service.create_session(
@@ -83,17 +83,22 @@ async def _main() -> None:
         f"Chatting about {context['encounterName']} ({context['difficultyName']}). "
         "Ask e.g. 'How well are hunters performing?'. Type 'exit' to quit."
     )
-    while True:
-        try:
-            user_input = input("\nYou: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not user_input:
-            continue
-        if user_input.lower() in {"exit", "quit"}:
-            break
-        await _call_agent(runner, user_input)
+    from wcl_agent.wcl_client import aclose_clients
+
+    try:
+        while True:
+            try:
+                user_input = input("\nYou: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not user_input:
+                continue
+            if user_input.lower() in {"exit", "quit"}:
+                break
+            await _call_agent(runner, user_input)
+    finally:
+        await aclose_clients()  # the WCL HTTP pool
 
 
 def run() -> None:

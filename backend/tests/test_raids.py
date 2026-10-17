@@ -79,7 +79,7 @@ async def test_capture_ignores_non_report_tools_and_failures(session, tenant_id)
 
 
 async def test_capture_new_raid_resolves_label(monkeypatch, session, tenant_id):
-    def fake_meta(code):
+    async def fake_meta(code):
         return {"status": "success", "guild": "G", "zone": "Z", "start_time_ms": 1_759_000_000_000}
 
     monkeypatch.setattr(raids_service, "get_report_metadata", fake_meta)
@@ -159,7 +159,10 @@ async def test_upsert_merges_encounters_without_duplicating(session, tenant_id):
 
 
 async def test_capture_persists_distinct_encounters_from_fights(monkeypatch, session, tenant_id):
-    monkeypatch.setattr(raids_service, "get_report_metadata", lambda code: {"status": "error"})
+    async def no_meta(code):
+        return {"status": "error"}
+
+    monkeypatch.setattr(raids_service, "get_report_metadata", no_meta)
     result = {
         "status": "success",
         "fights": [
@@ -215,3 +218,67 @@ async def test_concurrent_first_reference_converges_to_one_row(tmp_path, tenant_
         assert len(raids) == 1
     finally:
         await eng.dispose()
+
+
+# --- Feature 013 / US2: investigating a recent raid from the welcome page -------------
+
+
+async def _store_recent(session_factory, tenant_id, code: str = "RECENT1"):
+    from datetime import datetime, timedelta, timezone
+
+    from backend.app.services.recent_raid_types import ListedReport
+
+    started = datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc)
+    async with session_factory() as s:
+        char = await repo.add_character(
+            s, tenant_id=tenant_id, role="self", name="Alpha", server="Realm", region="EU"
+        )
+        await repo.upsert_listed_reports(
+            s,
+            tenant_id=tenant_id,
+            reports=[
+                ListedReport(
+                    code=code,
+                    title="Title",
+                    zone_id=53,
+                    zone_name="The Venomous Abyss",
+                    guild_name="Guild",
+                    started_at=started,
+                    ended_at=started + timedelta(hours=3),
+                    character_ids=frozenset({char.id}),
+                    is_raid=True,
+                )
+            ],
+        )
+        await s.commit()
+
+
+async def test_investigating_a_recent_raid_tracks_it(as_user, session_factory):
+    from backend.app.api.raids import kickoff_prompt_for
+
+    await _store_recent(session_factory, as_user.tenant_id)
+    resp = await as_user.client.post("/api/raids/RECENT1/investigate", json={})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["kickoff_prompt"] == kickoff_prompt_for("RECENT1")
+
+    raids = (await as_user.client.get("/api/raids")).json()["raids"]
+    [raid] = [r for r in raids if r["report_code"] == "RECENT1"]
+    assert raid["label"] == "Guild — The Venomous Abyss — 2026-10-15"
+    assert raid["zone"] == "The Venomous Abyss" and raid["guild"] == "Guild"
+
+    again = await as_user.client.post("/api/raids/RECENT1/investigate", json={})
+    assert again.status_code == 201  # now a tracked raid; still one row
+    raids = (await as_user.client.get("/api/raids")).json()["raids"]
+    assert sum(r["report_code"] == "RECENT1" for r in raids) == 1
+
+
+async def test_another_tenants_recent_raid_cannot_be_investigated(
+    as_user, make_authed_client, session_factory
+):
+    other = await make_authed_client("other@example.com")
+    try:
+        await _store_recent(session_factory, other.tenant_id, code="THEIRS")
+        resp = await as_user.client.post("/api/raids/THEIRS/investigate", json={})
+        assert resp.status_code == 404  # FR-017
+    finally:
+        await other.client.aclose()

@@ -57,9 +57,9 @@ MENU_PAYLOAD = {"data": {"worldData": {"zones": [
 ]}}}
 
 
-def test_current_patch_picks_newest_heroic_zone_default_partition(monkeypatch):
+async def test_current_patch_picks_newest_heroic_zone_default_partition(monkeypatch):
     fake = install(monkeypatch, lambda q, v: MENU_PAYLOAD)
-    assert current_patch() == "12.1"
+    assert await current_patch() == "12.1"
     assert fake.count("MenuDiscovery") == 1
 
 
@@ -68,12 +68,12 @@ def test_current_patch_from_zones_edge_cases():
     assert current_patch_from_zones(MENU_PAYLOAD["data"]["worldData"]["zones"][:1]) is None  # M+ only
 
 
-def test_current_patch_swallows_errors(monkeypatch):
+async def test_current_patch_swallows_errors(monkeypatch):
     def boom(q, v):
         raise RuntimeError("no WCL")
 
     install(monkeypatch, boom)
-    assert current_patch() is None
+    assert await current_patch() is None
 
 
 # --- (c) parse_guide_meta ---------------------------------------------------------------

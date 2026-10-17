@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useState, type ReactNode } from "react";
 import type { Message, SpellCardState } from "../types";
 import { StickToBottom } from "use-stick-to-bottom";
 import { FollowUps } from "./FollowUps";
@@ -18,6 +18,8 @@ interface Props {
   onSelectBosses: (ids: number[]) => void;
   onPickSuggestion: (text: string) => void;
   onDownloadMessage: (messageId: string) => void;
+  /** Rendered after the messages (feature 013: the welcome panel in a new chat). */
+  footer?: ReactNode;
 }
 
 // Persisted tool calls collapse into a one-line disclosure so completed messages stay
@@ -97,6 +99,7 @@ function MessageListImpl({
   onSelectBosses,
   onPickSuggestion,
   onDownloadMessage,
+  footer,
 }: Props) {
   return (
     <StickToBottom className="message-list" resize="smooth" initial="smooth">
@@ -179,6 +182,8 @@ function MessageListImpl({
             {streaming && <LiveMessage status={status} streamCards={streamCards} />}
 
             {error && <div className="message error">⚠️ {error}</div>}
+
+            {footer}
           </StickToBottom.Content>
 
           {!isAtBottom && (

@@ -1,7 +1,7 @@
 """Provenance/completeness envelope on WCL tool results (feature 009, Phase 2).
 
-WCL is faked by replacing ``get_client`` in the tool modules with a stub whose
-``query`` dispatches on the GraphQL text. No network, no model.
+WCL is faked with the shared ``wcl_fakes.install`` stub, whose ``query`` dispatches
+on the GraphQL text. No network, no model.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.tests.wcl_fakes import install
 from wcl_agent import report_tools, tools
 from wcl_agent.provenance import (
     Completeness,
@@ -19,22 +20,8 @@ from wcl_agent.provenance import (
 )
 
 
-class _FakeClient:
-    def __init__(self, responder):
-        self._responder = responder
-        self.calls: list[tuple[str, dict]] = []
-
-    def query(self, query: str, variables=None):
-        variables = variables or {}
-        self.calls.append((query, variables))
-        return self._responder(query, variables)
-
-
-def _install(monkeypatch, responder) -> _FakeClient:
-    fake = _FakeClient(responder)
-    monkeypatch.setattr(report_tools, "get_client", lambda: fake)
-    monkeypatch.setattr(tools, "get_client", lambda: fake)
-    return fake
+def _install(monkeypatch, responder):
+    return install(monkeypatch, responder)
 
 
 # --- (a) with_envelope -----------------------------------------------------------
@@ -79,13 +66,13 @@ def test_envelope_detects_cap_truncation():
 # --- (b) get_report_table --------------------------------------------------------
 
 
-def test_report_table_carries_provenance(monkeypatch):
+async def test_report_table_carries_provenance(monkeypatch):
     def responder(query, variables):
         assert "table(dataType: Casts" in query
         return {"data": {"reportData": {"report": {"table": {"data": {"entries": [{"name": "A"}]}}}}}}
 
     _install(monkeypatch, responder)
-    res = report_tools.get_report_table("ABC", "Casts", fight_id=9, source_id=7)
+    res = await report_tools.get_report_table("ABC", "Casts", fight_id=9, source_id=7)
     assert res["status"] == "success"
     assert res["table"] == {"data": {"entries": [{"name": "A"}]}}
     assert res["provenance"]["report_code"] == "ABC"
@@ -94,9 +81,9 @@ def test_report_table_carries_provenance(monkeypatch):
     assert res["completeness"]["truncated"] is False
 
 
-def test_report_table_all_fights_omits_fight_id(monkeypatch):
+async def test_report_table_all_fights_omits_fight_id(monkeypatch):
     _install(monkeypatch, lambda q, v: {"data": {"reportData": {"report": {"table": {}}}}})
-    res = report_tools.get_report_table("ABC", "Deaths")
+    res = await report_tools.get_report_table("ABC", "Deaths")
     assert "fight_id" not in res["provenance"]
     assert "source_id" not in res["provenance"]
 
@@ -105,10 +92,10 @@ def test_report_table_all_fights_omits_fight_id(monkeypatch):
 
 
 @pytest.mark.parametrize("next_ts,expected", [(123456, True), (None, False)])
-def test_report_events_has_more(monkeypatch, next_ts, expected):
+async def test_report_events_has_more(monkeypatch, next_ts, expected):
     payload = {"data": [{"timestamp": 1}], "nextPageTimestamp": next_ts}
     _install(monkeypatch, lambda q, v: {"data": {"reportData": {"report": {"events": payload}}}})
-    res = report_tools.get_report_events("ABC", "Casts", fight_id=9, source_id=7, limit=1)
+    res = await report_tools.get_report_events("ABC", "Casts", fight_id=9, source_id=7, limit=1)
     assert res["status"] == "success"
     assert res["completeness"]["has_more"] is expected
     assert res["events"] == payload
@@ -142,10 +129,10 @@ def _rankings_page(n: int, has_more: bool):
 
 
 @pytest.mark.parametrize("has_more,scope", [(True, "top_of_leaderboard"), (False, "full")])
-def test_rankings_distribution_sample_scope(monkeypatch, has_more, scope):
+async def test_rankings_distribution_sample_scope(monkeypatch, has_more, scope):
     _install(monkeypatch, lambda q, v: _rankings_page(10, has_more))
     ctx = SimpleNamespace(state={})
-    res = tools.get_rankings_distribution(
+    res = await tools.get_rankings_distribution(
         "Mage", "Fire", "dps", 1, ctx, encounter_id=3470, difficulty_id=4
     )
     assert res["status"] == "success"
@@ -158,10 +145,10 @@ def test_rankings_distribution_sample_scope(monkeypatch, has_more, scope):
     assert res["provenance"]["metric"] == "dps"
 
 
-def test_compare_specs_aggregates_completeness(monkeypatch):
+async def test_compare_specs_aggregates_completeness(monkeypatch):
     _install(monkeypatch, lambda q, v: _rankings_page(5, True))
     ctx = SimpleNamespace(state={})
-    res = tools.compare_specs("mage", "dps", 1, ctx, encounter_id=3470, difficulty_id=4)
+    res = await tools.compare_specs("mage", "dps", 1, ctx, encounter_id=3470, difficulty_id=4)
     assert res["status"] == "success"
     assert [c["spec"] for c in res["comparison"]]  # existing key untouched
     assert res["completeness"]["sample_scope"] == "top_of_leaderboard"
@@ -172,10 +159,10 @@ def test_compare_specs_aggregates_completeness(monkeypatch):
 # --- (e) whitelist fix ------------------------------------------------------------
 
 
-def test_resurrections_rejected_everywhere(monkeypatch):
+async def test_resurrections_rejected_everywhere(monkeypatch):
     fake = _install(monkeypatch, lambda q, v: pytest.fail("must not query WCL"))
     for fn in (report_tools.get_report_table, report_tools.get_report_events, report_tools.get_report_graph):
-        res = fn("ABC", "Resurrections")
+        res = await fn("ABC", "Resurrections")
         assert res["status"] == "error"
         assert "Resurrections" not in res["valid"]
     assert fake.calls == []

@@ -114,6 +114,43 @@ export interface InvestigateResponse {
   kickoff_prompt: string;
 }
 
+// --- Recent raids (feature 013, contracts/rest-recent-raids.md) ---------------
+
+export interface RecentRaidCharacter {
+  name: string;
+  server: string;
+  region: string;
+}
+
+export interface RecentRaid {
+  report_code: string;
+  title: string;
+  zone_name: string | null;
+  started_at: string;
+  /** WCL difficulty id: 1 LFR, 3 Normal, 4 Heroic, 5 Mythic. */
+  difficulty: number | null;
+  /** null until the raid's details have been fetched. */
+  bosses_pulled: number | null;
+  bosses_killed: number | null;
+  is_final: boolean;
+  characters: RecentRaidCharacter[];
+}
+
+export type RecentRaidsStatus = "idle" | "running" | "succeeded" | "failed";
+
+export interface RecentRaidsRefresh {
+  status: RecentRaidsStatus;
+  last_success_at: string | null;
+  /** wcl_unavailable | rate_limited | timeout | unknown */
+  last_error: string | null;
+}
+
+export interface RecentRaidsResponse {
+  has_characters: boolean;
+  raids: RecentRaid[];
+  refresh: RecentRaidsRefresh;
+}
+
 // --- Profile (feature 005 / US1) ---------------------------------------------
 
 export type GuideStatus = "none" | "pending" | "ready" | "failed";

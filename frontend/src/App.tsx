@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   deleteConversation,
@@ -16,6 +16,7 @@ import { useAuth } from "./auth/useAuth";
 import { Ambient } from "./components/Ambient";
 import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
+import { WelcomePanel } from "./components/WelcomePanel";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
 import { streamStore } from "./lib/streamStore";
@@ -418,10 +419,23 @@ export default function App() {
         conversationId: resp.conversation_id,
         model: resp.model,
       });
+      // Feature 013: a recent raid becomes a tracked raid on investigation (FR-009).
+      void refreshRaids();
     } catch {
       setError("Could not start the investigation. Is the backend up?");
     }
-  }, [sendText]);
+  }, [sendText, refreshRaids]);
+
+  // Feature 013: a fresh chat (no question asked yet) shows the user's recent raids under
+  // Barnaby's greeting. Memoized so MessageList's memo holds across App re-renders.
+  const showWelcome = activeId === null && !streaming && !messages.some((m) => m.role === "user");
+  const welcome = useMemo(
+    () =>
+      showWelcome ? (
+        <WelcomePanel onInvestigate={handleInvestigateRaid} disabled={streaming} />
+      ) : undefined,
+    [showWelcome, handleInvestigateRaid, streaming],
+  );
 
   const openProfile = useCallback(() => navigate("/profile"), [navigate]);
 
@@ -490,6 +504,7 @@ export default function App() {
           onSelectBosses={setSelectedBosses}
           onPickSuggestion={send}
           onDownloadMessage={handleDownloadMessage}
+          footer={welcome}
         />
         <Composer disabled={streaming || !connected} onSend={send} />
         <div className="attribution">

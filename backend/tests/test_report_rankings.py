@@ -14,9 +14,9 @@ def _responder(query, variables):
     return {"data": {"reportData": {"report": {"rankings": REPORT_RANKINGS_FIXTURE}}}}
 
 
-def test_compare_and_timeframe_are_sent_and_echoed(monkeypatch):
+async def test_compare_and_timeframe_are_sent_and_echoed(monkeypatch):
     fake = install(monkeypatch, _responder)
-    res = get_report_rankings("ABC", 9, compare="Parses", timeframe="Today")
+    res = await get_report_rankings("ABC", 9, compare="Parses", timeframe="Today")
     assert res["status"] == "success"
     query, variables = fake.calls[0]
     assert "compare: Parses" in query and "timeframe: Today" in query
@@ -31,9 +31,9 @@ def test_compare_and_timeframe_are_sent_and_echoed(monkeypatch):
     assert mage["total_parses"] == 2159 and mage["partition"] == 1
 
 
-def test_defaults_are_rankings_historical(monkeypatch):
+async def test_defaults_are_rankings_historical(monkeypatch):
     fake = install(monkeypatch, _responder)
-    res = get_report_rankings("ABC")
+    res = await get_report_rankings("ABC")
     query, variables = fake.calls[0]
     assert "compare: Rankings" in query and "timeframe: Historical" in query
     assert variables["fightIDs"] is None
@@ -45,9 +45,9 @@ def test_defaults_are_rankings_historical(monkeypatch):
 
 
 @pytest.mark.parametrize("kwargs", [{"compare": "Best"}, {"timeframe": "Yesterday"}])
-def test_invalid_enums_rejected_without_a_call(monkeypatch, kwargs):
+async def test_invalid_enums_rejected_without_a_call(monkeypatch, kwargs):
     fake = install(monkeypatch, _responder)
-    res = get_report_rankings("ABC", 9, **kwargs)
+    res = await get_report_rankings("ABC", 9, **kwargs)
     assert res["status"] == "error"
     assert res["valid"] in (["Parses", "Rankings"], ["Historical", "Today"])
     assert fake.calls == []

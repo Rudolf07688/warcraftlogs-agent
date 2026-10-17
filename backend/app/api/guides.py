@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.constants import CLASS_SPECS
 from wcl_agent.patch import current_patch, guide_freshness
-from wcl_agent.threading_utils import run_in_tool_pool
+from wcl_agent.wcl_client import background_lane
 
 from ..auth.dependencies import require_csrf, require_session
 from ..auth.rate_limit import guide_limiter
@@ -41,8 +41,9 @@ def _validate_spec(class_name: str, spec: str) -> None:
 
 
 async def _live_patch() -> str | None:
-    """The current raid patch (blocking WCL lookup, cached by the client) off the loop."""
-    return await run_in_tool_pool(current_patch)  # WCL call: tool pool (PERF-101)
+    """The current raid patch (cached WCL lookup), in the background lane (feature 013)."""
+    with background_lane():
+        return await current_patch()
 
 
 async def _guide_out(class_name: str, spec: str, guide: SpecGuide | None) -> GuideOut:

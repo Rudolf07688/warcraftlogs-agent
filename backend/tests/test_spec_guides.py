@@ -370,7 +370,10 @@ def test_roster_freshness_only_for_ready_rows():
 
 
 async def test_api_exposes_freshness_and_sources(as_user, session_factory, monkeypatch):
-    monkeypatch.setattr(guides_api, "current_patch", lambda: "12.1")
+    async def patch_12_1():
+        return "12.1"
+
+    monkeypatch.setattr(guides_api, "current_patch", patch_12_1)
     async with session_factory() as s:
         await repo.upsert_spec_guide(
             s, class_name="Mage", spec="Fire", status="ready", guide_markdown="# Fire",

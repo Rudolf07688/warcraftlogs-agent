@@ -28,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from wcl_agent.constants import CLASS_SPECS
 from wcl_agent.guide_meta import GuideCooldown, GuideMeta, set_guide_meta
 from wcl_agent.patch import guide_freshness
-from wcl_agent.threading_utils import run_in_tool_pool
+from wcl_agent.wcl_client import background_lane
 
 from ..config import settings
 from ..db import repository as repo
@@ -81,7 +81,7 @@ _GUILD_PROMPT = (
 # --- WCL spec resolution ------------------------------------------------------
 
 
-def _resolve_active_spec_sync(
+async def _resolve_active_spec(
     name: str, server: str, region: str
 ) -> tuple[str | None, str | None] | None:
     """Best-effort (class, spec) from a character's current-zone rankings.
@@ -91,7 +91,7 @@ def _resolve_active_spec_sync(
     """
     from wcl_agent.report_tools import get_character_zone_rankings
 
-    res = get_character_zone_rankings(name, server, region)
+    res = await get_character_zone_rankings(name, server, region)
     if res.get("status") != "success":
         return None
     zr = res.get("zoneRankings")
@@ -110,9 +110,11 @@ def _resolve_active_spec_sync(
 async def resolve_active_spec(
     name: str, server: str, region: str
 ) -> tuple[str | None, str | None] | None:
-    """Async wrapper — the WCL client is blocking, so run it off the event loop."""
+    """Best-effort spec resolution in the background lane (FR-024): guide work never takes
+    WCL slots a chat lookup is waiting for."""
     try:
-        return await run_in_tool_pool(_resolve_active_spec_sync, name, server, region)
+        with background_lane():
+            return await _resolve_active_spec(name, server, region)
     except Exception:  # noqa: BLE001 - resolution is best-effort
         logger.exception("Active-spec resolution failed for %s-%s (%s)", name, server, region)
         return None

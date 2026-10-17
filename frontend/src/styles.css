@@ -821,3 +821,92 @@ body::after {
     animation: none;
   }
 }
+
+/* --- Welcome panel: my recent raids (feature 013) ------------------------------- */
+.welcome-panel {
+  width: 100%;
+  max-width: min(820px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.welcome-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.welcome-panel-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  letter-spacing: 0.03em;
+  color: var(--primary);
+}
+.welcome-panel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.raid-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 10px;
+}
+.raid-card {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+  background: var(--card);
+  color: var(--foreground);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.raid-card:hover:not(:disabled) {
+  border-color: var(--primary);
+  box-shadow: 0 0 12px color-mix(in oklch, var(--glow) 30%, transparent);
+}
+.raid-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.raid-card-content {
+  min-width: 0;
+  gap: 6px;
+}
+.raid-card-title {
+  width: 100%;
+  justify-content: space-between;
+}
+.raid-card-zone {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.raid-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--muted);
+}
+.raid-card-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.raid-card-meta svg {
+  flex-shrink: 0;
+}
+.raid-card-skeleton {
+  height: 96px;
+  border-radius: var(--radius);
+}
+.welcome-empty {
+  border: 1px dashed var(--border-token);
+}

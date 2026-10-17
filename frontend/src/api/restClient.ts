@@ -12,6 +12,8 @@ import type {
   Identity,
   Invitation,
   InvestigateResponse,
+  RecentRaidsRefresh,
+  RecentRaidsResponse,
   Profile,
   RaidRole,
   Raid,
@@ -182,6 +184,16 @@ export async function investigateRaid(
     { model: model ?? null },
     { csrf: true },
   );
+}
+
+// Feature 013: the welcome page's recent raids. The GET never waits for Warcraft Logs; it
+// may start a background refresh, reported in `refresh.status`.
+export async function getRecentRaids(): Promise<RecentRaidsResponse> {
+  return send("GET", "/api/recent-raids");
+}
+
+export async function refreshRecentRaids(): Promise<RecentRaidsRefresh> {
+  return send("POST", "/api/recent-raids/refresh", undefined, { csrf: true });
 }
 
 export async function listConversations(): Promise<{ conversations: Conversation[] }> {

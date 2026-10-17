@@ -10,16 +10,16 @@ from wcl_agent.tools import create_chart
 # --- capture service ----------------------------------------------------------
 
 
-def test_capture_from_valid_create_chart():
-    result = create_chart("bar", "Specs", '[{"name":"Enh","y":[95,96]}]')
+async def test_capture_from_valid_create_chart():
+    result = await create_chart("bar", "Specs", '[{"name":"Enh","y":[95,96]}]')
     spec = capture_artifact_from_tool("create_chart", True, result)
     assert spec is not None
     assert spec.kind == "bar"
     assert spec.title == "Specs"
 
 
-def test_capture_ignores_other_tools_and_failures():
-    result = create_chart("bar", "Specs", '[{"name":"Enh","y":[95]}]')
+async def test_capture_ignores_other_tools_and_failures():
+    result = await create_chart("bar", "Specs", '[{"name":"Enh","y":[95]}]')
     assert capture_artifact_from_tool("get_report_table", True, result) is None
     assert capture_artifact_from_tool("create_chart", False, result) is None
     assert capture_artifact_from_tool("create_chart", True, {"status": "error"}) is None
@@ -35,7 +35,7 @@ async def test_persisted_artifact_returned_with_figure_and_seq(as_user, session_
         await repo.add_message(s, conv.id, "user", "plot it", tenant_id=tid)
         agent_msg = await repo.add_message(s, conv.id, "agent", "here you go", tenant_id=tid)
         spec = capture_artifact_from_tool(
-            "create_chart", True, create_chart("line", "DPS", '[{"name":"R","y":[1,2,3]}]')
+            "create_chart", True, await create_chart("line", "DPS", '[{"name":"R","y":[1,2,3]}]')
         )
         await repo.add_artifact(
             s, tenant_id=tid, conversation_id=conv.id, kind=spec.kind, title=spec.title,
@@ -59,7 +59,7 @@ async def test_persisted_artifact_returned_with_figure_and_seq(as_user, session_
 async def test_assign_seq_only_touches_unlinked_captures(session, tenant_id):
     conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
     spec = capture_artifact_from_tool(
-        "create_chart", True, create_chart("line", "A", '[{"name":"R","y":[1]}]')
+        "create_chart", True, await create_chart("line", "A", '[{"name":"R","y":[1]}]')
     )
     a = await repo.add_artifact(
         session, tenant_id=tenant_id, conversation_id=conv.id, kind=spec.kind,

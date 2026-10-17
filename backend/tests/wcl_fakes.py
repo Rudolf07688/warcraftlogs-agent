@@ -1,9 +1,10 @@
 """Shared fake Warcraft Logs client for tool tests (feature 009).
 
-``install(monkeypatch, responder)`` replaces ``get_client`` in every ``wcl_agent``
-module that binds it, so a tool under test never touches the network. The
+``install(monkeypatch, responder)`` replaces ``wcl_client.get_async_client``, the
+one way every ``wcl_agent`` module reaches WCL, so a tool under test never touches
+the network. The
 ``responder(query, variables)`` callable returns the JSON payload for a query —
-tests dispatch on the GraphQL text.
+tests dispatch on the GraphQL text. It may be sync or async.
 
 ``mock_async_client(handler)`` builds a real ``AsyncWCLClient`` over an
 ``httpx.MockTransport`` (feature 013), for tests of the client itself. The token
@@ -12,35 +13,43 @@ endpoint is answered automatically; ``handler(request)`` sees only GraphQL posts
 
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
-from wcl_agent import report_tools, tools, wcl_client
+from wcl_agent import wcl_client
 
-Responder = Callable[[str, dict[str, Any]], dict[str, Any]]
+Responder = Callable[[str, dict[str, Any]], dict[str, Any] | Awaitable[dict[str, Any]]]
 
 
 class FakeClient:
+    """Stands in for ``AsyncWCLClient``; records every query."""
+
     def __init__(self, responder: Responder):
         self._responder = responder
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    def query(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def query(
+        self, query: str, variables: dict[str, Any] | None = None, *, cache: bool = True
+    ) -> dict[str, Any]:
         variables = variables or {}
         self.calls.append((query, variables))
-        return self._responder(query, variables)
+        result = self._responder(query, variables)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
 
     def count(self, needle: str) -> int:
         return sum(1 for q, _ in self.calls if needle in q)
 
 
 def install(monkeypatch, responder: Responder) -> FakeClient:
+    """Every wcl_agent module reaches the client through ``wcl_client.get_async_client``."""
     fake = FakeClient(responder)
-    for module in (report_tools, tools, wcl_client):
-        monkeypatch.setattr(module, "get_client", lambda: fake)
+    monkeypatch.setattr(wcl_client, "get_async_client", lambda: fake)
     return fake
 
 

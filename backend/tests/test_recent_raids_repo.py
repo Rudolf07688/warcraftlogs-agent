@@ -99,6 +99,17 @@ async def test_a_stale_running_claim_can_be_reclaimed_and_the_old_run_cannot_fin
     assert row.status == "running" and row.run_id == new and row.last_error is None
 
 
+async def test_a_crashed_run_is_reclaimed_even_right_after_a_successful_one(session, tenant_id):
+    first = await claim(session, tenant_id)
+    await repo.finish_refresh(session, tenant_id=tenant_id, run_id=first, ok=True, error=None)
+    await session.execute(  # a later run claimed then crashed; the last finish is recent
+        update(RecentRaidRefresh)
+        .where(RecentRaidRefresh.tenant_id == tenant_id)
+        .values(status="running", started_at=NOW - timedelta(minutes=6))
+    )
+    assert await claim(session, tenant_id) is not None  # FR-026
+
+
 async def test_concurrent_claims_from_two_sessions_yield_exactly_one_winner(
     session_factory, tenant_id
 ):

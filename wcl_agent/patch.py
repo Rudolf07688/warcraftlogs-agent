@@ -45,15 +45,30 @@ def current_patch_from_zones(zones: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def current_patch() -> str | None:
+async def current_patch() -> str | None:
     """Name of the current raid partition (the live patch), or None when unknown."""
     try:
-        data = wcl_client.get_client().query(MENU_DISCOVERY)
+        data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
         zones = ((data.get("data") or {}).get("worldData") or {}).get("zones") or []
         return current_patch_from_zones(zones)
     except Exception as exc:  # noqa: BLE001 - freshness degrades to "unknown"
         logger.warning("current_patch lookup failed: %s", exc)
         return None
+
+
+def raid_zone_ids_from(zones: list[dict[str, Any]]) -> set[int]:
+    """Pure helper: ids of zones that offer raid difficulties (Heroic), frozen ones included.
+
+    Mythic+ and other non-raid zones have no Heroic difficulty, so they are left out.
+    """
+    return {int(z["id"]) for z in zones if isinstance(z, dict) and z.get("id") and _offers_heroic(z)}
+
+
+async def raid_zone_ids() -> set[int]:
+    """Ids of every raid zone, from the cached zone list (feature 013)."""
+    data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
+    zones = ((data.get("data") or {}).get("worldData") or {}).get("zones") or []
+    return raid_zone_ids_from(zones)
 
 
 def parse_patch(value: str | None) -> tuple[int, int] | None:

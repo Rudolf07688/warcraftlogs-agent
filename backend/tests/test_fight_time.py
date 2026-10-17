@@ -104,7 +104,7 @@ def test_resolve_player_bad_source_id():
 # --- fetch_dead_windows (faked WCL) ---------------------------------------------------
 
 
-def test_fetch_dead_windows_uses_first_cast_after_each_death(monkeypatch):
+async def test_fetch_dead_windows_uses_first_cast_after_each_death(monkeypatch):
     def responder(query, variables):
         if "dataType: Deaths" in query:
             return {"data": {"reportData": {"report": {"table": {"data": {"entries": [
@@ -119,7 +119,7 @@ def test_fetch_dead_windows_uses_first_cast_after_each_death(monkeypatch):
         raise AssertionError(query)
 
     fake = install(monkeypatch, responder)
-    windows = fetch_dead_windows("ABC", 9, 7, 300_000)
+    windows = await fetch_dead_windows("ABC", 9, 7, 300_000)
     assert windows == [(100_000.0, 130_000.0), (250_000.0, 300_000.0)]
     assert fake.count("dataType: Deaths") == 1
     assert fake.count("dataType: Casts") == 2  # one per (deduplicated) death

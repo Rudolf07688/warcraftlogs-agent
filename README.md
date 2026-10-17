@@ -257,10 +257,10 @@ Every turn logs one line you can grep to verify the effect, e.g.
 
 The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours worth knowing:
 
-- **Tools run concurrently, off the event loop.** `build_agent` wraps every sync WCL tool
-  with `threading_utils.off_loop`; the heavy tools fan out their independent requests.
-- **One pooled WCL session** with (connect, read) timeouts, an in-flight request cap,
-  identical-query dedupe and a byte-bounded result cache (still per tenant, FR-019).
+- **Tools run concurrently.** Every WCL tool is a coroutine (feature 013, below); the heavy
+  tools fan out their independent requests.
+- **One pooled WCL client** with timeouts, an in-flight request cap, identical-query dedupe
+  and a byte-bounded result cache (still per tenant, FR-019).
 - **No DB connection is held while the model streams**: each capture and the final save use
   short transactions.
 - **`done` comes before follow-up suggestions**, so the composer unlocks as soon as the
@@ -277,12 +277,45 @@ The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours wor
 | Variable | Default | Meaning |
 |---|---|---|
 | `WCL_MAX_CONCURRENCY` | `6` | WCL requests in flight at once, process-wide |
-| `WCL_TOOL_THREADS` | `32` | dedicated worker threads for WCL tool calls (not asyncio's default executor) |
 | `WCL_CONTEXT_KEEP_TURNS` | `2` | turns (current included) whose tool results reach the model in full |
 | `WCL_CONTEXT_STUB_MIN_CHARS` | `1500` | older tool results larger than this are stubbed |
 | `WCL_CACHE_MAX_BYTES` | `134217728` | byte bound on the WCL result cache (128 MB) |
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `10` / `20` / `10` | DB connection pool (shared with the ADK session store) |
 | `WCL_GUIDE_MAX_CONCURRENCY` | `2` | background guide / guild-summary generations at once |
+
+### Welcome page and async Warcraft Logs (feature 013)
+
+A new chat opens on **your recent raids**: up to 20 raids your own characters were logged
+in, newest first, with zone, date, difficulty, which of your characters took part and boss
+kills. Click one to start the bounded raid overview in a new chat; it also becomes a
+tracked raid in the sidebar.
+
+- Raids are **stored** per workspace. Opening the page shows them at once and, at most every
+  15 minutes (or when your own characters change), refreshes in the background: one
+  Warcraft Logs request lists every character's recent reports, then details are fetched
+  only for new or still-live raids. A raid whose log ended over 2 h ago is final and never
+  fetched again.
+- The refresh claim is a database row, so only one instance refreshes a workspace at a
+  time, and a refresh that never finishes is reclaimed after 5 minutes. **Retry** appears
+  when a refresh fails.
+
+The side mission (QA PERF-201/211): **WCL access is native async** (httpx). Tools are
+coroutines with no worker threads, so an abandoned turn's lookups stop at once, and
+background work (guides, the patch lookup, recent raids) runs in a **background lane**
+capped at 2 of the 6 WCL slots, so it never queues chat lookups. Each query is bounded at
+75 s including the wait for a slot. The cache stores raw response bytes (no deep copies),
+and the backend freezes its startup heap out of the GC so large payloads don't stall
+streaming.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WCL_BACKGROUND_CONCURRENCY` | `2` | WCL slots background work may hold (1 … `WCL_MAX_CONCURRENCY`-1) |
+| `WCL_QUERY_TIMEOUT_S` | `75` | upper bound for one WCL query, including the wait for a slot |
+| `RECENT_RAIDS_REFRESH_MIN_S` | `900` | minimum seconds between recent-raid refreshes |
+| `RECENT_RAIDS_STALE_S` | `300` | when a stuck refresh may be reclaimed |
+
+`WCL_TOOL_THREADS` is gone. On Cloud Run, see `documentation/deployment.md` (background
+refreshes).
 
 **Production frontend.** `docker compose` runs the Vite dev server (`target: dev`, hot
 reload). For a production build, build the `prod` target, which serves the minified bundle
@@ -299,11 +332,11 @@ Or set `target: prod` and `ports: ["8080:80"]` on the `frontend` service in
 
 ```bash
 # Verify imports resolve
-uv run python -c "import google.adk, requests, pandas"
+uv run python -c "import google.adk, httpx, pandas"
 
 # Smoke-test the WCL API (no LLM) — prints your hourly points budget
-uv run python -c "from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import check_rate_limit; print(check_rate_limit())"
+uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
+from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
 ```
 
 ## Notes

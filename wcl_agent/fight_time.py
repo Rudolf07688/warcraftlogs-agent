@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .report_tools import _report_field
-from .threading_utils import gather_threads, unwrap
+from .aio import gather_settled, unwrap
 
 Interval = tuple[float, float]
 
@@ -156,7 +156,7 @@ def _dedupe_deaths(timestamps: list[float], tolerance_ms: float = 1000) -> list[
     return out
 
 
-def fetch_dead_windows(
+async def fetch_dead_windows(
     report_code: str,
     fight_id: int,
     source_id: int,
@@ -165,9 +165,9 @@ def fetch_dead_windows(
     """Deaths table → the player's death timestamps; one next-cast event per death.
 
     Costs 1 call + 1 per death (all through the cached client); the per-death calls run
-    concurrently (PERF-002). Raises on WCL errors so the calling tool can report them.
+    concurrently on the loop (PERF-002, feature 013). Raises on WCL errors so the calling tool can report them.
     """
-    table = _report_field(
+    table = await _report_field(
         report_code,
         "table(dataType: Deaths, fightIDs: $fightIDs, sourceID: $sourceID)",
         ", $fightIDs: [Int], $sourceID: Int",
@@ -183,8 +183,8 @@ def fetch_dead_windows(
             and (e.get("id") in (None, source_id))
         ]
     )
-    def next_cast(death: float) -> float | None:
-        events = _report_field(
+    async def next_cast(death: float) -> float | None:
+        events = await _report_field(
             report_code,
             "events(dataType: Casts, fightIDs: $fightIDs, sourceID: $sourceID, "
             "startTime: $startTime, limit: 1) { data nextPageTimestamp }",
@@ -197,7 +197,7 @@ def fetch_dead_windows(
         ts = first.get("timestamp") if first else None
         return float(ts) if ts is not None else None
 
-    results = gather_threads([lambda d=d: next_cast(d) for d in deaths])
+    results = await gather_settled(*(next_cast(d) for d in deaths))
     next_casts = [unwrap(r) for r in results]  # first failure (in death order) is raised
     return dead_windows(deaths, next_casts, fight_end)
 

@@ -13,8 +13,8 @@ from wcl_agent.tools import create_chart
 # --- create_chart tool validation ---------------------------------------------
 
 
-def test_create_chart_success_normalizes_spec():
-    r = create_chart("line", "DPS", '[{"name":"Raid","y":[1,2,3]}]', y_label="DPS")
+async def test_create_chart_success_normalizes_spec():
+    r = await create_chart("line", "DPS", '[{"name":"Raid","y":[1,2,3]}]', y_label="DPS")
     assert r["status"] == "success"
     chart = r["chart"]
     assert chart["kind"] == "line"
@@ -22,25 +22,25 @@ def test_create_chart_success_normalizes_spec():
     assert chart["y_label"] == "DPS"
 
 
-def test_create_chart_rejects_bad_kind():
-    r = create_chart("pie", "T", '[{"name":"A","y":[1]}]')
+async def test_create_chart_rejects_bad_kind():
+    r = await create_chart("pie", "T", '[{"name":"A","y":[1]}]')
     assert r["status"] == "error"
     assert "line" in r["valid"]
 
 
-def test_create_chart_rejects_bad_json():
-    r = create_chart("bar", "T", "{not json}")
+async def test_create_chart_rejects_bad_json():
+    r = await create_chart("bar", "T", "{not json}")
     assert r["status"] == "error"
 
 
-def test_create_chart_rejects_mismatched_x():
-    r = create_chart("line", "T", '[{"name":"A","y":[1,2,3],"x":[0,1]}]')
+async def test_create_chart_rejects_mismatched_x():
+    r = await create_chart("line", "T", '[{"name":"A","y":[1,2,3],"x":[0,1]}]')
     assert r["status"] == "error"
 
 
-def test_create_chart_rejects_too_many_points():
+async def test_create_chart_rejects_too_many_points():
     big = ",".join("1" for _ in range(600))
-    r = create_chart("line", "T", f'[{{"name":"A","y":[{big}]}}]')
+    r = await create_chart("line", "T", f'[{{"name":"A","y":[{big}]}}]')
     assert r["status"] == "error"
 
 

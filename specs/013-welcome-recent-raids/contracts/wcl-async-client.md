@@ -34,13 +34,13 @@ async def acheck_rate_limit() -> dict   # the sync check_rate_limit() is removed
 | # | Guarantee | Requirement |
 |---|---|---|
 | G1 | No blocking I/O. Every network call is an `await` on `httpx.AsyncClient`. | FR-018 |
-| G2 | **Cache**: a hit returns `json.loads(stored_bytes)`, a fresh object on every call. A miss stores `resp.content` (bytes) with the existing `ttl_for` rules. `rateLimitData` and `cache=False` skip the cache. | FR-022 |
+| G2 | **Cache**: a hit returns `json.loads(stored_bytes)`, a fresh object on every call (payloads over 256 KB are parsed with `asyncio.to_thread`). A miss stores `resp.content` (bytes) with the existing `ttl_for` rules. `rateLimitData` and `cache=False` skip the cache. | FR-022 |
 | G3 | **Single-flight**: concurrent identical cache keys share one fetch task. Each caller `await`s `asyncio.shield(task)`. | FR-022 |
 | G4 | **Cancellation**: a cancelled caller stops waiting at once. The shared task is cancelled only when its last waiter has gone, which frees its slot. | FR-019, SC-007 |
 | G5 | **Timeout**: each fetch is bounded by `asyncio.timeout(WCL_QUERY_TIMEOUT_S=75)` around the slot plus the request. HTTP timeouts are `connect=5`, `read=60`. A timeout raises `TimeoutError` to every waiter and frees the slot. | FR-021 |
 | G6 | **Lanes**: every fetch holds a `LaneLimiter` slot (below) for the length of the HTTP request only, not while waiting for single-flight or parsing a cache hit. | FR-020 |
 | G7 | **Errors**: an HTTP error status raises `httpx.HTTPStatusError`. A GraphQL `errors` payload raises `RuntimeError(json)`, as today. Errors are never cached. | FR-023 |
-| G8 | **Auth**: the token is fetched once per client under an `asyncio.Lock`. A `401` refreshes the token once and retries. | FR-023 |
+| G8 | **Auth**: the token is fetched once under an `asyncio.Lock` and shared across loops by client id. A `401` refreshes the token once and retries. | FR-023 |
 | G9 | **Tenant scope**: cache keys still include the `_scope_prefix` ContextVar (feature 006). It now propagates naturally through `await`. | FR-022 |
 
 ## `LaneLimiter`
@@ -56,7 +56,7 @@ class LaneLimiter:
 |---|---|
 | L1 | `interactive` acquires when `in_use < total`. |
 | L2 | `background` acquires only when `in_use < total` **and** `bg_in_use < background_cap` **and** `interactive_waiting == 0`. |
-| L3 | A release wakes all waiters, and each one checks its rule again. A cancelled waiter leaves the wait count cleanly. |
+| L3 | Waiters queue FIFO as futures. A release (synchronous, so a cancelled holder always frees its slot) hands free slots to the oldest waiters whose rule allows it. A cancelled waiter leaves the queue cleanly and wakes the others. |
 | L4 | Settings: `WCL_MAX_CONCURRENCY` (default 6, as today) and `WCL_BACKGROUND_CONCURRENCY` (default 2, clamped to `1 … total-1`). |
 | L5 | One limiter per event loop, so asyncio primitives are never shared across loops. Tests run several loops. |
 
@@ -69,7 +69,7 @@ class LaneLimiter:
 | `services/guide.resolve_active_spec` | **background** |
 | `patch.current_patch` from `ws.py` (preamble) and `api/guides.py` | **background** |
 | `services/recent_raids` list and detail steps | **background** (FR-024) |
-| CLI `menu.select_encounter` | interactive (via the `asyncio.run` shim) |
+| CLI `menu.select_encounter` | interactive (`async def`, awaited by `cli._main`) |
 
 ## Concurrency helpers in `wcl_agent/aio.py` (replace `gather_threads` for WCL)
 
@@ -85,6 +85,12 @@ def run_sync(coro: Awaitable[T]) -> T
     """For the Phase A–B transition only, in threading_utils. A sync caller on a tool-pool thread runs a converted async helper
     on the captured event loop with run_coroutine_threadsafe(...).result(). With no captured loop it uses asyncio.run. Deleted in Phase C."""
 ```
+
+## Event-loop latency (SC-008)
+
+- Large tool results are sized off the loop (`report_tools._acap`, a `to_thread` around `_cap`).
+- The backend calls `gc.collect(); gc.freeze()` once startup has finished. A cyclic-GC walk of the startup heap, triggered by allocations from parsing large payloads, stalled the loop for about 80 ms. Frozen, it takes about 3 ms.
+- Measured with `test_wcl_loop_lag.py` (4 turns, each looping over 1.3 MB lookups, 0.2–0.6 s latency, nothing cached): the worst stall is 15–35 ms, down from 157 ms. The rest is the JSON CPU of results that complete in the same instant. Getting reliably under 20 ms needs a faster JSON codec or no longer re-encoding results to size them.
 
 ## Removed at the end of the migration (Phase C)
 

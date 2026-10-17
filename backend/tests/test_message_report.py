@@ -28,7 +28,7 @@ async def _seed(session_factory, tid):
         await repo.add_message(s, conv.id, "user", "FIRST QUESTION about parses", tenant_id=tid)
         a1 = await repo.add_message(s, conv.id, "agent", "FIRST ANSWER with a chart", tenant_id=tid)
         spec = capture_artifact_from_tool(
-            "create_chart", True, create_chart("line", "DPS", '[{"name":"R","y":[1,2,3]}]')
+            "create_chart", True, await create_chart("line", "DPS", '[{"name":"R","y":[1,2,3]}]')
         )
         await repo.add_artifact(
             s, tenant_id=tid, conversation_id=conv.id, kind=spec.kind, title=spec.title,

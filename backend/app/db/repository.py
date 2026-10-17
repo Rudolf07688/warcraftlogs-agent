@@ -493,9 +493,9 @@ async def claim_refresh(
     """Atomically claim this tenant's refresh; return the new ``run_id``, or ``None``.
 
     One conditional ``UPDATE … RETURNING`` is the lock across instances (research R4). The
-    gate (data-model §3): not running (or running but stale), and one of: never finished,
-    finished over ``min_gap_s`` ago, the own-character set changed, or ``force`` after a
-    failure.
+    gate (data-model §3): a stale ``running`` claim (older than ``stale_s``) is always taken
+    over; otherwise not running, and one of: never finished, finished over ``min_gap_s``
+    ago, the own-character set changed, or ``force`` after a failure.
     """
     now = datetime.now(timezone.utc)
     await session.execute(
@@ -504,7 +504,9 @@ async def claim_refresh(
         .on_conflict_do_nothing(index_elements=["tenant_id"])
     )
     R = RecentRaidRefresh
-    not_running = or_(R.status != "running", R.started_at < now - timedelta(seconds=stale_s))
+    # A run that never recorded an outcome (crash, restart, throttled instance) is taken
+    # over once stale, whatever the gap since the previous run finished (FR-026).
+    stale = (R.status == "running") & (R.started_at < now - timedelta(seconds=stale_s))
     due = [
         R.finished_at.is_(None),
         R.finished_at < now - timedelta(seconds=min_gap_s),
@@ -516,7 +518,7 @@ async def claim_refresh(
     run_id = uuid.uuid4()
     result = await session.execute(
         update(R)
-        .where(R.tenant_id == tenant_id, not_running, or_(*due))
+        .where(R.tenant_id == tenant_id, or_(stale, (R.status != "running") & or_(*due)))
         .values(status="running", run_id=run_id, started_at=now, character_set=character_set)
         .returning(R.run_id)
         .execution_options(synchronize_session=False)

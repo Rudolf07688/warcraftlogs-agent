@@ -9,10 +9,6 @@ the lane limiter (contracts/wcl-async-client.md G1-G9).
 Lanes (PERF-211): background work (guides, the patch lookup, recent raids) runs inside
 :func:`background_lane` and may hold at most ``WCL_BACKGROUND_CONCURRENCY`` of the
 ``WCL_MAX_CONCURRENCY`` slots, and never takes a slot while a chat lookup is waiting.
-
-The sync :class:`WCLClient` / :func:`get_client` / :func:`check_rate_limit` are a temporary
-bridge for tools that are not async yet (tasks.md Phase A-B); they run the async client on
-the dispatching event loop via ``threading_utils.run_sync``.
 """
 
 from __future__ import annotations
@@ -26,7 +22,6 @@ from collections import deque
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
@@ -46,7 +41,7 @@ DEFAULT_QUERY_TIMEOUT_S = 75
 # PERF-003: a hung connect fails fast; slow queries keep 60 s.
 HTTP_TIMEOUT = httpx.Timeout(60, connect=5)
 # Payloads above this are parsed off the loop so a big report can't stall streaming.
-_PARSE_OFF_LOOP_BYTES = 2_000_000
+_PARSE_OFF_LOOP_BYTES = 256_000
 
 Lane = Literal["interactive", "background"]
 _lane: ContextVar[Lane] = ContextVar("wcl_lane", default="interactive")
@@ -305,13 +300,6 @@ def get_async_client() -> AsyncWCLClient:
     return client
 
 
-async def _aclose_loop_client() -> None:
-    """Close the running loop's client (used when a short-lived loop ends)."""
-    client = _clients.pop(asyncio.get_running_loop(), None)
-    if client is not None:
-        await client.aclose()
-
-
 async def aclose_clients() -> None:
     """Close every loop's client and HTTP pool (FastAPI lifespan shutdown)."""
     clients = list(_clients.items())
@@ -327,32 +315,3 @@ async def acheck_rate_limit() -> dict[str, Any]:
     """Return the current API points budget (limit / spent / reset seconds)."""
     data = await get_async_client().query(RATE_LIMIT_QUERY)
     return data["data"]["rateLimitData"]
-
-
-# --- Temporary sync bridge (removed in tasks.md Phase C) --------------------------------
-
-
-@dataclass
-class WCLClient:
-    """Sync facade over the async client for tools that are not async yet."""
-
-    def query(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-        from .threading_utils import run_sync
-
-        async def _q() -> dict[str, Any]:
-            return await get_async_client().query(query, variables)
-
-        return run_sync(_q, cleanup=_aclose_loop_client)
-
-
-_client = WCLClient()
-
-
-def get_client() -> WCLClient:
-    """Return the shared sync facade (bridge; see :func:`get_async_client`)."""
-    return _client
-
-
-def check_rate_limit() -> dict[str, Any]:
-    """Return the current API points budget (limit / spent / reset seconds)."""
-    return get_client().query(RATE_LIMIT_QUERY)["data"]["rateLimitData"]

@@ -102,10 +102,10 @@ def _register(game_patch="12.1"):
     ))
 
 
-def test_death_and_intermission_shrink_eligible_time(monkeypatch):
+async def test_death_and_intermission_shrink_eligible_time(monkeypatch):
     _register()
     install(monkeypatch, make_responder(deaths=[240_000]))  # dead for the last 60 s
-    res = get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
     assert res["status"] == "success"
     t = res["time"]
     assert (t["fight_s"], t["dead_s"], t["intermission_s"], t["eligible_s"]) == (300.0, 60.0, 60.0, 180.0)
@@ -123,43 +123,43 @@ def test_death_and_intermission_shrink_eligible_time(monkeypatch):
     assert res["completeness"]["truncated"] is False
 
 
-def test_eligible_time_ignores_wcl_active_time(monkeypatch):
+async def test_eligible_time_ignores_wcl_active_time(monkeypatch):
     _register()
     install(monkeypatch, make_responder(intermission=False))
-    res = get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
     assert res["time"]["eligible_s"] == 300.0  # not the 5 s activeTime in the Casts entry
     assert res["time"]["intermission_s"] == 0.0
     assert next(c for c in res["cooldowns"] if c["name"] == "Combustion")["opportunities"] == 3
     assert "activeTime" not in str(res)
 
 
-def test_no_guide_entry_means_rates_only(monkeypatch):
+async def test_no_guide_entry_means_rates_only(monkeypatch):
     clear_guide_meta()
     install(monkeypatch, make_responder())
-    res = get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
     assert res["guide"]["available"] is False and res["guide"]["game_patch"] is None
     assert res["cooldowns"] == []
     assert len(res["rates"]) == 3
 
 
-def test_unknown_patch_guide_flags_every_cooldown(monkeypatch):
+async def test_unknown_patch_guide_flags_every_cooldown(monkeypatch):
     _register(game_patch=None)
     install(monkeypatch, make_responder())
-    res = get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
     assert res["guide"]["freshness"] == "unknown"
     assert res["cooldowns"] and all(c["freshness_caveat"] for c in res["cooldowns"])
 
 
-def test_player_errors(monkeypatch):
+async def test_player_errors(monkeypatch):
     _register()
     install(monkeypatch, make_responder())
-    missing = get_cooldown_usage(CODE, FIGHT, "Nobody")
+    missing = await get_cooldown_usage(CODE, FIGHT, "Nobody")
     assert missing["status"] == "error" and missing["players_present"] == ["Hrslkks", "Other"]
     install(monkeypatch, make_responder(duplicate=True))
-    dup = get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    dup = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
     assert dup["status"] == "error" and [c["source_id"] for c in dup["candidates"]] == [7, 9]
-    assert get_cooldown_usage(CODE, FIGHT, "Hrslkks", source_id=7)["status"] == "success"
-    assert get_cooldown_usage(CODE, 0, "Hrslkks")["status"] == "error"
+    assert (await get_cooldown_usage(CODE, FIGHT, "Hrslkks", source_id=7))["status"] == "success"
+    assert (await get_cooldown_usage(CODE, 0, "Hrslkks"))["status"] == "error"
 
 
 def test_tool_summary_for_cooldowns():

@@ -14,13 +14,32 @@ credentials) or nothing passes, a documented fallback set is returned with
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
-from typing import Any
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, TypeVar
 
-from .threading_utils import gather_threads
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
+
+
+def _gather_threads(calls: list[Callable[[], T]], max_workers: int = 4) -> list[T | BaseException]:
+    """Run blocking SDK probes concurrently; results in input order, errors in their slot."""
+    if not calls:
+        return []
+
+    def capture(call: Callable[[], T]) -> T | BaseException:
+        try:
+            return call()
+        except Exception as exc:  # noqa: BLE001 - handed back to the caller in its slot
+            return exc
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(calls))) as pool:
+        futures = [pool.submit(contextvars.copy_context().run, capture, c) for c in calls]
+        return [f.result() for f in futures]
 
 
 def _is_anthropic(model: str) -> bool:
@@ -116,7 +135,7 @@ def discover_models(
             infra_ran = True
             probes += [(m, lambda m=m: _probe_anthropic(aclient, m)) for m in anthropic_ids]
 
-    results = gather_threads([probe for _, probe in probes], max_workers=8)
+    results = _gather_threads([probe for _, probe in probes], max_workers=8)
     validated = [m for (m, _), ok in zip(probes, results) if ok is True]
 
     if not infra_ran or not validated:

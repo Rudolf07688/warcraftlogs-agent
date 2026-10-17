@@ -22,7 +22,7 @@ from .fight_time import PlayerResolutionError, fetch_dead_windows, resolve_playe
 from .provenance import Completeness, PercentileContext, Provenance, flatten_report_rankings, with_envelope
 from .queries import ENCOUNTER_RANKINGS
 from .report_tools import _report_field
-from .threading_utils import gather_threads, unwrap
+from .aio import gather_settled, unwrap
 
 BENCHMARK_METRICS = ("dps", "hps", "bossdps")
 MAX_SIZE = 5
@@ -235,7 +235,7 @@ def _player_block(resolved, row: PercentileContext | None, extra: dict[str, Any]
     }
 
 
-def _fetch_report_context(report_code: str, fight_id: int, metric: str) -> dict[str, Any] | None:
+async def _fetch_report_context(report_code: str, fight_id: int, metric: str) -> dict[str, Any] | None:
     """masterData actors + the fight + report.rankings for that fight, in one call."""
     query = f"""
     query BenchmarkCtx($code: String!, $fightIDs: [Int]) {{
@@ -248,12 +248,14 @@ def _fetch_report_context(report_code: str, fight_id: int, metric: str) -> dict[
       }} }}
     }}
     """.strip()
-    data = wcl_client.get_client().query(query, {"code": report_code, "fightIDs": [fight_id]})
+    data = await wcl_client.get_async_client().query(
+        query, {"code": report_code, "fightIDs": [fight_id]}
+    )
     return ((data.get("data") or {}).get("reportData") or {}).get("report")
 
 
-def _casts_table(report_code: str, fight_id: int) -> dict[str, Any] | None:
-    return _report_field(
+async def _casts_table(report_code: str, fight_id: int) -> dict[str, Any] | None:
+    return await _report_field(
         report_code,
         "table(dataType: Casts, fightIDs: $fightIDs)",
         ", $fightIDs: [Int]",
@@ -262,7 +264,7 @@ def _casts_table(report_code: str, fight_id: int) -> dict[str, Any] | None:
     )
 
 
-def compare_player_to_cohort(
+async def compare_player_to_cohort(
     report_code: str,
     fight_id: int,
     player_name: str,
@@ -308,7 +310,7 @@ def compare_player_to_cohort(
     requested_size = max(1, min(int(size or MAX_SIZE), MAX_SIZE))
 
     try:
-        report = _fetch_report_context(report_code, fight_id, metric)
+        report = await _fetch_report_context(report_code, fight_id, metric)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if not report or not report.get("fights"):
@@ -368,8 +370,8 @@ def compare_player_to_cohort(
     # error precedence and messages are unchanged.
     band = band_pages(row.total_parses)
 
-    def leaderboard_page(page: int) -> list[dict[str, Any]]:
-        data = wcl_client.get_client().query(
+    async def leaderboard_page(page: int) -> list[dict[str, Any]]:
+        data = await wcl_client.get_async_client().query(
             ENCOUNTER_RANKINGS,
             {
                 "encounterID": row.encounter_id,
@@ -386,9 +388,9 @@ def compare_player_to_cohort(
         ) or {}
         return blob.get("rankings") or []
 
-    def cohort_branch() -> dict[str, Any]:
-        rl_res, *page_res = gather_threads(
-            [wcl_client.check_rate_limit] + [lambda p=p: leaderboard_page(p) for p in band.pages]
+    async def cohort_branch() -> dict[str, Any]:
+        rl_res, *page_res = await gather_settled(
+            wcl_client.acheck_rate_limit(), *(leaderboard_page(p) for p in band.pages)
         )
         # Budget → size (research R4). Budget unknown ⇒ no shrink.
         remaining: float | None = None
@@ -413,21 +415,16 @@ def compare_player_to_cohort(
             e for e in selection.members
             if (e.get("report") or {}).get("code") and (e.get("report") or {}).get("fightID")
         ]
-        casts = gather_threads(
-            [
-                lambda e=e: _casts_table(e["report"]["code"], int(e["report"]["fightID"]))
-                for e in fetchable
-            ]
+        casts = await gather_settled(
+            *(_casts_table(e["report"]["code"], int(e["report"]["fightID"])) for e in fetchable)
         )
         out["member_casts"] = {id(e): c for e, c in zip(fetchable, casts)}
         return out
 
-    cohort_res, casts_res, dead_res = gather_threads(
-        [
-            cohort_branch,
-            lambda: _casts_table(report_code, fight_id),
-            lambda: fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end),
-        ]
+    cohort_res, casts_res, dead_res = await gather_settled(
+        cohort_branch(),
+        _casts_table(report_code, fight_id),
+        fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end),
     )
     if isinstance(cohort_res, BaseException):  # an unexpected failure outside the WCL calls
         return {"status": "error", "error_message": f"WCL request failed (leaderboard): {cohort_res}"}

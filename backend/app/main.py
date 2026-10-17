@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gc
 import logging
 from contextlib import asynccontextmanager
 
@@ -26,6 +27,7 @@ from .api import (
     models,
     profile,
     raids,
+    recent_raids,
     reports,
     ws,
 )
@@ -157,6 +159,11 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
 
         tracker.finish()
         logger.info("Backend ready in %d ms", tracker.snapshot()["elapsed_ms"])
+        # Feature 013 (SC-008): move the startup heap (ADK, genai, pydantic models…) out of
+        # the cyclic GC's reach. Otherwise each collection triggered by parsing a large WCL
+        # payload walks it, measured at ~80 ms of event-loop stall; frozen, ~3 ms.
+        gc.collect()
+        gc.freeze()
     except Exception:  # noqa: BLE001
         # Already recorded on the tracker (phase=failed) and logged by tracker.run; the
         # process stays up so /api/health can show *what* failed instead of a dead port.
@@ -204,6 +211,7 @@ app.include_router(conversations.router)
 app.include_router(profile.router)
 app.include_router(guides.router)
 app.include_router(raids.router)
+app.include_router(recent_raids.router)
 app.include_router(reports.router)
 app.include_router(greeting.router)
 app.include_router(ws.router)

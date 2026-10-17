@@ -27,7 +27,7 @@ from .fight_time import (
 from .guide_meta import GuideCooldown, get_guide_meta
 from .patch import current_patch, guide_freshness
 from .provenance import Completeness, Provenance, with_envelope
-from .threading_utils import gather_threads, unwrap
+from .aio import gather_settled, unwrap
 
 EXCLUDED_WINDOWS_UNKNOWN = ["target immunity outside intermissions"]
 
@@ -67,7 +67,7 @@ def _split_icon(icon: str | None) -> tuple[str | None, str | None]:
 # --- The tool ---------------------------------------------------------------------
 
 
-def _fetch_context(report_code: str, fight_id: int) -> dict[str, Any] | None:
+async def _fetch_context(report_code: str, fight_id: int) -> dict[str, Any] | None:
     query = """
     query CooldownCtx($code: String!, $fightIDs: [Int]) {
       reportData { report(code: $code) {
@@ -80,7 +80,9 @@ def _fetch_context(report_code: str, fight_id: int) -> dict[str, Any] | None:
       } }
     }
     """.strip()
-    data = wcl_client.get_client().query(query, {"code": report_code, "fightIDs": [fight_id]})
+    data = await wcl_client.get_async_client().query(
+        query, {"code": report_code, "fightIDs": [fight_id]}
+    )
     return ((data.get("data") or {}).get("reportData") or {}).get("report")
 
 
@@ -96,7 +98,7 @@ def _intermission_ids(phases: list[dict[str, Any]] | None, encounter_id: int | N
     return set()
 
 
-def get_cooldown_usage(
+async def get_cooldown_usage(
     report_code: str,
     fight_id: int,
     player_name: str,
@@ -133,7 +135,7 @@ def get_cooldown_usage(
     if not fight_id or fight_id < 1:
         return {"status": "error", "error_message": "fight_id must be a single fight id (> 0)."}
     try:
-        report = _fetch_context(report_code, fight_id)
+        report = await _fetch_context(report_code, fight_id)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if not report or not report.get("fights"):
@@ -148,11 +150,9 @@ def get_cooldown_usage(
     fight_start, fight_end = float(fight.get("startTime") or 0), float(fight.get("endTime") or 0)
     fight_s = round(max(0.0, fight_end - fight_start) / 1000, 1)
     # The casts table and the death windows are independent: fetch them together (PERF-002).
-    casts_res, dead_res = gather_threads(
-        [
-            lambda: _casts_table(report_code, fight_id),
-            lambda: fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end),
-        ]
+    casts_res, dead_res = await gather_settled(
+        _casts_table(report_code, fight_id),
+        fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end),
     )
     try:
         entry = reduce_casts_entry(unwrap(casts_res), source_id=resolved.source_id)
@@ -173,7 +173,7 @@ def get_cooldown_usage(
     abilities = entry.abilities if entry else []
 
     meta = get_guide_meta(class_name, spec) if class_name and spec else None
-    freshness = guide_freshness(meta.game_patch, current_patch()) if meta is not None else None
+    freshness = guide_freshness(meta.game_patch, await current_patch()) if meta is not None else None
     guide = {
         "available": bool(meta is not None and meta.cooldowns),
         "game_patch": meta.game_patch if meta is not None else None,

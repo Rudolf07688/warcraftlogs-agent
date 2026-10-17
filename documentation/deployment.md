@@ -36,6 +36,20 @@ no rework. This captures the plan (clarified 2026-10-01); it is **not** built ye
 Supported, but: enable **session affinity**, keep streamed turns well under the
 request timeout, and set an adequate timeout. Capture in the deployment work.
 
+## Background refreshes (feature 013)
+
+Opening the welcome page may start a background refresh of the user's recent raids
+after the response is sent. Cloud Run throttles CPU outside requests by default, so such
+a refresh can stall until the next request arrives. Recommend **"CPU always allocated"**
+(`--no-cpu-throttling`) for the backend service.
+
+Correctness doesn't depend on it: the refresh claim is a row in Postgres, not process
+memory, so any instance can pick up the work. A run that never records an outcome (the
+instance was throttled, scaled in or restarted) is reclaimed by the next page load after
+`RECENT_RAIDS_STALE_S` (default 5 minutes). Stored raids are always shown immediately.
+Background WCL work is capped at `WCL_BACKGROUND_CONCURRENCY` (default 2) of the
+`WCL_MAX_CONCURRENCY` slots, so it never delays chat lookups.
+
 ## Schema management
 
 v1 creates tables on startup (`Base.metadata.create_all`). Before production,

@@ -12,18 +12,20 @@ the rest of the API so the agent can answer essentially any question:
 
 Every field WCL returns as a ``JSON`` scalar is passed straight back to the model
 (size-capped), so these tools stay robust even as the JSON shape varies by zone.
-All return a ``dict`` with a ``"status"`` key.
+All return a ``dict`` with a ``"status"`` key. They are coroutines (feature 013): WCL
+I/O is awaited on the event loop, so ADK runs parallel tool calls concurrently.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict
 from typing import Any
 
 from .constants import METRICS
 from .provenance import Completeness, Provenance, flatten_report_rankings, with_envelope
-from .wcl_client import get_client
+from . import wcl_client
 
 # --- Enum whitelists (inlined into queries after validation) ------------------
 # Match the live API enums (feature 009, research R5/R14): ``Resurrections`` is
@@ -61,7 +63,12 @@ def _cap(obj: Any) -> Any:
     }
 
 
-def _report_field(
+async def _acap(obj: Any) -> Any:
+    """``_cap`` off the event loop: sizing a large result is a full ``json.dumps`` (SC-008)."""
+    return await asyncio.to_thread(_cap, obj)
+
+
+async def _report_field(
     code: str,
     field_call: str,
     var_decls: str,
@@ -73,7 +80,7 @@ def _report_field(
         f"query ReportQ($code: String!{var_decls}) {{ "
         f"reportData {{ report(code: $code) {{ {field_call} }} }} }}"
     )
-    data = get_client().query(query, {"code": code, **variables})
+    data = await wcl_client.get_async_client().query(query, {"code": code, **variables})
     report = ((data.get("data") or {}).get("reportData") or {}).get("report")
     if report is None:
         return None
@@ -87,7 +94,7 @@ def _fight_ids(fight_id: int) -> list[int] | None:
 
 # --- Report structure ---------------------------------------------------------
 
-def get_report_fights(report_code: str) -> dict[str, Any]:
+async def get_report_fights(report_code: str) -> dict[str, Any]:
     """List the fights (pulls) in a Warcraft Logs report, with the players in each.
 
     Use this to turn a report code (e.g. from a leaderboard parse) into fight IDs
@@ -119,7 +126,7 @@ def get_report_fights(report_code: str) -> dict[str, Any]:
     }
     """.strip()
     try:
-        data = get_client().query(query, {"code": report_code})
+        data = await wcl_client.get_async_client().query(query, {"code": report_code})
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
 
@@ -153,13 +160,13 @@ def get_report_fights(report_code: str) -> dict[str, Any]:
             "guild": (report.get("guild") or {}).get("name"),
             "start_time_ms": report.get("startTime"),
             "players": players,
-            "fights": _cap(fights),
+            "fights": await _acap(fights),
         },
         Provenance(report_code=report_code),
     )
 
 
-def get_report_master_data(report_code: str) -> dict[str, Any]:
+async def get_report_master_data(report_code: str) -> dict[str, Any]:
     """Get the actor (player/NPC/pet) and ability id->name maps for a report.
 
     Useful for resolving source_id / ability_id values used by the table, events,
@@ -180,19 +187,19 @@ def get_report_master_data(report_code: str) -> dict[str, Any]:
     }
     """.strip()
     try:
-        data = get_client().query(query, {"code": report_code})
+        data = await wcl_client.get_async_client().query(query, {"code": report_code})
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     md = (((data.get("data") or {}).get("reportData") or {}).get("report") or {}).get("masterData")
     if md is None:
         return {"status": "error", "error_message": f"No report '{report_code}'."}
     return with_envelope(
-        {"status": "success", "actors": _cap(md.get("actors")), "abilities": _cap(md.get("abilities"))},
+        {"status": "success", "actors": await _acap(md.get("actors")), "abilities": await _acap(md.get("abilities"))},
         Provenance(report_code=report_code),
     )
 
 
-def get_report_metadata(report_code: str) -> dict[str, Any]:
+async def get_report_metadata(report_code: str) -> dict[str, Any]:
     """Resolve a report's human-readable metadata in a single GraphQL call.
 
     Used to label a tracked raid (``"<guild> — <zone> — <date>"``). Not exposed to
@@ -216,7 +223,7 @@ def get_report_metadata(report_code: str) -> dict[str, Any]:
     }
     """.strip()
     try:
-        data = get_client().query(query, {"code": report_code})
+        data = await wcl_client.get_async_client().query(query, {"code": report_code})
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     report = ((data.get("data") or {}).get("reportData") or {}).get("report")
@@ -233,7 +240,7 @@ def get_report_metadata(report_code: str) -> dict[str, Any]:
 
 # --- The workhorses: table / events / graph -----------------------------------
 
-def get_report_table(
+async def get_report_table(
     report_code: str,
     data_type: str,
     fight_id: int = 0,
@@ -288,18 +295,18 @@ def get_report_table(
         "abilityID": ability_id or None,
     }
     try:
-        table = _report_field(report_code, field, var_decls, variables, "table")
+        table = await _report_field(report_code, field, var_decls, variables, "table")
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if table is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     return with_envelope(
-        {"status": "success", "data_type": data_type, "table": _cap(table)},
+        {"status": "success", "data_type": data_type, "table": await _acap(table)},
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
 
 
-def get_report_events(
+async def get_report_events(
     report_code: str,
     data_type: str,
     fight_id: int = 0,
@@ -360,20 +367,20 @@ def get_report_events(
         "startTime": start_time or None,
     }
     try:
-        events = _report_field(report_code, field, var_decls, variables, "events")
+        events = await _report_field(report_code, field, var_decls, variables, "events")
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if events is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     has_more = isinstance(events, dict) and events.get("nextPageTimestamp") is not None
     return with_envelope(
-        {"status": "success", "data_type": data_type, "events": _cap(events)},
+        {"status": "success", "data_type": data_type, "events": await _acap(events)},
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
         Completeness(has_more=has_more),
     )
 
 
-def get_report_graph(
+async def get_report_graph(
     report_code: str,
     data_type: str,
     fight_id: int = 0,
@@ -406,13 +413,13 @@ def get_report_graph(
     var_decls = ", $fightIDs: [Int], $sourceID: Int"
     variables = {"fightIDs": _fight_ids(fight_id), "sourceID": source_id or None}
     try:
-        graph = _report_field(report_code, field, var_decls, variables, "graph")
+        graph = await _report_field(report_code, field, var_decls, variables, "graph")
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if graph is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     return with_envelope(
-        {"status": "success", "data_type": data_type, "graph": _cap(graph)},
+        {"status": "success", "data_type": data_type, "graph": await _acap(graph)},
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
 
@@ -421,7 +428,7 @@ RANKING_COMPARE_TYPES = {"Rankings", "Parses"}
 RANKING_TIMEFRAMES = {"Historical", "Today"}
 
 
-def get_report_rankings(
+async def get_report_rankings(
     report_code: str,
     fight_id: int = 0,
     compare: str = "Rankings",
@@ -464,7 +471,7 @@ def get_report_rankings(
     field = f"rankings(fightIDs: $fightIDs, compare: {compare}, timeframe: {timeframe})"
     var_decls = ", $fightIDs: [Int]"
     try:
-        rankings = _report_field(
+        rankings = await _report_field(
             report_code, field, var_decls, {"fightIDs": _fight_ids(fight_id)}, "rankings"
         )
     except Exception as exc:  # noqa: BLE001
@@ -476,12 +483,12 @@ def get_report_rankings(
         for p in flatten_report_rankings(rankings, compare=compare, timeframe=timeframe, metric="default")
     ]
     return with_envelope(
-        {"status": "success", "rankings": _cap(rankings), "percentiles": _cap(percentiles)},
+        {"status": "success", "rankings": await _acap(rankings), "percentiles": await _acap(percentiles)},
         Provenance(report_code=report_code, fight_id=fight_id or None, compare=compare, timeframe=timeframe),
     )
 
 
-def get_report_player_details(report_code: str, fight_id: int = 0) -> dict[str, Any]:
+async def get_report_player_details(report_code: str, fight_id: int = 0) -> dict[str, Any]:
     """Get player gear, talents, specs, and roles for a report's fight(s).
 
     Args:
@@ -494,7 +501,7 @@ def get_report_player_details(report_code: str, fight_id: int = 0) -> dict[str, 
     field = "playerDetails(fightIDs: $fightIDs)"
     var_decls = ", $fightIDs: [Int]"
     try:
-        details = _report_field(
+        details = await _report_field(
             report_code, field, var_decls, {"fightIDs": _fight_ids(fight_id)}, "playerDetails"
         )
     except Exception as exc:  # noqa: BLE001
@@ -502,7 +509,7 @@ def get_report_player_details(report_code: str, fight_id: int = 0) -> dict[str, 
     if details is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     return with_envelope(
-        {"status": "success", "playerDetails": _cap(details)},
+        {"status": "success", "playerDetails": await _acap(details)},
         Provenance(report_code=report_code, fight_id=fight_id or None),
     )
 
@@ -513,7 +520,7 @@ def _server_slug(server: str) -> str:
     return server.strip().lower().replace(" ", "-").replace("'", "")
 
 
-def get_character_zone_rankings(
+async def get_character_zone_rankings(
     name: str, server: str, region: str, zone_id: int = 0, metric: str = "dps", difficulty: int = 0
 ) -> dict[str, Any]:
     """Get one player's parse percentiles across a whole raid zone.
@@ -547,19 +554,19 @@ def get_character_zone_rankings(
         "zoneID": zone_id or None, "difficulty": difficulty or None,
     }
     try:
-        data = get_client().query(query, variables)
+        data = await wcl_client.get_async_client().query(query, variables)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     char = ((data.get("data") or {}).get("characterData") or {}).get("character")
     if not char:
         return {"status": "error", "error_message": f"Character '{name}-{server}' ({region}) not found."}
     return with_envelope(
-        {"status": "success", "name": char.get("name"), "zoneRankings": _cap(char.get("zoneRankings"))},
+        {"status": "success", "name": char.get("name"), "zoneRankings": await _acap(char.get("zoneRankings"))},
         Provenance(metric=metric, difficulty=difficulty or None),
     )
 
 
-def get_character_encounter_rankings(
+async def get_character_encounter_rankings(
     name: str, server: str, region: str, encounter_id: int, metric: str = "dps", difficulty: int = 0
 ) -> dict[str, Any]:
     """Get one player's parse history on a single boss encounter.
@@ -591,21 +598,21 @@ def get_character_encounter_rankings(
         "encounterID": encounter_id, "difficulty": difficulty or None,
     }
     try:
-        data = get_client().query(query, variables)
+        data = await wcl_client.get_async_client().query(query, variables)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     char = ((data.get("data") or {}).get("characterData") or {}).get("character")
     if not char:
         return {"status": "error", "error_message": f"Character '{name}-{server}' ({region}) not found."}
     return with_envelope(
-        {"status": "success", "name": char.get("name"), "encounterRankings": _cap(char.get("encounterRankings"))},
+        {"status": "success", "name": char.get("name"), "encounterRankings": await _acap(char.get("encounterRankings"))},
         Provenance(encounter_id=encounter_id, metric=metric, difficulty=difficulty or None),
     )
 
 
 # --- Ultimate escape hatch ----------------------------------------------------
 
-def run_wcl_graphql(query: str, variables_json: str = "") -> dict[str, Any]:
+async def run_wcl_graphql(query: str, variables_json: str = "") -> dict[str, Any]:
     """Run an arbitrary read-only GraphQL query against the Warcraft Logs v2 API.
 
     Fallback for anything the other tools don't cover. You write the GraphQL. The
@@ -631,7 +638,7 @@ def run_wcl_graphql(query: str, variables_json: str = "") -> dict[str, Any]:
     if not isinstance(variables, dict):
         return {"status": "error", "error_message": "variables_json must be a JSON object."}
     try:
-        data = get_client().query(query, variables)
+        data = await wcl_client.get_async_client().query(query, variables)
     except Exception as exc:  # noqa: BLE001 - includes GraphQL errors for the model to fix
         return {"status": "error", "error_message": f"Query failed: {exc}"}
-    return with_envelope({"status": "success", "data": _cap(data.get("data"))}, Provenance())
+    return with_envelope({"status": "success", "data": await _acap(data.get("data"))}, Provenance())

@@ -101,8 +101,8 @@ One row per tenant. It records the refresh state, and it is the lock across inst
 ```
 
 The claim gate (all conditions in one `UPDATE … RETURNING`):
-- **not running**, or running but stale (`started_at < now − 5 min`); **and**
-- **one of**:
+- **running but stale** (`started_at < now − 5 min`): always claimable, because the previous run never recorded its outcome; **or**
+- **not running, and one of**:
   - `force`, allowed only when `status = 'failed'`;
   - never finished;
   - `finished_at < now − 15 min`;

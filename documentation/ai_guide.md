@@ -86,7 +86,8 @@ wcl_agent/
   cli.py                   # env check -> menu -> asyncio chat REPL (the `wcl` entry point)
   menu.py                  # interactive zone/encounter/difficulty selection
   agent.py                 # root_agent: Gemini model + instruction + all 15 tools
-  wcl_client.py            # WCLClient (OAuth + GraphQL) singleton + check_rate_limit
+  wcl_client.py            # AsyncWCLClient (httpx, OAuth + GraphQL) per loop, lanes, acheck_rate_limit
+  aio.py                   # gather_settled / unwrap: async fan-out inside a tool
   queries.py               # GraphQL strings for the menu + leaderboard
   constants.py             # class/spec PascalCase filter map + METRICS + normalizer
   tools.py                 # LEADERBOARD tools (rankings distribution / spec compare)
@@ -213,15 +214,16 @@ it returns a truncation note + preview telling the model to narrow filters.
 
 ## 7. How to add a new tool (recipe)
 
-1. Add a plain Python function in `tools.py` or `report_tools.py`:
+1. Add an `async def` function in `tools.py` or `report_tools.py` (every tool is a coroutine):
    - **Primitive args** (`str`/`int`), sensible defaults for optionals.
    - **A thorough docstring** — ADK turns the docstring + type hints into the tool
      schema the LLM sees. Describe purpose, each arg, and the return shape.
    - **Return a dict** with `"status"`; wrap the WCL call in `try/except` and
      return `{"status":"error","error_message":…}`.
-   - For GraphQL, reuse `_report_field(...)` (report fields) or `get_client().query(...)`.
+   - For GraphQL, reuse `await _report_field(...)` (report fields) or
+     `await wcl_client.get_async_client().query(...)`. Fan out with `aio.gather_settled`.
      **Inline enum-valued args after whitelist validation**; keep scalars as `$vars`.
-   - Wrap potentially large JSON in `_cap(...)`.
+   - Wrap potentially large JSON in `await _acap(...)` (sizes it off the loop).
 2. Register the function in `agent.py`'s `tools=[…]` list (and import it).
 3. Update the agent `instruction` if it introduces a new capability/workflow.
 4. **Smoke-test it live** against a real report/character before trusting it (see §8).
@@ -244,13 +246,14 @@ Useful checks:
 uv run python -c "from wcl_agent.agent import root_agent; print(len(root_agent.tools))"
 
 # WCL auth/GraphQL smoke (no LLM) — prints points budget
-uv run python -c "from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import check_rate_limit; print(check_rate_limit())"
+uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
+from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
 
 # menu discovery (no LLM)
-uv run python -c "from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import get_client; from wcl_agent.queries import MENU_DISCOVERY; \
-print([z['name'] for z in get_client().query(MENU_DISCOVERY)['data']['worldData']['zones']])"
+uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
+from wcl_agent.wcl_client import get_async_client; from wcl_agent.queries import MENU_DISCOVERY; \
+q = lambda: get_async_client().query(MENU_DISCOVERY); \
+print([z['name'] for z in asyncio.run(q())['data']['worldData']['zones']])"
 ```
 To test a tool, construct a stub context: `class Ctx: state = {…}` and call the tool
 with `Ctx()`. To test the whole agent non-interactively, build a `Runner` +
@@ -515,15 +518,21 @@ Implemented in `specs/012-multi-character-profile/`. Summary for future agents:
 
 Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future agents must know:
 
-- **Tools run in threads.** `build_agent` wraps `TOOLS` with `threading_utils.off_loop`
-  (ADK runs sync tools inline on the loop in SSE mode). They run on a dedicated pool
-  (`WCL_TOOL_THREADS`); call other WCL functions from async code with `run_in_tool_pool`,
-  never `asyncio.to_thread` (PERF-101). `TOOLS` itself stays sync for direct
-  callers. Use `gather_threads` for fan-out inside a tool: ordered results, per-item errors,
-  contextvars copied (the tenant cache scope must reach workers).
-- **WCL client** (`wcl_client.py`): pooled `requests.Session`, `WCL_MAX_CONCURRENCY` cap,
-  single-flight per cache key. The cache (`cache.py`) is locked and bounded by entries and
-  bytes. Tests patch `requests.Session.post`, not `requests.post`.
+- **Tools are coroutines (feature 013, superseding the PERF-001 threads).** `build_agent`
+  registers `TOOLS` directly; ADK awaits them on the loop. There are no WCL worker threads:
+  never call WCL from a thread, and use `aio.gather_settled` for fan-out inside a tool
+  (ordered results, per-item errors; cancelling the caller cancels the children; the tenant
+  cache scope ContextVar travels with `await`).
+- **WCL client** (`wcl_client.py`): one `AsyncWCLClient` (httpx) per event loop via
+  `get_async_client()`; every module calls it as `wcl_client.get_async_client()` so tests
+  patch one name (`backend/tests/wcl_fakes.install`, or `mock_async_client` over an
+  `httpx.MockTransport` for client tests). Single-flight per cache key with
+  cancel-on-last-waiter, a `LaneLimiter` (`WCL_MAX_CONCURRENCY` slots, background capped at
+  `WCL_BACKGROUND_CONCURRENCY` and yielding to waiting chat lookups), and a 75 s per-query
+  timeout. Wrap background work in `with background_lane():`. The cache stores raw response
+  bytes; each hit parses a fresh object. Large tool results are sized with `_acap` off the
+  loop, and the backend `gc.freeze()`s its startup heap (a GC walk of it stalled the loop
+  ~80 ms).
 - **Chat turn** (`api/ws.py`): the setup transaction closes before streaming. Captures,
   partial replies and the final save open their own `tenant_scope`. Never hold a session
   across `stream_response`. `DoneFrame` precedes `SuggestionsFrame(message_id=…)`.
@@ -548,3 +557,29 @@ Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future age
   blob in `get_report_rankings` (feature 009 contract; trimmed from older turns anyway).
   Explicit context caching waits on the `cached_tokens` measurements.
 
+
+## 18. Feature 013 — welcome page with my recent raids
+
+Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
+
+- **Storage** (migration `0010_recent_raids`, RLS like `0005`): `recent_raids` (one row per
+  report an own character was in, `UNIQUE(tenant_id, report_code)`), `recent_raid_characters`
+  (links, cascade on character delete, so the list only shows raids a current own character
+  attended), and `recent_raid_refresh` (one row per tenant: state + the claim lock).
+- **Refresh** (`services/recent_raids.py`): `maybe_start_refresh` runs one conditional
+  `UPDATE … RETURNING` claim (`repo.claim_refresh`; gate: not running or stale > 5 min, and
+  never finished / > 15 min ago / own-character set changed / forced after a failure),
+  commits, then `background.spawn`s `run_recent_raid_refresh`. That run: one aliased
+  `recentReports` request (`cache=False`), upsert, then details for new or non-final raids
+  only, 10 per request. Final = log ended > 2 h before the fetch. Errors become short codes
+  (`wcl_unavailable`, `rate_limited`, `timeout`, `unknown`). All WCL calls are in
+  `background_lane()`; no DB session is held across a WCL await.
+- **API**: `GET /api/recent-raids` never waits for WCL. `POST /api/recent-raids/refresh`
+  (CSRF) is Retry: 202 when it started a run, 200 with the current state otherwise, 409
+  `no_characters`. `POST /api/raids/{code}/investigate` also accepts a code that is only a
+  recent raid of this tenant, and turns it into a tracked raid first.
+- **UI**: `WelcomePanel.tsx` renders in a new chat under Barnaby's greeting, through
+  `MessageList`'s `footer` slot. It polls every 3 s while a refresh runs (paused when the
+  tab is hidden, gives up after 3 minutes).
+- **Tests**: the SQLite test engine is one shared connection, so `test_recent_raids.py`
+  queues spawned refreshes and runs them in `drain()` instead of concurrently with requests.

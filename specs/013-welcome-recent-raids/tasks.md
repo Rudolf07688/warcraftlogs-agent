@@ -173,7 +173,7 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
 
 ### Tests for User Story 1
 
-- [ ] T018 [P] [US1] Write the service and API tests in `backend/tests/test_recent_raids.py`. Use a fake async WCL responder: patch `backend.app.services.recent_raids.get_async_client` with an object whose `async query(query, variables, cache=True)` dispatches on `recentReports` / `reportData` / `worldData` in the query text. Tests:
+- [X] T018 [P] [US1] Write the service and API tests in `backend/tests/test_recent_raids.py`. Use a fake async WCL responder: patch `backend.app.services.recent_raids.get_async_client` with an object whose `async query(query, variables, cache=True)` dispatches on `recentReports` / `reportData` / `worldData` in the query text. Tests:
   - a refresh stores raids, sets details, links characters, and leaves non-raid (Mythic+ zone) reports out of the list;
   - one report attended by 2 own characters appears once, with both names, in `GET /api/recent-raids` (SC-005);
   - `bosses_*` are `null` before details arrive;
@@ -182,10 +182,10 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
 
 ### Implementation for User Story 1
 
-- [ ] T019 [P] [US1] Add GraphQL builders to `wcl_agent/queries.py` (constitution I: query strings live in one module):
+- [X] T019 [P] [US1] Add GraphQL builders to `wcl_agent/queries.py` (constitution I: query strings live in one module):
   - `recent_reports_query(n: int) -> str`, which builds aliases `c0..c{n-1}`, each `characterData { character(name: $n{i}, serverSlug: $s{i}, serverRegion: $r{i}) { recentReports(limit: $limit) { data { code title startTime endTime zone { id name } guild { name } } } } }` with matching `$n{i}: String!`… variable declarations. Use one `characterData` block per alias, or alias the `character` fields inside one `characterData`, whichever the live call in T020 accepts.
   - `report_details_query(n: int) -> str`, which builds `reportData { r{i}: report(code: $c{i}) { endTime zone { id } fights(killType: Encounters) { encounterID kill difficulty } } }`.
-- [ ] T020 [US1] Create `backend/app/services/recent_raids.py` and add the **list step** (research R1):
+- [X] T020 [US1] Create `backend/app/services/recent_raids.py` and add the **list step** (research R1):
   - `character_set_hash(chars) -> str`: sha256 of the sorted `name|server|region` in lowercase;
   - `async def fetch_listed_reports(chars: list[UserCharacter]) -> list[ListedReport]`:
     - **one** `await get_async_client().query(recent_reports_query(len(chars)), variables, cache=False)`;
@@ -195,14 +195,14 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
     - characters whose alias returns `null` (not found) are skipped.
 
   **Before coding**, make one live call (`uv run python -I -c ...` with `.env` loaded) to confirm the `recentReports` pagination field is `data`, and adjust T019 if it isn't.
-- [ ] T021 [US1] Add the **detail step** to `backend/app/services/recent_raids.py` (research R2):
+- [X] T021 [US1] Add the **detail step** to `backend/app/services/recent_raids.py` (research R2):
   - `async def fetch_report_details(codes: list[str], raid_zone_ids: set[int]) -> dict[str, ReportDetails]` makes one `report_details_query(len(codes))` call (cached as usual, since it is report-scoped);
   - `bosses_pulled` and `bosses_killed` are distinct `encounterID` counts (killed means `kill is True`);
   - `difficulty` is the highest of {1, 3, 4, 5} among the boss fights, or `None`;
   - `is_raid = zone.id in raid_zone_ids`.
 
   Add `raid_zone_ids(zones) -> set[int]` to `wcl_agent/patch.py`. It reuses `_offers_heroic` and gets the zones from `MENU_DISCOVERY` through `await get_async_client().query(MENU_DISCOVERY)`, which is cached.
-- [ ] T022 [US1] Add the refresh runner to `backend/app/services/recent_raids.py`.
+- [X] T022 [US1] Add the refresh runner to `backend/app/services/recent_raids.py`.
 
   `async def run_recent_raid_refresh(tenant_id, run_id)`:
   1. Read the own characters with `tenant_scope` and close the session.
@@ -221,14 +221,14 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
   - `claim_refresh(...)` with the settings values;
   - when claimed, `await session.commit()` and re-apply the scope, using `commit_and_rescope` if an identity is available, otherwise `set_scope`;
   - then `background.spawn(run_recent_raid_refresh(tenant_id, run_id), ("recent_raids", tenant_id))` and return `True`.
-- [ ] T023 [US1] Create `backend/app/api/recent_raids.py` with a router (`prefix="/api/recent-raids"`) and `GET ""` → `RecentRaidsResponse` (contracts/rest-recent-raids.md):
+- [X] T023 [US1] Create `backend/app/api/recent_raids.py` with a router (`prefix="/api/recent-raids"`) and `GET ""` → `RecentRaidsResponse` (contracts/rest-recent-raids.md):
   - load the own characters with `repo.list_own_characters`;
   - if there are any, call `maybe_start_refresh` (wrap it in `try/except Exception` and log; never fail the request);
   - return `list_recent_raids(limit=settings.recent_raids_limit)` mapped to `RecentRaidOut`, plus `get_refresh` mapped to `RecentRaidsRefreshOut` (`idle` when there is no row).
 
   Register the router in `backend/app/main.py`, next to `raids.router`.
-- [ ] T024 [P] [US1] Add the types `RecentRaid`, `RecentRaidCharacter`, `RecentRaidsRefresh` and `RecentRaidsResponse` to `frontend/src/types.ts`. Add `getRecentRaids()` (GET `/api/recent-raids`) and `refreshRecentRaids()` (POST `/api/recent-raids/refresh`, `{ csrf: true }`) to `frontend/src/api/restClient.ts`, following `getRaids` and `investigateRaid`.
-- [ ] T025 [US1] **First**, search the shadcn registry through the shadcn MCP (`search_items_in_registries` for card, item, empty, skeleton, badge, alert) and record which existing `components/ui/*` parts are used. Then create `frontend/src/components/WelcomePanel.tsx`, a memoized component with props `{ onInvestigate(reportCode: string): void; disabled: boolean }`:
+- [X] T024 [P] [US1] Add the types `RecentRaid`, `RecentRaidCharacter`, `RecentRaidsRefresh` and `RecentRaidsResponse` to `frontend/src/types.ts`. Add `getRecentRaids()` (GET `/api/recent-raids`) and `refreshRecentRaids()` (POST `/api/recent-raids/refresh`, `{ csrf: true }`) to `frontend/src/api/restClient.ts`, following `getRaids` and `investigateRaid`.
+- [X] T025 [US1] **First**, search the shadcn registry through the shadcn MCP (`search_items_in_registries` for card, item, empty, skeleton, badge, alert) and record which existing `components/ui/*` parts are used. Then create `frontend/src/components/WelcomePanel.tsx`, a memoized component with props `{ onInvestigate(reportCode: string): void; disabled: boolean }`:
   - it fetches `getRecentRaids()` on mount;
   - it renders a responsive grid of raid cards (Card/Item) showing:
     - the zone name (falling back to the title);
@@ -240,13 +240,13 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
   - **polling (research R6)**: while `refresh.status === "running"`, it re-fetches every 3 s, pauses when `document.visibilityState === "hidden"`, gives up after 3 minutes and clears its timers on unmount;
   - clicking a card calls `onInvestigate(raid.report_code)`;
   - styling uses only the theme tokens from `frontend/src/index.css`, and icons only from `react-icons`.
-- [ ] T026 [US1] In `frontend/src/App.tsx`, render `<WelcomePanel onInvestigate={...} disabled={streaming} />` in the no-conversation state (`activeId === null && !messages.some(m => m.role === "user") && !streaming`), between the header and the Composer:
+- [X] T026 [US1] In `frontend/src/App.tsx`, render `<WelcomePanel onInvestigate={...} disabled={streaming} />` in the no-conversation state (`activeId === null && !messages.some(m => m.role === "user") && !streaming`), between the header and the Composer:
   - keep Barnaby's greeting visible above it (render the greeting message from `messages` first);
   - keep `MessageList` for every other state;
   - for now, wire `onInvestigate` to a no-op `useCallback` (T029 connects it).
 
   Add the panel styles to `frontend/src/styles.css`, with a mobile-friendly grid, no horizontal scroll and theme tokens.
-- [ ] T027 [US1] Run the shadcn MCP audit checklist (`get_audit_checklist`) for the new UI and fix what it flags. Then run `cd frontend && npx tsc -b && npx vite build` and the backend suite.
+- [X] T027 [US1] Run the shadcn MCP audit checklist (`get_audit_checklist`) for the new UI and fix what it flags. Then run `cd frontend && npx tsc -b && npx vite build` and the backend suite.
 
 **Checkpoint**: US1 is fully working. The welcome page lists stored and fresh raids, and every FR-007 state renders.
 
@@ -260,21 +260,21 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
 
 ### Tests for User Story 2
 
-- [ ] T028 [P] [US2] In `backend/tests/test_api.py`, add tests:
+- [X] T028 [P] [US2] In `backend/tests/test_api.py`, add tests:
   - `POST /api/raids/{code}/investigate` for a code that only exists in `recent_raids` returns `201` with the same `kickoff_prompt` as `raids.kickoff_prompt_for(code)`, and `GET /api/raids` now includes it with label `"<guild> — <zone> — <YYYY-MM-DD>"`;
   - an unknown code still returns `404`;
   - another tenant's recent raid returns `404` (FR-017).
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] In `backend/app/api/raids.py` `investigate_raid`, when `repo.get_tracked_raid` returns `None`:
+- [X] T029 [US2] In `backend/app/api/raids.py` `investigate_raid`, when `repo.get_tracked_raid` returns `None`:
   1. Call `repo.get_recent_raid(db, report_code, tenant_id=...)`. If that is also `None`, raise the existing 404.
   2. Otherwise build the label with `services.raids._build_label(report_code, {"status": "success", "title": rr.title, "zone": rr.zone_name, "guild": rr.guild_name, "start_time_ms": rr.started_at.timestamp() * 1000})`.
   3. Call `repo.upsert_tracked_raid(db, tenant_id=..., report_code=..., label=..., zone=..., guild=..., report_started_at=rr.started_at, conversation_id=None, encounters=[])`.
   4. Continue as today.
 
   Run `impact` on `investigate_raid` first.
-- [ ] T030 [US2] In `frontend/src/App.tsx`, connect `WelcomePanel.onInvestigate` to `handleInvestigateRaid`. After it resolves, call `void refreshRaids()` so the new tracked raid shows in the sidebar (FR-009). The existing `streamingRef` guard covers clicks during a stream (scenario 2.3). Make sure **New chat** (`newChat`) returns to the welcome state (FR-002); it already sets `activeId=null` and clears the messages.
+- [X] T030 [US2] In `frontend/src/App.tsx`, connect `WelcomePanel.onInvestigate` to `handleInvestigateRaid`. After it resolves, call `void refreshRaids()` so the new tracked raid shows in the sidebar (FR-009). The existing `streamingRef` guard covers clicks during a stream (scenario 2.3). Make sure **New chat** (`newChat`) returns to the welcome state (FR-002); it already sets `activeId=null` and clears the messages.
 
 **Checkpoint**: US1 and US2 together give the "2 clicks to last night's raid" flow.
 
@@ -288,7 +288,7 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
 
 ### Tests for User Story 3
 
-- [ ] T031 [P] [US3] In `backend/tests/test_recent_raids.py`, add tests:
+- [X] T031 [P] [US3] In `backend/tests/test_recent_raids.py`, add tests:
   - **FR-012 / SC-004**: two refreshes with a forced gate (backdate `finished_at`), where the first stores `endTime` older than 2 h. The second refresh issues **0** `reportData` detail queries and exactly 1 `recentReports` query, with `cache=False` passed.
   - A report with `endTime` within 2 h stays `is_final=False` and is fetched again.
   - A responder raising `httpx.ConnectError` records `failed`/`wcl_unavailable` and leaves the stored rows untouched (FR-015, SC-006).
@@ -298,15 +298,15 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
 
 ### Implementation for User Story 3
 
-- [ ] T032 [US3] In `backend/app/api/recent_raids.py`, add `POST /refresh` (`require_csrf`) per the contract: `maybe_start_refresh(..., force=True)`, returning `202` + `RecentRaidsRefreshOut` when claimed, `200` + the current state when not, and `409 {"detail": "no_characters"}`.
-- [ ] T033 [US3] In `frontend/src/components/WelcomePanel.tsx`, add:
+- [X] T032 [US3] In `backend/app/api/recent_raids.py`, add `POST /refresh` (`require_csrf`) per the contract: `maybe_start_refresh(..., force=True)`, returning `202` + `RecentRaidsRefreshOut` when claimed, `200` + the current state when not, and `409 {"detail": "no_characters"}`.
+- [X] T033 [US3] In `frontend/src/components/WelcomePanel.tsx`, add:
   - a **Retry** button in both failure states, which calls `refreshRecentRaids()` and then resumes polling;
   - the subtle "Couldn't refresh" note when raids exist and the status is `failed`;
   - a small Spinner with "checking for new raids…" while running with raids present;
   - "updated N min ago" from `refresh.last_success_at`.
 
   Map `last_error` to friendly text (`rate_limited` → "Warcraft Logs is busy, try again shortly", and so on). Raw codes are never shown.
-- [ ] T034 [P] [US3] Add a "Background refreshes" note to `documentation/deployment.md`, following research R4: Cloud Run throttles CPU after a response, so recommend "CPU always allocated". The stale reclaim (5 minutes) keeps refreshes correct either way.
+- [X] T034 [P] [US3] Add a "Background refreshes" note to `documentation/deployment.md`, following research R4: Cloud Run throttles CPU after a response, so recommend "CPU always allocated". The stale reclaim (5 minutes) keeps refreshes correct either way.
 
 **Checkpoint**: US1–US3 are complete. The welcome page is production-ready on the async WCL core.
 
@@ -322,8 +322,8 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
 
 ### Phase B: async tools
 
-- [ ] T035 [US4] Update `backend/tests/wcl_fakes.py` for the transition. `FakeClient` keeps the sync `query` and gains `async def aquery`, which is exposed through an `AsyncView` whose `query` is async, with both sharing `self.calls`. `install()` monkeypatches `get_client` (the sync view) **and** `get_async_client` (the async view) in every module that binds either: `report_tools`, `tools`, `wcl_client`, `fight_time`, `benchmark`, `cooldowns` and `patch`, using `hasattr` checks. Run the suite.
-- [ ] T036 [US4] Convert `wcl_agent/report_tools.py` to async:
+- [X] T035 [US4] Update `backend/tests/wcl_fakes.py` for the transition. `FakeClient` keeps the sync `query` and gains `async def aquery`, which is exposed through an `AsyncView` whose `query` is async, with both sharing `self.calls`. `install()` monkeypatches `get_client` (the sync view) **and** `get_async_client` (the async view) in every module that binds either: `report_tools`, `tools`, `wcl_client`, `fight_time`, `benchmark`, `cooldowns` and `patch`, using `hasattr` checks. Run the suite.
+- [X] T036 [US4] Convert `wcl_agent/report_tools.py` to async:
   - every tool function, `_report_field` and `run_wcl_graphql` becomes `async def`, using `await get_async_client().query(...)`;
   - names, docstrings, parameters and return shapes stay unchanged (contract §Tool contract).
 
@@ -332,26 +332,26 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
   - `backend/app/services/raids.py`: `await get_report_metadata(code)` directly, replacing `run_in_tool_pool` (interactive lane, because it is inside a chat turn).
 
   Make `test_report_rankings.py` and the report parts of `test_provenance.py` `async` and `await` the tools. Run `impact` on `_report_field`, then the suite.
-- [ ] T037 [US4] Convert `wcl_agent/fight_time.py` (`fetch_dead_windows` and anything else that queries) to async, replacing `gather_threads` with `aio.gather_settled`. It awaits `_report_field` directly. Update its sync callers in `benchmark.py` and `cooldowns.py` to `run_sync(...)`, and update `backend/tests/test_fight_time.py`. Run the suite.
-- [ ] T038 [US4] Convert `current_patch()` in `wcl_agent/patch.py` to async. Then:
+- [X] T037 [US4] Convert `wcl_agent/fight_time.py` (`fetch_dead_windows` and anything else that queries) to async, replacing `gather_threads` with `aio.gather_settled`. It awaits `_report_field` directly. Update its sync callers in `benchmark.py` and `cooldowns.py` to `run_sync(...)`, and update `backend/tests/test_fight_time.py`. Run the suite.
+- [X] T038 [US4] Convert `current_patch()` in `wcl_agent/patch.py` to async. Then:
   - `backend/app/api/ws.py:372` and `backend/app/api/guides.py:45` use `with background_lane(): live_patch = await current_patch()`, removing `run_in_tool_pool` from both;
   - `cooldowns.py` uses `run_sync(...)` until T040;
   - update `backend/tests/test_guide_meta.py`.
 
   Run the suite.
-- [ ] T039 [US4] Convert `wcl_agent/benchmark.py` (`compare_player_to_cohort`, `_fetch_report_context`, `_casts_table` and the internal fan-outs) to async. `gather_threads` becomes `aio.gather_settled`, and the `run_sync` wrappers added in T036 and T037 go away. `cooldowns.py` calls `_casts_table` with `run_sync(...)` until T040. Update `backend/tests/test_benchmark.py` and the `compare_player_to_cohort` test in `test_tool_concurrency.py`. Run the suite.
-- [ ] T040 [US4] Convert `wcl_agent/cooldowns.py` (`get_cooldown_usage`, `_fetch_context`) to async and remove every remaining `run_sync` call in it. Update `backend/tests/test_cooldowns.py`. Run the suite.
-- [ ] T041 [US4] Convert `wcl_agent/tools.py` (`find_encounter`, `get_rankings_distribution`, `compare_specs`, `_fetch_rankings`, `check_rate_limit`, which uses `acheck_rate_limit`, and the others that query) to async, with `gather_threads` → `gather_settled`. Tools that don't touch WCL (`get_selected_encounter`, `get_spec_options`, `create_chart`) become `async def` too, so `TOOLS` is uniform. Update `test_charts.py`, `test_artifacts.py`, `test_message_report.py` and the tools parts of `test_provenance.py`. Run the suite.
-- [ ] T042 [US4] In `backend/app/services/guide.py`:
+- [X] T039 [US4] Convert `wcl_agent/benchmark.py` (`compare_player_to_cohort`, `_fetch_report_context`, `_casts_table` and the internal fan-outs) to async. `gather_threads` becomes `aio.gather_settled`, and the `run_sync` wrappers added in T036 and T037 go away. `cooldowns.py` calls `_casts_table` with `run_sync(...)` until T040. Update `backend/tests/test_benchmark.py` and the `compare_player_to_cohort` test in `test_tool_concurrency.py`. Run the suite.
+- [X] T040 [US4] Convert `wcl_agent/cooldowns.py` (`get_cooldown_usage`, `_fetch_context`) to async and remove every remaining `run_sync` call in it. Update `backend/tests/test_cooldowns.py`. Run the suite.
+- [X] T041 [US4] Convert `wcl_agent/tools.py` (`find_encounter`, `get_rankings_distribution`, `compare_specs`, `_fetch_rankings`, `check_rate_limit`, which uses `acheck_rate_limit`, and the others that query) to async, with `gather_threads` → `gather_settled`. Tools that don't touch WCL (`get_selected_encounter`, `get_spec_options`, `create_chart`) become `async def` too, so `TOOLS` is uniform. Update `test_charts.py`, `test_artifacts.py`, `test_message_report.py` and the tools parts of `test_provenance.py`. Run the suite.
+- [X] T042 [US4] In `backend/app/services/guide.py`:
   - make `_resolve_active_spec_sync` the async `_resolve_active_spec`, awaiting `get_character_zone_rankings`;
   - `resolve_active_spec` wraps it in `with background_lane():` (FR-024) and drops `run_in_tool_pool`.
 
   Run `impact` on `resolve_active_spec`, then the suite.
-- [ ] T043 [US4] In `wcl_agent/agent.py` `build_agent`, register `TOOLS` directly (`tools: list = list(TOOLS)`) and delete the `off_loop` import and the PERF-001 comment. In `wcl_agent/menu.py`, `select_encounter` uses `asyncio.run(get_async_client().query(MENU_DISCOVERY))` (the only sync shim). Smoke-test the CLI with `uv run python main.py`. Run the suite.
+- [X] T043 [US4] In `wcl_agent/agent.py` `build_agent`, register `TOOLS` directly (`tools: list = list(TOOLS)`) and delete the `off_loop` import and the PERF-001 comment. In `wcl_agent/menu.py`, `select_encounter` uses `asyncio.run(get_async_client().query(MENU_DISCOVERY))` (the only sync shim). Smoke-test the CLI with `uv run python main.py`. Run the suite.
 
 ### Phase C: remove the threads
 
-- [ ] T044 [US4] Delete `wcl_agent/threading_utils.py`:
+- [X] T044 [US4] Delete `wcl_agent/threading_utils.py`:
   - move `gather_threads` (with `_capture`) into `wcl_agent/models.py` as a private `_gather_threads` for the sync SDK probes;
   - remove `run_sync`, `off_loop`, `run_in_tool_pool`, `_bridge_loop` and the tool pool.
 
@@ -360,8 +360,8 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
   - remove `WCL_TOOL_THREADS` from `.env.example`, the README and any config;
   - remove the sync view from `backend/tests/wcl_fakes.py`;
   - update the comments in `backend/app/agent_runner.py:14` and `wcl_agent/cache.py:35` that mention `off_loop` or `run_in_tool_pool`.
-- [ ] T045 [US4] Remove the `requests` dependency if nothing imports it any more (`grep -rn "import requests" wcl_agent backend main.py`): `uv remove requests`, and commit `uv.lock`. If a transitive dependency still pulls it in, that's fine; only the direct dependency goes.
-- [ ] T046 [US4] Rewrite `backend/tests/test_tool_concurrency.py` for async:
+- [X] T045 [US4] Remove the `requests` dependency if nothing imports it any more (`grep -rn "import requests" wcl_agent backend main.py`): `uv remove requests`, and commit `uv.lock`. If a transitive dependency still pulls it in, that's fine; only the direct dependency goes.
+- [X] T046 [US4] Rewrite `backend/tests/test_tool_concurrency.py` for async:
   - every item in `TOOLS` is a coroutine function, and the ADK `FunctionTool(fn)._get_declaration()` keeps `tool_context` out of the schema;
   - `build_agent` registers the tools unwrapped;
   - two tool calls with a slow fake responder run concurrently (wall time ≈ one call);
@@ -369,7 +369,7 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
   - **SC-007**: start `get_report_table` through a fake transport that never responds, as an `asyncio.Task`, cancel it after 0.2 s, and assert `_limiter().in_use == 0` within 5 s.
 
   Delete the `off_loop` and `gather_threads` tests.
-- [ ] T047 [P] [US4] Create `backend/tests/test_wcl_loop_lag.py` (`@pytest.mark.perf`, SC-008):
+- [X] T047 [P] [US4] Create `backend/tests/test_wcl_loop_lag.py` (`@pytest.mark.perf`, SC-008):
   - a loop-lag probe task records the drift of `await asyncio.sleep(0.005)` over 2 s;
   - meanwhile, 4 concurrent tool fan-outs run through an `httpx.MockTransport` returning a 1.3 MB JSON payload, with the cache cleared first so every call parses;
   - assert the worst-case drift is below 20 ms.
@@ -382,10 +382,10 @@ description: "Task list for feature 013: welcome page with my recent raids, plus
 
 ## Phase 7: Polish and cross-cutting concerns
 
-- [ ] T048 [P] Update `README.md`: a feature 013 section (the welcome page and how it refreshes), the new settings from quickstart.md, the removed `WCL_TOOL_THREADS`, and a note that WCL access is now native async with interactive and background lanes.
-- [ ] T049 [P] Update `documentation/ai_guide.md` where it describes the threaded WCL tools or `off_loop`, so it matches the async client (constitution governance: runtime guidance stays consistent).
-- [ ] T050 Run the quickstart.md manual verification for US1–US4 against `docker compose up --build`, including the two-instance check and the crash and stale-reclaim check. Record the results in a short note at the end of this file.
-- [ ] T051 Run `node .gitnexus/run.cjs detect-changes --scope all --repo .`. Re-run it if it reports `partial` or `truncated`. Confirm that only the expected symbols and flows changed, then re-index with `node .gitnexus/run.cjs analyze --index-only`.
+- [X] T048 [P] Update `README.md`: a feature 013 section (the welcome page and how it refreshes), the new settings from quickstart.md, the removed `WCL_TOOL_THREADS`, and a note that WCL access is now native async with interactive and background lanes.
+- [X] T049 [P] Update `documentation/ai_guide.md` where it describes the threaded WCL tools or `off_loop`, so it matches the async client (constitution governance: runtime guidance stays consistent).
+- [X] T050 Run the quickstart.md manual verification for US1–US4 against `docker compose up --build`, including the two-instance check and the crash and stale-reclaim check. Record the results in a short note at the end of this file.
+- [X] T051 Run `node .gitnexus/run.cjs detect-changes --scope all --repo .`. Re-run it if it reports `partial` or `truncated`. Confirm that only the expected symbols and flows changed, then re-index with `node .gitnexus/run.cjs analyze --index-only`.
 
 ---
 
@@ -448,3 +448,25 @@ Task T024: "Add RecentRaid types + getRecentRaids/refreshRecentRaids in frontend
 ### Commit cadence
 
 Commit after each task or checkpoint. Every commit must leave the suite green (constitution II) and be preceded by `detect-changes`.
+
+---
+
+## Verification notes (T050, 2026-10-16)
+
+Run against two local `uvicorn` instances on the docker Postgres (migration 0010) with live Warcraft Logs and Gemini. Browser-only steps were not run.
+
+| Check | Result |
+|---|---|
+| US1: first refresh for a real own character | 20 raids stored and listed, 7.5 s refresh. Cards carry zone, date, difficulty, kills and characters |
+| US1: reload | stored list returned in ~60 ms (both instances at once) |
+| US2: investigate a recent raid | `201`, same kickoff prompt; it shows up in `GET /api/raids` with label `The Venomous Abyss — 2026-10-15` (no guild on that log). Unknown code → `404` |
+| US2: kickoff turn over the WebSocket | `done` after 34 s, 3 KB reply; `get_report_fights` then 4 overlapping `get_report_table` calls, all ok |
+| US3 / SC-010: two instances hit at the same moment | one claim; both report `running`, then `succeeded` |
+| US3: Retry while not failed | `200`, no new run |
+| US3 / FR-026: run stuck `running` for 6 min | reclaimed by the other instance and finished. **Bug found and fixed here**: the gate also required "due", so a crash right after a success was never reclaimed (now a stale claim always wins; regression test added) |
+| US4: CLI | `main.py` menu and chat loop start on the async client |
+| US4 / SC-008 (`-m perf`) | worst loop stall 15–35 ms over 4 turns of 1.3 MB lookups (from 157 ms). The 20 ms target is not reliably met: the rest is JSON CPU of results that complete together (see the contract's event-loop latency notes) |
+
+Not run: the visual check of the welcome panel in a browser (states, polling, Retry button), and the tab-close cancellation check (SC-007 is covered by `test_tool_concurrency.py`).
+
+Pre-existing and unchanged by this feature: `agent_runner` emits a `tool_start` for each function-call part ADK streams, so the UI receives a duplicate `tool_start` per call.

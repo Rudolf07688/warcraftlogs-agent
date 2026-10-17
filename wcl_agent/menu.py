@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from .queries import MENU_DISCOVERY
-from .wcl_client import get_client
+from . import wcl_client
 
 
 def _prompt_choice(title: str, options: list[str]) -> int:
@@ -37,15 +37,14 @@ def _default_partition(zone: dict[str, Any]) -> int | None:
     return partitions[-1]["id"] if partitions else None
 
 
-def select_encounter() -> dict[str, Any]:
+async def select_encounter() -> dict[str, Any]:
     """Run the interactive selection and return the chosen encounter context.
 
     Returns a dict with keys: ``zoneID``, ``zoneName``, ``encounterID``,
     ``encounterName``, ``difficultyID``, ``difficultyName``, ``partition``.
     """
-    client = get_client()
     print("Fetching Warcraft Logs zones...")
-    data = client.query(MENU_DISCOVERY)
+    data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
     zones: list[dict[str, Any]] = data["data"]["worldData"]["zones"]
 
     # Prefer current (non-frozen) raids, but keep a fallback so selection never

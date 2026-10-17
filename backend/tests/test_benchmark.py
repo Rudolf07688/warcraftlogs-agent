@@ -192,34 +192,34 @@ def make_responder(*, kill=True, deaths=(), duplicate=False, remaining=500, tota
     return responder
 
 
-def test_wipe_is_limited(monkeypatch):
+async def test_wipe_is_limited(monkeypatch):
     install(monkeypatch, make_responder(kill=False))
-    res = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
+    res = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
     assert res["status"] == "limited"
     assert "wipe" in res["reason"]
     assert res["player"]["source_id"] == 7
     assert res["provenance"]["report_code"] == PLAYER_CODE
 
 
-def test_unknown_player_lists_present(monkeypatch):
+async def test_unknown_player_lists_present(monkeypatch):
     install(monkeypatch, make_responder())
-    res = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Nobody")
+    res = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Nobody")
     assert res["status"] == "error"
     assert res["players_present"] == ["Hrslkks", "Other"]
 
 
-def test_duplicate_name_needs_source_id(monkeypatch):
+async def test_duplicate_name_needs_source_id(monkeypatch):
     install(monkeypatch, make_responder(duplicate=True))
-    res = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
+    res = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
     assert res["status"] == "error"
     assert [c["source_id"] for c in res["candidates"]] == [7, 9]
-    ok = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks", source_id=7)
+    ok = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks", source_id=7)
     assert ok["status"] == "success" and ok["player"]["source_id"] == 7
 
 
-def test_success_shape_and_links(monkeypatch):
+async def test_success_shape_and_links(monkeypatch):
     fake = install(monkeypatch, make_responder())
-    res = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
+    res = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
     assert res["status"] == "success"
     cohort = res["cohort"]
     assert cohort["size"] == 5 and cohort["requested_size"] == 5
@@ -244,9 +244,9 @@ def test_success_shape_and_links(monkeypatch):
     assert "activeTime" not in str(res)
 
 
-def test_early_death_rates_use_alive_time(monkeypatch):
+async def test_early_death_rates_use_alive_time(monkeypatch):
     install(monkeypatch, make_responder(deaths=[180_000]))  # died at 60% of a 300 s kill
-    res = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
+    res = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
     player = res["player"]
     assert player["dead_s"] == pytest.approx(120, abs=1)
     assert player["alive_s"] == pytest.approx(180, abs=1)
@@ -255,24 +255,24 @@ def test_early_death_rates_use_alive_time(monkeypatch):
     assert fireball["player_casts_per_min"] == pytest.approx(200 / 3, abs=0.1)  # ÷ 180 s, not 300 s
 
 
-def test_low_budget_shrinks_cohort(monkeypatch):
+async def test_low_budget_shrinks_cohort(monkeypatch):
     install(monkeypatch, make_responder(remaining=30))
-    res = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
+    res = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
     assert res["cohort"]["size"] == 1 and res["cohort"]["label"] == "anecdotal"
     assert any("budget" in u for u in res["cohort"]["unmet_criteria"])
 
 
-def test_band_clipped_is_disclosed(monkeypatch):
+async def test_band_clipped_is_disclosed(monkeypatch):
     install(monkeypatch, make_responder(total_parses=60_000))
-    res = compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
+    res = await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
     assert res["completeness"]["sample_scope"] == "band_clipped"
     assert res["cohort"]["label"] == "directional"
     assert any("clipped" in u for u in res["cohort"]["unmet_criteria"])
 
 
-def test_bad_inputs():
-    assert compare_player_to_cohort("X", 1, "a", metric="wdps")["status"] == "error"
-    assert compare_player_to_cohort("X", 0, "a")["status"] == "error"
+async def test_bad_inputs():
+    assert (await compare_player_to_cohort("X", 1, "a", metric="wdps"))["status"] == "error"
+    assert (await compare_player_to_cohort("X", 0, "a"))["status"] == "error"
     assert benchmark.MAX_SIZE == 5
 
 

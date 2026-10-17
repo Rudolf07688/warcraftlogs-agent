@@ -49,3 +49,33 @@ query EncounterRankings(
   }
 }
 """.strip()
+
+
+# Feature 013: recent reports for several characters in ONE request. Each character is an
+# aliased field (c0, c1, …) inside a single characterData block; an unknown character
+# resolves to null. Confirmed against the live API: the pagination field is `data`.
+def recent_reports_query(n: int) -> str:
+    decls = ", ".join(f"$n{i}: String!, $s{i}: String!, $r{i}: String!" for i in range(n))
+    fields = "\n".join(
+        f"    c{i}: character(name: $n{i}, serverSlug: $s{i}, serverRegion: $r{i}) {{\n"
+        "      recentReports(limit: $limit) {\n"
+        "        data { code title startTime endTime zone { id name } guild { name } }\n"
+        "      }\n"
+        "    }"
+        for i in range(n)
+    )
+    return f"query RecentReports({decls}, $limit: Int!) {{\n  characterData {{\n{fields}\n  }}\n}}"
+
+
+# Feature 013: boss pulls/kills/difficulty for several reports in ONE request (r0, r1, …).
+def report_details_query(n: int) -> str:
+    decls = ", ".join(f"$c{i}: String!" for i in range(n))
+    fields = "\n".join(
+        f"    r{i}: report(code: $c{i}) {{\n"
+        "      endTime\n"
+        "      zone { id }\n"
+        "      fights(killType: Encounters) { encounterID kill difficulty }\n"
+        "    }"
+        for i in range(n)
+    )
+    return f"query ReportDetails({decls}) {{\n  reportData {{\n{fields}\n  }}\n}}"
