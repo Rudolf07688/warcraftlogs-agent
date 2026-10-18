@@ -7,6 +7,7 @@ ignored rather than misread.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -93,3 +94,71 @@ class WorldZones(BaseModel):
     """``world_zones``: ``worldData.zones`` as the existing pure helpers consume it."""
 
     zones: list[dict[str, Any]]
+
+
+class GameSpec(BaseModel):
+    id: int | None = None
+    name: str  # display name, e.g. "Beast Mastery"
+    slug: str  # filter value, e.g. "BeastMastery"
+
+
+class GameClass(BaseModel):
+    id: int | None = None
+    name: str  # display name, e.g. "Demon Hunter"
+    slug: str  # filter value, e.g. "DemonHunter"
+    specs: list[GameSpec] = []
+
+
+class GameClasses(BaseModel):
+    """Warcraft Logs ``gameData.classes`` — the live class/spec roster (feature 015)."""
+
+    classes: list[GameClass]
+
+
+class DataSheetCache(BaseModel):
+    """A guide data sheet, stored as JSON so ``wcl_agent`` needs no backend model (feature 015)."""
+
+    data: dict[str, Any]
+
+
+class ResearchCache(BaseModel):
+    """A filtered guide fact sheet, stored as JSON (feature 015)."""
+
+    data: dict[str, Any]
+
+
+class TalentNames(BaseModel):
+    """Optional talent-entry id → name map (feature 015, research R5 §6)."""
+
+    names: dict[int, str]
+
+
+class LiveVersion(BaseModel):
+    """The live retail build from Blizzard's version endpoint (feature 015, research R1)."""
+
+    region: str
+    version: str  # VersionsName, e.g. "12.1.5.70448"
+    build_id: int | None = None
+    seqn: int | None = None
+    fetched_at: datetime
+
+    @property
+    def patch(self) -> str:
+        """``major.minor.patch`` — the part of the version guides target."""
+        return ".".join(self.version.split(".")[:3])
+
+
+class HotfixEntry(BaseModel):
+    date: str | None = None  # the article's date heading, as written
+    class_name: str  # WCL class filter value, e.g. "DemonHunter"
+    specs: list[str] = []  # WCL spec values; empty = the whole class
+
+
+class HotfixFeed(BaseModel):
+    """The newest Blizzard "Hotfixes:" article, reduced to which classes/specs it touches (R2)."""
+
+    article_url: str | None = None
+    latest_at: datetime | None = None
+    entries: list[HotfixEntry] = []
+    touches_all_classes: bool = False  # a change listed for every class at once
+

@@ -7,7 +7,7 @@ import { Button } from "./ui/button";
 // Feature 010: the one error / notice strip used by the admin and profile pages (FR-009).
 
 export interface StatusAlertProps {
-  tone: "error" | "notice";
+  tone: "error" | "notice" | "warn";
   children: ReactNode;
   /** When given, renders a Dismiss button on the right. */
   onDismiss?: () => void;
@@ -21,11 +21,12 @@ export function StatusAlert({ tone, children, onDismiss, className }: StatusAler
       className={cn(
         "items-center border-border",
         tone === "notice" && "border-primary/40 text-glow",
+        tone === "warn" && "border-warning/40 bg-warning/10",
         onDismiss && "grid-cols-[0_1fr_auto]",
         className,
       )}
     >
-      <AlertDescription className={cn("break-words", tone === "notice" && "text-foreground")}>
+      <AlertDescription className={cn("break-words", tone !== "error" && "text-foreground")}>
         {children}
       </AlertDescription>
       {onDismiss && (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date as date_
 from datetime import datetime
 from typing import Literal
 
@@ -291,11 +292,10 @@ class CharacterOut(BaseModel):
     # US4: the stored user override, plus the computed effective role (override or
     # spec-inferred). The UI treats effective_role set + raid_role null as "inferred".
     raid_role: RaidRole | None = None
-    # Feature 008 / US3 (FR-016): guide status is **derived** from the shared spec-guide
-    # library (keyed by this character's resolved (class_name, active_spec)), not stored on
-    # the character. Defaults to "none" when the spec is unresolved or has no guide row.
-    guide_status: str = "none"
-    guide_updated_at: datetime | None = None
+    # Feature 008 / US3 (FR-016), feature 015: guide status per content type is **derived**
+    # from the shared library (keyed by this character's resolved (class_name, active_spec)),
+    # not stored on the character. "none" when the spec is unresolved or has no guide row.
+    guides: CharacterGuides = Field(default_factory=lambda: CharacterGuides())
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -303,19 +303,21 @@ class CharacterOut(BaseModel):
         return self.raid_role or role_for_spec(self.active_spec)
 
     @classmethod
-    def from_character(cls, char: object, guide: object | None = None) -> "CharacterOut":
-        """Build from a ``UserCharacter`` with guide status derived from its spec guide.
+    def from_character(cls, char: object, guides: dict[str, object] | None = None) -> "CharacterOut":
+        """Build from a ``UserCharacter`` with guide statuses derived from its spec guides.
 
-        ``guide`` is the matching ``SpecGuide`` (or ``None`` ⇒ status "none"). Used by every
-        character response so the UI badge reflects the shared library (F1 / FR-016).
+        ``guides`` maps a content type to the matching ``SpecGuide`` row (absent ⇒ "none").
+        Used by every character response so the UI reflects the shared library (FR-016).
         """
+        from .db.repository import guide_has_published
+
         out = cls.model_validate(char)
-        if guide is not None:
-            out.guide_status = guide.status
-            out.guide_updated_at = guide.updated_at
-        else:
-            out.guide_status = "none"
-            out.guide_updated_at = None
+        statuses = {}
+        for ct, row in (guides or {}).items():
+            if row is not None:
+                # A verified version is what the player gets, whatever the latest run did.
+                statuses[ct] = "ready" if guide_has_published(row) else row.status
+        out.guides = CharacterGuides(**statuses)
         return out
 
 
@@ -344,8 +346,14 @@ class ProfileOut(BaseModel):
 
 # --- Spec guides (feature 008 / US2) — the GLOBAL shared library ---------------
 
-# "none" = no row (not downloaded); the others mirror SpecGuide.status.
-GuideStatus = Literal["none", "pending", "ready", "failed"]
+# Feature 015: every guide is one content type of one spec.
+ContentType = Literal["raid", "mplus"]
+
+# "none" = no row (not downloaded); the others mirror SpecGuide.status (the latest run).
+GuideStatus = Literal["none", "pending", "ready", "needs_review", "failed"]
+
+# Feature 015: what the viewer shows — the published version, an unverified draft, or nothing.
+GuideDisplay = Literal["published", "draft", "none"]
 
 # Feature 009 / US5: read-time freshness vs the current raid patch (None unless ready).
 GuideFreshness = Literal["current", "possibly_stale", "unknown"]
@@ -354,62 +362,96 @@ GuideFreshness = Literal["current", "possibly_stale", "unknown"]
 class GuideSource(BaseModel):
     title: str | None = None
     uri: str
+    tier: int | None = None  # 1 official, 2 Warcraft Logs, 3 guide site (tier 4 is never cited)
+    date: date_ | None = None
 
 
-class GuideCooldownIn(BaseModel):
-    """One major cooldown as stated by the guide generator (data-model §2)."""
+class GuideSummary(BaseModel):
+    """One content type of one spec, as the library lists it (feature 015)."""
 
-    name: str = Field(min_length=1, max_length=80)
-    spell_id: int | None = Field(default=None, gt=0)
-    cooldown_s: float = Field(ge=1, le=600)
-    charges: int = Field(default=1, ge=1, le=5)
-    talent_modified: bool = False
-
-
-class GuideMetaBlock(BaseModel):
-    """The fenced ``guide-meta`` JSON block parsed off the end of a generated guide."""
-
-    patch: str | None = Field(default=None, max_length=20)
-    major_cooldowns: list[GuideCooldownIn] = Field(default_factory=list, max_length=15)
-
-    @field_validator("patch", mode="before")
-    @classmethod
-    def _strip_patch(cls, v):
-        if v is None:
-            return None
-        v = str(v).strip()
-        return v or None
+    content_type: ContentType
+    status: GuideStatus  # the latest run ("none" = no row)
+    has_published: bool = False
+    refreshing: bool = False  # a run is pending while a published version is shown
+    game_patch: str | None = None  # of the published version
+    season: str | None = None  # of the published version (Mythic+)
+    generated_at: datetime | None = None
+    updated_at: datetime | None = None
+    freshness: GuideFreshness | None = None  # None unless has_published
+    stale_reason: str | None = None  # patch_changed | season_changed | hotfix | legacy
 
 
 class GuideListItem(BaseModel):
+    """One row per spec (FR-028), with both content types' summaries."""
+
     class_name: str  # WCL filter value, e.g. "Paladin"
     class_display: str  # display name, e.g. "Death Knight"
     spec: str  # e.g. "Protection"
-    status: GuideStatus
-    updated_at: datetime | None = None
-    game_patch: str | None = None  # patch the guide targets (None = unknown)
-    generated_at: datetime | None = None
-    freshness: GuideFreshness | None = None  # None unless status == "ready"
+    spec_display: str  # e.g. "Beast Mastery"
+    role: RaidRole
+    raid: GuideSummary
+    mplus: GuideSummary
 
 
 class GuideListOut(BaseModel):
     guides: list[GuideListItem]  # full roster (every class+spec), status-merged
+    # Feature 015: where the roster came from — live game data or the static fallback.
+    roster_source: Literal["game_data", "fallback"] = "fallback"
 
 
-class GuideOut(BaseModel):
+class GuideOut(GuideSummary):
+    """One content type of one guide, for the viewer (contracts/guides-api.md)."""
+
     class_name: str
     spec: str
-    status: GuideStatus
-    guide_markdown: str | None = None  # present only when status == "ready"; meta block stripped
-    updated_at: datetime | None = None
-    game_patch: str | None = None
-    generated_at: datetime | None = None
-    freshness: GuideFreshness | None = None
+    display: GuideDisplay = "none"
+    guide_markdown: str | None = None  # the published version, or the draft when display == "draft"
     sources: list[GuideSource] = []
+    unconfirmed: list[str] = []  # areas left out because nothing current confirmed them
+    review_issues: list[str] = []  # only when display == "draft"
+    failure_reason: str | None = None  # only when status == "failed"
 
 
 class GuideGenerateIn(BaseModel):
     force: bool = False  # true = regenerate/refresh even if already ready
+
+
+class GuideReportIn(BaseModel):
+    note: str = Field(min_length=5, max_length=500)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def _strip(cls, v):
+        return str(v or "").strip()
+
+
+class GuideReportOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    status: Literal["open", "fixed", "rejected"]
+    created_at: datetime
+
+
+class GuideReportAdminOut(GuideReportOut):
+    class_name: str
+    spec: str
+    content_type: ContentType
+    note: str
+    user_id: uuid.UUID
+    guide_generated_at: datetime | None = None
+    outcome_note: str | None = None
+    resolved_at: datetime | None = None
+
+
+class CharacterGuides(BaseModel):
+    """A character's guide status per content type (feature 015): "ready" whenever a
+    verified version exists (even while an update runs or was held), else the latest run."""
+
+    raid: GuideStatus = "none"
+    mplus: GuideStatus = "none"
+
+
+CharacterOut.model_rebuild()  # resolves its forward reference to CharacterGuides
 
 
 # --- Charts & artifacts (feature 005 / US2) ----------------------------------

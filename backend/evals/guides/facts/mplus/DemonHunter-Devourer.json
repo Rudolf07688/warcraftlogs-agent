@@ -1,0 +1,66 @@
+[
+  {
+    "id": "ranged",
+    "statement": "Devourer is a ranged damage spec.",
+    "expected": "present",
+    "match": [
+      "\\branged\\b"
+    ],
+    "contradict": [
+      "Devourer[^.\\n]{0,40}\\bmelee\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "primary_stat_intellect",
+    "statement": "Intellect is the primary stat.",
+    "expected": "present",
+    "match": [
+      "\\bIntellect\\b"
+    ],
+    "contradict": [
+      "primary stat[^.\\n]{0,20}\\b(Agility|Strength)\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "disrupt",
+    "statement": "Disrupt is the interrupt.",
+    "expected": "present",
+    "match": [
+      "\\bDisrupt\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_demon_spikes",
+    "statement": "Demon Spikes (a Vengeance tank ability) is not part of Devourer.",
+    "expected": "absent",
+    "match": [
+      "\\bDemon Spikes\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_fel_devastation",
+    "statement": "Fel Devastation (a Vengeance ability) is not part of Devourer.",
+    "expected": "absent",
+    "match": [
+      "\\bFel Devastation\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_raid_zone",
+    "statement": "The Mythic+ guide does not give raid-zone advice (The Venomous Abyss).",
+    "expected": "absent",
+    "match": [
+      "Venomous Abyss"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  }
+]

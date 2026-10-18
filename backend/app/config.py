@@ -99,6 +99,19 @@ class Settings(BaseSettings):
     # so filling in a profile can't flood the model quota the player's chat depends on.
     wcl_guide_max_concurrency: int = 2
 
+    # feature 015: grounded guide pipeline (contracts/guide-pipeline.md §Config).
+    wcl_guide_review_model: str = "gemini-3.1-pro-preview"  # reviewer; must differ from the author
+    wcl_guide_max_review_rounds: int = 3  # checks + review rounds before a run is held (FR-047)
+    wcl_guide_brief_max_chars: int = 6000  # one coaching brief, never truncated (FR-010)
+    wcl_guide_preamble_briefs_max_chars: int = 12000  # whole briefs inlined per chat turn (FR-013)
+    wcl_guide_datasheet_min_sample: int = 20  # ranked players a data sheet needs to be citable
+    wcl_guide_inuse_days: int = 14  # stale guides wanted this recently regenerate at once (FR-051)
+    wcl_guide_report_per_minute: int = 5  # per-user cap on "report an inaccuracy"
+    wcl_guide_research_fetch_enabled: bool = False  # fetch allowlisted third-party pages (terms review first)
+    wcl_guide_talent_names_url: str = ""  # optional talent id → name JSON; off until terms are checked
+    wow_version_url: str = "https://us.version.battle.net/v2/products/wow/versions"  # live build
+    wow_news_url: str = "https://worldofwarcraft.blizzard.com/en-us/news"  # hotfix article discovery
+
     # Findings-report synthesis (feature 007 / US2-US3). A plain (non-web-search) model
     # that summarizes in-scope chat content into an analytic findings document. Runs
     # off the event loop with a bounded timeout; independent of the user's chat model.

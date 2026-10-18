@@ -1,0 +1,51 @@
+{
+  "id": "mplus-devourer-nalorakk",
+  "report_code": "Z8t1GRx6rdq3jYJv",
+  "fight_id": 15,
+  "player": "Supermonoo",
+  "class_name": "DemonHunter",
+  "spec": "Devourer",
+  "content_type": "mplus",
+  "question": "In my +23 Den of Nalorakk run (report Z8t1GRx6rdq3jYJv, fight 15) I played Devourer Demon Hunter as Supermonoo. How was my damage and what can I improve for Mythic+?",
+  "expected_points": [
+    {
+      "id": "interrupts",
+      "kind": "raise",
+      "match": [
+        "\\binterrupt",
+        "\\bDisrupt\\b"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "measured_numbers",
+      "kind": "raise",
+      "match": [
+        "\\d+(\\.\\d+)?\\s*(casts?|%|per minute|cpm|uses?|DPS)\\b"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_tank_abilities",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "\\bDemon Spikes\\b",
+        "\\bFel Devastation\\b"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_raid_advice",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "Venomous Abyss"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    }
+  ],
+  "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+}

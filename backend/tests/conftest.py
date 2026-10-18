@@ -49,6 +49,20 @@ def _no_shared_cache(monkeypatch):
     _reset_cache_state()
 
 
+@pytest.fixture(autouse=True)
+def _no_guide_background_scans(monkeypatch):
+    """Feature 015: guide routes and the chat preamble start a throttled stale scan that reads
+    Blizzard's live sources; tests start inside the throttle window so none runs
+    (test_stale_scan calls the scan directly)."""
+    import time
+
+    from backend.app.services import guide
+
+    monkeypatch.setattr(guide, "_last_scan", time.monotonic())  # throttled: no scan starts
+    monkeypatch.setattr(guide, "_last_stamp", {})
+    yield
+
+
 @pytest_asyncio.fixture
 async def fake_redis(monkeypatch):
     """Enable the cache over an in-memory fakeredis server; returns a client for assertions."""

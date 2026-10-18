@@ -4,8 +4,9 @@ Turns "you only cast Combustion twice" into "2 of ~4 opportunities": eligible ti
 is the fight minus the player's dead windows and the encounter's intermissions
 (research R5, shared ``fight_time`` helpers — never WCL ``activeTime``), and the
 cooldown durations come from the spec guide's machine-readable metadata via the
-in-process registry (research R6/R7). With no guide cooldowns the tool returns
-rates only, so the model compares rates and never says "missed" (FR-025).
+published coaching brief of the matching content type — Raid or Mythic+, never the other
+one (feature 015, FR-016). With no brief cooldowns the tool returns rates only, so the
+model compares rates and never says "missed" (FR-025).
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from . import wcl_client
-from .benchmark import _casts_table, reduce_casts_entry
+from .benchmark import _casts_table, reduce_casts_entry, source_casts
 from .fight_time import (
     PlayerResolutionError,
     eligible_seconds,
@@ -24,8 +25,8 @@ from .fight_time import (
     resolve_player,
     windows_seconds,
 )
-from .guide_meta import GuideCooldown, get_guide_meta
-from .patch import current_patch, guide_freshness
+from .guide_meta import GuideCooldown, get_brief
+from .patch import MYTHIC_PLUS_DIFFICULTY_ID, is_mplus_zone_id
 from .provenance import Completeness, Provenance, with_envelope
 from .aio import gather_settled, unwrap
 
@@ -71,6 +72,7 @@ async def _fetch_context(report_code: str, fight_id: int) -> dict[str, Any] | No
     query = """
     query CooldownCtx($code: String!, $fightIDs: [Int]) {
       reportData { report(code: $code) {
+        zone { id }
         masterData { actors(type: "Player") { id name server subType } }
         phases { encounterID phases { id name isIntermission } }
         fights(fightIDs: $fightIDs) {
@@ -103,13 +105,16 @@ async def get_cooldown_usage(
     fight_id: int,
     player_name: str,
     source_id: int = 0,
+    content_type: str = "",
 ) -> dict[str, Any]:
     """Count a player's major-cooldown uses against approximate opportunities in one fight.
 
     Use this BEFORE saying a cooldown was under-used or "missed". It computes the
     player's eligible time (fight length minus time dead and intermissions — not
-    WCL activeTime) and, when the spec's guide provides cooldown durations
-    (`guide.available`), "uses of ~opportunities" per major cooldown. Express
+    WCL activeTime) and, when the spec's coaching brief for this content type provides
+    cooldown durations (`guide.available`), "uses of ~opportunities" per major cooldown.
+    The content type (Raid or Mythic+) is read from the report unless you pass it;
+    a Mythic+ run never uses the Raid brief, or the reverse. Express
     results as "N of ~M opportunities" only when `guide.available` is true; the
     counts are always approximate (`approximate: true`) and carry
     `freshness_caveat` when the guide may be out of date. Otherwise compare the
@@ -121,11 +126,13 @@ async def get_cooldown_usage(
         fight_id (int): The fight id (> 0).
         player_name (str): The player's character name as it appears in the report.
         source_id (int): The player's source id, to disambiguate duplicate names.
+        content_type (str): "raid" or "mplus" to override the content type read from
+            the report; leave empty to infer it.
 
     Returns:
         dict: {"status": "success", player: {name, source_id, class, spec},
             time: {fight_s, dead_s, intermission_s, eligible_s, excluded_windows_unknown},
-            guide: {available, game_patch, freshness, generated_at},
+            guide: {available, content_type, game_patch, freshness, generated_at},
             cooldowns: [{name, spell_id, cooldown_s, charges, talent_modified, uses,
                          opportunities, approximate, freshness_caveat}],
             rates: [{ability: {name, guid}, casts, casts_per_min}],
@@ -134,6 +141,8 @@ async def get_cooldown_usage(
     """
     if not fight_id or fight_id < 1:
         return {"status": "error", "error_message": "fight_id must be a single fight id (> 0)."}
+    if content_type not in ("", "raid", "mplus"):
+        return {"status": "error", "error_message": 'content_type must be "raid", "mplus" or empty.'}
     try:
         report = await _fetch_context(report_code, fight_id)
     except Exception as exc:  # noqa: BLE001
@@ -149,13 +158,17 @@ async def get_cooldown_usage(
 
     fight_start, fight_end = float(fight.get("startTime") or 0), float(fight.get("endTime") or 0)
     fight_s = round(max(0.0, fight_end - fight_start) / 1000, 1)
-    # The casts table and the death windows are independent: fetch them together (PERF-002).
-    casts_res, dead_res = await gather_settled(
+    # The casts tables and the death windows are independent: fetch them together (PERF-002).
+    # The whole-raid table gives the player's class/spec icon; the player's own table gives
+    # every ability (the whole-raid one lists only the top few, so cooldowns went missing).
+    casts_res, source_res, dead_res = await gather_settled(
         _casts_table(report_code, fight_id),
+        source_casts(report_code, fight_id, resolved.source_id),
         fetch_dead_windows(report_code, fight_id, resolved.source_id, fight_end),
     )
     try:
         entry = reduce_casts_entry(unwrap(casts_res), source_id=resolved.source_id)
+        own_abilities = unwrap(source_res)
         dead = unwrap(dead_res)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
@@ -170,12 +183,17 @@ async def get_cooldown_usage(
 
     class_name, spec = _split_icon(entry.class_spec if entry else None)
     class_name = class_name or resolved.class_name
-    abilities = entry.abilities if entry else []
+    abilities = own_abilities or (entry.abilities if entry else [])
 
-    meta = get_guide_meta(class_name, spec) if class_name and spec else None
-    freshness = guide_freshness(meta.game_patch, await current_patch()) if meta is not None else None
+    if not content_type:
+        zone_id = (report.get("zone") or {}).get("id")
+        is_mplus = fight.get("difficulty") == MYTHIC_PLUS_DIFFICULTY_ID or await is_mplus_zone_id(zone_id)
+        content_type = "mplus" if is_mplus else "raid"
+    meta = await get_brief(class_name, spec, content_type, mark_used=True) if class_name and spec else None
+    freshness = meta.freshness if meta is not None else None
     guide = {
         "available": bool(meta is not None and meta.cooldowns),
+        "content_type": content_type,
         "game_patch": meta.game_patch if meta is not None else None,
         "freshness": freshness,
         "generated_at": meta.generated_at.isoformat() if meta is not None and meta.generated_at else None,

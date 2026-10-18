@@ -9,7 +9,7 @@ import pytest
 from backend.tests.test_guide_meta import MENU_PAYLOAD
 from backend.tests.wcl_fakes import install
 from wcl_agent.cooldowns import get_cooldown_usage, match_uses, opportunities
-from wcl_agent.guide_meta import GuideCooldown, GuideMeta, clear_guide_meta, set_guide_meta
+from wcl_agent.guide_meta import BriefRecord, GuideCooldown, clear_brief_loader, set_brief_loader
 
 # --- pure helpers -------------------------------------------------------------------
 
@@ -37,7 +37,7 @@ def test_match_uses_by_spell_id_then_name():
     assert match_uses(cds, abilities) == [2, 3, 1, 0]
 
 
-# --- tool-level (faked WCL + registry) ------------------------------------------------------
+# --- tool-level (faked WCL + brief loader) --------------------------------------------------
 
 CODE, FIGHT = "ABC", 9
 START, END = 1_000_000, 1_300_000  # 300 s
@@ -52,7 +52,7 @@ CASTS_ENTRY = {
 }
 
 
-def make_responder(*, deaths=(), intermission=True, duplicate=False):
+def make_responder(*, deaths=(), intermission=True, duplicate=False, difficulty=4, zone_id=53):
     actors = [
         {"id": 7, "name": "Hrslkks", "server": "Azshara", "subType": "Mage"},
         {"id": 8, "name": "Other", "server": "Azshara", "subType": "Warrior"},
@@ -72,13 +72,14 @@ def make_responder(*, deaths=(), intermission=True, duplicate=False):
             return MENU_PAYLOAD
         if "phaseTransitions" in query:
             return {"data": {"reportData": {"report": {
+                "zone": {"id": zone_id},
                 "masterData": {"actors": actors},
                 "phases": [{"encounterID": 3470, "phases": [
                     {"id": 1, "name": "Stage One", "isIntermission": False},
                     {"id": 2, "name": "Intermission", "isIntermission": intermission},
                     {"id": 3, "name": "Stage Two", "isIntermission": False}]}],
                 "fights": [{"id": FIGHT, "startTime": START, "endTime": END, "kill": True,
-                            "encounterID": 3470, "difficulty": 4, "friendlyPlayers": friendly,
+                            "encounterID": 3470, "difficulty": difficulty, "friendlyPlayers": friendly,
                             "phaseTransitions": transitions}],
             }}}}
         if "dataType: Deaths" in query:
@@ -94,12 +95,34 @@ def make_responder(*, deaths=(), intermission=True, duplicate=False):
     return responder
 
 
-def _register(game_patch="12.1"):
-    clear_guide_meta()
-    set_guide_meta(GuideMeta(
-        "Mage", "Fire", game_patch, datetime(2026, 10, 7, tzinfo=UTC),
-        (GuideCooldown("Combustion", 190319, 120.0), GuideCooldown("Shifting Power", None, 60.0)),
-    ))
+_RAID_CDS = (GuideCooldown("Combustion", 190319, 120.0), GuideCooldown("Shifting Power", None, 60.0))
+
+
+def _register(game_patch="12.1", freshness="current", briefs=None):
+    """Register a brief loader holding ``briefs`` ({content_type: cooldowns})."""
+    briefs = {"raid": _RAID_CDS} if briefs is None else briefs
+    asked: list[tuple[str, str, str]] = []
+
+    async def loader(class_name, spec, content_type):
+        asked.append((class_name, spec, content_type))
+        if (class_name, spec) != ("Mage", "Fire") or content_type not in briefs:
+            return None
+        return BriefRecord(
+            class_name="Mage", spec="Fire", content_type=content_type, text="brief",
+            cooldowns=briefs[content_type], game_patch=game_patch, season=None,
+            generated_at=datetime(2026, 10, 7, tzinfo=UTC), freshness=freshness,
+            data_sufficient=True,
+        )
+
+    set_brief_loader(loader)
+    return asked
+
+
+@pytest.fixture(autouse=True)
+def _no_loader():
+    clear_brief_loader()
+    yield
+    clear_brief_loader()
 
 
 async def test_death_and_intermission_shrink_eligible_time(monkeypatch):
@@ -134,7 +157,6 @@ async def test_eligible_time_ignores_wcl_active_time(monkeypatch):
 
 
 async def test_no_guide_entry_means_rates_only(monkeypatch):
-    clear_guide_meta()
     install(monkeypatch, make_responder())
     res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
     assert res["guide"]["available"] is False and res["guide"]["game_patch"] is None
@@ -143,7 +165,7 @@ async def test_no_guide_entry_means_rates_only(monkeypatch):
 
 
 async def test_unknown_patch_guide_flags_every_cooldown(monkeypatch):
-    _register(game_patch=None)
+    _register(game_patch=None, freshness="unknown")
     install(monkeypatch, make_responder())
     res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
     assert res["guide"]["freshness"] == "unknown"
@@ -162,6 +184,43 @@ async def test_player_errors(monkeypatch):
     assert (await get_cooldown_usage(CODE, 0, "Hrslkks"))["status"] == "error"
 
 
+# --- feature 015: the brief of the report's content type, never the other one ------------
+
+_MPLUS_CDS = (GuideCooldown("Combustion", 190319, 60.0),)
+
+
+async def test_mplus_report_uses_the_mplus_brief(monkeypatch):
+    asked = _register(briefs={"raid": _RAID_CDS, "mplus": _MPLUS_CDS})
+    install(monkeypatch, make_responder(difficulty=10, zone_id=60))  # zone 60 = Mythic+ Season 2
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    assert res["guide"]["content_type"] == "mplus" and res["guide"]["available"] is True
+    assert [c["cooldown_s"] for c in res["cooldowns"]] == [60.0]
+    assert asked == [("Mage", "Fire", "mplus")]
+
+
+async def test_mplus_zone_alone_marks_mplus(monkeypatch):
+    _register(briefs={"raid": _RAID_CDS, "mplus": _MPLUS_CDS})
+    install(monkeypatch, make_responder(difficulty=None, zone_id=60))
+    assert (await get_cooldown_usage(CODE, FIGHT, "Hrslkks"))["guide"]["content_type"] == "mplus"
+
+
+async def test_mplus_report_with_only_a_raid_brief_has_no_guide(monkeypatch):
+    _register(briefs={"raid": _RAID_CDS})
+    install(monkeypatch, make_responder(difficulty=10, zone_id=60))
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    assert res["guide"]["available"] is False and res["guide"]["content_type"] == "mplus"
+    assert res["cooldowns"] == []  # no fallback to the raid brief
+
+
+async def test_explicit_content_type_overrides_the_report(monkeypatch):
+    _register(briefs={"raid": _RAID_CDS, "mplus": _MPLUS_CDS})
+    install(monkeypatch, make_responder(difficulty=10, zone_id=60))
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks", content_type="raid")
+    assert res["guide"]["content_type"] == "raid" and len(res["cooldowns"]) == 2
+    bad = await get_cooldown_usage(CODE, FIGHT, "Hrslkks", content_type="pvp")
+    assert bad["status"] == "error"
+
+
 def test_tool_summary_for_cooldowns():
     from backend.app.services.tool_summary import summarize_tool_result
 
@@ -171,3 +230,26 @@ def test_tool_summary_for_cooldowns():
     none = {"status": "success", "cooldowns": [], "guide": {"available": False},
             "time": {"eligible_s": 252.0, "fight_s": 264.0}}
     assert summarize_tool_result("get_cooldown_usage", True, none) == "rates only — no guide cooldowns · eligible 4m12s of 4m24s"
+
+
+async def test_uses_the_players_own_casts_table(monkeypatch):
+    # The whole-raid Casts table lists only a player's top abilities; the cooldown must be
+    # counted from the player's own table (feature 015 fix).
+    _register()
+    base = make_responder()
+
+    def responder(query, variables):
+        if "dataType: Casts" in query and "sourceID" in query:
+            return {"data": {"reportData": {"report": {"endTime": 1, "table": {"data": {"entries": [
+                {"name": "Fireball", "guid": 133, "total": 100},
+                {"name": "Combustion", "guid": 190319, "total": 3},
+            ]}}}}}}
+        if "dataType: Casts" in query:
+            trimmed = dict(CASTS_ENTRY, abilities=[{"guid": 133, "name": "Fireball", "total": 100}])
+            return {"data": {"reportData": {"report": {"table": {"data": {"entries": [trimmed]}}}}}}
+        return base(query, variables)
+
+    install(monkeypatch, responder)
+    res = await get_cooldown_usage(CODE, FIGHT, "Hrslkks")
+    assert next(c for c in res["cooldowns"] if c["name"] == "Combustion")["uses"] == 3
+    assert res["player"]["spec"] == "Fire"  # class/spec still read from the whole-raid table

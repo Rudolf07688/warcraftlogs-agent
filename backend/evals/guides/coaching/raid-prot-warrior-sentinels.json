@@ -1,0 +1,50 @@
+{
+  "id": "raid-prot-warrior-sentinels",
+  "report_code": "1NzRYfGxLgpTFbaV",
+  "fight_id": 22,
+  "player": "Boost",
+  "class_name": "Warrior",
+  "spec": "Protection",
+  "content_type": "raid",
+  "question": "Look at the Protection Warrior Boost in report 1NzRYfGxLgpTFbaV fight 22 (Entombed Sentinels). How was their active mitigation and defensive cooldown usage?",
+  "expected_points": [
+    {
+      "id": "shield_block",
+      "kind": "raise",
+      "match": [
+        "\\bShield Block\\b"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "ignore_pain",
+      "kind": "raise",
+      "match": [
+        "\\bIgnore Pain\\b"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_removed_abilities",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "\\bShield Barrier\\b"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_mplus_advice",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "\\baffix(es)?\\b",
+        "\\bkeystone\\b"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    }
+  ],
+  "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+}

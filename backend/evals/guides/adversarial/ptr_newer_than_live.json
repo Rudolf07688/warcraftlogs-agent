@@ -1,0 +1,22 @@
+{
+  "case": "ptr_newer_than_live",
+  "description": "Search returns a PTR page for the next patch next to a live page. The PTR page must be dropped and never cited.",
+  "check": "ptr_newer_than_live",
+  "content_type": "raid",
+  "inputs": {
+    "evidence": [
+      {"id": "src:1", "statement": "Combustion's cooldown is reduced to 90 seconds.", "topic": "cooldowns",
+       "source_url": "https://www.wowhead.com/ptr-2/news/patch-12-2-ptr-mage-changes", "source_title": "Patch 12.2 PTR: Mage changes",
+       "source_date": "2026-10-10", "tier": 3, "product": "retail", "environment": "ptr", "patch": "12.2", "content_type": "both",
+       "subject": "Combustion cooldown", "value": "90 s"},
+      {"id": "src:2", "statement": "Combustion has a 2 minute cooldown.", "topic": "cooldowns",
+       "source_url": "https://www.icy-veins.com/wow/fire-mage-pve-dps-guide", "source_title": "Fire Mage DPS Guide",
+       "source_date": "2026-09-20", "tier": 3, "product": "retail", "environment": "live", "patch": "12.1", "content_type": "both",
+       "subject": "Combustion cooldown", "value": "120 s"}
+    ]
+  },
+  "expected": {
+    "dropped_urls": ["https://www.wowhead.com/ptr-2/news/patch-12-2-ptr-mage-changes"],
+    "citable_urls": ["https://www.icy-veins.com/wow/fire-mage-pve-dps-guide"]
+  }
+}

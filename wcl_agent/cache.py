@@ -63,6 +63,13 @@ class CacheFamily(StrEnum):
     REPORT_PLAYER = "report_player"
     OAUTH_TOKEN = "oauth_token"
     WORLD_ZONES = "world_zones"
+    # feature 015: guide-pipeline sources (not WCL data, but cached the same way)
+    GAME_CLASSES = "game_classes"
+    SPEC_DATASHEET = "spec_datasheet"
+    GUIDE_RESEARCH = "guide_research"
+    TALENT_NAMES = "talent_names"
+    LIVE_VERSION = "live_version"
+    HOTFIX_FEED = "hotfix_feed"
 
 
 class Outcome(StrEnum):
@@ -92,6 +99,12 @@ FAMILIES: dict[CacheFamily, FamilyConfig] = {
     CacheFamily.CHAR_REPORTS: FamilyConfig(300, 0.60),
     CacheFamily.REPORT_SUMMARY: FamilyConfig(86400, 0.40),
     CacheFamily.REPORT_PLAYER: FamilyConfig(86400, 0.40),
+    CacheFamily.GAME_CLASSES: FamilyConfig(86400, 0.90, memo_s=3600),  # live class/spec roster
+    CacheFamily.SPEC_DATASHEET: FamilyConfig(43200, 0.50),  # guide data sheets (research R6)
+    CacheFamily.GUIDE_RESEARCH: FamilyConfig(21600, 0.50),  # filtered guide fact sheets
+    CacheFamily.TALENT_NAMES: FamilyConfig(604800, 0.50),  # optional talent id → name map
+    CacheFamily.LIVE_VERSION: FamilyConfig(900, 0.50),  # Blizzard's live build (research R1)
+    CacheFamily.HOTFIX_FEED: FamilyConfig(1800, 0.50),  # newest "Hotfixes:" article (R2)
 }
 
 
@@ -149,6 +162,7 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
 
     OAUTH_TOKEN = "wcl:v1:oauth:token"
     WORLD_ZONES = "wcl:v1:world:zones"
+    GAME_CLASSES = "wcl:v1:game:classes"
 
     @staticmethod
     def char_id(region: str, realm: str, name: str) -> str:
@@ -178,6 +192,27 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
             f"wcl:v1:report:{code.strip()}:player:{source_id}:table:"
             f"{data_type}:{fight_id or 0}:{ability_id or 0}:{hostility}"
         )
+
+    @staticmethod
+    def spec_datasheet(content_type: str, class_name: str, spec: str, patch_or_season: str) -> str:
+        scope = "".join(patch_or_season.split()).lower()
+        return f"wcl:v1:datasheet:{content_type}:{class_name}:{spec}:{scope}"
+
+    @staticmethod
+    def guide_research(content_type: str, class_name: str, spec: str, patch: str, hotfix: str) -> str:
+        return f"guide:research:v1:{content_type}:{class_name}:{spec}:{patch}:{hotfix}"
+
+    @staticmethod
+    def talent_names(source: str) -> str:
+        return f"ext:talents:v1:{source}"
+
+    @staticmethod
+    def live_version(region: str) -> str:
+        return f"ext:wow_version:v1:{region.strip().lower()}"
+
+    @staticmethod
+    def hotfix_feed() -> str:
+        return "ext:hotfix:v1"
 
     @staticmethod
     def lock(key: str) -> str:

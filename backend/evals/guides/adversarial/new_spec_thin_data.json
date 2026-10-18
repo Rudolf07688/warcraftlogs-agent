@@ -1,0 +1,15 @@
+{
+  "case": "new_spec_thin_data",
+  "description": "A new spec has only a handful of ranked logs. The measured numbers are shown to the author as not citable guidance.",
+  "check": "new_spec_thin_data",
+  "content_type": "raid",
+  "inputs": {
+    "data_sheet": {
+      "class_name": "DemonHunter", "spec": "Devourer", "content_type": "raid",
+      "scope": {"zone_id": 53, "zone_name": "The Venomous Abyss", "difficulty": 5, "encounters": ["Boss A"], "metric": "dps", "sample_size": 6},
+      "sufficient": false,
+      "abilities": [{"ability_id": 1234567, "name": "Example Ability", "casts_per_min_median": 4.2, "players_using": 6}]
+    }
+  },
+  "expected": {"marker": "not citable as guidance"}
+}

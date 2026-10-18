@@ -110,11 +110,11 @@ async def _seed_guides(session):
 
 async def test_guide_pairs_match_exactly_and_can_filter_ready(session):
     await _seed_guides(session)
-    pairs = [("Mage", "Fire"), ("Priest", "Holy")]
-    rows = await repo.get_spec_guides_for(session, pairs)
-    assert set(rows) == {("Mage", "Fire"), ("Priest", "Holy")}
-    ready = await repo.get_spec_guides_for(session, pairs, ready_only=True)
-    assert set(ready) == {("Mage", "Fire")}
+    keys = [("Mage", "Fire", "raid"), ("Priest", "Holy", "raid")]
+    rows = await repo.get_spec_guides_for(session, keys)
+    assert set(rows) == {("Mage", "Fire", "raid"), ("Priest", "Holy", "raid")}
+    ready = await repo.get_spec_guides_for(session, keys, ready_only=True)
+    assert set(ready) == {("Mage", "Fire", "raid")}
 
 
 async def test_status_only_reads_skip_the_guide_text(session):
@@ -123,7 +123,8 @@ async def test_status_only_reads_skip_the_guide_text(session):
     roster = await repo.list_spec_guides(session, with_text=False)
     assert roster and all("guide_markdown" in inspect(g).unloaded for g in roster)
     session.expunge_all()
-    status = await repo.get_spec_guides_for(session, [("Mage", "Fire")], with_text=False)
-    g = status[("Mage", "Fire")]
+    status = await repo.get_spec_guides_for(session, [("Mage", "Fire", "raid")], with_text=False)
+    g = status[("Mage", "Fire", "raid")]
     assert "guide_markdown" in inspect(g).unloaded
     assert g.status == "ready" and g.updated_at is not None
+    assert repo.guide_has_published(g)

@@ -17,11 +17,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from . import wcl_client
+from .cache import keys
 from .constants import METRICS
 from .fight_time import PlayerResolutionError, fetch_dead_windows, resolve_player, windows_seconds
 from .provenance import Completeness, PercentileContext, Provenance, flatten_report_rankings, with_envelope
 from .queries import ENCOUNTER_RANKINGS
-from .report_tools import _report_field
+from .report_tools import _player_table, _report_field
 from .aio import gather_settled, unwrap
 
 BENCHMARK_METRICS = ("dps", "hps", "bossdps")
@@ -172,6 +173,24 @@ def reduce_casts_entry(
     )
 
 
+def median_range(values: list[float]) -> dict[str, float] | None:
+    """Median, quartiles and range of a sample (rounded to 2 dp); None when empty."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) > 1:
+        p25, _, p75 = statistics.quantiles(ordered, n=4, method="inclusive")
+    else:
+        p25 = p75 = ordered[0]
+    return {
+        "median": round(statistics.median(ordered), 2),
+        "p25": round(p25, 2),
+        "p75": round(p75, 2),
+        "min": round(ordered[0], 2),
+        "max": round(ordered[-1], 2),
+    }
+
+
 def _per_min(total: int, minutes: float) -> float:
     return round(total / minutes, 2) if minutes > 0 else 0.0
 
@@ -202,13 +221,14 @@ def aggregate_measures(
     for key, ability in keyed.items():
         rates = [_per_min(_total(m, key), minutes) for m, minutes in members]
         users = sum(1 for m, _ in members if _total(m, key) > 0)
+        spread = median_range(rates) or {}
         measures.append(
             {
                 "ability": ability,
                 "player_casts_per_min": _per_min(_total(player, key), player_minutes),
-                "cohort_median_per_min": round(statistics.median(rates), 2) if rates else None,
-                "cohort_min": round(min(rates), 2) if rates else None,
-                "cohort_max": round(max(rates), 2) if rates else None,
+                "cohort_median_per_min": spread.get("median"),
+                "cohort_min": spread.get("min"),
+                "cohort_max": spread.get("max"),
                 "cohort_users": users,
             }
         )
@@ -262,6 +282,30 @@ async def _casts_table(report_code: str, fight_id: int) -> dict[str, Any] | None
         {"fightIDs": [fight_id]},
         "table",
     )
+
+
+async def source_casts(report_code: str, fight_id: int, source_id: int) -> list[dict[str, Any]]:
+    """Every ability one player cast in a fight (``[{guid, name, total}]``, most cast first).
+
+    The source-filtered Casts table (cached per player, ``report_player``). Unlike the
+    whole-raid table, which lists only each player's top few abilities, it includes the
+    major cooldowns (feature 015).
+    """
+    table = await _player_table(
+        report_code,
+        "table(dataType: Casts, fightIDs: $fightIDs, sourceID: $sourceID)",
+        ", $fightIDs: [Int], $sourceID: Int",
+        {"fightIDs": [fight_id], "sourceID": source_id},
+        keys.report_player(report_code, source_id, "Casts", fight_id, 0, "Friendlies"),
+    )
+    data = (table or {}).get("data") if isinstance((table or {}).get("data"), dict) else table
+    abilities = [
+        {"guid": e.get("guid"), "name": e.get("name"), "total": int(e.get("total") or 0)}
+        for e in (data or {}).get("entries") or []
+        if isinstance(e, dict) and e.get("guid") is not None
+    ]
+    abilities.sort(key=lambda a: a["total"], reverse=True)
+    return abilities
 
 
 async def compare_player_to_cohort(

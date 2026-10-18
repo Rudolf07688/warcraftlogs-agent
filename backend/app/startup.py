@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 BOOT_STEPS: tuple[tuple[str, str], ...] = (
     ("serializers", "Preparing model serializers"),
     ("sessions", "Preparing conversation session tables"),
-    ("guides", "Loading the class guide registry"),
+    ("roster", "Loading the class and spec list"),
+    ("guides", "Connecting the coaching briefs"),
     ("models", "Discovering and validating AI models"),
     ("greeting", "Warming up Barnaby's greeting"),
 )

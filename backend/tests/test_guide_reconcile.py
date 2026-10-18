@@ -12,6 +12,7 @@ import asyncio
 from backend.app.db import repository as repo
 from backend.app.db import session as db_session
 from backend.app.services import background, guide
+from backend.tests.guide_fakes import fake_pipeline
 
 
 async def _drain_bg() -> None:
@@ -26,16 +27,12 @@ async def test_autofetch_reuses_ready_guide_with_zero_regeneration(
     session_factory, tenant_id, monkeypatch
 ):
     monkeypatch.setattr(db_session, "SessionLocal", session_factory)
-    gen_calls: list[str] = []
-
-    async def fake_gen(prompt):
-        gen_calls.append(prompt)
-        return "md"
+    gen_calls: list = []
 
     async def fake_resolve(*a):
         return ("Shaman", "Enhancement")
 
-    monkeypatch.setattr(guide, "_generate_text", fake_gen)
+    fake_pipeline(monkeypatch, "md", gen_calls)
     monkeypatch.setattr(guide, "resolve_active_spec", fake_resolve)
 
     async with session_factory() as s:
@@ -96,12 +93,15 @@ async def test_character_out_guide_status_is_derived(as_user, session_factory, m
         await repo.upsert_spec_guide(
             s, class_name="Mage", spec="Arcane", status="ready", guide_markdown="g"
         )
+        await repo.upsert_spec_guide(
+            s, class_name="Mage", spec="Arcane", content_type="mplus", status="needs_review"
+        )
         await s.commit()
 
     prof = (await as_user.client.get("/api/profile")).json()
     friend = next(fr for fr in prof["friends"] if fr["name"] == "Khadgar")
-    assert friend["guide_status"] == "ready"  # derived from the shared library (FR-016)
-    assert friend["guide_updated_at"] is not None
+    # Derived from the shared library per content type (FR-016, feature 015).
+    assert friend["guides"] == {"raid": "ready", "mplus": "needs_review"}
 
 
 async def test_unresolved_character_guide_status_none(as_user, session_factory, monkeypatch):
@@ -116,4 +116,4 @@ async def test_unresolved_character_guide_status_none(as_user, session_factory, 
 
     prof = (await as_user.client.get("/api/profile")).json()
     friend = next(fr for fr in prof["friends"] if fr["name"] == "Mystery")
-    assert friend["guide_status"] == "none"  # unresolved spec ⇒ no guide
+    assert friend["guides"] == {"raid": "none", "mplus": "none"}  # unresolved spec ⇒ no guide

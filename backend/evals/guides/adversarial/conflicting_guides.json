@@ -1,0 +1,19 @@
+{
+  "case": "conflicting_guides",
+  "description": "Two equally trusted live guides disagree on the same value. The conflict is recorded and neither is citable, so the claim ends up unconfirmed.",
+  "check": "conflicting_guides",
+  "content_type": "raid",
+  "inputs": {
+    "evidence": [
+      {"id": "src:1", "statement": "Critical Strike is the best secondary stat.", "topic": "stats",
+       "source_url": "https://www.icy-veins.com/wow/fire-mage-pve-dps-stat-priority", "source_title": "Fire Mage Stat Priority",
+       "source_date": "2026-09-20", "tier": 3, "product": "retail", "environment": "live", "patch": "12.1", "content_type": "raid",
+       "subject": "best secondary stat", "value": "Critical Strike"},
+      {"id": "src:2", "statement": "Haste is the best secondary stat.", "topic": "stats",
+       "source_url": "https://www.archon.gg/wow/builds/fire/mage/raid/overview", "source_title": "Fire Mage Raid Builds",
+       "source_date": "2026-09-22", "tier": 3, "product": "retail", "environment": "live", "patch": "12.1", "content_type": "raid",
+       "subject": "best secondary stat", "value": "Haste"}
+    ]
+  },
+  "expected": {"conflicted_ids": ["src:1", "src:2"]}
+}

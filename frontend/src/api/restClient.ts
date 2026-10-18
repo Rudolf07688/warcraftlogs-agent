@@ -6,8 +6,10 @@ import type {
   ChartArtifact,
   Conversation,
   ConversationDetail,
+  ContentType,
   Guide,
   GuideListResponse,
+  GuideReport,
   Guild,
   Identity,
   Invitation,
@@ -307,31 +309,38 @@ export async function deleteGuild(): Promise<void> {
   await send("DELETE", "/api/profile/guild", undefined, { csrf: true });
 }
 
-// --- Class guides (feature 008 / US2) — shared, global spec-guide library ------
+// --- Class guides (features 008, 015) — shared, global spec-guide library -------
+
+function guidePath(className: string, spec: string, contentType: ContentType): string {
+  return `/api/guides/${encodeURIComponent(className)}/${encodeURIComponent(spec)}/${contentType}`;
+}
 
 export async function listGuides(): Promise<GuideListResponse> {
   return send("GET", "/api/guides");
 }
 
-export async function getGuide(className: string, spec: string): Promise<Guide> {
-  return send(
-    "GET",
-    `/api/guides/${encodeURIComponent(className)}/${encodeURIComponent(spec)}`,
-  );
+export async function getGuide(className: string, spec: string, contentType: ContentType): Promise<Guide> {
+  return send("GET", guidePath(className, spec, contentType));
 }
 
-// Request / retry / refresh a spec's guide. `force` regenerates even if already ready.
+// Request / retry / refresh one content type's guide. `force` regenerates even if ready.
 export async function generateGuide(
   className: string,
   spec: string,
+  contentType: ContentType,
   force = false,
 ): Promise<Guide> {
-  return send(
-    "POST",
-    `/api/guides/${encodeURIComponent(className)}/${encodeURIComponent(spec)}/generate`,
-    { force },
-    { csrf: true },
-  );
+  return send("POST", `${guidePath(className, spec, contentType)}/generate`, { force }, { csrf: true });
+}
+
+// "Report an inaccuracy" on a published guide (feature 015).
+export async function reportGuide(
+  className: string,
+  spec: string,
+  contentType: ContentType,
+  note: string,
+): Promise<GuideReport> {
+  return send("POST", `${guidePath(className, spec, contentType)}/reports`, { note }, { csrf: true });
 }
 
 // --- Backend readiness ----------------------------------------------------------

@@ -189,3 +189,57 @@ async def test_own_character_limit_endpoint(as_user, monkeypatch):
         assert r.status_code == 201, r.text
     r = await client.post("/api/profile/self", json={"name": "Eleven", "server": "S", "region": "US"})
     assert (r.status_code, r.json()["detail"]) == (409, "character_limit")
+
+
+# --- feature 015: guide status per content type, Mythic+ guide for M+ players ---------------
+
+
+async def test_character_save_requests_mplus_guide_only_for_mplus_players(session_factory, tenant_id, monkeypatch):
+    from backend.app.db import session as db_session
+    from backend.app.services import guide
+
+    monkeypatch.setattr(db_session, "SessionLocal", session_factory)
+    requested = []
+
+    async def fake_ensure(class_name, spec, content_type="raid", *, force=False):
+        requested.append((class_name, spec, content_type))
+
+    async def resolve(*a):
+        return ("Priest", "Holy")
+
+    plays = {"Damies": True, "Raider": False}
+
+    async def fake_plays(name, server, region):
+        return plays[name]
+
+    monkeypatch.setattr(guide, "ensure_guide", fake_ensure)
+    monkeypatch.setattr(guide, "resolve_active_spec", resolve)
+    monkeypatch.setattr(guide, "_plays_mythic_plus", fake_plays)
+    async with session_factory() as s:
+        keys = []
+        for name in plays:
+            c = await repo.add_character(s, tenant_id=tenant_id, role="friend", name=name, server="Argent Dawn", region="EU")
+            keys.append(c.id)
+        await s.commit()
+    for cid in keys:
+        await guide.run_character_guide(cid, tenant_id)
+    assert requested == [("Priest", "Holy", "raid"), ("Priest", "Holy", "mplus"), ("Priest", "Holy", "raid")]
+
+
+async def test_plays_mythic_plus_reads_ranked_runs(monkeypatch):
+    from backend.app.services import guide
+    from backend.tests.test_guide_meta import MENU_PAYLOAD
+    from backend.tests.wcl_fakes import install
+
+    install(monkeypatch, lambda q, v: MENU_PAYLOAD)
+    seen = {}
+
+    async def rankings(name, server, region, zone_id=0, metric="dps", difficulty=0, force_refresh=False):
+        seen["args"] = (zone_id, difficulty)
+        runs = 3 if name == "Keys" else 0
+        return {"status": "success", "zoneRankings": {"rankings": [{"spec": "Holy", "totalKills": runs}]}}
+
+    monkeypatch.setattr("wcl_agent.report_tools.get_character_zone_rankings", rankings)
+    assert await guide._plays_mythic_plus("Keys", "Argent Dawn", "EU") is True
+    assert seen["args"] == (60, 10)  # the current Mythic+ zone, Mythic+ difficulty
+    assert await guide._plays_mythic_plus("NoKeys", "Argent Dawn", "EU") is False

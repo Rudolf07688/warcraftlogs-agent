@@ -153,7 +153,7 @@ export interface RecentRaidsResponse {
 
 // --- Profile (feature 005 / US1) ---------------------------------------------
 
-export type GuideStatus = "none" | "pending" | "ready" | "failed";
+export type GuideStatus = "none" | "pending" | "ready" | "needs_review" | "failed";
 
 // US4 (feature 007): a character's raid role. `raid_role` is the stored user override
 // (null = unset); `effective_role` is the override or the spec-inferred default.
@@ -169,8 +169,13 @@ export interface Character {
   active_spec: string | null;
   raid_role: RaidRole | null;
   effective_role: RaidRole | null;
-  guide_status: GuideStatus;
-  guide_updated_at: string | null;
+  // Feature 015: guide status per content type, derived from the shared library.
+  guides: CharacterGuides;
+}
+
+export interface CharacterGuides {
+  raid: GuideStatus;
+  mplus: GuideStatus;
 }
 
 export interface Guild {
@@ -196,42 +201,69 @@ export interface CharacterInput {
   raid_role?: RaidRole | null;
 }
 
-// --- Class guides (feature 008 / US2) — the shared, global spec-guide library --
+// --- Class guides (features 008, 015) — the shared, global spec-guide library ---
 
-// One roster entry per class+spec, merged with the library's status.
-// Feature 009: read-time freshness vs the current raid patch (null unless ready).
+// Feature 015: every guide is one content type of one spec.
+export type ContentType = "raid" | "mplus";
+
+// Read-time freshness vs the live patch / season (null unless a version is published).
 export type GuideFreshness = "current" | "possibly_stale" | "unknown";
+
+// What the viewer shows: the published version, an unverified draft, or nothing.
+export type GuideDisplay = "published" | "draft" | "none";
 
 export interface GuideSource {
   title: string | null;
   uri: string;
+  tier: number | null; // 1 official, 2 Warcraft Logs, 3 guide site
+  date: string | null;
 }
 
+// One content type of one spec, as the library lists it.
+export interface GuideSummary {
+  content_type: ContentType;
+  status: GuideStatus; // the latest run ("none" = never generated)
+  has_published: boolean;
+  refreshing: boolean; // a run is pending while the published version is shown
+  game_patch: string | null;
+  season: string | null; // Mythic+ only
+  generated_at: string | null;
+  updated_at: string | null;
+  freshness: GuideFreshness | null;
+  stale_reason: string | null; // patch_changed | season_changed | hotfix | legacy
+}
+
+// One row per spec, with both content types.
 export interface GuideListItem {
   class_name: string; // WCL filter value, e.g. "Paladin"
   class_display: string; // display name, e.g. "Death Knight"
-  spec: string; // e.g. "Protection"
-  status: GuideStatus;
-  updated_at: string | null;
-  game_patch: string | null; // patch the guide targets, e.g. "12.1" (null = unknown)
-  generated_at: string | null; // when the current content was generated
-  freshness: GuideFreshness | null;
+  spec: string; // e.g. "BeastMastery"
+  spec_display: string; // e.g. "Beast Mastery"
+  role: RaidRole;
+  raid: GuideSummary;
+  mplus: GuideSummary;
 }
 
 export interface GuideListResponse {
   guides: GuideListItem[];
+  roster_source: "game_data" | "fallback";
 }
 
-export interface Guide {
+export interface Guide extends GuideSummary {
   class_name: string;
   spec: string;
-  status: GuideStatus;
-  guide_markdown: string | null; // present only when status === "ready"
-  updated_at: string | null;
-  game_patch: string | null;
-  generated_at: string | null;
-  freshness: GuideFreshness | null;
-  sources: GuideSource[]; // web sources used during generation ([] when none)
+  display: GuideDisplay;
+  guide_markdown: string | null;
+  sources: GuideSource[];
+  unconfirmed: string[]; // areas left out because nothing current confirmed them
+  review_issues: string[]; // only when display === "draft"
+  failure_reason: string | null;
+}
+
+export interface GuideReport {
+  id: string;
+  status: "open" | "fixed" | "rejected";
+  created_at: string;
 }
 
 // --- Backend boot / readiness (GET /api/health) -------------------------------

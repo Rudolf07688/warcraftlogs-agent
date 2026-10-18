@@ -26,6 +26,7 @@ from wcl_agent.constants import role_for_spec
         ("Fire", "dps"),
         ("Assassination", "dps"),
         ("Balance", "dps"),
+        ("Devourer", "dps"),      # Demon Hunter (feature 015)
     ],
 )
 def test_role_for_spec_known(spec, role):

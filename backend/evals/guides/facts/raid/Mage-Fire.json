@@ -1,0 +1,75 @@
+[
+  {
+    "id": "combustion",
+    "statement": "Combustion is Fire's major damage cooldown.",
+    "expected": "present",
+    "match": [
+      "\\bCombustion\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "hot_streak",
+    "statement": "Hot Streak makes the next Pyroblast or Flamestrike instant.",
+    "expected": "present",
+    "match": [
+      "\\bHot Streak\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "fire_blast",
+    "statement": "Fire Blast is used to turn Heating Up into Hot Streak.",
+    "expected": "present",
+    "match": [
+      "\\bFire Blast\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "primary_stat_intellect",
+    "statement": "Intellect is the primary stat.",
+    "expected": "present",
+    "match": [
+      "\\bIntellect\\b"
+    ],
+    "contradict": [
+      "primary stat[^.\\n]{0,20}\\b(Agility|Strength)\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_icy_veins",
+    "statement": "Icy Veins (a Frost ability) is not part of Fire's kit.",
+    "expected": "absent",
+    "match": [
+      "\\bIcy Veins\\b(?!\\.com|/)"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_arcane_power",
+    "statement": "Arcane Power (a removed ability) is not mentioned.",
+    "expected": "absent",
+    "match": [
+      "\\bArcane Power\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_mplus_affixes",
+    "statement": "The raid guide gives no Mythic+ affix or keystone advice.",
+    "expected": "absent",
+    "match": [
+      "\\baffix(es)?\\b",
+      "\\bkeystones?\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  }
+]

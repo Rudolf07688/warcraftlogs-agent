@@ -508,26 +508,34 @@ class GuildProfile(Base):
 
 
 class SpecGuide(Base):
-    """One generated guide per ``(class, spec)`` — a GLOBAL, shared library (feature 008 / US2).
+    """One guide per ``(class, spec, content_type)`` — a GLOBAL, shared library (features 008, 015).
 
     Deliberately **not** tenant-scoped and **no RLS**: guides are generic class/spec advice,
     not user data (plan Complexity Tracking). A single shared store removes the per-character
-    duplication of identical content. Absence of a row ⇒ the spec is "not downloaded"; the
-    row ``status`` drives the Class Guides list. ``class_name``/``spec`` are the WCL PascalCase
-    filter values from ``wcl_agent.constants.CLASS_SPECS``.
+    duplication of identical content. Absence of a row ⇒ the guide is "not generated".
+    ``class_name``/``spec`` are WCL PascalCase filter values from the roster;
+    ``content_type`` is ``raid`` or ``mplus``.
+
+    Feature 015 splits the row into the **published** version (``guide_markdown``,
+    ``brief``, ``claims``, ``game_patch``, ``season``, ``generated_at``, ``sources``,
+    ``major_cooldowns``, ``briefing``, ``evidence``: the last version that passed review)
+    and the **latest run** (``status``, ``draft``, ``review_issues``, ``failure_reason``).
+    Only publishing overwrites the published columns, so a held or failed run never hides
+    the last verified guide, and the agent only ever reads the published ``brief``.
     """
 
     __tablename__ = "spec_guides"
     __table_args__ = (
-        UniqueConstraint("class_name", "spec", name="uq_spec_guide_identity"),
+        UniqueConstraint("class_name", "spec", "content_type", name="uq_spec_guide_identity"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
     class_name: Mapped[str] = mapped_column(String(40))
     spec: Mapped[str] = mapped_column(String(40))
+    content_type: Mapped[str] = mapped_column(String(8), server_default="raid", default="raid")
     guide_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # "pending" | "ready" | "failed" (a missing row = not-downloaded / "none")
-    status: Mapped[str] = mapped_column(String(10), server_default="pending", default="pending")
+    # Latest run: "pending" | "ready" | "needs_review" | "failed" (a missing row = "none")
+    status: Mapped[str] = mapped_column(String(14), server_default="pending", default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -536,8 +544,59 @@ class SpecGuide(Base):
     # freshness / no machine-readable cooldowns (pre-feature rows).
     game_patch: Mapped[str | None] = mapped_column(String(20), nullable=True)
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    sources: Mapped[list | None] = mapped_column(_JSON, nullable=True)  # [{title, uri}]
+    sources: Mapped[list | None] = mapped_column(_JSON, nullable=True)  # [{title, uri, tier, date}]
     major_cooldowns: Mapped[list | None] = mapped_column(_JSON, nullable=True)  # [GuideCooldown]
+    # Feature 015 (migration 0011). Published: the coaching brief, the claims both
+    # renderings came from, the Mythic+ season, the briefing and the evidence snapshot.
+    brief: Mapped[dict | None] = mapped_column(_JSON, nullable=True)
+    claims: Mapped[list | None] = mapped_column(_JSON, nullable=True)
+    season: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    briefing: Mapped[dict | None] = mapped_column(_JSON, nullable=True)
+    evidence: Mapped[dict | None] = mapped_column(_JSON, nullable=True)
+    # Latest run: the held draft and its open issues, or why the run failed.
+    draft: Mapped[dict | None] = mapped_column(_JSON, nullable=True)
+    review_issues: Mapped[list | None] = mapped_column(_JSON, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # "patch_changed" | "season_changed" | "hotfix" | "legacy" | NULL (cleared on publish).
+    stale_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Last time the guide was opened, resolved for a character, or given to the agent.
+    last_wanted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GuideInaccuracyReport(Base):
+    """A user's "report an inaccuracy" note on one published guide (feature 015, FR-052).
+
+    Global like ``spec_guides`` (no tenant, no RLS): the background generator reads open
+    reports for a guide outside any tenant scope, and maintainers list them through a
+    platform-admin endpoint. No FK to the guide row, so a report survives regeneration.
+    """
+
+    __tablename__ = "guide_inaccuracy_reports"
+    __table_args__ = (
+        Index(
+            "ix_guide_reports_open",
+            "class_name",
+            "spec",
+            "content_type",
+            postgresql_where=text("status = 'open'"),
+            sqlite_where=text("status = 'open'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    class_name: Mapped[str] = mapped_column(String(40))
+    spec: Mapped[str] = mapped_column(String(40))
+    content_type: Mapped[str] = mapped_column(String(8))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    note: Mapped[str] = mapped_column(String(500))
+    guide_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # "open" | "fixed" | "rejected"
+    status: Mapped[str] = mapped_column(String(12), server_default="open", default="open")
+    outcome_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Artifact(Base):

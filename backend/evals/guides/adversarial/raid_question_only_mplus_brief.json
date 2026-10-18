@@ -1,0 +1,11 @@
+{
+  "case": "raid_question_only_mplus_brief",
+  "description": "The player asks about a raid boss, but only a Mythic+ brief exists for their spec. The agent gets no brief rather than the Mythic+ one.",
+  "check": "raid_question_only_mplus_brief",
+  "content_type": "raid",
+  "inputs": {
+    "question": "How did my Fire Mage do on the last raid boss pull on Heroic?",
+    "stored_content_type": "mplus"
+  },
+  "expected": {"content_type": "raid", "brief_given": false}
+}

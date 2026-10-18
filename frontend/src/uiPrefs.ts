@@ -30,3 +30,22 @@ export function setSidebarWidth(px: number): void {
     // Ignore storage failures (private mode, quota) — preference is non-critical.
   }
 }
+
+// Feature 015: the Class Guides library's Raid / Mythic+ switch, remembered per device.
+const GUIDE_CONTENT_KEY = "wcl.ui.guideContentType";
+
+export function getGuideContentType(): "raid" | "mplus" {
+  try {
+    return localStorage.getItem(GUIDE_CONTENT_KEY) === "mplus" ? "mplus" : "raid";
+  } catch {
+    return "raid";
+  }
+}
+
+export function setGuideContentType(value: "raid" | "mplus"): void {
+  try {
+    localStorage.setItem(GUIDE_CONTENT_KEY, value);
+  } catch {
+    // Ignore storage failures (private mode, quota) — preference is non-critical.
+  }
+}

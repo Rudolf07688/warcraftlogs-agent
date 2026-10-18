@@ -1,0 +1,22 @@
+{
+  "case": "hotfix_after_publish",
+  "description": "A hotfix touching Mage was published after the guide was generated on the same patch. The guide is marked stale (reason hotfix).",
+  "check": "hotfix_after_publish",
+  "content_type": "raid",
+  "inputs": {
+    "stale_scan": {
+      "content_type": "raid",
+      "class_name": "Mage",
+      "spec": "Fire",
+      "game_patch": "12.1",
+      "season": null,
+      "generated_at": "2026-10-01T00:00:00+00:00",
+      "current_reason": null,
+      "live_patch": "12.1",
+      "live_season": "Mythic+ Season 2",
+      "hotfix_at": "2026-10-15T00:00:00+00:00",
+      "hotfix_touches": true
+    }
+  },
+  "expected": {"stale_reason": "hotfix"}
+}

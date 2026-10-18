@@ -20,6 +20,47 @@ query MenuDiscovery {
 """.strip()
 
 
+# Feature 015: the live class/spec list (slugs are the className/specName filter values).
+GAME_CLASSES = """
+query GameClasses {
+  gameData {
+    classes { id name slug specs { id name slug } }
+  }
+}
+""".strip()
+
+
+# Feature 015 (research R5): top logs-only rankings for one spec on one encounter, with each
+# entry's talents and gear. ``leaderboard: LogsOnly`` keeps out Blizzard leaderboard rows
+# that have no report, talents or gear.
+SPEC_RANKINGS = """
+query SpecRankings(
+  $encounterID: Int!
+  $className: String!
+  $specName: String!
+  $metric: CharacterRankingMetricType!
+  $difficulty: Int
+  $partition: Int
+  $page: Int
+) {
+  worldData {
+    encounter(id: $encounterID) {
+      characterRankings(
+        className: $className
+        specName: $specName
+        metric: $metric
+        difficulty: $difficulty
+        partition: $partition
+        leaderboard: LogsOnly
+        includeCombatantInfo: true
+        page: $page
+      )
+    }
+  }
+}
+""".strip()
+
+
 # Rankings for one boss, optionally filtered by class/spec. `characterRankings`
 # is a JSON scalar and takes no sub-selection.
 ENCOUNTER_RANKINGS = """

@@ -14,11 +14,13 @@ from google.adk.sessions import DatabaseSessionService
 from sqlalchemy import text
 
 from wcl_agent.genai_compat import ensure_genai_serializers_built
+from wcl_agent.guide_meta import set_brief_loader
 from wcl_agent.models import discover_models
 from wcl_agent.wcl_client import aclose_clients
 
 from .agent_runner import set_session_service
 from .api import (
+    admin_guides,
     admin_users,
     cache_stats,
     auth,
@@ -75,8 +77,13 @@ _install_app_logging()
 _install_log_redaction()  # after: the redaction filter attaches to the handler above too
 from .db.session import engine
 from .greeting import GREETING_MODEL, get_greeting
-from .services.guide import load_guide_registry
+from .services.guide import load_brief_record, maybe_scan_stale_guides, touch_guide_wanted
 from .startup import ReadinessGate, StartupTracker
+
+
+def _brief_used(record) -> None:
+    """A tool handed this brief to the agent: the guide is in use (FR-051)."""
+    touch_guide_wanted([(record.class_name, record.spec, record.content_type)])
 
 
 async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
@@ -111,17 +118,34 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
 
         await tracker.run("sessions", _sessions)
 
-        # Feature 009 / US5: publish ready spec guides' patch + major cooldowns to the
-        # in-process wcl_agent registry (consumed by get_cooldown_usage). Best-effort —
-        # an empty or unreachable table must not block startup (optional step).
-        async def _guides() -> int:
-            loaded = await load_guide_registry()
-            logger.info("Guide registry loaded: %d ready guides", loaded)
-            return loaded
+        # Feature 015 / US3: load the live class/spec roster from Warcraft Logs game data
+        # (cached 24 h). Optional: without it the static fallback roster is used.
+        async def _roster():
+            from wcl_agent.roster import load_roster
+
+            return await load_roster()
 
         await tracker.run(
-            "guides", _guides, optional=True, detail=lambda n: f"{n} ready guides"
+            "roster",
+            _roster,
+            optional=True,
+            detail=lambda r: f"{len(r.specs)} specs ({r.source})",
         )
+
+        # Feature 015 / US2: tools read published coaching briefs through this loader
+        # (replaces the boot-time cooldown registry; nothing to warm up).
+        async def _guides() -> None:
+            set_brief_loader(load_brief_record, on_used=_brief_used)
+            maybe_scan_stale_guides()  # patch / season / hotfix changes since the last run
+
+        await tracker.run("guides", _guides, optional=True, detail=lambda _: "brief loader ready")
+        if settings.wcl_guide_review_model == settings.wcl_guide_model:
+            # FR-046: the reviewer must be a different, stronger model than the author.
+            logger.warning(
+                "WCL_GUIDE_REVIEW_MODEL equals WCL_GUIDE_MODEL (%s): guides are reviewed by "
+                "their own author model; set a different, stronger reviewer.",
+                settings.wcl_guide_model,
+            )
 
         # US4: discover + validate the selectable models once (blocking probes off the
         # event loop). app.state is the single runtime source of truth for the set and
@@ -207,6 +231,7 @@ install_error_handlers(app)
 
 app.include_router(auth.router)
 app.include_router(admin_users.router)
+app.include_router(admin_guides.router)
 app.include_router(cache_stats.router)
 app.include_router(models.router)
 app.include_router(conversations.router)

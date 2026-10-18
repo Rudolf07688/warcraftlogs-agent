@@ -2,13 +2,16 @@
 
 Warcraft Logs' ``className`` / ``specName`` filters expect PascalCase,
 space-free identifiers (e.g. ``Hunter`` / ``BeastMastery``) rather than the
-localized display names. This map is the single source of truth for that.
+localized display names.
+
+Feature 015: the live class/spec list comes from Warcraft Logs game data
+(``wcl_agent.roster``); ``CLASS_SPECS`` is its offline fallback, so keep it current.
 """
 
 # class filter value -> {display name, [spec filter values]}
 CLASS_SPECS: dict[str, dict[str, object]] = {
     "DeathKnight": {"display": "Death Knight", "specs": ["Blood", "Frost", "Unholy"]},
-    "DemonHunter": {"display": "Demon Hunter", "specs": ["Havoc", "Vengeance"]},
+    "DemonHunter": {"display": "Demon Hunter", "specs": ["Havoc", "Vengeance", "Devourer"]},
     "Druid": {"display": "Druid", "specs": ["Balance", "Feral", "Guardian", "Restoration"]},
     "Evoker": {"display": "Evoker", "specs": ["Augmentation", "Devastation", "Preservation"]},
     "Hunter": {"display": "Hunter", "specs": ["BeastMastery", "Marksmanship", "Survival"]},
@@ -48,11 +51,19 @@ def role_for_spec(spec: str | None) -> str | None:
     """Return 'tank' | 'healer' | 'dps' for a known spec; None when unknown/unset.
 
     Unknown or missing specs return None (unset, not guessed) so an unresolved character
-    simply shows no role (FR-025).
+    simply shows no role (FR-025). A spec only the live roster knows (a new spec added
+    to the game, feature 015) is damage unless it is in the tank/healer sets.
     """
     if not spec:
         return None
-    return SPEC_ROLES.get(spec)
+    role = SPEC_ROLES.get(spec)
+    if role is not None:
+        return role
+    from .roster import roster_snapshot  # lazy: roster builds on this module
+
+    if any(s.spec == spec for s in roster_snapshot().specs):
+        return "tank" if spec in _TANK_SPECS else "healer" if spec in _HEALER_SPECS else "dps"
+    return None
 
 
 def normalize_class_name(name: str) -> str | None:
@@ -62,6 +73,11 @@ def normalize_class_name(name: str) -> str | None:
     """
     key = name.replace(" ", "").replace("'", "").lower()
     for filter_value in CLASS_SPECS:
+        if filter_value.lower() == key:
+            return filter_value
+    from .roster import roster_snapshot  # lazy: roster builds on this module
+
+    for filter_value in roster_snapshot().classes():
         if filter_value.lower() == key:
             return filter_value
     return None

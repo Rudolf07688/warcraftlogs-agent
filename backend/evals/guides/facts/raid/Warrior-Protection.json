@@ -1,0 +1,75 @@
+[
+  {
+    "id": "shield_block",
+    "statement": "Shield Block is the core physical mitigation.",
+    "expected": "present",
+    "match": [
+      "\\bShield Block\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "ignore_pain",
+    "statement": "Ignore Pain is the rage-spending absorb.",
+    "expected": "present",
+    "match": [
+      "\\bIgnore Pain\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "shield_wall",
+    "statement": "Shield Wall is a major defensive cooldown.",
+    "expected": "present",
+    "match": [
+      "\\bShield Wall\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "primary_stat_strength",
+    "statement": "Strength is the primary stat.",
+    "expected": "present",
+    "match": [
+      "\\bStrength\\b"
+    ],
+    "contradict": [
+      "primary stat[^.\\n]{0,20}\\b(Agility|Intellect)\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_shield_barrier",
+    "statement": "Shield Barrier (removed in Legion) is not mentioned.",
+    "expected": "absent",
+    "match": [
+      "\\bShield Barrier\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_mortal_strike",
+    "statement": "Mortal Strike (an Arms ability) is not part of Protection.",
+    "expected": "absent",
+    "match": [
+      "\\bMortal Strike\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_mplus_affixes",
+    "statement": "The raid guide gives no Mythic+ affix or keystone advice.",
+    "expected": "absent",
+    "match": [
+      "\\baffix(es)?\\b",
+      "\\bkeystones?\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  }
+]

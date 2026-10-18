@@ -363,6 +363,44 @@ and points the backend at it. Settings (all optional, defaults in `.env.example`
 `WCL_METRICS_RETENTION_DAYS`. Design: [documentation/redis_cache_spec.md](documentation/redis_cache_spec.md);
 spec: `specs/014-redis-wcl-cache/`.
 
+### Grounded Raid and Mythic+ guides (feature 015)
+
+Each spec has **two independent guides — Raid and Mythic+** — in the shared Class Guides
+library. A guide's main output is the **coaching brief** the agent coaches from; the readable
+guide is rendered from the same verified claims.
+
+- **How a guide is made** (`backend/app/services/guide_pipeline/`): a briefing with the real
+  date, the exact live build (Blizzard's version endpoint), the latest hotfix, raid tier and
+  Mythic+ season → a Warcraft Logs **data sheet** from logs-only top rankings (casts per
+  minute, shortest gaps between cooldowns, uptimes, stats, talent builds) → **research**
+  from search, filtered in code (no PTR/beta/Classic, no older patch, no other spec or
+  content type, nothing older than a hotfix to the spec; sources tiered, forums never
+  cited) → a tool-less **author** that writes claims citing evidence ids → deterministic
+  **checks** → a different, stronger **reviewer** that judges each claim only against its
+  evidence, for up to 3 rounds. Passing guides publish; others are **held for review** and
+  the last verified guide stays in use. Unknown patch ⇒ the run is postponed.
+- **The agent** gets whole briefs (never cut, never drafts) for the content type a message
+  is about — inline in the turn context (12 000-character budget) or via the
+  `get_coaching_brief` tool; `get_cooldown_usage` uses the brief of the report's content
+  type. Its clock (`<CURRENT_TIME>`) is live.
+- **Roster** comes from Warcraft Logs game data (Devourer included), with a static fallback.
+- **Freshness**: a new patch, Mythic+ season or a hotfix to the class marks guides stale; ones
+  in use (opened, a saved character's spec, or given to the agent in the last 14 days)
+  regenerate at once, others when next opened. Users can **report an inaccuracy**; the next
+  update judges it (admins: `GET /api/admin/guide-reports?status=open`).
+- **Accuracy check** (maintainer-run, live models + WCL):
+  `uv run python -m backend.evals.guides run [--baseline] [--live-generate] [--specs Mage/Fire] [--content raid,mplus] [--skip-coaching]`
+  scores patch accuracy, claim support, source leakage, facts, adversarial cases and coaching
+  against `backend/evals/guides/reports/baseline.json`; exit code 0 = release gate passed.
+  `uv run python -m backend.evals.guides datasheet Mage/Fire raid` prints one data sheet.
+- Settings (optional, see `.env.example`): `WCL_GUIDE_REVIEW_MODEL`,
+  `WCL_GUIDE_MAX_REVIEW_ROUNDS`, `WCL_GUIDE_BRIEF_MAX_CHARS`,
+  `WCL_GUIDE_PREAMBLE_BRIEFS_MAX_CHARS`, `WCL_GUIDE_DATASHEET_MIN_SAMPLE`,
+  `WCL_GUIDE_INUSE_DAYS`, `WCL_GUIDE_REPORT_PER_MINUTE`, `WCL_GUIDE_RESEARCH_FETCH_ENABLED`
+  (off until the maintainer has reviewed the guide sites' terms), `WCL_GUIDE_TALENT_NAMES_URL`,
+  `WOW_VERSION_URL`, `WOW_NEWS_URL`. Migration `0011_guide_content_types` keeps existing
+  guides as Raid guides marked `legacy`. Spec: `specs/015-grounded-class-guides/`.
+
 ## Quick checks
 
 ```bash

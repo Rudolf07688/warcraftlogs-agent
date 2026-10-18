@@ -1,0 +1,51 @@
+{
+  "id": "raid-fire-mage-nekzali",
+  "report_code": "vPkw7Hh64QRcmDYx",
+  "fight_id": 52,
+  "player": "Hrslkks",
+  "class_name": "Mage",
+  "spec": "Fire",
+  "content_type": "raid",
+  "question": "In report vPkw7Hh64QRcmDYx fight 52 (Nek'zali the Soulcoiler, Heroic), how did the Fire Mage Hrslkks use their cooldowns, and what could they improve?",
+  "expected_points": [
+    {
+      "id": "combustion_usage",
+      "kind": "raise",
+      "match": [
+        "\\bCombustion\\b"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "measured_numbers",
+      "kind": "raise",
+      "match": [
+        "\\d+(\\.\\d+)?\\s*(casts?|%|per minute|cpm|uses?)\\b"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_wrong_spec_abilities",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "\\bIcy Veins\\b",
+        "\\bArcane Power\\b"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_mplus_advice",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "\\baffix(es)?\\b",
+        "\\bkeystone\\b"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    }
+  ],
+  "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+}

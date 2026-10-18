@@ -1,0 +1,50 @@
+{
+  "id": "mplus-holy-priest-altar",
+  "report_code": "CdX3tQKaqFG782hm",
+  "fight_id": 13,
+  "player": "Damies",
+  "class_name": "Priest",
+  "spec": "Holy",
+  "content_type": "mplus",
+  "question": "This is my +21 Altar of Fangs key (report CdX3tQKaqFG782hm, fight 13). I was the Holy Priest Damies. What should I do better in Mythic+?",
+  "expected_points": [
+    {
+      "id": "core_heals",
+      "kind": "raise",
+      "match": [
+        "\\bPrayer of Mending\\b",
+        "Holy Word"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "measured_numbers",
+      "kind": "raise",
+      "match": [
+        "\\d+(\\.\\d+)?\\s*(casts?|%|per minute|cpm|uses?)\\b"
+      ],
+      "contradict": [],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_raid_advice",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "Venomous Abyss"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    },
+    {
+      "id": "no_discipline_mechanics",
+      "kind": "not_contradict",
+      "match": [],
+      "contradict": [
+        "\\bAtonement\\b"
+      ],
+      "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+    }
+  ],
+  "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+}

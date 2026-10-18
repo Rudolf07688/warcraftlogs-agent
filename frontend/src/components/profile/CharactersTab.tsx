@@ -23,7 +23,7 @@ import { cn } from "../../lib/utils";
 import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../../types";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { StatusAlert } from "../StatusAlert";
-import { GUIDE_LABEL_SHORT, GUIDE_TONE, StatusBadge } from "../StatusBadge";
+import { GUIDE_GLYPH, GUIDE_GLYPH_LABEL, GUIDE_LABEL_SHORT, GUIDE_TONE, StatusBadge } from "../StatusBadge";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
@@ -54,6 +54,33 @@ const GENERIC_ERROR = "That action failed. Check the details and try again.";
 function GuideBadge({ status }: { status: GuideStatus }) {
   if (status === "none") return null;
   return <StatusBadge tone={GUIDE_TONE[status]}>{GUIDE_LABEL_SHORT[status]}</StatusBadge>;
+}
+
+// Feature 015: one compact indicator per content type, e.g. "Raid ✓" "M+ –". Characters
+// get "ready" whenever a verified guide exists, so the glyph follows the status directly.
+const INDICATORS = [
+  { key: "raid", short: "Raid", long: "Raid" },
+  { key: "mplus", short: "M+", long: "Mythic+" },
+] as const;
+
+function GuideIndicators({ char }: { char: Character }) {
+  if (!char.class_name || !char.active_spec) return null;
+  return (
+    <span className="inline-flex gap-1">
+      {INDICATORS.map(({ key, short, long }) => {
+        const status = char.guides[key];
+        const glyph = status === "ready" ? "published" : status;
+        const label = `${long} guide: ${GUIDE_GLYPH_LABEL[glyph]}`;
+        return (
+          <StatusBadge key={key} tone={status === "none" ? "neutral" : GUIDE_TONE[status]} title={label}>
+            <span aria-label={label}>
+              {short} <span aria-hidden>{GUIDE_GLYPH[glyph]}</span>
+            </span>
+          </StatusBadge>
+        );
+      })}
+    </span>
+  );
 }
 
 function realmLabel(it: { server: string; region: string }): string {
@@ -142,7 +169,7 @@ function CharacterList({
           <ItemContent className="min-w-0">
             <ItemTitle className="flex-wrap">
               {c.name}
-              <GuideBadge status={c.guide_status} />
+              <GuideIndicators char={c} />
             </ItemTitle>
             <ItemDescription className="truncate">
               {realmLabel(c)}
@@ -347,8 +374,9 @@ export function CharactersTab() {
   useEffect(() => {
     if (!profile) return;
     const pending =
-      profile.own.some((c) => c.guide_status === "pending") ||
-      profile.friends.some((f) => f.guide_status === "pending") ||
+      [...profile.own, ...profile.friends].some(
+        (c) => c.guides.raid === "pending" || c.guides.mplus === "pending",
+      ) ||
       profile.guild?.summary_status === "pending";
     if (!pending) return;
     const t = setTimeout(() => void refresh(), 4000);

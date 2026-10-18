@@ -14,7 +14,8 @@ from typing import Any
 import pandas as pd
 from google.adk.tools import ToolContext
 
-from .constants import CLASS_SPECS, METRICS, normalize_class_name
+from .constants import METRICS, normalize_class_name
+from .roster import roster_snapshot
 from .provenance import Completeness, Provenance, with_envelope
 from .menu import load_world_zones
 from .queries import ENCOUNTER_RANKINGS
@@ -234,19 +235,20 @@ async def get_spec_options(class_name: str) -> dict[str, Any]:
         dict: {"status": "success", "class_name": <filter value>,
                "specs": [...]} or an error with the list of valid classes.
     """
+    roster = roster_snapshot()
     normalized = normalize_class_name(class_name)
     if not normalized:
         return {
             "status": "error",
             "error_message": f"Unknown class '{class_name}'.",
-            "valid_classes": list(CLASS_SPECS.keys()),
+            "valid_classes": roster.classes(),
         }
     return with_envelope(
         {
             "status": "success",
             "class_name": normalized,
-            "display": CLASS_SPECS[normalized]["display"],
-            "specs": CLASS_SPECS[normalized]["specs"],
+            "display": roster.class_display(normalized),
+            "specs": roster.specs_for(normalized),
         },
         Provenance(),
     )
@@ -407,19 +409,20 @@ async def compare_specs(
         dict: {"status": "success", "comparison": [ {spec, sample_size,
             median, p95, max}, ... ]} ranked by median score, or an error.
     """
+    roster = roster_snapshot()
     normalized = normalize_class_name(class_name)
     if not normalized:
         return {
             "status": "error",
             "error_message": f"Unknown class '{class_name}'.",
-            "valid_classes": list(CLASS_SPECS.keys()),
+            "valid_classes": roster.classes(),
         }
 
     comparison = []
     any_more = False
     total_sample = 0
     provenance: dict[str, Any] = {}
-    specs = CLASS_SPECS[normalized]["specs"]
+    specs = roster.specs_for(normalized)
     # Specs are independent: fetch them concurrently, then read results in spec order
     # (PERF-002). Pages within one spec stay sequential (they stop at hasMorePages).
     results = await gather_settled(

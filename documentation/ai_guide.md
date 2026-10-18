@@ -620,3 +620,57 @@ Implemented in `specs/014-redis-wcl-cache/` (design: `documentation/redis_cache_
   `chat:refresh:{user}:{char}` (60 s). `ws.py` sets the turn's user with `set_refresh_actor`.
 - **Tests**: Redis is off unless a test takes the `fake_redis` fixture (conftest); use
   `DeadRedis` (test_wcl_cache.py) for outage paths.
+
+## 20. Feature 015 — grounded, patch-aware Raid and Mythic+ guides
+
+Implemented in `specs/015-grounded-class-guides/` (grounding plan:
+`documentation/wow_guide_grounding_plan_v2.md`). Guides are **agent context first**.
+
+- **Storage**: `spec_guides` keyed `(class_name, spec, content_type)` (`raid` | `mplus`).
+  Columns split into the **published** version (`guide_markdown`, `brief`, `claims`,
+  `game_patch`, `season`, `sources`, `briefing`, `evidence`, …) and the **latest run**
+  (`status` pending/ready/needs_review/failed, `draft`, `review_issues`, `failure_reason`).
+  Only `repo.publish_spec_guide` writes published columns; `hold_spec_guide` /
+  `fail_spec_guide` never touch them. `stale_reason` + `last_wanted_at` drive freshness.
+  New global table `guide_inaccuracy_reports`.
+- **Pipeline** (`services/guide_pipeline/`, plain async functions on google-genai, no ADK):
+  `briefing.build_briefing` → `datasheet.build_data_sheet` (cached 12 h) →
+  `research.build_fact_sheet` (two calls: grounded collect, structured extract; then
+  `filter_evidence` = `hard_filter` + `rank_evidence`; cached 6 h) →
+  `authoring.author_claims` (tool-less; `accept_claims` drops claims whose evidence ids do
+  not resolve) → `review_loop` (render → `checks.run_checks` → `review.review_claims` with
+  `wcl_guide_review_model` → remove unconfirmed / `revise_claims` contradicted; ≤ 3 rounds)
+  → publish / hold / fail. Entry point `run_guide_generation`; `services.guide.ensure_guide`
+  dedups and spawns it under the generation semaphore. Every run logs one
+  `guide run class=… outcome=… rounds=… duration_s=…` line.
+- **Claims → outputs**: `render.build_brief` (ability ids only from the data sheet),
+  `render_brief_text` (the agent's text: `[O|B|G,H|M|L]` tags, `LOG:` checks, no braces,
+  ≤ 6000 chars, never truncated), `render_guide_markdown` (one bullet per claim with a
+  `<!-- cN -->` marker, stripped by the API).
+- **Agent side**: `wcl_agent.guide_meta` holds an injected loader (`set_brief_loader`,
+  `get_brief(class, spec, content_type, mark_used=)`); the backend registers
+  `services.guide.load_brief_record` (published brief only, 60 s cache). The preamble
+  (`services.guide.briefs_for_turn` + `profile_context.build_preamble`) classifies the turn
+  (`services.content_type.classify_content_type`, unknown ⇒ Raid with a note) and inlines
+  whole briefs within 12 000 chars, plus an index line per spec. Tools: `get_coaching_brief`
+  (`wcl_agent/guides_tool.py`) and `get_cooldown_usage(content_type=)` (content type from
+  the fight's difficulty / report zone; reads the player's own Casts table). The instruction
+  is an ADK `InstructionProvider` (`agent.build_instruction`) so `<CURRENT_TIME>` is live;
+  `<COACHING_BRIEFS>` replaced `<GUIDES>`.
+- **Roster**: `wcl_agent/roster.py` (`load_roster` from `gameData.classes`, cached 24 h;
+  `roster_snapshot()` for sync callers; `CLASS_SPECS` is the fallback and includes Devourer).
+- **Freshness**: `services.guide.maybe_scan_stale_guides()` (throttled 10 min; called by
+  `GET /api/guides`, the preamble and startup) → `compute_stale_reason` → in-use guides
+  regenerate; `touch_guide_wanted` stamps use (≤ hourly). Opening a stale guide queues it.
+- **API**: `GET /api/guides` (one row per spec, `raid`/`mplus` summaries),
+  `GET|POST /api/guides/{class}/{spec}/{content_type}[/generate|/reports]`,
+  `GET /api/admin/guide-reports`. UI: `ClassGuidesTab` (Raid/Mythic+ switch, other-type dot),
+  `GuideViewerDialog` (tabs, draft warning), `ReportGuideDialog`, `GuideIndicators`.
+- **Accuracy check**: `backend/evals/guides/` (`python -m backend.evals.guides run|datasheet`),
+  fixtures under `facts/`, `adversarial/`, `coaching/`; the scorers are unit-tested in
+  `test_eval_scoring.py`. The baseline must come from `main` (procedure in
+  `specs/015-grounded-class-guides/checklists/progress.md`).
+- **Tests**: fake the model calls with `monkeypatch.setattr(llm, "generate_structured", …)`
+  (reviewer schema `_ReviewDraft`), fake whole runs with `backend/tests/guide_fakes.fake_pipeline`;
+  conftest keeps the stale scan inside its throttle window.
+

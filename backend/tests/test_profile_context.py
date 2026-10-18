@@ -1,5 +1,5 @@
 """The KNOWN PLAYER CONTEXT preamble (feature 005 / US1; feature 007 captured metadata + roles;
-feature 008 guide-by-spec reuse)."""
+feature 015 whole coaching briefs per content type)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,13 @@ from backend.app.db.models import (
     TrackedRaid,
     UserCharacter,
 )
+from backend.app.config import settings
 from backend.app.services.profile_context import build_preamble
+from wcl_agent.guide_meta import BriefRecord
+
+
+def _brief(cls: str, spec: str, text: str, content_type: str = "raid") -> BriefRecord:
+    return BriefRecord(cls, spec, content_type, text, (), "12.1", None, None, "current", True)
 
 
 def test_empty_profile_yields_empty_preamble():
@@ -37,39 +43,73 @@ def test_preamble_includes_identities_and_scoping_rule():
     assert "Horde-Orgrimmar (US)" in text
 
 
-def test_ready_guides_are_included_and_capped():
-    # Feature 008: the guide comes from the shared spec_guides map, keyed by (class, spec).
-    big = "x" * 10000
+def test_whole_brief_inlined_with_index():
+    self_char = UserCharacter(
+        role="self", name="Thrall", server="Stormrage", region="US",
+        class_name="Shaman", active_spec="Enhancement",
+    )
+    text_in = "COACHING BRIEF — Enhancement Shaman · Raid\nPRIORITY (in order)\n1. [G,H] Stormstrike."
+    text = build_preamble(
+        [self_char], [], None,
+        briefs={("Shaman", "Enhancement"): _brief("Shaman", "Enhancement", text_in)},
+        available={("Shaman", "Enhancement"): {"raid": True, "mplus": True}},
+    )
+    assert "- Coaching briefs — content type: Raid:" in text
+    assert "  COACHING BRIEF — Enhancement Shaman · Raid\n  PRIORITY (in order)\n  1. [G,H] Stormstrike." in text
+    assert (
+        "  - Enhancement Shaman (Thrall) — Raid: inline · Mythic+: available (get_coaching_brief)"
+        in text
+    )
+
+
+def test_briefs_fit_whole_or_are_omitted_whole(monkeypatch):
+    monkeypatch.setattr(settings, "wcl_guide_preamble_briefs_max_chars", 1000)
+    own = [_own("Alpha", "Mage", "Frost"), _own("Beta", "Priest", "Holy")]
+    friend = UserCharacter(role="friend", name="Thrall", server="Draenor", region="EU",
+                           class_name="Shaman", active_spec="Enhancement")
+    briefs = {
+        ("Mage", "Frost"): _brief("Mage", "Frost", "F" * 600),
+        ("Priest", "Holy"): _brief("Priest", "Holy", "H" * 600),  # does not fit after Frost
+        ("Shaman", "Enhancement"): _brief("Shaman", "Enhancement", "E" * 300),  # still fits
+    }
+    text = build_preamble(own, [friend], None, briefs=briefs)
+    assert "F" * 600 in text and "E" * 300 in text
+    assert "H" not in text.replace("Holy", "").replace("Healer", "").replace("Mythic+", "")
+    assert "Holy Priest (Beta) — Raid: omitted (budget) — use get_coaching_brief" in text
+    assert "Frost Mage (Alpha) — Raid: inline" in text  # own characters first
+    assert "Enhancement Shaman (Thrall) — Raid: inline" in text
+
+
+def test_assumed_content_type_note_and_mplus_label():
+    char = _own("Alpha", "Mage", "Fire")
+    assumed = build_preamble([char], [], None, content_type_note="assumed Raid — the message did not say")
+    assert "- Coaching briefs — content type: Raid (assumed Raid — the message did not say):" in assumed
+    mplus = build_preamble(
+        [char], [], None, content_type="mplus",
+        available={("Mage", "Fire"): {"raid": True, "mplus": False}},
+    )
+    assert "Fire Mage (Alpha) — Mythic+: none (no verified guidance) · Raid: available (get_coaching_brief)" in mplus
+
+
+def test_no_brief_means_none_in_the_index():
+    # A resolved character whose spec has no published brief ⇒ no brief text, and the
+    # index says there is no verified guidance (never another spec's or type's brief).
     self_char = UserCharacter(
         role="self", name="Thrall", server="Stormrage", region="US",
         class_name="Shaman", active_spec="Enhancement",
     )
     text = build_preamble(
-        [self_char], [], None, spec_guides={("Shaman", "Enhancement"): big}
+        [self_char], [], None, briefs={("Mage", "Fire"): _brief("Mage", "Fire", "irrelevant")}
     )
-    assert "Spec guides:" in text
-    assert "## Thrall — Enhancement" in text
-    # The 10k guide is trimmed well below its raw length (per-guide + total caps).
-    assert len(text) < 6000
+    assert "irrelevant" not in text
+    assert "Enhancement Shaman (Thrall) — Raid: none (no verified guidance)" in text
 
 
-def test_guide_not_injected_without_spec_guide_entry():
-    # A resolved character whose spec has no entry in the shared library ⇒ no guide block.
-    self_char = UserCharacter(
-        role="self", name="Thrall", server="Stormrage", region="US",
-        class_name="Shaman", active_spec="Enhancement",
-    )
-    assert "Spec guides:" not in build_preamble([self_char], [], None)
-    # An entry for a *different* spec is also not injected for this character.
-    text = build_preamble([self_char], [], None, spec_guides={("Mage", "Fire"): "irrelevant"})
-    assert "Spec guides:" not in text
-
-
-def test_unresolved_spec_character_gets_no_guide():
-    # No class/spec ⇒ never keyed into the library, even if the map is non-empty.
+def test_unresolved_spec_character_gets_no_brief_block():
+    # No class/spec ⇒ no brief block at all, even if the map is non-empty.
     char = UserCharacter(role="self", name="Thrall", server="Stormrage", region="US")
-    text = build_preamble([char], [], None, spec_guides={("Shaman", "Enhancement"): "x"})
-    assert "Spec guides:" not in text
+    text = build_preamble([char], [], None, briefs={("Shaman", "Enhancement"): _brief("Shaman", "Enhancement", "x")})
+    assert "Coaching briefs" not in text and "Brief index" not in text
 
 
 # --- feature 007: captured-metadata block (US1) -------------------------------
@@ -87,11 +127,10 @@ def test_empty_captured_metadata_is_byte_identical():
     with_empty = build_preamble(
         [self_char], [], None,
         known_raids=[], known_players=[], known_encounters=[], known_guilds=[],
-        spec_guides={},
+        briefs={}, available={},
     )
     assert with_empty == baseline
     assert "RECENTLY SEEN" not in with_empty
-    assert "Spec guides:" not in with_empty
     # Fully empty everything ⇒ "" exactly as today (SC-008).
     assert build_preamble([], [], None, known_raids=[], known_players=[]) == ""
 
@@ -187,19 +226,20 @@ def test_several_own_characters_listed_on_one_line():
     assert "Friends:" not in text
 
 
-def test_shared_spec_guide_injected_once_under_both_names():
-    guides = {("Mage", "Frost"): "Frostbolt into Flurry."}
-    text = build_preamble([_own("Alpha", "Mage", "Frost"), _own("Gamma", "Mage", "Frost")], [], None, spec_guides=guides)
-    assert "  ## Alpha, Gamma — Frost\n" in text
+def test_shared_spec_brief_injected_once_under_both_names():
+    briefs = {("Mage", "Frost"): _brief("Mage", "Frost", "Frostbolt into Flurry.")}
+    text = build_preamble([_own("Alpha", "Mage", "Frost"), _own("Gamma", "Mage", "Frost")], [], None, briefs=briefs)
+    assert "Frost Mage (Alpha, Gamma) — Raid: inline" in text
     assert text.count("Frostbolt into Flurry.") == 1
 
 
-def test_distinct_specs_keep_their_own_guide_headings():
+def test_distinct_specs_each_get_their_brief():
     friend = UserCharacter(role="friend", name="Thrall", server="Draenor", region="EU", class_name="Shaman", active_spec="Enhancement")
-    guides = {("Mage", "Frost"): "frost guide", ("Shaman", "Enhancement"): "enh guide"}
-    text = build_preamble([_own("Alpha", "Mage", "Frost")], [friend], None, spec_guides=guides)
-    assert "  ## Alpha — Frost\n  frost guide" in text
-    assert "  ## Thrall — Enhancement\n  enh guide" in text
+    briefs = {("Mage", "Frost"): _brief("Mage", "Frost", "frost brief"),
+              ("Shaman", "Enhancement"): _brief("Shaman", "Enhancement", "enh brief")}
+    text = build_preamble([_own("Alpha", "Mage", "Frost")], [friend], None, briefs=briefs)
+    assert text.index("frost brief") < text.index("enh brief")
+    assert "Frost Mage (Alpha) — Raid: inline" in text and "Enhancement Shaman (Thrall) — Raid: inline" in text
 
 
 def test_every_own_character_excluded_from_recently_seen():

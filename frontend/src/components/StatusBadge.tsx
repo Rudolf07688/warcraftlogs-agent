@@ -20,6 +20,7 @@ const TONE_VARIANT: Record<Tone, BadgeVariant> = {
 export const GUIDE_TONE: Record<GuideStatus, Tone> = {
   ready: "ok",
   pending: "pending",
+  needs_review: "warn",
   failed: "failed",
   none: "neutral",
 };
@@ -42,13 +43,26 @@ export const GUIDE_LABEL_SHORT: Record<GuideStatus, string> = {
   none: "",
   pending: "guide loading…",
   ready: "guide ready",
+  needs_review: "guide held for review",
   failed: "guide unavailable",
 };
 export const GUIDE_LABEL_LIBRARY: Record<GuideStatus, string> = {
-  none: "Not downloaded",
+  none: "Not generated",
   pending: "Generating…",
-  ready: "Downloaded",
+  ready: "Ready",
+  needs_review: "Unverified draft",
   failed: "Failed",
+};
+
+// Feature 015: compact per-content-type indicator beside a character (guides-api.md status
+// table). "published" wins: a held or failed update still shows the verified guide.
+export const GUIDE_GLYPH = { published: "✓", none: "–", pending: "…", needs_review: "!", failed: "×" } as const;
+export const GUIDE_GLYPH_LABEL: Record<keyof typeof GUIDE_GLYPH, string> = {
+  published: "ready",
+  none: "not generated",
+  pending: "generating",
+  needs_review: "unverified draft",
+  failed: "failed",
 };
 
 export interface StatusBadgeProps {

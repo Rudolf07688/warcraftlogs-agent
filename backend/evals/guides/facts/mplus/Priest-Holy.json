@@ -1,0 +1,74 @@
+[
+  {
+    "id": "serenity",
+    "statement": "Holy Word: Serenity is a core single-target heal.",
+    "expected": "present",
+    "match": [
+      "Holy Word:\\s*Serenity"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "prayer_of_mending",
+    "statement": "Prayer of Mending is kept on cooldown.",
+    "expected": "present",
+    "match": [
+      "\\bPrayer of Mending\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "purify",
+    "statement": "Purify removes harmful magic effects (dispels).",
+    "expected": "present",
+    "match": [
+      "\\bPurify\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "primary_stat_intellect",
+    "statement": "Intellect is the primary stat.",
+    "expected": "present",
+    "match": [
+      "\\bIntellect\\b"
+    ],
+    "contradict": [
+      "primary stat[^.\\n]{0,20}\\b(Agility|Strength)\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_chakra",
+    "statement": "Chakra (removed in Legion) is not mentioned.",
+    "expected": "absent",
+    "match": [
+      "\\bChakra\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_atonement",
+    "statement": "Atonement (a Discipline mechanic) is not part of Holy.",
+    "expected": "absent",
+    "match": [
+      "\\bAtonement\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_raid_zone",
+    "statement": "The Mythic+ guide does not give raid-zone advice (The Venomous Abyss).",
+    "expected": "absent",
+    "match": [
+      "Venomous Abyss"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  }
+]

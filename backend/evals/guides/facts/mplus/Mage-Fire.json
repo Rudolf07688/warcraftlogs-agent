@@ -1,0 +1,64 @@
+[
+  {
+    "id": "combustion",
+    "statement": "Combustion is Fire's major damage cooldown.",
+    "expected": "present",
+    "match": [
+      "\\bCombustion\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "counterspell",
+    "statement": "Counterspell is the interrupt.",
+    "expected": "present",
+    "match": [
+      "\\bCounterspell\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "primary_stat_intellect",
+    "statement": "Intellect is the primary stat.",
+    "expected": "present",
+    "match": [
+      "\\bIntellect\\b"
+    ],
+    "contradict": [
+      "primary stat[^.\\n]{0,20}\\b(Agility|Strength)\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_icy_veins",
+    "statement": "Icy Veins (a Frost ability) is not part of Fire's kit.",
+    "expected": "absent",
+    "match": [
+      "\\bIcy Veins\\b(?!\\.com|/)"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_arcane_power",
+    "statement": "Arcane Power (a removed ability) is not mentioned.",
+    "expected": "absent",
+    "match": [
+      "\\bArcane Power\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_raid_zone",
+    "statement": "The Mythic+ guide does not give raid-zone advice (The Venomous Abyss).",
+    "expected": "absent",
+    "match": [
+      "Venomous Abyss"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  }
+]

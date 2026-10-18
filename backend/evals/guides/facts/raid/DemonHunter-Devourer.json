@@ -1,0 +1,69 @@
+[
+  {
+    "id": "ranged",
+    "statement": "Devourer is a ranged damage spec.",
+    "expected": "present",
+    "match": [
+      "\\branged\\b"
+    ],
+    "contradict": [
+      "Devourer[^.\\n]{0,40}\\bmelee\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "primary_stat_intellect",
+    "statement": "Intellect is the primary stat.",
+    "expected": "present",
+    "match": [
+      "\\bIntellect\\b"
+    ],
+    "contradict": [
+      "primary stat[^.\\n]{0,20}\\b(Agility|Strength)\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "dps_role",
+    "statement": "Devourer is a damage (DPS) spec, not a tank.",
+    "expected": "present",
+    "match": [
+      "\\b(DPS|damage)\\b"
+    ],
+    "contradict": [
+      "Devourer[^.\\n]{0,40}\\btank\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "metamorphosis",
+    "statement": "Devourer has a Metamorphosis form.",
+    "expected": "present",
+    "match": [
+      "\\bMetamorphosis\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_demon_spikes",
+    "statement": "Demon Spikes (a Vengeance tank ability) is not part of Devourer.",
+    "expected": "absent",
+    "match": [
+      "\\bDemon Spikes\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_mplus_affixes",
+    "statement": "The raid guide gives no Mythic+ affix or keystone advice.",
+    "expected": "absent",
+    "match": [
+      "\\baffix(es)?\\b",
+      "\\bkeystones?\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  }
+]

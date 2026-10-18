@@ -1,0 +1,75 @@
+[
+  {
+    "id": "serenity",
+    "statement": "Holy Word: Serenity is a core single-target heal.",
+    "expected": "present",
+    "match": [
+      "Holy Word:\\s*Serenity"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "prayer_of_mending",
+    "statement": "Prayer of Mending is kept on cooldown.",
+    "expected": "present",
+    "match": [
+      "\\bPrayer of Mending\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "guardian_spirit",
+    "statement": "Guardian Spirit is the external defensive cooldown.",
+    "expected": "present",
+    "match": [
+      "\\bGuardian Spirit\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "primary_stat_intellect",
+    "statement": "Intellect is the primary stat.",
+    "expected": "present",
+    "match": [
+      "\\bIntellect\\b"
+    ],
+    "contradict": [
+      "primary stat[^.\\n]{0,20}\\b(Agility|Strength)\\b"
+    ],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_chakra",
+    "statement": "Chakra (removed in Legion) is not mentioned.",
+    "expected": "absent",
+    "match": [
+      "\\bChakra\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_atonement",
+    "statement": "Atonement (a Discipline mechanic) is not part of Holy.",
+    "expected": "absent",
+    "match": [
+      "\\bAtonement\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  },
+  {
+    "id": "no_mplus_affixes",
+    "statement": "The raid guide gives no Mythic+ affix or keystone advice.",
+    "expected": "absent",
+    "match": [
+      "\\baffix(es)?\\b",
+      "\\bkeystones?\\b"
+    ],
+    "contradict": [],
+    "notes": "UNVERIFIED — maintainer must hand-check against the live game"
+  }
+]

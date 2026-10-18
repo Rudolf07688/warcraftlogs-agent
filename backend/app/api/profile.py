@@ -32,16 +32,16 @@ router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
 async def _char_out(db: AsyncSession, char) -> CharacterOut:
-    """Build a ``CharacterOut`` with guide status derived from the shared spec guide (FR-016).
+    """Build a ``CharacterOut`` with guide statuses derived from the shared library (FR-016).
 
     ``spec_guides`` is global (no RLS), so reading it on the tenant session is fine.
     """
-    guide = None
+    guides: dict = {}
     if char.class_name and char.active_spec:
-        guide = await repo.get_spec_guide(
-            db, class_name=char.class_name, spec=char.active_spec
-        )
-    return CharacterOut.from_character(char, guide)
+        keys = [(char.class_name, char.active_spec, ct) for ct in ("raid", "mplus")]
+        rows = await repo.get_spec_guides_for(db, keys, with_text=False)
+        guides = {ct: g for (_, _, ct), g in rows.items()}
+    return CharacterOut.from_character(char, guides)
 
 
 def _conflict(exc: repo.CharacterConflict) -> HTTPException:
@@ -104,12 +104,21 @@ async def get_profile(
 ) -> ProfileOut:
     own, friends, guild = await repo.get_profile(db, tenant_id=identity.tenant_id)
     chars = list(own) + list(friends)
-    pairs = [(c.class_name, c.active_spec) for c in chars if c.class_name and c.active_spec]
-    guides = await repo.get_spec_guides_for(db, pairs, with_text=False)  # status only
+    keys = [
+        (c.class_name, c.active_spec, ct)
+        for c in chars
+        if c.class_name and c.active_spec
+        for ct in ("raid", "mplus")
+    ]
+    guides = await repo.get_spec_guides_for(db, keys, with_text=False)  # status only, one query
 
     def out(c) -> CharacterOut:
-        guide = guides.get((c.class_name, c.active_spec)) if c.class_name and c.active_spec else None
-        return CharacterOut.from_character(c, guide)
+        mine = {
+            ct: guides.get((c.class_name, c.active_spec, ct))
+            for ct in ("raid", "mplus")
+            if c.class_name and c.active_spec
+        }
+        return CharacterOut.from_character(c, mine)
 
     return ProfileOut(
         own=[out(c) for c in own],

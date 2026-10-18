@@ -43,10 +43,9 @@ from ..services import raids as raids_service
 from ..services.artifacts import capture_artifact_from_tool
 from ..services.charts import chart_spec_to_plotly
 from ..services.encounters import encounters_from_tool
-from ..services.profile_context import build_preamble, guide_heading_label
+from ..services.guide import briefs_for_turn
+from ..services.profile_context import build_preamble
 from ..services.tool_summary import summarize_tool_result
-from wcl_agent.patch import current_patch, guide_freshness
-from wcl_agent.wcl_client import background_lane
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -245,7 +244,7 @@ async def _handle_turn(
         # WCL data is public and cached for every tenant alike (feature 014 supersedes
         # FR-019); only the forced-refresh limit is per user, for this turn (US4).
         set_refresh_actor(str(identity.user_id))
-        preamble = await _build_turn_preamble(session, tenant_id)
+        preamble = await _build_turn_preamble(session, tenant_id, turn.content)
 
     # Stream the agent response, accumulating tokens into the final content.
     # US2: a per-turn scratch store holds each tool's full output on disk so large
@@ -337,7 +336,7 @@ async def _start_turn(sock: _TurnSocket, turn: ChatTurn, identity: RequestIdenti
     sock.suggestions = await _handle_turn(sock, turn, identity)
 
 
-async def _build_turn_preamble(session, tenant_id) -> str:
+async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
     """The (non-persisted) KNOWN PLAYER CONTEXT preamble for this turn (US1).
 
     Empty string when no profile exists, so behavior is unchanged (FR-006).
@@ -350,31 +349,17 @@ async def _build_turn_preamble(session, tenant_id) -> str:
     known_players = await repo.list_recent_known_players(session, tenant_id=tenant_id)
     known_encounters = await repo.list_recent_known_encounters(session, tenant_id=tenant_id)
     known_guilds = await repo.list_recent_known_guilds(session, tenant_id=tenant_id)
-    # US3 (feature 008): each profile character's guide now lives in the GLOBAL
-    # spec_guides library, keyed by its resolved (class, spec). Fetch the ready guides
-    # for the profile's specs and pass a (class, spec) → markdown map to the preamble.
-    # (spec_guides has no RLS, so reading it on the tenant session is fine.)
+    # Feature 015 / US2: whole coaching briefs of the content type this turn is about,
+    # for each profile character's resolved spec (published briefs only, never drafts).
     profile_chars = list(own) + list(friends)
-    spec_pairs = [
-        (c.class_name, c.active_spec)
-        for c in profile_chars
-        if c.class_name and c.active_spec
-    ]
-    guide_rows = await repo.get_spec_guides_for(session, spec_pairs, ready_only=True)
-    ready_guides = {
-        key: g for key, g in guide_rows.items() if g.status == "ready" and g.guide_markdown
-    }
-    spec_guides = {key: g.guide_markdown for key, g in ready_guides.items()}
-    # Feature 009 / US5: label each injected guide with its patch + freshness
-    # (current patch via the cached WCL client, background lane; None ⇒ unknown).
-    guide_labels: dict[tuple[str, str], str] = {}
-    if ready_guides:
-        with background_lane():
-            live_patch = await current_patch()
-        guide_labels = {
-            key: guide_heading_label(g.game_patch, guide_freshness(g.game_patch, live_patch))
-            for key, g in ready_guides.items()
-        }
+    specs = [(c.class_name, c.active_spec) for c in profile_chars if c.class_name and c.active_spec]
+    turn = None
+    if specs:
+        recent_zone = next((r.zone for r in known_raids if r.zone), None)
+        try:
+            turn = await briefs_for_turn(specs, user_text, recent_zone)
+        except Exception:  # noqa: BLE001 - QA BUG-001: a turn without briefs, never a dead socket
+            logger.exception("coaching briefs unavailable for this turn")
     return build_preamble(
         own,
         friends,
@@ -383,8 +368,10 @@ async def _build_turn_preamble(session, tenant_id) -> str:
         known_players=known_players,
         known_encounters=known_encounters,
         known_guilds=known_guilds,
-        spec_guides=spec_guides,
-        guide_labels=guide_labels,
+        briefs=turn.briefs if turn else {},
+        available=turn.available if turn else {},
+        content_type=turn.content_type if turn else "raid",
+        content_type_note=turn.note if turn else None,
     )
 
 

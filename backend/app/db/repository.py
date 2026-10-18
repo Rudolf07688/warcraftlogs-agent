@@ -24,6 +24,7 @@ from .models import (
     Artifact,
     CapturedGraph,
     Conversation,
+    GuideInaccuracyReport,
     GuildProfile,
     KnownEncounter,
     KnownPlayer,
@@ -1018,17 +1019,20 @@ async def set_character_spec(
     return char
 
 
-# --- Spec guides (feature 008 / US2) — GLOBAL, non-tenant shared library -------
+# --- Spec guides (features 008, 015) — GLOBAL, non-tenant shared library -------
 # These helpers take a plain (non-tenant) session: ``spec_guides`` has no ``tenant_id``
-# and no RLS (plan Complexity Tracking). Keyed by the WCL ``(class_name, spec)`` pair.
+# and no RLS (plan Complexity Tracking). Keyed by the WCL ``(class_name, spec)`` pair plus
+# the feature-015 ``content_type`` (``raid`` | ``mplus``).
 
 
 async def get_spec_guide(
-    session: AsyncSession, *, class_name: str, spec: str
+    session: AsyncSession, *, class_name: str, spec: str, content_type: str = "raid"
 ) -> SpecGuide | None:
     result = await session.execute(
         select(SpecGuide).where(
-            SpecGuide.class_name == class_name, SpecGuide.spec == spec
+            SpecGuide.class_name == class_name,
+            SpecGuide.spec == spec,
+            SpecGuide.content_type == content_type,
         )
     )
     return result.scalar_one_or_none()
@@ -1043,91 +1047,336 @@ async def upsert_spec_guide(
     class_name: str,
     spec: str,
     status: str,
+    content_type: str = "raid",
     guide_markdown: str | None = None,
     game_patch: str | None | object = _UNSET,
     generated_at: datetime | None | object = _UNSET,
     sources: list | None | object = _UNSET,
     major_cooldowns: list | None | object = _UNSET,
+    **columns: object,
 ) -> SpecGuide:
-    """Create or update the ``(class, spec)`` guide. Stamps markdown only when provided.
+    """Create or update one guide's row. Stamps markdown only when provided.
 
-    The feature-009 provenance columns are stamped only when passed (``None`` clears
-    them); omitted ⇒ unchanged, so status flips never touch them.
+    The provenance columns (and any feature-015 column passed in ``columns``, e.g.
+    ``failure_reason``) are stamped only when passed (``None`` clears them); omitted ⇒
+    unchanged, so status flips never touch them.
 
-    Raises ``IntegrityError`` if a concurrent insert wins the unique ``(class, spec)``
-    constraint — the caller rolls back and re-reads the winner (contracts: dedup).
+    Raises ``IntegrityError`` if a concurrent insert wins the unique
+    ``(class, spec, content_type)`` constraint — the caller rolls back and re-reads the
+    winner (contracts: dedup).
     """
-    provenance = {
+    unknown = set(columns) - _GUIDE_STAMP_COLUMNS
+    if unknown:
+        raise TypeError(f"unknown spec_guides columns: {sorted(unknown)}")
+    stamped = {
         "game_patch": game_patch,
         "generated_at": generated_at,
         "sources": sources,
         "major_cooldowns": major_cooldowns,
+        **columns,
     }
-    existing = await get_spec_guide(session, class_name=class_name, spec=spec)
+    stamped = {column: value for column, value in stamped.items() if value is not _UNSET}
+    existing = await get_spec_guide(
+        session, class_name=class_name, spec=spec, content_type=content_type
+    )
     if existing is not None:
         existing.status = status
         if guide_markdown is not None:
             existing.guide_markdown = guide_markdown
-        for column, value in provenance.items():
-            if value is not _UNSET:
-                setattr(existing, column, value)
+        for column, value in stamped.items():
+            setattr(existing, column, value)
         await session.flush()
         return existing
     guide = SpecGuide(
         class_name=class_name,
         spec=spec,
+        content_type=content_type,
         status=status,
         guide_markdown=guide_markdown,
-        **{column: value for column, value in provenance.items() if value is not _UNSET},
+        **stamped,
     )
     session.add(guide)
     await session.flush()
     return guide
 
 
+# Feature-015 columns ``upsert_spec_guide`` may stamp by keyword.
+_GUIDE_STAMP_COLUMNS = frozenset(
+    {
+        "brief",
+        "claims",
+        "season",
+        "briefing",
+        "evidence",
+        "draft",
+        "review_issues",
+        "failure_reason",
+        "stale_reason",
+        "last_wanted_at",
+    }
+)
+
+
+async def publish_spec_guide(
+    session: AsyncSession,
+    *,
+    class_name: str,
+    spec: str,
+    content_type: str,
+    markdown: str,
+    brief: dict | None,
+    claims: list | None,
+    game_patch: str | None,
+    season: str | None,
+    generated_at: datetime,
+    sources: list | None,
+    major_cooldowns: list | None,
+    briefing: dict | None,
+    evidence: dict | None,
+) -> SpecGuide:
+    """Publish a verified run: overwrite every published column at once, mark the row
+    ``ready`` and clear the latest-run leftovers (draft, issues, failure, staleness)."""
+    return await upsert_spec_guide(
+        session,
+        class_name=class_name,
+        spec=spec,
+        content_type=content_type,
+        status="ready",
+        guide_markdown=markdown,
+        game_patch=game_patch,
+        generated_at=generated_at,
+        sources=sources,
+        major_cooldowns=major_cooldowns,
+        brief=brief,
+        claims=claims,
+        season=season,
+        briefing=briefing,
+        evidence=evidence,
+        draft=None,
+        review_issues=None,
+        failure_reason=None,
+        stale_reason=None,
+    )
+
+
+async def hold_spec_guide(
+    session: AsyncSession,
+    *,
+    class_name: str,
+    spec: str,
+    content_type: str,
+    draft: dict,
+    review_issues: list,
+) -> SpecGuide:
+    """Hold a run that did not pass review: store the draft and its open issues as
+    ``needs_review``; the published columns stay untouched (FR-049)."""
+    return await upsert_spec_guide(
+        session,
+        class_name=class_name,
+        spec=spec,
+        content_type=content_type,
+        status="needs_review",
+        draft=draft,
+        review_issues=review_issues,
+        failure_reason=None,
+    )
+
+
+async def fail_spec_guide(
+    session: AsyncSession,
+    *,
+    class_name: str,
+    spec: str,
+    content_type: str,
+    reason: str,
+    review_issues: list | None | object = _UNSET,
+) -> SpecGuide:
+    """Mark the latest run ``failed`` with a short machine-readable reason; the published
+    columns stay untouched."""
+    extra = {} if review_issues is _UNSET else {"review_issues": review_issues}
+    return await upsert_spec_guide(
+        session,
+        class_name=class_name,
+        spec=spec,
+        content_type=content_type,
+        status="failed",
+        failure_reason=reason[:200],
+        **extra,
+    )
+
+
+# True when a version has ever been published (data-model §2, derived ``has_published``).
+_HAS_PUBLISHED = or_(
+    SpecGuide.brief.is_not(None), SpecGuide.guide_markdown.is_not(None)
+).label("has_published")
+
 # The SpecGuide columns that describe a guide's status, without its text (PERF-014).
 _GUIDE_STATUS_COLUMNS = (
     SpecGuide.class_name,
     SpecGuide.spec,
+    SpecGuide.content_type,
     SpecGuide.status,
     SpecGuide.updated_at,
     SpecGuide.game_patch,
+    SpecGuide.season,
     SpecGuide.generated_at,
+    SpecGuide.stale_reason,
+    SpecGuide.last_wanted_at,
+    SpecGuide.failure_reason,
 )
 
 
 async def list_spec_guides(session: AsyncSession, *, with_text: bool = True) -> list[SpecGuide]:
-    """All guide rows (global library). ``with_text=False`` skips the markdown, sources and
-    cooldowns (the roster needs only status columns — PERF-014)."""
-    stmt = select(SpecGuide)
-    if not with_text:
-        stmt = stmt.options(load_only(*_GUIDE_STATUS_COLUMNS))
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    """All guide rows (global library). ``with_text=False`` skips the markdown, brief,
+    claims and evidence (the roster needs only status columns — PERF-014); each row then
+    carries a ``has_published`` attribute computed in SQL."""
+    if with_text:
+        result = await session.execute(select(SpecGuide))
+        return list(result.scalars().all())
+    stmt = select(SpecGuide, _HAS_PUBLISHED).options(load_only(*_GUIDE_STATUS_COLUMNS))
+    return _with_has_published(await session.execute(stmt))
+
+
+def _with_has_published(result) -> list[SpecGuide]:
+    rows = []
+    for guide, has_published in result.all():
+        # Not a mapped column: a plain attribute read by the summaries.
+        guide.__dict__["has_published"] = bool(has_published)
+        rows.append(guide)
+    return rows
+
+
+def guide_has_published(guide: SpecGuide) -> bool:
+    """Whether the row holds a published version, from the SQL flag when the text columns
+    were not loaded (``with_text=False``), else from the columns themselves."""
+    if "has_published" in guide.__dict__:
+        return guide.__dict__["has_published"]
+    return guide.brief is not None or guide.guide_markdown is not None
 
 
 async def get_spec_guides_for(
     session: AsyncSession,
-    pairs: list[tuple[str, str]],
+    keys: list[tuple[str, str, str]],
     *,
     with_text: bool = True,
     ready_only: bool = False,
-) -> dict[tuple[str, str], SpecGuide]:
-    """Batch-load guides for the given ``(class_name, spec)`` pairs → keyed map.
+) -> dict[tuple[str, str, str], SpecGuide]:
+    """Batch-load guides for the given ``(class_name, spec, content_type)`` keys → keyed map.
 
-    Matches the exact pairs (not the class × spec cross product). ``with_text=False``
-    loads status columns only; ``ready_only`` filters to ready guides in SQL (PERF-014).
+    Matches the exact keys (not a cross product). ``with_text=False`` loads status columns
+    (plus ``has_published``) only; ``ready_only`` filters to ready guides in SQL (PERF-014).
     """
-    wanted = sorted({(c, s) for c, s in pairs if c and s})
+    wanted = sorted({(c, s, t) for c, s, t in keys if c and s and t})
     if not wanted:
         return {}
-    stmt = select(SpecGuide).where(tuple_(SpecGuide.class_name, SpecGuide.spec).in_(wanted))
-    if ready_only:
-        stmt = stmt.where(SpecGuide.status == "ready")
-    if not with_text:
-        stmt = stmt.options(load_only(*_GUIDE_STATUS_COLUMNS))
-    result = await session.execute(stmt)
-    return {(g.class_name, g.spec): g for g in result.scalars().all()}
+    match = tuple_(SpecGuide.class_name, SpecGuide.spec, SpecGuide.content_type).in_(wanted)
+    if with_text:
+        stmt = select(SpecGuide).where(match)
+        if ready_only:
+            stmt = stmt.where(SpecGuide.status == "ready")
+        rows = list((await session.execute(stmt)).scalars().all())
+    else:
+        stmt = select(SpecGuide, _HAS_PUBLISHED).where(match).options(
+            load_only(*_GUIDE_STATUS_COLUMNS)
+        )
+        if ready_only:
+            stmt = stmt.where(SpecGuide.status == "ready")
+        rows = _with_has_published(await session.execute(stmt))
+    return {(g.class_name, g.spec, g.content_type): g for g in rows}
+
+
+async def set_guide_stale(
+    session: AsyncSession, marks: dict[tuple[str, str, str], str]
+) -> None:
+    """Set ``stale_reason`` on guide rows (the stale scan, FR-050). Status stays as it is."""
+    for (class_name, spec, content_type), reason in marks.items():
+        await session.execute(
+            update(SpecGuide)
+            .where(
+                SpecGuide.class_name == class_name,
+                SpecGuide.spec == spec,
+                SpecGuide.content_type == content_type,
+            )
+            .values(stale_reason=reason)
+        )
+
+
+async def touch_guides_wanted(
+    session: AsyncSession, keys: list[tuple[str, str, str]], when: datetime
+) -> None:
+    """Stamp ``last_wanted_at`` (the in-use rule, FR-051) on existing guide rows."""
+    if not keys:
+        return
+    await session.execute(
+        update(SpecGuide)
+        .where(tuple_(SpecGuide.class_name, SpecGuide.spec, SpecGuide.content_type).in_(sorted(set(keys))))
+        .values(last_wanted_at=when)
+        .execution_options(synchronize_session=False)
+    )
+
+
+# --- Guide inaccuracy reports (feature 015, FR-052) — GLOBAL like spec_guides ------------
+
+
+async def create_guide_report(
+    session: AsyncSession,
+    *,
+    class_name: str,
+    spec: str,
+    content_type: str,
+    user_id: uuid.UUID,
+    note: str,
+    guide_generated_at: datetime | None,
+) -> GuideInaccuracyReport:
+    report = GuideInaccuracyReport(
+        class_name=class_name,
+        spec=spec,
+        content_type=content_type,
+        user_id=user_id,
+        note=note,
+        guide_generated_at=guide_generated_at,
+        status="open",
+    )
+    session.add(report)
+    await session.flush()
+    await session.refresh(report)
+    return report
+
+
+async def list_open_guide_reports(
+    session: AsyncSession, *, class_name: str, spec: str, content_type: str, limit: int = 20
+) -> list[GuideInaccuracyReport]:
+    result = await session.execute(
+        select(GuideInaccuracyReport)
+        .where(
+            GuideInaccuracyReport.class_name == class_name,
+            GuideInaccuracyReport.spec == spec,
+            GuideInaccuracyReport.content_type == content_type,
+            GuideInaccuracyReport.status == "open",
+        )
+        .order_by(GuideInaccuracyReport.created_at)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def resolve_guide_report(
+    session: AsyncSession, report_id: uuid.UUID, *, status: str, outcome_note: str | None, when: datetime
+) -> None:
+    await session.execute(
+        update(GuideInaccuracyReport)
+        .where(GuideInaccuracyReport.id == report_id, GuideInaccuracyReport.status == "open")
+        .values(status=status, outcome_note=(outcome_note or "")[:300] or None, resolved_at=when)
+    )
+
+
+async def list_guide_reports(
+    session: AsyncSession, *, status: str | None = None, limit: int = 200
+) -> list[GuideInaccuracyReport]:
+    stmt = select(GuideInaccuracyReport).order_by(GuideInaccuracyReport.created_at.desc()).limit(limit)
+    if status:
+        stmt = stmt.where(GuideInaccuracyReport.status == status)
+    return list((await session.execute(stmt)).scalars().all())
 
 
 async def set_guild_summary(

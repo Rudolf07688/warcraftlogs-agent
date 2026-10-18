@@ -1,0 +1,19 @@
+{
+  "case": "old_similar_guide",
+  "description": "A guide written for the previous patch is still stored. Wherever the agent sees it, it must be labelled possibly stale rather than presented as current.",
+  "check": "old_similar_guide",
+  "content_type": "raid",
+  "inputs": {
+    "live_patch": "12.1",
+    "stored_guide": {
+      "patch": "12.0",
+      "brief": {
+        "class_name": "Mage", "spec": "Fire", "content_type": "raid", "role": "dps",
+        "patch": "12.0", "generated_at": "2026-06-01T00:00:00Z",
+        "priority": [{"text": "Keep Hot Streak procs flowing into instant Pyroblast.", "evidence_type": "guidance", "confidence": "medium", "claim_id": "c1"}],
+        "unconfirmed": [], "data_sufficient": false
+      }
+    }
+  },
+  "expected": {"freshness": "possibly_stale", "brief_label": "possibly stale"}
+}

@@ -25,7 +25,7 @@ def test_summarize_sums_days_and_derives_rates():
     assert overview["hit_rate"] == 0.8 and overview["avg_load_ms"] == 500.0
     assert overview["status"] == "ok"  # threshold 0.60
     assert out["char_id"]["hit_rate"] == 0.85 and out["char_id"]["status"] == "review"
-    assert set(out) == {f.value for f in CacheFamily}  # all seven, always
+    assert set(out) == {f.value for f in CacheFamily}  # every family, always
     assert out["world_zones"] == {
         "hits": 0, "misses": 0, "neg_hits": 0, "lock_timeouts": 0, "errors": 0,
         "redis_errors": 0, "hit_rate": None, "avg_load_ms": None, "status": "no_data",

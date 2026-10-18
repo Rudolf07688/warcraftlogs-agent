@@ -1,17 +1,20 @@
-"""In-process registry of guide metadata for the WCL tools (feature 009, US5/US4).
+"""Coaching briefs for the WCL tools: an injected loader (features 009, 015).
 
-The backend fills it at startup (every ``ready`` spec guide) and after each
-successful guide generation; ``get_cooldown_usage`` reads it synchronously from an
-ADK worker thread. ``wcl_agent`` never imports the backend (dependency direction is
-backend → wcl_agent), so this tiny registry is the transport (research R7). The CLI
-leaves it empty, and the tools fall back to rate-only coaching.
+``wcl_agent`` never imports the backend (dependency direction is backend → wcl_agent), so
+the backend registers a loader at startup (``set_brief_loader``) that reads the PUBLISHED
+coaching brief of one ``(class, spec, content_type)`` from the shared guide library —
+never a draft (FR-016). Tools call ``get_brief``. The CLI registers nothing, and the tools
+then coach from measured log data only (data-model §5, research R7).
 """
 
 from __future__ import annotations
 
-import threading
+import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -24,38 +27,58 @@ class GuideCooldown:
 
 
 @dataclass(frozen=True)
-class GuideMeta:
+class BriefRecord:
+    """One published coaching brief, ready for the agent."""
+
     class_name: str  # WCL PascalCase, e.g. "Mage"
     spec: str  # e.g. "Fire"
+    content_type: str  # "raid" | "mplus"
+    text: str  # the rendered brief (already within its budget, never truncated)
+    cooldowns: tuple[GuideCooldown, ...]
     game_patch: str | None
+    season: str | None
     generated_at: datetime | None
-    cooldowns: tuple[GuideCooldown, ...] = ()
+    freshness: str  # current | possibly_stale | unknown
+    data_sufficient: bool
 
 
-_registry: dict[tuple[str, str], GuideMeta] = {}
-_lock = threading.Lock()
+BriefLoader = Callable[[str, str, str], Awaitable[BriefRecord | None]]
+BriefUsed = Callable[[BriefRecord], None]
+
+_loader: BriefLoader | None = None
+_on_used: BriefUsed | None = None
 
 
-def _key(class_name: str, spec: str) -> tuple[str, str]:
-    return (class_name or "").strip().casefold(), (spec or "").strip().casefold()
+def set_brief_loader(loader: BriefLoader, on_used: BriefUsed | None = None) -> None:
+    """Register the loader, and optionally a callback told when a tool hands a brief to the
+    agent (the backend stamps the guide as in use)."""
+    global _loader, _on_used
+    _loader, _on_used = loader, on_used
 
 
-def set_guide_meta(meta: GuideMeta) -> None:
-    with _lock:
-        _registry[_key(meta.class_name, meta.spec)] = meta
+def clear_brief_loader() -> None:
+    """Tests (and shutdown) only."""
+    global _loader, _on_used
+    _loader, _on_used = None, None
 
 
-def get_guide_meta(class_name: str, spec: str) -> GuideMeta | None:
-    with _lock:
-        return _registry.get(_key(class_name, spec))
+async def get_brief(
+    class_name: str, spec: str, content_type: str, *, mark_used: bool = False
+) -> BriefRecord | None:
+    """The published brief for exactly this content type, or None (never the other type).
 
-
-def clear_guide_meta() -> None:
-    """Tests only."""
-    with _lock:
-        _registry.clear()
-
-
-def registry_size() -> int:
-    with _lock:
-        return len(_registry)
+    ``mark_used`` = the brief goes to the agent now (reported through ``on_used``).
+    """
+    if _loader is None or not class_name or not spec or content_type not in ("raid", "mplus"):
+        return None
+    try:
+        record = await _loader(class_name.strip(), spec.strip(), content_type)
+    except Exception as exc:  # noqa: BLE001 - coaching degrades to measured data only
+        logger.warning("brief lookup failed for %s %s %s: %s", class_name, spec, content_type, exc)
+        return None
+    if record is not None and mark_used and _on_used is not None:
+        try:
+            _on_used(record)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping only
+            logger.warning("brief use callback failed: %s", exc)
+    return record

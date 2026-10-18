@@ -63,12 +63,12 @@
 - Deployment / Hosting Plan
 - Implement redis - confirm browser cache usage. 
 - ~~Rate limit llm for 429s (Done: 011)~~
-  - Also catch 429 timeouts as tool errors so it doesn't break the agent loop
-- [Small] Add option to add a multiple characters
+  ~~- Also catch 429 timeouts as tool errors so it doesn't break the agent loop~~
+- ~~[Small] Add option to add a multiple characters~~
 - PDF reports still look terrible with some html/markdown markers visible
   - Need to use proper pdf generation
-- Dashboard from previous pulled stats
-  - Use this data as cache layer to answer questions (maybe fill in a template?)
+- ~~Dashboard from previous pulled stats~~
+  - ~~Use this data as cache layer to answer questions (maybe fill in a template?)~~ -> Redis
 - Add symmantic search vector store
   - Look for data related to the user's query or whatever the agent decides would be a good search term.
   - Essentially used as a cache to speed up api call waiting.
@@ -90,3 +90,17 @@
 - Every single fetch must be stored in the db
   - Over time we will have saved all relavent data, building up a massive database of information
   - I want to structure the app so that 80% of questions don't require external api calls (fast)
+- Unstructured directory `./wcl_agent/*.py`
+- **Fix Class guides**
+  - Hallucinations
+    - Add better grounding
+    - Add an agent to review the guide after generation and agent must fix it first.
+      - Current datetime and exact patch version must be sent to agent context 
+  - Devourer DH spec not showing
+- Show that report is being generated / downloaded while waiting
+  - Feels like it doesn't work
+[ UI / Design ]
+- Chat interface redesign
+  - mayby rather single-lane chat
+  - Scroll to top of the question-message once answer is fully complete.
+- Slightly increase default font size

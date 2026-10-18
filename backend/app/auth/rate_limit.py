@@ -85,3 +85,5 @@ login_limiter = InProcessRateLimiter()
 token_limiter = InProcessRateLimiter()
 # Per-user cap on manual spec-guide generation (feature 008 / US2, FR-014). Keyed by user_id.
 guide_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_generate_per_minute)
+# Feature 015: per-user cap on "report an inaccuracy".
+guide_report_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_report_per_minute)
