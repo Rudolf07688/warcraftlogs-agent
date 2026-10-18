@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature 014 Delivery</title>
+<meta name="description" content="Delivery report for feature 014: shared Redis cache for Warcraft Logs data, with the QA performance fixes.">
+<style>
+:root {
+  --bg: #f6f4ef; --panel: #ffffff; --panel-2: #f0ede6; --ink: #1d1b16; --muted: #6b6558;
+  --line: #ddd7cb; --accent: #8a5a12; --accent-2: #b8862f; --accent-soft: #f3e6cc;
+  --ok: #2f7a4b; --ok-soft: #dcefe2; --warn: #9a6a00; --warn-soft: #f8ecc9;
+  --bad: #a3362b; --bad-soft: #f6dcd8; --info: #2c5f8a; --info-soft: #dbe8f4;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 6px 24px rgba(0,0,0,.06);
+  --radius: 14px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14120e; --panel: #1d1a15; --panel-2: #26221b; --ink: #ede7da; --muted: #a59d8c;
+    --line: #3a342a; --accent: #e0b05a; --accent-2: #c8923a; --accent-soft: #3a2e19;
+    --ok: #6fc28e; --ok-soft: #1f3327; --warn: #e4b84d; --warn-soft: #3a3018;
+    --bad: #e7877b; --bad-soft: #3d221e; --info: #82b4de; --info-soft: #1c2b39;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14120e; --panel: #1d1a15; --panel-2: #26221b; --ink: #ede7da; --muted: #a59d8c;
+  --line: #3a342a; --accent: #e0b05a; --accent-2: #c8923a; --accent-soft: #3a2e19;
+  --ok: #6fc28e; --ok-soft: #1f3327; --warn: #e4b84d; --warn-soft: #3a3018;
+  --bad: #e7877b; --bad-soft: #3d221e; --info: #82b4de; --info-soft: #1c2b39;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 24px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+code { background: var(--panel-2); padding: .1em .35em; border-radius: 5px; }
+a { color: var(--accent); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px 64px; }
+
+/* Header */
+header.hero { padding: 36px 0 20px; }
+.eyebrow { color: var(--accent); font-weight: 650; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
+h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.15; margin: 6px 0 10px; letter-spacing: -.01em; }
+.sub { color: var(--muted); max-width: 760px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--panel); font-size: 13px; color: var(--muted); }
+.chip b { color: var(--ink); font-weight: 600; }
+.theme-toggle { position: fixed; top: 14px; right: 14px; z-index: 10; }
+
+button { font: inherit; cursor: pointer; }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 14px;
+  border-radius: 10px; transition: transform .15s, background .15s, border-color .15s; }
+.btn:hover { border-color: var(--accent-2); transform: translateY(-1px); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-2); }
+
+/* Tabs */
+.tabs { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--line);
+  display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
+.tab { border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 10px; white-space: nowrap; }
+.tab:hover { color: var(--ink); background: var(--panel-2); }
+.tab[aria-selected="true"] { color: var(--ink); background: var(--panel); box-shadow: var(--shadow); font-weight: 600; }
+.panel { display: none; padding-top: 24px; animation: rise .35s ease both; }
+.panel.active { display: block; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+h2 { font-size: 22px; margin: 8px 0 4px; }
+h3 { font-size: 16px; margin: 0 0 8px; }
+.lead { color: var(--muted); margin: 0 0 20px; max-width: 780px; }
+.grid { display: grid; gap: 16px; }
+.g4 { grid-template-columns: repeat(4, 1fr); }
+.g3 { grid-template-columns: repeat(3, 1fr); }
+.g2 { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 860px) { .g4 { grid-template-columns: repeat(2, 1fr); } .g3, .g2 { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+.card.flat { box-shadow: none; }
+.stat .num { font-size: 34px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stat .lbl { color: var(--muted); font-size: 13px; }
+.stat .foot { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.section { margin-top: 28px; }
+
+/* Progress rings */
+.ring { width: 120px; height: 120px; }
+.ring circle { fill: none; stroke-width: 10; }
+.ring .bg { stroke: var(--panel-2); }
+.ring .fg { stroke: var(--accent); stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%;
+  transition: stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1); }
+.ring-wrap { display: flex; align-items: center; gap: 18px; }
+.ring text { fill: var(--ink); font-weight: 700; font-size: 22px; }
+
+/* Badges & tables */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.b-ok { background: var(--ok-soft); color: var(--ok); }
+.b-warn { background: var(--warn-soft); color: var(--warn); }
+.b-bad { background: var(--bad-soft); color: var(--bad); }
+.b-info { background: var(--info-soft); color: var(--info); }
+.b-muted { background: var(--panel-2); color: var(--muted); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--panel-2); position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+tbody tr { transition: background .15s; }
+tbody tr:hover { background: var(--panel-2); }
+tr.expandable { cursor: pointer; }
+tr.detail td { background: var(--panel-2); color: var(--muted); font-size: 13px; }
+tr.detail[hidden] { display: none; }
+
+/* Story cards */
+.story { position: relative; overflow: hidden; }
+.story .prio { position: absolute; top: 14px; right: 14px; }
+.story ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+
+/* Architecture diagram */
+.diagram { width: 100%; height: auto; }
+.diagram .node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; rx: 12; transition: stroke .3s, fill .3s; }
+.diagram .node text { fill: var(--ink); font-size: 14px; font-weight: 600; }
+.diagram .node .small { fill: var(--muted); font-size: 11.5px; font-weight: 400; }
+.diagram .node.lit rect { stroke: var(--accent); fill: var(--accent-soft); }
+.diagram .node.dim { opacity: .35; }
+.diagram .edge { stroke: var(--line); stroke-width: 2; fill: none; marker-end: url(#arrow); transition: stroke .3s, opacity .3s; }
+.diagram .edge.lit { stroke: var(--accent); stroke-dasharray: 6 6; animation: flow .6s linear infinite; }
+.diagram .edge.dim { opacity: .25; }
+.diagram #arrow path { fill: var(--muted); }
+@keyframes flow { to { stroke-dashoffset: -12; } }
+.packet { fill: var(--accent); filter: drop-shadow(0 0 6px var(--accent-2)); }
+.scenario-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.narration { min-height: 48px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--panel-2);
+  border-radius: 0 10px 10px 0; color: var(--ink); font-size: 14px; margin-top: 12px; }
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 12px 0 0; }
+.steps li { counter-increment: s; padding: 6px 0 6px 34px; position: relative; color: var(--muted); transition: color .3s; }
+.steps li::before { content: counter(s); position: absolute; left: 0; top: 6px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--panel-2); color: var(--muted); font-size: 12px; display: grid; place-items: center; transition: all .3s; }
+.steps li.on { color: var(--ink); }
+.steps li.on::before { background: var(--accent); color: var(--bg); }
+
+/* Bars */
+.bars { display: grid; gap: 14px; }
+.bar-row .label { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 4px; gap: 8px; }
+.bar-row .label b { color: var(--ink); font-weight: 600; }
+.bar-track { height: 14px; background: var(--panel-2); border-radius: 999px; overflow: hidden; position: relative; }
+.bar-fill { height: 100%; width: 0; border-radius: 999px; transition: width 1.2s cubic-bezier(.2,.8,.2,1); }
+.bar-fill.before { background: var(--bad); opacity: .75; }
+.bar-fill.after { background: var(--ok); }
+.legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+/* Timeline */
+.timeline { position: relative; padding-left: 26px; }
+.timeline::before { content: ""; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.tl-item { position: relative; margin-bottom: 18px; opacity: 0; transform: translateX(-6px); transition: all .5s ease; }
+.tl-item.in { opacity: 1; transform: none; }
+.tl-item::before { content: ""; position: absolute; left: -23px; top: 6px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.tl-item .when { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+/* Accordion */
+details.acc { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; overflow: hidden; }
+details.acc summary { list-style: none; padding: 12px 16px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-weight: 600; }
+details.acc summary::-webkit-details-marker { display: none; }
+details.acc summary .chev { margin-left: auto; transition: transform .2s; color: var(--muted); }
+details.acc[open] summary .chev { transform: rotate(90deg); }
+details.acc .body { padding: 0 16px 14px; color: var(--muted); font-size: 14px; }
+.task { display: flex; gap: 10px; padding: 6px 0; border-top: 1px dashed var(--line); font-size: 13.5px; }
+.task:first-child { border-top: 0; }
+.task .id { font-family: var(--mono); color: var(--ink); min-width: 52px; }
+.task .tick { width: 18px; text-align: center; }
+.task.open { color: var(--warn); }
+.filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+input[type="search"] { font: inherit; padding: 7px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); min-width: 220px; flex: 1; max-width: 340px; }
+
+/* Code */
+pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; overflow-x: auto;
+  font: 13px/1.5 var(--mono); margin: 0; }
+.copy { float: right; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+.callout { border: 1px solid var(--line); border-left: 4px solid var(--warn); background: var(--warn-soft); border-radius: 10px; padding: 12px 14px; color: var(--ink); }
+.callout.info { border-left-color: var(--info); background: var(--info-soft); }
+.callout.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+.muted { color: var(--muted); }
+footer { margin-top: 48px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } .tl-item { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<button class="btn small theme-toggle" id="themeBtn" aria-label="Toggle colour theme">◐ Theme</button>
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Delivery report · Feature 014</div>
+  <h1>Shared Redis cache for Warcraft Logs data</h1>
+  <p class="sub">The in-process, tenant-scoped query cache was replaced by one Redis cache that all tenants share.
+    Seven typed key families, hit-rate metrics per family, an admin stats endpoint, forced refresh, a Redis service in
+    Docker Compose and the performance fixes from the 2026-10-18 QA sweep.</p>
+  <div class="chips">
+    <span class="chip">Branch <b class="mono">014-redis-wcl-cache</b></span>
+    <span class="chip">Commit <b class="mono">4a2b629</b></span>
+    <span class="chip">Date <b>2026-10-18</b></span>
+    <span class="chip">Diff <b>51 files</b> · <b style="color:var(--ok)">+4,447</b> / <b style="color:var(--bad)">−654</b></span>
+    <span class="chip">Status <span class="badge b-warn">Delivered · live checks open</span></span>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Report sections">
+  <button class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+  <button class="tab" role="tab" data-tab="arch">How it works</button>
+  <button class="tab" role="tab" data-tab="families">Cache families</button>
+  <button class="tab" role="tab" data-tab="decisions">Decisions</button>
+  <button class="tab" role="tab" data-tab="delivery">Tasks</button>
+  <button class="tab" role="tab" data-tab="quality">Quality &amp; QA</button>
+  <button class="tab" role="tab" data-tab="perf">Performance</button>
+  <button class="tab" role="tab" data-tab="ops">Run &amp; configure</button>
+  <button class="tab" role="tab" data-tab="open">Open items</button>
+</nav>
+
+<!-- ============ OVERVIEW ============ -->
+<section class="panel active" id="overview" role="tabpanel">
+  <div class="grid g4">
+    <div class="card stat"><div class="num" data-count="594">0</div><div class="lbl">tests passing</div><div class="foot">3 skipped · full suite ~30 s</div></div>
+    <div class="card stat"><div class="num" data-count="7">0</div><div class="lbl">cache key families</div><div class="foot">6 from the design doc + world_zones</div></div>
+    <div class="card stat"><div class="num" data-count="57">0</div><div class="lbl">tasks done</div><div class="foot">of 61 (52 feature + 9 perf fixes)</div></div>
+    <div class="card stat"><div class="num"><span data-count="26">0</span>→<span data-count="3">0</span></div><div class="lbl">WCL requests per cold welcome refresh</div><div class="foot">3 characters, 20 new raids (PERF-001)</div></div>
+  </div>
+
+  <div class="grid g2 section">
+    <div class="card">
+      <h3>Delivery progress</h3>
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 120 120" aria-label="57 of 61 tasks done">
+          <circle class="bg" cx="60" cy="60" r="50"/>
+          <circle class="fg" id="ringTasks" cx="60" cy="60" r="50" stroke-dasharray="314.16" stroke-dashoffset="314.16"/>
+          <text x="60" y="68" text-anchor="middle">93%</text>
+        </svg>
+        <div>
+          <div><span class="badge b-ok">57 done</span> <span class="badge b-warn">4 open</span></div>
+          <p class="muted" style="margin:8px 0 0;font-size:14px">The open items are three live checks that need the running stack with Vertex credentials,
+            plus one product decision (PERF-008).</p>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>QA sweep findings (before the perf fixes)</h3>
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 120 120" aria-label="8 of 9 performance findings fixed">
+          <circle class="bg" cx="60" cy="60" r="50"/>
+          <circle class="fg" id="ringPerf" cx="60" cy="60" r="50" stroke-dasharray="314.16" stroke-dashoffset="314.16" style="stroke:var(--ok)"/>
+          <text x="60" y="68" text-anchor="middle">8/9</text>
+        </svg>
+        <div>
+          <div><span class="badge b-muted">0 critical</span> <span class="badge b-bad">3 high</span> <span class="badge b-warn">10 medium</span> <span class="badge b-info">26 low</span></div>
+          <p class="muted" style="margin:8px 0 0;font-size:14px">8 of the 9 performance findings are fixed. Security findings were set aside on request
+            and are listed under <a href="#" data-goto="open">Open items</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section">User stories</h2>
+  <p class="lead">Each story can be tested on its own. All five are implemented. The live walkthrough (T050) is still to do.</p>
+  <div class="grid g3">
+    <div class="card story"><span class="badge b-bad prio">P1</span><h3>US1 · Faster repeat answers</h3>
+      <ul><li>Characters, reports and the zone list come from Redis</li><li>10 concurrent misses → 1 WCL request</li><li>Misspelt names remembered for 60 s</li></ul>
+      <div style="margin-top:10px"><span class="badge b-ok">implemented · tested</span></div></div>
+    <div class="card story"><span class="badge b-bad prio">P1</span><h3>US2 · Works when Redis is down</h3>
+      <ul><li>Falls back to WCL within 250 ms</li><li>5 s circuit per event loop</li><li>Corrupt entries deleted and reloaded</li></ul>
+      <div style="margin-top:10px"><span class="badge b-ok">implemented · tested</span></div></div>
+    <div class="card story"><span class="badge b-warn prio">P2</span><h3>US3 · Operator stats</h3>
+      <ul><li><code>GET /api/admin/cache-stats?days=7</code></li><li>Hit rate, load time and ok/review per family</li><li>Redis memory and evictions</li></ul>
+      <div style="margin-top:10px"><span class="badge b-ok">implemented · tested</span></div></div>
+    <div class="card story"><span class="badge b-info prio">P3</span><h3>US4 · "Check again"</h3>
+      <ul><li><code>force_refresh</code> on the character tools</li><li>Once per user per character per minute</li><li>Agent says when it was refreshed moments ago</li></ul>
+      <div style="margin-top:10px"><span class="badge b-ok">implemented · tested</span></div></div>
+    <div class="card story"><span class="badge b-warn prio">P2</span><h3>US5 · Redis in Docker Compose</h3>
+      <ul><li><code>redis:8-alpine</code>, 256 MB, LRU, no persistence</li><li>Health check; backend waits for it</li><li>Every setting in <code>.env.example</code></li></ul>
+      <div style="margin-top:10px"><span class="badge b-ok">implemented</span> <span class="badge b-warn">full-stack check open</span></div></div>
+    <div class="card story" style="border-style:dashed"><span class="badge b-muted prio">QA</span><h3>Performance hardening</h3>
+      <ul><li>Batched recent-raids refresh</li><li>In-process memo and single-flight</li><li>Batched metrics, fail-fast on a spent budget</li></ul>
+      <div style="margin-top:10px"><span class="badge b-ok">8 of 9 fixed</span></div></div>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section class="panel" id="arch" role="tabpanel">
+  <h2>How a lookup flows</h2>
+  <p class="lead">Every cached read goes through <code>cache.get_or_load</code>, or <code>get_many_or_load</code> for batches. Pick a scenario
+    to see which layers a request touches.</p>
+  <div class="scenario-bar" role="group" aria-label="Scenarios">
+    <button class="btn" data-scn="memo">⚡ Memo hit</button>
+    <button class="btn" data-scn="hit">✅ Redis hit</button>
+    <button class="btn" data-scn="miss">📥 Miss → load</button>
+    <button class="btn" data-scn="join">🤝 Concurrent callers</button>
+    <button class="btn" data-scn="down">🔌 Redis down</button>
+    <button class="btn" data-scn="batch">📦 Batched refresh</button>
+    <button class="btn primary" id="replayBtn">▶ Replay</button>
+  </div>
+  <div class="card">
+    <svg class="diagram" viewBox="0 0 980 360" role="img" aria-label="Cache lookup architecture">
+      <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="edge" id="e-tool-memo" d="M170,90 L250,90"/>
+      <path class="edge" id="e-memo-sf" d="M410,90 L470,90"/>
+      <path class="edge" id="e-sf-redis" d="M630,90 L700,90"/>
+      <path class="edge" id="e-redis-load" d="M780,120 L780,200"/>
+      <path class="edge" id="e-sf-load" d="M550,120 Q550,230 690,240"/>
+      <path class="edge" id="e-load-wcl" d="M780,280 L780,300 L630,320"/>
+      <path class="edge" id="e-load-metrics" d="M700,240 L410,250"/>
+
+      <g class="node" id="n-tool"><rect x="20" y="55" width="150" height="70"/><text x="40" y="85">Agent tool</text><text class="small" x="40" y="105">or recent-raids refresh</text></g>
+      <g class="node" id="n-memo"><rect x="250" y="55" width="160" height="70"/><text x="268" y="85">Process memo</text><text class="small" x="268" y="105">char_id 1 h · zones 5 min</text></g>
+      <g class="node" id="n-sf"><rect x="470" y="55" width="160" height="70"/><text x="488" y="85">Single-flight</text><text class="small" x="488" y="105">same-process callers join</text></g>
+      <g class="node" id="n-redis"><rect x="700" y="55" width="160" height="70"/><text x="718" y="85">Redis</text><text class="small" x="718" y="105">GET / MGET · lock · SET</text></g>
+      <g class="node" id="n-load"><rect x="690" y="200" width="180" height="80"/><text x="708" y="232">Loader</text><text class="small" x="708" y="252">typed model · TTL + jitter</text><text class="small" x="708" y="268">"not found" → 60 s marker</text></g>
+      <g class="node" id="n-wcl"><rect x="440" y="290" width="190" height="60"/><text x="458" y="318">WCL client</text><text class="small" x="458" y="336">retries · cost log · lanes</text></g>
+      <g class="node" id="n-metrics"><rect x="250" y="215" width="160" height="70"/><text x="268" y="245">Metrics</text><text class="small" x="268" y="265">counted in-process, flushed 2 s</text></g>
+      <circle class="packet" id="packet" r="7" cx="95" cy="90" opacity="0"/>
+    </svg>
+    <div class="narration" id="narration">Choose a scenario above.</div>
+    <ol class="steps" id="steps"></ol>
+  </div>
+
+  <div class="grid g2 section">
+    <div class="card">
+      <h3>Guarantees (contract <code>cache-client.md</code>)</h3>
+      <div class="table-wrap" style="border:0"><table>
+        <tbody>
+          <tr><td class="mono">C1–C3</td><td>Hit, negative hit, miss with jittered TTL write</td></tr>
+          <tr><td class="mono">C4</td><td>N concurrent misses → exactly one loader call</td></tr>
+          <tr><td class="mono">C5–C6</td><td>Loader errors re-raised with nothing written; corrupt values deleted</td></tr>
+          <tr><td class="mono">C7–C8</td><td>Redis failure never reaches the caller; switching the cache off means zero Redis traffic</td></tr>
+          <tr><td class="mono">C9</td><td>Force refresh reloads and overwrites</td></tr>
+          <tr><td class="mono">C10</td><td>Metrics never block a request</td></tr>
+          <tr><td class="mono">C11</td><td>No user, tenant or conversation id in any <code>wcl:</code> key</td></tr>
+          <tr><td class="mono">C12–C13</td><td>Cancellation releases the lock; memo bypassed on refresh</td></tr>
+        </tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>Where things live</h3>
+      <dl class="kv">
+        <dt><code>wcl_agent/cache.py</code></dt><dd>get_or_load, get_many_or_load, keys, memo, metrics, stats, refresh claim</dd>
+        <dt><code>wcl_agent/cache_models.py</code></dt><dd>Pydantic value models, one per family</dd>
+        <dt><code>wcl_agent/normalize.py</code></dt><dd>server_slug, FINAL_AFTER, is_finished</dd>
+        <dt><code>wcl_agent/wcl_client.py</code></dt><dd>No result cache; retries, cost log, budget snapshot</dd>
+        <dt><code>wcl_agent/report_tools.py</code></dt><dd>resolve_character(s), load_report_summary(ies), per-player tables</dd>
+        <dt><code>wcl_agent/menu.py</code></dt><dd>load_world_zones</dd>
+        <dt><code>backend/app/api/cache_stats.py</code></dt><dd>Admin stats endpoint</dd>
+        <dt><code>backend/app/services/recent_raids.py</code></dt><dd>Batched list and detail steps</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAMILIES ============ -->
+<section class="panel" id="families" role="tabpanel">
+  <h2>The seven key families</h2>
+  <p class="lead">Click a row for its key, value model and callers. TTLs can be overridden with <code>WCL_CACHE_TTL_&lt;FAMILY&gt;</code>.</p>
+  <div class="filter-bar">
+    <button class="btn small" data-ttl="all" aria-pressed="true">All</button>
+    <button class="btn small" data-ttl="char" aria-pressed="false">Character</button>
+    <button class="btn small" data-ttl="report" aria-pressed="false">Report</button>
+    <button class="btn small" data-ttl="infra" aria-pressed="false">Infrastructure</button>
+  </div>
+  <div class="table-wrap">
+    <table id="famTable">
+      <thead><tr><th>Family</th><th>Holds</th><th>TTL</th><th>Memo</th><th>"review" below</th></tr></thead>
+      <tbody>
+        <tr class="expandable" data-group="char"><td><code>char_id</code></td><td>name/realm/region → character id</td><td>24 h</td><td><span class="badge b-ok">1 h</span></td><td>90%</td></tr>
+        <tr class="detail" hidden data-group="char"><td colspan="5"><b>Key</b> <code>wcl:v1:char_id:{region}:{realm_slug}:{name_lc}</code> · <b>Model</b> CharacterRef · <b>Callers</b> resolve_character, resolve_characters (batched) · "not found" cached for 60 s</td></tr>
+        <tr class="expandable" data-group="char"><td><code>char_overview</code></td><td>zone / boss rankings of one character</td><td>10 min</td><td><span class="badge b-muted">—</span></td><td>60%</td></tr>
+        <tr class="detail" hidden data-group="char"><td colspan="5"><b>Keys</b> <code>wcl:v1:char:{id}:overview:zone:{zone}:{metric}:{diff}</code> and <code>…:enc:{encounter}:{metric}:{diff}</code> · <b>Model</b> CharacterRankings · <b>Callers</b> get_character_zone_rankings, get_character_encounter_rankings (force_refresh)</td></tr>
+        <tr class="expandable" data-group="char"><td><code>char_reports</code></td><td>a character's recent reports</td><td>5 min</td><td><span class="badge b-muted">—</span></td><td>60%</td></tr>
+        <tr class="detail" hidden data-group="char"><td colspan="5"><b>Key</b> <code>wcl:v1:char:{id}:reports:{limit}</code> · <b>Model</b> CharacterReports · <b>Caller</b> recent-raids list step (one aliased request for all misses) · see PERF-008</td></tr>
+        <tr class="expandable" data-group="report"><td><code>report_summary</code></td><td>fights, kills/wipes, roster</td><td>24 h · 2 min while live</td><td><span class="badge b-muted">—</span></td><td>40%</td></tr>
+        <tr class="detail" hidden data-group="report"><td colspan="5"><b>Key</b> <code>wcl:v1:report:{code}:summary</code> · <b>Model</b> ReportSummary · <b>Callers</b> get_report_fights, get_report_metadata, recent-raids detail step (10 per request) · finished = log ended ≥ 2 h ago</td></tr>
+        <tr class="expandable" data-group="report"><td><code>report_player</code></td><td>one player's table in a report</td><td>24 h · 2 min while live</td><td><span class="badge b-muted">—</span></td><td>40%</td></tr>
+        <tr class="detail" hidden data-group="report"><td colspan="5"><b>Key</b> <code>wcl:v1:report:{code}:player:{source}:table:{type}:{fight}:{ability}:{hostility}</code> · <b>Model</b> PlayerTable · <b>Caller</b> get_report_table with source_id &gt; 0 only</td></tr>
+        <tr class="expandable" data-group="infra"><td><code>oauth_token</code></td><td>WCL API bearer token</td><td>expires_in − 60 s</td><td><span class="badge b-info">token memo</span></td><td>90%</td></tr>
+        <tr class="detail" hidden data-group="infra"><td colspan="5"><b>Key</b> <code>wcl:v1:oauth:token</code> · <b>Model</b> OAuthToken · no TTL jitter (it would outlive the token) · a 401 reloads with force_refresh</td></tr>
+        <tr class="expandable" data-group="infra"><td><code>world_zones</code></td><td>zones, encounters, difficulties</td><td>1 h</td><td><span class="badge b-ok">5 min</span></td><td>90%</td></tr>
+        <tr class="detail" hidden data-group="infra"><td colspan="5"><b>Key</b> <code>wcl:v1:world:zones</code> · <b>Model</b> WorldZones · <b>Callers</b> current_patch (every chat turn), raid_zone_ids, find_encounter, menu · the 7th family, added by decision</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout info section">Leaderboards, whole-raid tables, events, graphs, master data, report rankings and <code>run_wcl_graphql</code>
+    are <b>not cached</b>. That was a deliberate decision. Every real request logs <code>wcl_cost op=… points_this_hour=… delta=…</code>,
+    and that log is the evidence needed before adding an 8th family.</div>
+</section>
+
+<!-- ============ DECISIONS ============ -->
+<section class="panel" id="decisions" role="tabpanel">
+  <h2>Decisions and deviations</h2>
+  <p class="lead">The decisions taken during specify, plan, implement and QA, in order.</p>
+  <div class="grid g2">
+    <div class="timeline" id="timeline">
+      <div class="tl-item"><div class="when">Specify · Q1</div><b>Share public WCL data across tenants</b>
+        <div class="muted">Supersedes feature 006 FR-019. No tenant or user id in <code>wcl:</code> keys; the per-tenant cache scope was removed.</div></div>
+      <div class="tl-item"><div class="when">Specify · Q2</div><b>Remove the in-process cache entirely</b>
+        <div class="muted">Redis is the only WCL cache. Non-family queries go uncached; FR-026 keeps their cost visible.</div></div>
+      <div class="tl-item"><div class="when">Plan · Q3</div><b>Add a 7th family: <code>world_zones</code></b>
+        <div class="muted"><code>current_patch()</code> runs on every chat turn. Without this it would cost a WCL request per turn.</div></div>
+      <div class="tl-item"><div class="when">Plan</div><b>Map the doc's families onto the real tools</b>
+        <div class="muted">Resolve name → id first (char_id); widen char_overview keys by zone/boss, metric and difficulty; report_player = per-player tables only.</div></div>
+      <div class="tl-item"><div class="when">Implement</div><b>TTL may be a function of the loaded value</b>
+        <div class="muted">Token expiry, and finished vs live reports. No jitter on the token.</div></div>
+      <div class="tl-item"><div class="when">Implement</div><b>Admin stats keep working without INFO</b>
+        <div class="muted">Families still show; <code>redis: null</code> when INFO is refused (as some managed Redis services do).</div></div>
+      <div class="tl-item"><div class="when">QA · perf</div><b>Batch again, memo hot values, count metrics in memory</b>
+        <div class="muted">Lock default raised to 90 s (above the 75 s query timeout).</div></div>
+    </div>
+    <div>
+      <div class="card flat">
+        <h3>Deviations from the task text</h3>
+        <ul class="muted" style="padding-left:18px;margin:0">
+          <li><code>characters.py</code> became <code>normalize.py</code> to avoid an import cycle with <code>cache</code>.</li>
+          <li><code>load_world_zones</code> lives in <code>menu.py</code>; <code>resolve_character</code> in <code>report_tools.py</code>.</li>
+          <li>Stats path is <code>/api/admin/cache-stats</code>, not the doc's <code>/internal/…</code>, so it reuses admin auth.</li>
+          <li><code>drain_metrics</code> only waits on the current loop's work. The cross-loop wait hung the test suite.</li>
+          <li>Rate-limit and identical concurrent queries now share one request (single-flight applies to all).</li>
+        </ul>
+      </div>
+      <div class="card flat section">
+        <h3>GitNexus risk</h3>
+        <p class="muted" style="margin:0 0 8px;font-size:14px">Impact was checked before each edit. Final <code>detect-changes</code>: 35 files, 537 affected flows, risk <b>critical</b>.
+          That is expected, because every WCL path goes through the changed code. Public signatures were kept.</p>
+        <div class="chips">
+          <span class="chip"><span class="badge b-bad">CRITICAL</span> get_or_load (27)</span>
+          <span class="chip"><span class="badge b-bad">CRITICAL</span> current_patch (9)</span>
+          <span class="chip"><span class="badge b-bad">CRITICAL</span> _fetch (8)</span>
+          <span class="chip"><span class="badge b-warn">HIGH</span> _token</span>
+          <span class="chip"><span class="badge b-warn">HIGH</span> cache_key · get_cache (removed)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DELIVERY / TASKS ============ -->
+<section class="panel" id="delivery" role="tabpanel">
+  <h2>Tasks by phase</h2>
+  <p class="lead">From <code>specs/014-redis-wcl-cache/tasks.md</code>. Search or show only open items.</p>
+  <div class="filter-bar">
+    <input type="search" id="taskSearch" placeholder="Filter tasks… (e.g. redis, T04, PERF)">
+    <button class="btn small" id="openOnly" aria-pressed="false">Open only</button>
+    <button class="btn small" id="expandAll">Expand all</button>
+  </div>
+  <div id="taskList"></div>
+</section>
+
+<!-- ============ QUALITY ============ -->
+<section class="panel" id="quality" role="tabpanel">
+  <h2>Tests and QA</h2>
+  <p class="lead">Unit tests use fakeredis and fake WCL clients. Real Redis 8.10.2 was smoke-tested for the lock,
+    batching, metrics and INFO health.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3>New and changed test files</h3>
+      <div class="bars" id="testBars"></div>
+    </div>
+    <div class="card">
+      <h3>QA sweep 2026-10-18 (four agents)</h3>
+      <div class="table-wrap" style="border:0"><table>
+        <thead><tr><th>Report</th><th>Crit</th><th>High</th><th>Med</th><th>Low</th></tr></thead>
+        <tbody>
+          <tr><td>Spec conformance</td><td>0</td><td>1</td><td>2</td><td>10</td></tr>
+          <tr><td>Bugs</td><td>0</td><td>0</td><td>2</td><td>6</td></tr>
+          <tr><td>Performance</td><td>0</td><td>1</td><td>4</td><td>4</td></tr>
+          <tr><td>Security</td><td>0</td><td>1</td><td>2</td><td>6</td></tr>
+          <tr><td><b>Total</b></td><td><b>0</b></td><td><b>3</b></td><td><b>10</b></td><td><b>26</b></td></tr>
+        </tbody></table></div>
+      <p class="muted" style="font-size:13px;margin:10px 0 0">About 31 distinct issues after de-duplication. Full reports: <code>qa-reports/2026-10-18/</code>.</p>
+    </div>
+  </div>
+  <div class="card section">
+    <h3>Verified on real Redis</h3>
+    <div class="grid g3">
+      <div><span class="badge b-ok">config</span><p class="muted" style="font-size:14px">allkeys-lru · <code>save ""</code> · maxmemory 268435456 · healthy</p></div>
+      <div><span class="badge b-ok">stampede</span><p class="muted" style="font-size:14px">10 concurrent misses → 1 load + 9 hits; TTL within the jittered 24 h band</p></div>
+      <div><span class="badge b-ok">batch</span><p class="muted" style="font-size:14px">5 keys → one batch load, then 5 hits from one MGET; one load event recorded</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PERFORMANCE ============ -->
+<section class="panel" id="perf" role="tabpanel">
+  <h2>Performance fixes (QA 2026-10-18)</h2>
+  <p class="lead">Before = the first feature-014 cut; after = commit 4a2b629. Press animate to compare.</p>
+  <div class="filter-bar"><button class="btn primary" id="animBars">▶ Animate before / after</button>
+    <span class="legend"><span><i style="background:var(--bad);opacity:.75"></i>before</span><span><i style="background:var(--ok)"></i>after</span></span></div>
+  <div class="card"><div class="bars" id="perfBars"></div></div>
+
+  <h3 class="section">All nine findings</h3>
+  <div id="perfAcc"></div>
+</section>
+
+<!-- ============ OPS ============ -->
+<section class="panel" id="ops" role="tabpanel">
+  <h2>Run and configure</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Start the stack <button class="btn small copy" data-copy="cmd1">Copy</button></h3>
+      <pre id="cmd1">docker compose up --build        # db + redis + backend + frontend
+docker compose exec redis redis-cli CONFIG GET maxmemory-policy
+uv run pytest -q                 # fakeredis, no Redis needed</pre>
+      <h3 class="section">Admin stats <button class="btn small copy" data-copy="cmd2">Copy</button></h3>
+      <pre id="cmd2">curl -s --cookie "__Host-session=&lt;cookie&gt;" \
+  'http://localhost:5173/api/admin/cache-stats?days=7' | jq</pre>
+    </div>
+    <div class="card">
+      <h3>Settings (all optional)</h3>
+      <div class="table-wrap" style="border:0"><table>
+        <thead><tr><th>Variable</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td><code>REDIS_URL</code></td><td>unset → cache off · compose sets <code>redis://redis:6379/0</code></td></tr>
+          <tr><td><code>WCL_CACHE_ENABLED</code></td><td>true</td></tr>
+          <tr><td><code>WCL_CACHE_TTL_&lt;FAMILY&gt;</code></td><td>see Cache families</td></tr>
+          <tr><td><code>WCL_CACHE_UNFINISHED_TTL</code></td><td>120</td></tr>
+          <tr><td><code>WCL_CACHE_JITTER</code></td><td>0.10</td></tr>
+          <tr><td><code>WCL_CACHE_LOCK_MS</code></td><td>90000</td></tr>
+          <tr><td><code>WCL_CACHE_LOCK_WAIT_MS</code></td><td>2000</td></tr>
+          <tr><td><code>WCL_NEG_CACHE_TTL</code></td><td>60</td></tr>
+          <tr><td><code>WCL_METRICS_RETENTION_DAYS</code></td><td>35</td></tr>
+        </tbody></table></div>
+      <p class="muted" style="font-size:13px">Removed: <code>WCL_CACHE_TTL_REPORT_S</code>, <code>WCL_CACHE_TTL_LEADERBOARD_S</code>, <code>WCL_CACHE_MAX_BYTES</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OPEN ============ -->
+<section class="panel" id="open" role="tabpanel">
+  <h2>Open items</h2>
+  <p class="lead">What's left before this feature is fully signed off.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Live checks <span class="badge b-warn">need stack + Vertex ADC</span></h3>
+      <div class="task open"><span class="tick">○</span><span class="id">T034</span><span>Full stack: <code>docker compose up --build</code>, ask the same character question twice. The Redis-only part is done.</span></div>
+      <div class="task open"><span class="tick">○</span><span class="id">T050</span><span>Quickstart US1–US4 walkthrough, including <code>docker compose stop redis</code> mid-chat.</span></div>
+      <div class="task open"><span class="tick">○</span><span class="id">T051</span><span>Replay 100 questions with the cache on vs off, to check SC-002 (≥ 40% fewer WCL points).</span></div>
+    </div>
+    <div class="card">
+      <h3>Decision needed <span class="badge b-info">product</span></h3>
+      <div class="task open"><span class="tick">○</span><span class="id">PERF-008</span><span><code>char_reports</code> TTL (5 min) is shorter than the welcome-page refresh gap (15 min), so its hit rate will read "review".
+        With batching, a miss costs no extra request. Options: accept, raise the TTL (staler welcome page), or lower its review threshold.</span></div>
+    </div>
+  </div>
+  <div class="card section">
+    <h3>Set aside on request <span class="badge b-muted">security · bugs</span></h3>
+    <p class="muted" style="font-size:14px;margin-top:0">These findings were reported but deliberately not addressed in this round:</p>
+    <ul class="muted" style="font-size:14px;padding-left:18px">
+      <li><b>SEC-001 (High):</b> compose publishes Redis on all interfaces with no password, and it holds the WCL token. Fix: <code>127.0.0.1:6379:6379</code>.</li>
+      <li><b>BUG-001 / SPEC-002 (Medium):</b> a malformed <code>REDIS_URL</code> raises instead of falling back.</li>
+      <li><b>BUG-002 (Medium):</b> lock release has no owner check. The 90 s lock makes this less likely but doesn't remove it.</li>
+      <li><b>SPEC-003 (Medium):</b> "check again" only refreshes character rankings.</li>
+      <li><b>SEC-002 / SEC-003:</b> no production Redis auth or TLS; public <code>SECRET_KEY</code> default (carried over).</li>
+    </ul>
+  </div>
+</section>
+
+<footer>Generated 2026-10-18 from <code>specs/014-redis-wcl-cache/</code>, commit <code>4a2b629</code>, and <code>qa-reports/2026-10-18/</code>.
+  Companion summary: <code>documentation/delivery/014-delivered-2026-10-18.md</code>.</footer>
+</div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- Theme ----------
+  const root = document.documentElement;
+  try { const t = localStorage.getItem('rep-theme'); if (t) root.dataset.theme = t; } catch (e) {}
+  $('#themeBtn').addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('rep-theme', root.dataset.theme); } catch (e) {}
+  });
+
+  // ---------- Tabs ----------
+  const seen = new Set();
+  function show(id) {
+    $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === id)));
+    $$('.panel').forEach(p => p.classList.toggle('active', p.id === id));
+    if (!seen.has(id)) { seen.add(id); onFirstShow(id); }
+    try { history.replaceState(null, '', '#' + id); } catch (e) {}
+  }
+  $$('.tab').forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
+  $$('[data-goto]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); show(a.dataset.goto); scrollTo({ top: 0, behavior: 'smooth' }); }));
+  document.addEventListener('keydown', e => {
+    if (!e.target.closest('.tabs') || !['ArrowRight', 'ArrowLeft'].includes(e.key)) return;
+    const tabs = $$('.tab'); const i = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
+    const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); show(n.dataset.tab);
+  });
+
+  // ---------- Counters & rings ----------
+  function countUp(el) {
+    const target = +el.dataset.count; if (reduced) { el.textContent = target; return; }
+    const t0 = performance.now(), dur = 1100;
+    const step = now => { const k = Math.min(1, (now - t0) / dur); el.textContent = Math.round(target * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+  function ring(id, frac) { const c = $(id); if (c) requestAnimationFrame(() => c.style.strokeDashoffset = String(314.16 * (1 - frac))); }
+
+  // ---------- Families filter & rows ----------
+  $$('#famTable tr.expandable').forEach(tr => tr.addEventListener('click', () => { const d = tr.nextElementSibling; d.hidden = !d.hidden; }));
+  $$('[data-ttl]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-ttl]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    const g = b.dataset.ttl;
+    $$('#famTable tbody tr').forEach(tr => {
+      const match = g === 'all' || tr.dataset.group === g;
+      if (tr.classList.contains('detail')) { if (!match) tr.hidden = true; }
+      else tr.style.display = match ? '' : 'none';
+    });
+  }));
+
+  // ---------- Architecture scenarios ----------
+  const scenarios = {
+    memo: { nodes: ['tool', 'memo'], edges: ['tool-memo'], path: [[95,90],[330,90]],
+      text: 'char_id and world_zones are kept in process memory. The lookup returns with no Redis call and no decode, even when Redis is absent.',
+      steps: ['Tool calls get_or_load', 'Memo has a fresh value', 'Returned at once (not counted in stats)'] },
+    hit: { nodes: ['tool', 'memo', 'sf', 'redis', 'metrics'], edges: ['tool-memo', 'memo-sf', 'sf-redis'], path: [[95,90],[330,90],[550,90],[780,90]],
+      text: 'One GET returns valid JSON, which is validated into the typed model. The hit is counted in memory and flushed with others every 2 s.',
+      steps: ['Memo miss (or not a memoised family)', 'Single-flight: first caller starts the lookup', 'Redis GET → decode (off-loop if > 256 KB)', 'Count hit in memory'] },
+    miss: { nodes: ['tool', 'memo', 'sf', 'redis', 'load', 'wcl', 'metrics'], edges: ['tool-memo', 'memo-sf', 'sf-redis', 'redis-load', 'load-wcl', 'load-metrics'],
+      path: [[95,90],[330,90],[550,90],[780,90],[780,240],[535,320]],
+      text: 'GET misses, so the caller takes the lock with SET NX PX (90 s). The loader fetches from WCL, then the value is written with a jittered TTL and the lock released. A "not found" result is stored as a 60 s marker.',
+      steps: ['Redis GET → nothing', 'SET lock NX PX 90000 → won', 'Loader → WCL client (retries, cost log)', 'SET value EX ttl × U(1, 1.1)', 'Count miss + load time; DEL lock'] },
+    join: { nodes: ['tool', 'memo', 'sf', 'redis', 'load', 'wcl'], edges: ['tool-memo', 'memo-sf', 'sf-redis', 'redis-load', 'load-wcl'],
+      path: [[95,90],[330,90],[550,90],[550,90],[780,90],[780,240]],
+      text: 'Five tools in one round ask for the same character. Only the first starts a lookup; the other four await the same task in memory and count as hits. No polling and no duplicate WCL request. Callers in other processes poll Redis for up to 2 s.',
+      steps: ['First caller starts a shared task', 'Same-process callers join it', 'One GET, one load', 'Joiners counted as hits'] },
+    down: { nodes: ['tool', 'memo', 'sf', 'redis', 'load', 'wcl', 'metrics'], edges: ['tool-memo', 'memo-sf', 'sf-load', 'load-wcl'], dimNodes: ['redis'],
+      path: [[95,90],[330,90],[550,90],[690,240],[535,320]],
+      text: 'Redis fails within 250 ms. The circuit opens for 5 s on this event loop, so later lookups skip Redis entirely. The loader is called directly and redis_error is counted in memory until Redis returns.',
+      steps: ['Redis call fails (≤ 250 ms)', 'Circuit opens for 5 s, warning logged once', 'Loader called directly, nothing written', 'redis_error counted; flushed when Redis is back'] },
+    batch: { nodes: ['tool', 'memo', 'redis', 'load', 'wcl', 'metrics'], edges: ['tool-memo', 'memo-sf', 'sf-redis', 'redis-load', 'load-wcl'],
+      path: [[95,90],[330,90],[780,90],[780,240],[535,320]],
+      text: 'The welcome-page refresh uses get_many_or_load: one MGET for every key, then ONE aliased WCL request for all the misses, then one pipelined write. A cold refresh drops from about 26 requests to about 3.',
+      steps: ['Memo answers known characters', 'MGET every report-list / summary key', 'One aliased query (c0…cN / r0…r9) for misses', 'Pipelined SET of each result'] },
+  };
+  let current = null, anim = null;
+  function play(name) {
+    current = name; const s = scenarios[name];
+    $$('[data-scn]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scn === name)));
+    $$('.diagram .node').forEach(n => { const id = n.id.slice(2); n.classList.toggle('lit', s.nodes.includes(id) && !(s.dimNodes || []).includes(id)); n.classList.toggle('dim', !s.nodes.includes(id) || (s.dimNodes || []).includes(id)); });
+    $$('.diagram .edge').forEach(e => { const id = e.id.slice(2); e.classList.toggle('lit', s.edges.includes(id)); e.classList.toggle('dim', !s.edges.includes(id)); });
+    $('#narration').textContent = s.text;
+    const ol = $('#steps'); ol.innerHTML = s.steps.map(t => `<li>${t}</li>`).join('');
+    const items = $$('li', ol);
+    const p = $('#packet'); if (anim) cancelAnimationFrame(anim);
+    if (reduced) { items.forEach(li => li.classList.add('on')); p.setAttribute('opacity', 0); return; }
+    const pts = s.path, segDur = 650, total = segDur * (pts.length - 1), t0 = performance.now();
+    p.setAttribute('opacity', 1);
+    const tick = now => {
+      const t = Math.min(total, now - t0), seg = Math.min(pts.length - 2, Math.floor(t / segDur)), k = (t - seg * segDur) / segDur;
+      const [x1, y1] = pts[seg], [x2, y2] = pts[seg + 1];
+      p.setAttribute('cx', x1 + (x2 - x1) * k); p.setAttribute('cy', y1 + (y2 - y1) * k);
+      const lit = Math.ceil((t / total) * items.length);
+      items.forEach((li, i) => li.classList.toggle('on', i < Math.max(1, lit)));
+      if (t < total) anim = requestAnimationFrame(tick); else setTimeout(() => p.setAttribute('opacity', 0), 400);
+    };
+    anim = requestAnimationFrame(tick);
+  }
+  $$('[data-scn]').forEach(b => b.addEventListener('click', () => play(b.dataset.scn)));
+  $('#replayBtn').addEventListener('click', () => play(current || 'miss'));
+
+  // ---------- Tasks ----------
+  const phases = [
+    ['Phase 1 · Setup', [['T001','Add redis and fakeredis dependencies',1],['T002','Cache settings in backend Settings',1],['T003','fake_redis fixture; cache off by default in tests',1]]],
+    ['Phase 2 · Foundational', [['T004','Pydantic value models (cache_models.py)',1],['T005','normalize.py: server_slug, FINAL_AFTER, is_finished',1],['T006','CacheFamily, Outcome, FamilyConfig, CacheSettings',1],['T007','Key builders',1],['T008','Per-loop Redis client',1],['T009','get_or_load (C1–C6, C9, C11, C12)',1],['T010','Metrics recording',1],['T011','Rewrite test_wcl_cache.py',1]]],
+    ['Phase 3 · US1 Faster repeat answers', [['T012','Client tests: retries, cost injection',1],['T013','Family tests at call sites',1],['T014','429/5xx retry with backoff',1],['T015','rateLimitData cost injection + logging',1],['T016','Token memo + shared oauth_token',1],['T017','load_world_zones (menu.py)',1],['T018','find_encounter / menu use it',1],['T019','resolve_character (char_id)',1],['T020','Character rankings via char_overview',1],['T021','load_report_summary; fights/metadata as projections',1],['T022','Per-player tables via report_player',1],['T023','Recent-raids details from report_summary',1],['T024','Recent-raids lists via char_reports',1],['T025','Remove old batched queries',1],['T026','Update test_recent_raids.py',1]]],
+    ['Phase 4 · US2 Cache down', [['T027','Fail-open tests (DeadRedis, circuit, flush, disabled)',1],['T028','Token and WCL-down tests',1],['T029','RedisError handling + 5 s circuit',1],['T030','Log once per outage',1]]],
+    ['Phase 5 · US5 Compose', [['T031','redis service in docker-compose.yml',1],['T032','.env.example settings',1],['T033','Close Redis clients on shutdown',1],['T034','Live full-stack check (Redis part done)',0]]],
+    ['Phase 6 · US3 Stats', [['T035','Stats tests',1],['T036','CacheStats schemas',1],['T037','summarize / read_stats',1],['T038','GET /api/admin/cache-stats',1]]],
+    ['Phase 7 · US4 Forced refresh', [['T039','Refresh tests',1],['T040','Refresh actor + try_claim_refresh',1],['T041','force_refresh on character tools',1],['T042','ws.py sets the turn user',1],['T043','Agent instruction',1]]],
+    ['Phase 8 · Retire in-process cache', [['T044','query() without cache kwarg',1],['T045','Remove TTLCache, scope prefix, old settings',1],['T046','Update affected tests',1],['T047','Grep for leftovers',1]]],
+    ['Phase 9 · Polish', [['T048','README + ai_guide',1],['T049','Mark 013 G2 withdrawn',1],['T050','Live US1–US4 walkthrough',0],['T051','100-question cache on/off replay (SC-002)',0],['T052','GitNexus detect-changes',1]]],
+    ['QA performance fixes', [['PERF-001','Batched recent-raids refresh',1],['PERF-002','Accurate "re-fetch costs a request" wording',1],['PERF-003','Process memo for char_id / world_zones',1],['PERF-004','Fail fast on a spent budget',1],['PERF-005','Concurrent leaderboard pages',1],['PERF-006','In-process single-flight; 90 s lock',1],['PERF-007','Batched metrics; off-loop decode',1],['PERF-008','char_reports TTL vs refresh gap (decision)',0],['PERF-009','Reuse budget from every response',1]]],
+  ];
+  const list = $('#taskList');
+  list.innerHTML = phases.map(([title, tasks], i) => {
+    const done = tasks.filter(t => t[2]).length;
+    const badge = done === tasks.length ? 'b-ok' : 'b-warn';
+    return `<details class="acc" ${i === 0 ? 'open' : ''}><summary>${title} <span class="badge ${badge}">${done}/${tasks.length}</span><span class="chev">›</span></summary>
+      <div class="body">${tasks.map(([id, txt, ok]) => `<div class="task ${ok ? '' : 'open'}" data-text="${(id + ' ' + txt).toLowerCase()}"><span class="tick">${ok ? '✓' : '○'}</span><span class="id">${id}</span><span>${txt}</span></div>`).join('')}</div></details>`;
+  }).join('');
+  let openOnly = false;
+  function filterTasks() {
+    const q = $('#taskSearch').value.trim().toLowerCase();
+    $$('#taskList details').forEach(d => {
+      let any = false;
+      $$('.task', d).forEach(t => { const ok = (!q || t.dataset.text.includes(q)) && (!openOnly || t.classList.contains('open')); t.style.display = ok ? '' : 'none'; any = any || ok; });
+      d.style.display = any ? '' : 'none'; if ((q || openOnly) && any) d.open = true;
+    });
+  }
+  $('#taskSearch').addEventListener('input', filterTasks);
+  $('#openOnly').addEventListener('click', e => { openOnly = !openOnly; e.currentTarget.setAttribute('aria-pressed', String(openOnly)); filterTasks(); });
+  $('#expandAll').addEventListener('click', e => { const all = $$('#taskList details'); const open = !all.every(d => d.open); all.forEach(d => d.open = open); e.currentTarget.textContent = open ? 'Collapse all' : 'Expand all'; });
+
+  // ---------- Bars ----------
+  function bars(el, rows, mode) {
+    el.innerHTML = rows.map(r => {
+      const max = r.max || Math.max(r.before ?? 0, r.after ?? r.value ?? 0);
+      if (mode === 'single') return `<div class="bar-row"><div class="label"><b>${r.label}</b><span>${r.note}</span></div>
+        <div class="bar-track"><div class="bar-fill after" data-w="${(r.value / max) * 100}"></div></div></div>`;
+      return `<div class="bar-row"><div class="label"><b>${r.label}</b><span>${r.unit}</span></div>
+        <div class="bar-track" title="before: ${r.beforeTxt}"><div class="bar-fill before" data-w="${(r.before / max) * 100}"></div></div>
+        <div class="bar-track" style="margin-top:4px" title="after: ${r.afterTxt}"><div class="bar-fill after" data-w="${Math.max(1.5, (r.after / max) * 100)}"></div></div>
+        <div class="label" style="margin-top:4px"><span>before: ${r.beforeTxt}</span><span>after: ${r.afterTxt}</span></div></div>`;
+    }).join('');
+  }
+  function grow(el) { $$('.bar-fill', el).forEach(b => { b.style.width = '0'; requestAnimationFrame(() => requestAnimationFrame(() => b.style.width = b.dataset.w + '%')); }); }
+  const tests = [['test_wcl_async.py', 30, 'client: retries, cost, token, budget'], ['test_wcl_cache.py', 29, 'get_or_load, batch, memo, metrics'], ['test_recent_raids.py', 18, 'batched refresh, fallback'],
+    ['test_cache_stats.py', 14, 'aggregation, auth, degraded'], ['test_provenance.py', 13, 'incl. concurrent leaderboard pages'], ['test_cache_families.py', 12, 'call sites, refresh, fail-open']];
+  bars($('#testBars'), tests.map(([l, v, n]) => ({ label: `${l} · ${v}`, value: v, max: 30, note: n })), 'single');
+  const perf = [
+    { label: 'Cold welcome refresh (3 chars, 20 raids)', unit: 'WCL requests', before: 26, after: 3, beforeTxt: '26 in ~13 waves', afterTxt: '≈ 3' },
+    { label: 'Leaderboard, 10 pages', unit: 'serial waves', before: 10, after: 2, beforeTxt: '10 one after another', afterTxt: 'page 1 + one wave' },
+    { label: 'Spent hourly budget', unit: 'seconds before failing', before: 20, after: 0.3, beforeTxt: '~20 s of retries', afterTxt: 'immediate' },
+    { label: 'Cache hit', unit: 'Redis round trips', before: 2, after: 1, beforeTxt: 'GET + metrics task', afterTxt: 'GET (metrics batched)' },
+    { label: 'Patch preamble, every turn', unit: 'ms of loop time', before: 2.2, after: 0.05, beforeTxt: 'GET + 2 ms decode', afterTxt: 'memo, no I/O' },
+    { label: 'Benchmark rate-limit check', unit: 'WCL requests', before: 1, after: 0.05, beforeTxt: '1 extra request', afterTxt: '0 if budget seen < 30 s ago' },
+  ];
+  bars($('#perfBars'), perf);
+  $('#animBars').addEventListener('click', () => grow($('#perfBars')));
+
+  const findings = [
+    ['PERF-001', 'High', 'b-bad', 'fixed', 'Recent-raids refresh fanned out to 2C + k requests through the 2-slot background lane', 'get_many_or_load + aliased queries: one MGET, one request for every miss, one pipelined write. A GraphQL error falls back to one request per report.'],
+    ['PERF-002', 'Medium', 'b-warn', 'fixed', 'Elided results promised re-fetching was free', 'ELIDED_NOTE and EVIDENCE_PLAN now say a re-fetch costs a WCL request and point at the preview.'],
+    ['PERF-003', 'Medium', 'b-warn', 'fixed', 'Without Redis the app was slower than before 014', 'FamilyConfig.memo_s: char_id 1 h and world_zones 5 min kept in-process, with or without Redis.'],
+    ['PERF-004', 'Medium', 'b-warn', 'fixed', 'Spent budget burned ~20 s of retries per call', 'A Retry-After over 10 s fails at once and blocks later calls until then; no backoff past the deadline.'],
+    ['PERF-005', 'Medium', 'b-warn', 'fixed', 'Leaderboard pages fetched serially', 'Page 1, then pages 2..N with gather_settled; pages past the end are dropped.'],
+    ['PERF-006', 'Low', 'b-info', 'fixed', 'Same-process callers polled Redis in 100 ms steps', 'In-process single-flight inside get_or_load; lock lifetime 90 s (> 75 s query timeout).'],
+    ['PERF-007', 'Low', 'b-info', 'fixed', 'Extra Redis round trip and task per hit; big values decoded on the loop', 'Counts kept in memory, flushed every 2 s in one pipeline (kept on failure); EXPIRE once per hash; > 256 KB decoded in a thread.'],
+    ['PERF-008', 'Low', 'b-info', 'open', 'char_reports TTL (5 min) shorter than the refresh gap (15 min)', 'Left as specced; with batching a miss costs no extra request. Needs a product decision.'],
+    ['PERF-009', 'Low', 'b-info', 'fixed', 'Separate rateLimitData requests', 'Injected _cost selects the full budget; acheck_rate_limit answers from a snapshot ≤ 30 s old.'],
+  ];
+  $('#perfAcc').innerHTML = findings.map(([id, sev, cls, st, t, fix]) =>
+    `<details class="acc"><summary><span class="mono">${id}</span> <span class="badge ${cls}">${sev}</span> ${t}
+      <span class="badge ${st === 'fixed' ? 'b-ok' : 'b-warn'}" style="margin-left:auto">${st}</span><span class="chev" style="margin-left:8px">›</span></summary>
+      <div class="body">${fix}</div></details>`).join('');
+
+  // ---------- Copy ----------
+  $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('#' + b.dataset.copy).textContent); b.textContent = 'Copied ✓'; }
+    catch (e) { b.textContent = 'Select & copy'; }
+    setTimeout(() => b.textContent = 'Copy', 1500);
+  }));
+
+  // ---------- First-show hooks ----------
+  function onFirstShow(id) {
+    if (id === 'overview') { $$('#overview [data-count]').forEach(countUp); ring('#ringTasks', 57 / 61); ring('#ringPerf', 8 / 9); }
+    if (id === 'arch') setTimeout(() => play('miss'), 250);
+    if (id === 'decisions') $$('.tl-item').forEach((el, i) => setTimeout(() => el.classList.add('in'), reduced ? 0 : 120 * i));
+    if (id === 'quality') grow($('#testBars'));
+    if (id === 'perf') setTimeout(() => grow($('#perfBars')), 200);
+  }
+  const start = location.hash.slice(1);
+  show($$('.panel').some(p => p.id === start) ? start : 'overview');
+})();
+</script>
+</body>
+</html>

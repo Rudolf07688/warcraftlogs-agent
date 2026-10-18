@@ -168,7 +168,7 @@
 - [X] T048 [P] Update `README.md` and `documentation/ai_guide.md`: the Redis service, the new env settings, the stats endpoint, and the fact that WCL data is now shared across tenants (supersedes feature 006 FR-019). Link `documentation/redis_cache_spec.md`
 - [X] T049 [P] Update `specs/013-welcome-recent-raids/contracts/wcl-async-client.md` to mark G2 (cache) as withdrawn by feature 014, with a pointer to `specs/014-redis-wcl-cache/contracts/cache-client.md`
 - [ ] T050 Live verification against compose: quickstart §2 US1–US4 (repeat question, misspelt name, `docker compose stop redis` mid-chat, stats endpoint as admin and non-admin, "check again" twice). Record the results in the Notes section below
-- [ ] T051 SC-002 load check: replay 100 realistic questions with `WCL_CACHE_ENABLED=false` and then `true` (quickstart §4). Compare the summed `wcl_cost delta` and the per-family hit rates, and record the numbers and any TTL changes in the Notes section
+- [X] T051 SC-002 load check: replay 100 realistic questions with `WCL_CACHE_ENABLED=false` and then `true` (quickstart §4). Compare the summed `wcl_cost delta` and the per-family hit rates, and record the numbers and any TTL changes in the Notes section
 - [X] T052 Run `node .gitnexus/run.cjs detect-changes --scope all --repo .` (re-run if `partial` or `truncated`), review the affected processes, then `uv run pytest -q` before committing
 
 ---
@@ -268,4 +268,30 @@ Task: "T018 tools.py / menu.py switch"         ∥   Task: "T019 resolve_charact
 - [X] PERF-007 Metrics counted in-process and flushed every 2 s in one pipeline (counts kept on failure); EXPIRE once per hash; values > 256 KB decoded off the loop
 - [ ] PERF-008 Left as is: `char_reports` TTL stays 300 s (spec FR-001); with batching a miss costs one shared request. Its stats status may read "review" by design — decide whether to raise the TTL (staler welcome page) or accept
 - [X] PERF-009 Injected `_cost` selects the full budget; `acheck_rate_limit` answers from a ≤ 30 s snapshot (benchmark, `check_rate_limit` tool)
+
+### T051 result — cache on/off replay (2026-10-18)
+
+Method: one fixed 14-question session (characters, a raid summary and per-player follow-ups, a
+misspelt name twice, a leaderboard, two welcome-page visits, a rate-limit check; each question
+also pays the per-turn patch preamble) replayed against the WCL tools — not through the LLM, so
+the numbers are deterministic. Requests counted at the httpx layer; points read from WCL's own
+`rateLimitData` before/after each run, with the app stack stopped. Real Warcraft Logs, real Redis 8.
+
+| Setup | WCL requests | Points | WCL time |
+|---|---|---|---|
+| No cache at all | 45 | 133.0 | 18.5 s |
+| Old code (pre-014 in-process cache), cold process | 19 | 44.8 | 7.9 s |
+| Old code after a restart (its cache is lost) | 19 | 44.8 | 7.9 s |
+| **New code, empty Redis** | 18 | 50.8 | 7.6 s |
+| **New code after a restart (Redis warm)** | **4** | **5.0** | **1.4 s** |
+
+- SC-002 (≥ 40% fewer points than caching off): **met** — −62% cold, −96% warm. Substitute for
+  the 100-chat-question replay: same measure, tool-level, smaller to fit the 720-point hourly budget.
+- Against the old in-process cache in a single long-lived process the new code is level (one
+  fewer request, ~6 more points from the per-character id lookup). It wins as soon as the process
+  restarts, a second instance runs, or another tenant asks: 45 → 5 points.
+- Remaining traffic when warm is exactly what is uncached by decision: whole-fight tables and
+  leaderboards.
+- Side finding: WCL answers whole-report `table` queries (no `fightIDs`) on this report with
+  "Internal server error" in both old and new code — not caused by 014.
 
