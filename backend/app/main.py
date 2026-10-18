@@ -13,9 +13,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from google.adk.sessions import DatabaseSessionService
 from sqlalchemy import text
 
+from wcl_agent.cache import CacheFamily, family_ttl, get_or_load, keys
+from wcl_agent.cache_models import ModelCatalog
 from wcl_agent.genai_compat import ensure_genai_serializers_built
 from wcl_agent.guide_meta import set_brief_loader
-from wcl_agent.models import discover_models
+from wcl_agent.models import (
+    choose_default,
+    classes_signature,
+    discover_models,
+    has_transient_gaps,
+    is_catalog_id,
+    log_class_results,
+    missing_fixed_models,
+)
+from wcl_agent.vertex import model_location, project_id
 from wcl_agent.wcl_client import aclose_clients
 
 from .agent_runner import set_session_service
@@ -86,6 +97,86 @@ def _brief_used(record) -> None:
     touch_guide_wanted([(record.class_name, record.spec, record.content_type)])
 
 
+# A catalog result that lost a model to a likely transient error is kept this long only,
+# so one bad probe at boot doesn't hide a model or class for the full 6 h (QA BUG-005).
+_UNSETTLED_CATALOG_TTL_S = 600
+
+
+def _catalog_ttl(catalog: ModelCatalog) -> int:
+    """Only a real catalog result is shared: a fallback or degraded one is retried next boot."""
+    if catalog.source != "catalog" or catalog.degraded:
+        return 0
+    ttl = family_ttl(CacheFamily.MODEL_CATALOG)
+    return min(ttl, _UNSETTLED_CATALOG_TTL_S) if has_transient_gaps(catalog.classes) else ttl
+
+
+async def _load_models(app: FastAPI) -> tuple[ModelCatalog, bool]:
+    """Discover the selectable models into ``app.state``; returns (result, from cache).
+
+    US4: blocking probes run off the event loop. app.state is the single runtime source
+    of truth for the set and the default (see model_state.get_model_state); never left
+    empty (FR-016). Feature 016: in catalog mode the result is shared through the
+    model_catalog cache family, so restarts and other workers skip the listing and the
+    probes; every boot still logs the per-class picks and the fixed-model warnings.
+    """
+    mode = settings.model_discovery_mode
+    gemini_classes = settings.gemini_classes
+    anthropic_classes = settings.anthropic_classes
+    loaded = False
+
+    async def load() -> ModelCatalog:
+        nonlocal loaded
+        loaded = True
+        return await asyncio.to_thread(
+            discover_models,
+            mode=mode,
+            gemini_ids=settings.gemini_models,
+            anthropic_ids=settings.anthropic_models,
+            configured_default=settings.default_model,
+            fallback_models=settings.model_list,
+            gemini_classes=gemini_classes,
+            anthropic_classes=anthropic_classes,
+        )
+
+    if mode == "catalog":
+        project = await asyncio.to_thread(project_id)
+        key = keys.model_catalog(
+            project or "-",
+            model_location(),
+            classes_signature(gemini_classes, anthropic_classes),
+        )
+        catalog = await get_or_load(
+            CacheFamily.MODEL_CATALOG, key, ModelCatalog, load, ttl=_catalog_ttl
+        )
+        if not loaded and not all(is_catalog_id(m) for m in catalog.models):
+            # A stored value is only trusted in the shape discovery itself serves (QA SEC-002).
+            logger.warning("cached model catalog holds unexpected ids %s; rediscovering", catalog.models)
+            catalog = await get_or_load(
+                CacheFamily.MODEL_CATALOG, key, ModelCatalog, load, ttl=_catalog_ttl, force_refresh=True
+            )
+        # The default follows the current WCL_DEFAULT_MODEL, not the one of the boot that
+        # stored the value (QA BUG-004).
+        default = choose_default(catalog.models, settings.default_model, catalog.classes)
+        if catalog.source == "catalog" and default != catalog.default:
+            catalog = catalog.model_copy(update={"default": default})
+    else:
+        catalog = await load()
+    if not loaded:
+        log_class_results(catalog.classes)  # every boot explains its picks (SC-006)
+    fixed = {
+        "WCL_GUIDE_MODEL": settings.wcl_guide_model,
+        "WCL_GUIDE_REVIEW_MODEL": settings.wcl_guide_review_model,
+        "WCL_REPORT_MODEL": settings.wcl_report_model,
+        "greeting": GREETING_MODEL,
+    }
+    for name, model in missing_fixed_models(fixed, catalog.listed):
+        logger.warning("%s=%s is not in the model catalog; it may be retired", name, model)
+    app.state.models = catalog.models
+    app.state.default_model = catalog.default
+    app.state.models_degraded = catalog.degraded
+    return catalog, not loaded
+
+
 async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
     """The boot sequence, run as a background task so the port opens immediately.
 
@@ -147,27 +238,11 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
                 settings.wcl_guide_model,
             )
 
-        # US4: discover + validate the selectable models once (blocking probes off the
-        # event loop). app.state is the single runtime source of truth for the set and
-        # the default (see model_state.get_model_state); never left empty (FR-016).
-        async def _models() -> dict:
-            discovery = await asyncio.to_thread(
-                discover_models,
-                gemini_ids=settings.gemini_models,
-                anthropic_ids=settings.anthropic_models,
-                configured_default=settings.default_model,
-                fallback_models=settings.model_list,
-            )
-            app.state.models = discovery["models"]
-            app.state.default_model = discovery["default"]
-            app.state.models_degraded = discovery["degraded"]
-            return discovery
-
         await tracker.run(
             "models",
-            _models,
-            detail=lambda d: f"{len(d['models'])} models"
-            + (" (degraded)" if d["degraded"] else ""),
+            lambda: _load_models(app),
+            detail=lambda r: f"{len(r[0].models)} models ({r[0].source}"
+            + (", cached)" if r[1] else ")"),
         )
 
         # US5: prime the fixed greeting model at startup, without blocking it. get_greeting

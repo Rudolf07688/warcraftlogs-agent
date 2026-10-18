@@ -7,14 +7,20 @@ GOOGLE_* env vars / mounted credentials (FR-016) — not read here.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from wcl_agent.models import ClassSetting, parse_class_settings
+
 # Populate os.environ from a local .env so ADK / wcl_client (which use os.getenv)
 # work in local dev. Harmless in containers/Cloud Run where env is already set.
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -84,6 +90,14 @@ class Settings(BaseSettings):
     # to Vertex; Anthropic-on-Vertex ids run Claude via Model Garden.
     wcl_gemini_models: str = "gemini-3.6-flash,gemini-3.1-pro-preview"
     wcl_anthropic_models: str = ""
+
+    # Feature 016: `catalog` builds the dropdown from Vertex's Model Garden catalog (the
+    # newest working versions per class, `name:count` in serving order); `static` probes
+    # only the lists above, which are also the fallback when the catalog can't be listed.
+    # Where models run is WCL_MODEL_LOCATION (read by wcl_agent.vertex, default global).
+    wcl_model_discovery: str = "catalog"
+    wcl_gemini_classes: str = "pro:2,flash:2,flash-lite:2"
+    wcl_anthropic_classes: str = "haiku:1,sonnet:1,opus:1"
 
     # CORS origins for the local frontend (comma-separated)
     cors_origins: str = "http://localhost:5173"
@@ -180,6 +194,22 @@ class Settings(BaseSettings):
         for m in [*self.gemini_models, *self.anthropic_models]:
             seen.setdefault(m, None)
         return list(seen)
+
+    @property
+    def model_discovery_mode(self) -> Literal["catalog", "static"]:
+        mode = self.wcl_model_discovery.strip().lower()
+        if mode in ("catalog", "static"):
+            return mode  # type: ignore[return-value]
+        logger.warning("WCL_MODEL_DISCOVERY=%r is not catalog or static; using catalog", mode)
+        return "catalog"
+
+    @property
+    def gemini_classes(self) -> list[ClassSetting]:
+        return parse_class_settings("google", self.wcl_gemini_classes)
+
+    @property
+    def anthropic_classes(self) -> list[ClassSetting]:
+        return parse_class_settings("anthropic", self.wcl_anthropic_classes)
 
     @property
     def default_model(self) -> str:

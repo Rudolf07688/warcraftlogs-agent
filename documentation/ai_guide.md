@@ -60,7 +60,8 @@ Agent: On Heroic Ula'tek this season, Marksmanship leads (median ~306k dps, p95 
      ```
      GOOGLE_GENAI_USE_VERTEXAI=TRUE
      GOOGLE_CLOUD_PROJECT=<your-gcp-project>
-     GOOGLE_CLOUD_LOCATION=global
+     GOOGLE_CLOUD_LOCATION=europe-west1   # general region; not used for model calls
+     WCL_MODEL_LOCATION=global            # where every model call runs (feature 016)
      ```
      Then run once: `gcloud auth application-default login` (and ensure the
      Vertex AI API is enabled on the project).
@@ -315,10 +316,14 @@ for future agents:
   Interrupted replies persist as `messages.status = "partial"`.
 - **Web grounding**: `build_agent` adds a `web_search` grounding sub-agent tool for
   Gemini models only; the runner emits a `grounding` frame.
-- **Model discovery**: `wcl_agent/models.py` probes `WCL_GEMINI_MODELS` /
-  `WCL_ANTHROPIC_MODELS` at startup; result lives on `app.state` and is read via
-  `backend/app/model_state.py` (single source of truth for the default). Claude is
-  registered with ADK's `LLMRegistry`.
+- **Model discovery**: `wcl_agent/models.py` lists the Vertex Model Garden catalog
+  (`wcl_agent/vertex.py`), probes the newest versions per class and keeps the newest
+  that answer (feature 016; `WCL_MODEL_DISCOVERY=static` probes `WCL_GEMINI_MODELS` /
+  `WCL_ANTHROPIC_MODELS` instead). The result is cached 6 h (`model_catalog` family),
+  lives on `app.state` and is read via `backend/app/model_state.py` (single source of
+  truth for the default). Claude is registered with ADK's `LLMRegistry`. Every model
+  client is built at `vertex.model_location()` (`WCL_MODEL_LOCATION`, default `global`),
+  never at `GOOGLE_CLOUD_LOCATION`.
 - **PDF export**: `captured_graphs` table + `services/graphs.py` capture graph JSON
   during chat; `services/pdf_report.py` renders analysis + matplotlib charts;
   `api/reports.py` streams it. (Feature 007 inserts a findings-synthesis step before

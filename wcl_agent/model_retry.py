@@ -29,8 +29,10 @@ from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types as genai_types
+from pydantic import Field
 
 from .context_trim import trim_old_tool_results, user_turn_indices
+from .vertex import adk_client_kwargs, async_anthropic_client
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +243,11 @@ class RetryingGemini(Gemini):
     policy: RetryPolicy = RetryPolicy()
     # attempts=1 means "no SDK retry": the loop above owns the waiting and the budget.
     retry_options: genai_types.HttpRetryOptions | None = genai_types.HttpRetryOptions(attempts=1)
+    # Feature 016: every client this model builds calls the model location, not
+    # GOOGLE_CLOUD_LOCATION (ADK applies client_kwargs to each per-event-loop client).
+    client_kwargs: dict[str, Any] | None = Field(
+        default_factory=adk_client_kwargs, exclude=True, repr=False
+    )
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -262,15 +269,19 @@ if _Claude is not None:
     class RetryingClaude(_Claude):
         """ADK ``Claude`` (Anthropic on Vertex) with the shared retry loop.
 
-        Reuses ADK's project/region resolution for the client and only turns off the
-        Anthropic SDK's built-in retries so the waits never nest.
+        Builds its own client at the model location (feature 016): ADK's would read
+        GOOGLE_CLOUD_LOCATION. A preset ``client`` is still honoured, as in ADK. The
+        Anthropic SDK's built-in retries are off so the waits never nest.
         """
 
         policy: RetryPolicy = RetryPolicy()
 
         @cached_property
         def _anthropic_client(self):  # type: ignore[override]
-            return super()._anthropic_client.with_options(max_retries=0)
+            from google.adk.utils._google_client_headers import get_tracking_headers
+
+            client = self.client or async_anthropic_client(default_headers=get_tracking_headers())
+            return client.with_options(max_retries=0)
 
         async def generate_content_async(
             self, llm_request: LlmRequest, stream: bool = False

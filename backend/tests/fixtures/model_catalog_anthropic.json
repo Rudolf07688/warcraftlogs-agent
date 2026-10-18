@@ -1,0 +1,69 @@
+{
+ "publisherModels": [
+  {
+   "name": "publishers/anthropic/models/claude-haiku-4-5",
+   "versionId": "20251001",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-opus-4-5",
+   "versionId": "20251101",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-opus-4-6",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-sonnet-4-6",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-opus-4-7",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-sonnet-5",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-opus-4-8",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-fable-5",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-opus-5",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-fable-5-1",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-opus-5-5",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-sonnet-5-5",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/anthropic/models/claude-haiku-5-5",
+   "versionId": "default",
+   "launchStage": "GA"
+  }
+ ]
+}

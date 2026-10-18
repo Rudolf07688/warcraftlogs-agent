@@ -21,7 +21,8 @@ def test_discover_keeps_responsive_and_excludes_bogus(monkeypatch):
         configured_default="gemini-good",
         fallback_models=["gemini-good"],
     )
-    assert result == {"models": ["gemini-good"], "default": "gemini-good", "degraded": False}
+    assert (result.models, result.default, result.degraded) == (["gemini-good"], "gemini-good", False)
+    assert result.source == "static" and not result.classes and not result.listed
 
 
 def test_discover_default_falls_back_to_first_validated(monkeypatch):
@@ -33,8 +34,8 @@ def test_discover_default_falls_back_to_first_validated(monkeypatch):
         configured_default="not-validated",
         fallback_models=["gemini-a"],
     )
-    assert result["degraded"] is False
-    assert result["default"] == "gemini-a"
+    assert result.degraded is False
+    assert result.default == "gemini-a"
 
 
 def test_discover_degraded_when_infra_unavailable(monkeypatch):
@@ -45,8 +46,8 @@ def test_discover_degraded_when_infra_unavailable(monkeypatch):
         configured_default="gemini-a",
         fallback_models=["gemini-a", "gemini-b"],
     )
-    assert result["degraded"] is True
-    assert result["models"] == ["gemini-a", "gemini-b"]  # never empty
+    assert result.degraded is True
+    assert result.models == ["gemini-a", "gemini-b"]  # never empty
 
 
 def test_discover_degraded_when_nothing_validates(monkeypatch):
@@ -58,8 +59,8 @@ def test_discover_degraded_when_nothing_validates(monkeypatch):
         configured_default="gemini-a",
         fallback_models=["gemini-a"],
     )
-    assert result["degraded"] is True
-    assert result["models"] == ["gemini-a"]
+    assert result.degraded is True
+    assert result.models == ["gemini-a"]
 
 
 def test_model_state_uses_app_state_when_present():

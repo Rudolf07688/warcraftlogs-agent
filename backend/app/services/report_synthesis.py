@@ -71,9 +71,9 @@ def _build_input(messages: list[dict], *, scope: str, question: str | None) -> s
 
 def _generate(model: str, prompt: str) -> str:
     """Blocking one-shot genai call (run via ``to_thread``). Non-web-search."""
-    from google import genai
+    from wcl_agent.vertex import genai_client
 
-    client = genai.Client()
+    client = genai_client()
     resp = client.models.generate_content(model=model, contents=prompt)
     return (getattr(resp, "text", "") or "").strip()
 

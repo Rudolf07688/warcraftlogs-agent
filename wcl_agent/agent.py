@@ -7,6 +7,7 @@ import os
 from datetime import UTC, datetime
 
 from google.adk.agents import Agent
+from google.adk.models.google_llm import Gemini
 from google.adk.models.registry import LLMRegistry
 from google.adk.planners import BuiltInPlanner
 from google.adk.tools import google_search
@@ -57,6 +58,7 @@ from .tools import (
     get_selected_encounter,
     get_spec_options,
 )
+from .vertex import adk_client_kwargs
 
 # Tag-delimited sections per specs/009-grounded-coaching-prompt/contracts/prompt.md.
 # backend/tests/test_prompt_contract.py asserts the sections and key clauses; wording
@@ -460,7 +462,8 @@ def _build_web_search_tool(model: str) -> AgentTool:
     """
     search_agent = Agent(
         name=WEB_SEARCH_AGENT_NAME,
-        model=model,
+        # A plain Gemini (its retries unchanged) pinned to the model location (feature 016).
+        model=Gemini(model=model, client_kwargs=adk_client_kwargs()),
         description="Searches the web with Google Search and returns a concise, cited answer.",
         instruction=(
             "You are a web search assistant. Use Google Search to find current, "

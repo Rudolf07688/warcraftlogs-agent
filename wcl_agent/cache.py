@@ -70,6 +70,8 @@ class CacheFamily(StrEnum):
     TALENT_NAMES = "talent_names"
     LIVE_VERSION = "live_version"
     HOTFIX_FEED = "hotfix_feed"
+    # feature 016: the startup model discovery result
+    MODEL_CATALOG = "model_catalog"
 
 
 class Outcome(StrEnum):
@@ -105,6 +107,7 @@ FAMILIES: dict[CacheFamily, FamilyConfig] = {
     CacheFamily.TALENT_NAMES: FamilyConfig(604800, 0.50),  # optional talent id → name map
     CacheFamily.LIVE_VERSION: FamilyConfig(900, 0.50),  # Blizzard's live build (research R1)
     CacheFamily.HOTFIX_FEED: FamilyConfig(1800, 0.50),  # newest "Hotfixes:" article (R2)
+    CacheFamily.MODEL_CATALOG: FamilyConfig(21600, 0.50),  # discovered chat models (016 R6)
 }
 
 
@@ -215,6 +218,10 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
         return "ext:hotfix:v1"
 
     @staticmethod
+    def model_catalog(project: str, location: str, sig: str) -> str:
+        return f"ext:models:v1:{project}:{location}:{sig}"
+
+    @staticmethod
     def lock(key: str) -> str:
         return f"lock:{key}"
 
@@ -252,7 +259,14 @@ def _client() -> Redis | None:
         logger.info("wcl cache: retrying Redis")
     client = _redis_clients.get(loop)
     if client is None:
-        client = _redis_clients[loop] = _make_redis(cache_settings().redis_url)
+        try:
+            client = _make_redis(cache_settings().redis_url)
+        except Exception as exc:  # noqa: BLE001 - e.g. a URL without a scheme: fail open (C7)
+            if loop not in _down_until:
+                logger.warning("wcl cache: cannot use REDIS_URL, bypassing the cache for %.0fs: %s", _CIRCUIT_S, exc)
+            _down_until[loop] = time.monotonic() + _CIRCUIT_S
+            return None
+        _redis_clients[loop] = client
     return client
 
 

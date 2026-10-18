@@ -99,8 +99,20 @@
   - Devourer DH spec not showing
 - Show that report is being generated / downloaded while waiting
   - Feels like it doesn't work
-[ UI / Design ]
+**[ UI / Design ]**
 - Chat interface redesign
   - mayby rather single-lane chat
   - Scroll to top of the question-message once answer is fully complete.
 - Slightly increase default font size
+- Showing to many recent raids in the welcome chat
+  - Rather include some recent m+ runs as well when available
+  - 6 raids and 6 dungeons max (most recent ones, in order)
+- In the left side bar, previous conversations must be above the "Raids" section.
+  - Generate conversation name based on the messages
+
+# QA Hits
+Medium findings still open:
+- PERF-001: the app waits for model discovery before serving anything.
+- SEC-003: remote images in model output can leak data.
+- SEC-004: the login rate limit is shared by all users behind the proxy.
+- SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty.

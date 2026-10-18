@@ -60,6 +60,8 @@ export default function App() {
   const activeIdRef = useRef<string | null>(null);
   const streamRef = useRef("");
   const modelRef = useRef("");
+  // The served set and default, for restoring a conversation whose model was retired.
+  const servedModelsRef = useRef<{ models: string[]; default: string }>({ models: [], default: "" });
   const groundedRef = useRef(false);
   const streamCardsRef = useRef<SpellCardState[]>([]);
   const pendingEncountersRef = useRef<Encounter[]>([]); // bosses surfaced this turn
@@ -273,9 +275,10 @@ export default function App() {
   useEffect(() => {
     getModels()
       .then((r) => {
+        servedModelsRef.current = { models: r.models, default: r.default };
         setModels(r.models);
         setModelsDegraded(!!r.degraded);
-        setModel((cur) => cur || r.default);
+        setModel((cur) => (cur && r.models.includes(cur) ? cur : r.default));
       })
       .catch(() => setError("Could not load models (is the backend up?)"));
     void refreshConversations();
@@ -295,7 +298,11 @@ export default function App() {
     activeIdRef.current = id;
     setActiveId(id);
     setMessages(detail.messages.map((m) => ({ ...m })));
-    setModel(detail.model);
+    // Discovery rotates models, so a chat may have been created on one no longer served:
+    // continue it on the default instead of a model every send would reject.
+    const served = servedModelsRef.current;
+    const usable = !served.models.length || served.models.includes(detail.model);
+    setModel(usable ? detail.model : served.default);
     setError(null);
     setSelectedBosses([]);
     activeEncountersRef.current = [];

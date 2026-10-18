@@ -1,0 +1,154 @@
+{
+ "publisherModels": [
+  {
+   "name": "publishers/google/models/gemini-1.5-pro-002",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-flash-preview-04-17",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-pro-exp-03-25",
+   "versionId": "default",
+   "launchStage": "EXPERIMENTAL"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-pro",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-flash",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-flash-lite",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-pro-tts",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-flash-tts",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-live-2.5-flash-native-audio",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3-flash-preview",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.1-flash-image-preview",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.1-pro-preview",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-flash",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.1-flash-image",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3-pro-image",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-embedding-2",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.1-flash-lite",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.1-flash-lite-image",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-transcribe-live-preview",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-transcribe-preview",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-flash-lite",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.6-flash",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-live-translate-preview",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-omni-1.1-flash-preview",
+   "versionId": "default",
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.7-flash",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.8-flash",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-nano-banana-2.1",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-transcribe",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-transcribe-live",
+   "versionId": "default",
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/google/models/gemini-4-argon",
+   "versionId": "default",
+   "launchStage": "GA"
+  }
+ ]
+}

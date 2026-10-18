@@ -14,8 +14,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # Loopback only (QA SEC-001): local tools (alembic, psql, `uv run` dev) reach it on
+    # localhost; the backend container uses the compose network, never the host port.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -36,8 +38,9 @@ services:
       - ""
       - --appendonly
       - "no"
+    # Loopback only (QA SEC-001): this Redis has no auth, so it must not face the LAN.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class CharacterRef(BaseModel):
@@ -162,3 +162,35 @@ class HotfixFeed(BaseModel):
     entries: list[HotfixEntry] = []
     touches_all_classes: bool = False  # a change listed for every class at once
 
+
+
+class ClassResult(BaseModel):
+    """One model class's discovery outcome (feature 016), replayed in the boot log on a hit."""
+
+    publisher: str
+    cls: str
+    models: list[str] = []  # kept ids, newest first
+    reason: str | None = None  # no_quota | not_enabled | failed | no_candidates
+    failed: list[str] = []  # ids skipped for an error that may not last (timeout, 5xx)
+
+
+class ModelCatalog(BaseModel):
+    """``model_catalog``: the startup model discovery result (feature 016, data-model.md)."""
+
+    models: list[str]  # served order; never empty
+    default: str
+    degraded: bool
+    source: Literal["catalog", "static", "fallback", "degraded"]
+    classes: list[ClassResult] = []  # empty unless source == "catalog"
+    listed: list[str] = []  # every callable id the catalog listed (fixed-model warning)
+    fetched_at: datetime
+
+    @model_validator(mode="after")
+    def _check(self) -> ModelCatalog:
+        if not self.models:
+            raise ValueError("models must not be empty")
+        if self.default not in self.models:
+            raise ValueError(f"default {self.default!r} is not among the models")
+        if self.degraded != (self.source == "degraded"):
+            raise ValueError("degraded must be true exactly when source is 'degraded'")
+        return self

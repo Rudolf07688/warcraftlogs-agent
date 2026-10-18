@@ -41,7 +41,8 @@ Agent: On Heroic Ula'tek this season, across 500 logged Hunter parses ...
    ```bash
    cp .env.example .env
    # edit .env: WCL keys + GOOGLE_CLOUD_PROJECT
-   # (GOOGLE_CLOUD_LOCATION defaults to the global endpoint)
+   # (model calls run at WCL_MODEL_LOCATION=global; GOOGLE_CLOUD_LOCATION=europe-west1
+   #  is the general region and is not used for models)
    ```
 4. **Install deps with uv** (Python >= 3.10):
    ```bash
@@ -148,8 +149,8 @@ CSRF token (sent as `X-CSRF-Token` on unsafe requests). Full verification steps 
   Anthropic/other models degrade gracefully with no web access.
 - **Validated model list** — the model dropdown is discovered and probed at
   startup; only responsive models are offered, with a fallback + "degraded" notice
-  if Vertex is unreachable. Configure candidates with `WCL_GEMINI_MODELS` /
-  `WCL_ANTHROPIC_MODELS` (see `.env.example`).
+  if Vertex is unreachable. Since feature 016 the candidates come from Vertex's own
+  catalog (see [Model discovery](#model-discovery-feature-016)).
 - **PDF export** — download any conversation as a PDF with the written analysis
   plus the graphs the agent fetched (rendered with matplotlib + reportlab).
 
@@ -421,9 +422,52 @@ from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rat
   `Marksmanship`) — handled for you in `wcl_agent/constants.py`.
 - The agent uses `gemini-3.6-flash` by default; change it with `WCL_DEFAULT_MODEL`
   (shared by the backend config and the `wcl_agent` CLI, so they can't drift). The
-  web app's selectable list comes from `WCL_GEMINI_MODELS` / `WCL_ANTHROPIC_MODELS`
-  probed at startup. ADK drives Claude on Vertex natively (registered in
-  `wcl_agent/agent.py`).
+  web app's selectable list is discovered at startup (see
+  [Model discovery](#model-discovery-feature-016)). ADK drives Claude on Vertex
+  natively (registered in `wcl_agent/agent.py`).
+
+## Model discovery (feature 016)
+
+The chat model dropdown is built at startup from Vertex's Model Garden catalog, so a new
+model release needs no `.env` edit:
+
+1. Both publisher catalogs (Google, Anthropic) are listed from the global endpoint.
+2. Each entry is sorted into a class: Gemini `pro`, `flash`, `flash-lite`; Claude
+   `haiku`, `sonnet`, `opus`. TTS, image, live, embedding and experimental models are
+   dropped. Newer versions come first; a preview outranks an older GA model (so
+   `gemini-3.1-pro-preview` beats `gemini-2.5-pro`), and GA wins a version tie.
+3. The newest few versions of every class get a one-token call with a tool declaration,
+   all at once. Per class the newest that answer are kept: `WCL_GEMINI_CLASSES`
+   (default `pro:2,flash:2,flash-lite:2`) and `WCL_ANTHROPIC_CLASSES` (default
+   `haiku:1,sonnet:1,opus:1`), served in that order. A 404 moves on to an older
+   version; a 429 that persists after one retry marks the whole class "no quota".
+4. The default is `WCL_DEFAULT_MODEL` if it was kept, else the newest flash.
+
+The startup log names every class's picks or the reason it has none, for example
+`claude sonnet: no quota (429)`, and warns when `WCL_GUIDE_MODEL`,
+`WCL_GUIDE_REVIEW_MODEL`, `WCL_REPORT_MODEL` or the greeting model is no longer in the
+catalog (those are never changed automatically).
+
+- **Claude quota**: Vertex enforces Claude quota per model class. No Claude model
+  appears until a quota increase for that class is granted in the Cloud console
+  (IAM & Admin → Quotas, "base model: anthropic-claude-…").
+- **Shared result**: the result is stored in Redis for 6 h (`WCL_CACHE_TTL_MODEL_CATALOG`,
+  `0` = don't store), keyed on project, model location and the class settings, so
+  restarts and other workers skip the probes. A fallback or degraded result is never
+  stored, and one where a probe hit a likely transient error (a timeout, a 5xx, a Gemini
+  429) is kept for 10 minutes only. The default always follows the current
+  `WCL_DEFAULT_MODEL`, and a stored value whose ids don't look like catalog ids is
+  rediscovered. To re-discover sooner, delete the key and restart:
+  `docker compose exec redis redis-cli --scan --pattern 'ext:models:*' | xargs -r docker compose exec -T redis redis-cli del`.
+- **Fallbacks**: if the catalog can't be listed, the static `WCL_GEMINI_MODELS` /
+  `WCL_ANTHROPIC_MODELS` are probed instead (one warning); if nothing passes,
+  `WCL_MODELS` is served with the "degraded" notice. `WCL_MODEL_DISCOVERY=static` always
+  uses the static lists.
+- **Where models run**: every model call (chat, web search, guides, reports, greeting,
+  suggestions, probes) uses `WCL_MODEL_LOCATION` (default `global`); clients are built
+  only in `wcl_agent/vertex.py`. `europe-west1` serves only Gemini 2.5 and no Claude,
+  and the `eu` multi-region lacks the Pro preview, so `GOOGLE_CLOUD_LOCATION` (default
+  `europe-west1`) is left to everything else. `WCL_ANTHROPIC_REGION` is gone.
 
 ## Feature 010 — shared UI components (shadcn/ui)
 

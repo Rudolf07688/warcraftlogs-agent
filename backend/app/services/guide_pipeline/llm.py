@@ -25,9 +25,9 @@ _client = None  # one google-genai client per process, created on first use
 def _get_client():
     global _client
     if _client is None:
-        from google import genai
+        from wcl_agent.vertex import genai_client
 
-        _client = genai.Client()
+        _client = genai_client()
     return _client
 
 

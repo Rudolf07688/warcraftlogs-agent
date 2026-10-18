@@ -25,7 +25,9 @@ no rework. This captures the plan (clarified 2026-10-01); it is **not** built ye
 2. Provision Cloud SQL (Postgres 17); grant the Cloud Run service account access.
 3. Store `WCL_CLIENT_ID`, `WCL_CLIENT_SECRET`, and DB creds in Secret Manager; map
    them to the service as env vars. Set `GOOGLE_GENAI_USE_VERTEXAI=TRUE`,
-   `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, and `DATABASE_URL`.
+   `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` (the general region, e.g.
+   `europe-west1`), `WCL_MODEL_LOCATION` (where model calls run; keep `global`, the only
+   location serving every current Gemini and Claude model) and `DATABASE_URL`.
 4. Deploy the backend to Cloud Run with its service account; enable the Vertex AI
    and Cloud SQL Admin APIs.
 5. Build/deploy the frontend (static build served by a CDN/host or a second Cloud

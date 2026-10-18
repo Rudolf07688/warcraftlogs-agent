@@ -32,7 +32,7 @@ def test_model_probes_run_concurrently(monkeypatch):
         fallback_models=["gemini-a"],
     )
     assert time.monotonic() - start < 0.6  # three 0.3 s probes overlapped
-    assert result["models"] == ["gemini-a", "gemini-b"]  # configured order kept
+    assert result.models == ["gemini-a", "gemini-b"]  # configured order kept
 
 
 def test_probe_that_raises_counts_as_failed(monkeypatch):
@@ -50,7 +50,7 @@ def test_probe_that_raises_counts_as_failed(monkeypatch):
         configured_default="gemini-a",
         fallback_models=["gemini-a"],
     )
-    assert result["models"] == ["gemini-a"]
+    assert result.models == ["gemini-a"]
 
 
 async def test_concurrent_greeting_misses_generate_once(monkeypatch):
