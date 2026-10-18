@@ -59,7 +59,9 @@ services:
       # Shared WCL cache (feature 014); overrides the host-side REDIS_URL from .env.
       REDIS_URL: redis://redis:6379/0
     volumes:
-      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
+      # Defaults to the Linux/macOS gcloud location. On Windows set GCP_ADC_FILE in .env,
+      # e.g. C:/Users/<you>/AppData/Roaming/gcloud/application_default_credentials.json
+      - ${GCP_ADC_FILE:-${HOME}/.config/gcloud/application_default_credentials.json}:/gcp/adc.json:ro
     depends_on:
       db:
         condition: service_healthy
