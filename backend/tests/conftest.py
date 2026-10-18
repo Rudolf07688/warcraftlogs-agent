@@ -19,6 +19,49 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from backend.app.db.models import Base
+from wcl_agent import cache as wcl_cache
+
+
+# --- Shared WCL cache (feature 014) -------------------------------------------
+# Tests run with the cache disabled unless they ask for ``fake_redis`` — the root .env may
+# set REDIS_URL for local runs, and a stray real Redis must never leak state into tests.
+
+
+def _reset_cache_state() -> None:
+    from wcl_agent import wcl_client
+
+    wcl_cache._redis_clients.clear()
+    wcl_cache._down_until.clear()
+    wcl_cache._counts.clear()
+    wcl_cache._expiring.clear()
+    wcl_cache._memo.clear()
+    # Process-wide WCL budget state (PERF-004/009) must not leak between tests.
+    wcl_client._budget = None
+    wcl_client._blocked_until = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _no_shared_cache(monkeypatch):
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("WCL_CACHE_ENABLED", raising=False)
+    _reset_cache_state()
+    yield
+    _reset_cache_state()
+
+
+@pytest_asyncio.fixture
+async def fake_redis(monkeypatch):
+    """Enable the cache over an in-memory fakeredis server; returns a client for assertions."""
+    import fakeredis
+
+    server = fakeredis.FakeServer()
+    monkeypatch.setenv("REDIS_URL", "redis://fake:6379/0")
+    monkeypatch.setenv("WCL_CACHE_ENABLED", "true")
+    monkeypatch.setattr(wcl_cache, "_make_redis", lambda url: fakeredis.FakeAsyncRedis(server=server))
+    probe = fakeredis.FakeAsyncRedis(server=server)
+    yield probe
+    await wcl_cache.drain_metrics()
+    await probe.aclose()
 
 
 @pytest_asyncio.fixture

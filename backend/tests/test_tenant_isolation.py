@@ -97,16 +97,26 @@ async def test_profile_isolated(as_user, tenant_b, session_factory, monkeypatch)
     assert b_prof["own"] == []  # B sees nothing of A's
 
 
-# --- WCL cache scope (FR-019) -------------------------------------------------
+# --- Shared WCL cache (feature 014 supersedes FR-019) -----------------------
 
 
-def test_wcl_cache_key_scoped_by_tenant():
-    from wcl_agent.cache import cache_key
+async def test_tenants_share_public_wcl_entries(as_user, monkeypatch, fake_redis):
+    """WCL data is public: two tenants asking about one report share one entry, and no
+    shared ``wcl:`` key names either tenant or user."""
+    from backend.tests.wcl_fakes import install
+    from wcl_agent import report_tools
+    from wcl_agent.cache import set_refresh_actor
 
-    q, v = "query reportData", {"code": "ABC"}
-    key_a = cache_key(q, v, prefix="tenant-a")
-    key_b = cache_key(q, v, prefix="tenant-b")
-    assert key_a != key_b  # a cached lookup never crosses tenants
+    report = {"title": "T", "startTime": 1, "endTime": 2, "zone": None, "guild": None,
+              "masterData": {"actors": []}, "fights": []}
+    fake = install(monkeypatch, lambda q, v: {"data": {"reportData": {"report": report}}})
+    for tenant in ("tenant-a", "tenant-b"):
+        set_refresh_actor(f"user-of-{tenant}")
+        assert (await report_tools.get_report_fights("SHARED"))["status"] == "success"
+    set_refresh_actor(None)
+    assert fake.count("ReportSummary") == 1
+    stored = [k.decode() async for k in fake_redis.scan_iter("wcl:*")]
+    assert not any("tenant" in k or "user" in k or str(as_user.tenant_id) in k for k in stored)
 
 
 # --- Session invalidation stops an in-flight socket (FR-023) ------------------

@@ -20,10 +20,31 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
 
+from .cache import (
+    CacheFamily,
+    family_ttl,
+    get_many_or_load,
+    get_or_load,
+    get_refresh_actor,
+    keys,
+    try_claim_refresh,
+    unfinished_ttl,
+)
+from .cache_models import (
+    CharacterRankings,
+    CharacterRef,
+    FightSummary,
+    PlayerRef,
+    PlayerTable,
+    ReportSummary,
+)
 from .constants import METRICS
+from .normalize import is_finished, server_slug
+from .queries import CHARACTER_REF, REPORT_SUMMARY, character_refs_query, report_summaries_query
 from .provenance import Completeness, Provenance, flatten_report_rankings, with_envelope
 from . import wcl_client
 
@@ -68,6 +89,18 @@ async def _acap(obj: Any) -> Any:
     return await asyncio.to_thread(_cap, obj)
 
 
+async def _report_fields(
+    code: str, field_calls: str, var_decls: str, variables: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Run ``reportData.report(code:){ <field_calls> }`` and return the report object."""
+    query = (
+        f"query ReportQ($code: String!{var_decls}) {{ "
+        f"reportData {{ report(code: $code) {{ {field_calls} }} }} }}"
+    )
+    data = await wcl_client.get_async_client().query(query, {"code": code, **variables})
+    return ((data.get("data") or {}).get("reportData") or {}).get("report")
+
+
 async def _report_field(
     code: str,
     field_call: str,
@@ -76,15 +109,86 @@ async def _report_field(
     field_name: str,
 ) -> Any:
     """Run ``reportData.report(code:){ <field_call> }`` and return that field."""
-    query = (
-        f"query ReportQ($code: String!{var_decls}) {{ "
-        f"reportData {{ report(code: $code) {{ {field_call} }} }} }}"
-    )
-    data = await wcl_client.get_async_client().query(query, {"code": code, **variables})
-    report = ((data.get("data") or {}).get("reportData") or {}).get("report")
+    report = await _report_fields(code, field_call, var_decls, variables)
     if report is None:
         return None
     return report.get(field_name)
+
+
+def _report_ttl(family: CacheFamily, end_time_ms: int | None) -> int:
+    """Finished reports keep the family TTL; one still being logged only briefly (FR-005)."""
+    if end_time_ms is not None and is_finished(end_time_ms):
+        return family_ttl(family)
+    return unfinished_ttl()
+
+
+def _summary_from(code: str, report: dict[str, Any]) -> ReportSummary:
+    actors = ((report.get("masterData") or {}).get("actors")) or []
+    zone = report.get("zone") or {}
+    return ReportSummary(
+        code=code,
+        title=report.get("title"),
+        start_time_ms=report["startTime"],
+        end_time_ms=report["endTime"],
+        zone_id=zone.get("id"),
+        zone_name=zone.get("name"),
+        guild_name=(report.get("guild") or {}).get("name"),
+        players={a["id"]: PlayerRef(name=a["name"], class_name=a.get("subType")) for a in actors},
+        fights=[
+            FightSummary(
+                id=f["id"],
+                name=f["name"],
+                encounter_id=f.get("encounterID"),
+                difficulty=f.get("difficulty"),
+                kill=f.get("kill"),
+                average_item_level=f.get("averageItemLevel"),
+                size=f.get("size"),
+                player_ids=list(f.get("friendlyPlayers") or []),
+            )
+            for f in report.get("fights") or []
+        ],
+    )
+
+
+def _summary_ttl(summary: ReportSummary) -> int:
+    return _report_ttl(CacheFamily.REPORT_SUMMARY, summary.end_time_ms)
+
+
+async def load_report_summary(code: str) -> ReportSummary | None:
+    """A report's fights, bosses, kills/wipes and roster (``report_summary``), or None."""
+    code = code.strip()
+
+    async def load() -> ReportSummary | None:
+        data = await wcl_client.get_async_client().query(REPORT_SUMMARY, {"code": code})
+        report = ((data.get("data") or {}).get("reportData") or {}).get("report")
+        return _summary_from(code, report) if report else None
+
+    return await get_or_load(
+        CacheFamily.REPORT_SUMMARY, keys.report_summary(code), ReportSummary, load, ttl=_summary_ttl
+    )
+
+
+async def load_report_summaries(codes: Sequence[str]) -> list[ReportSummary | None]:
+    """Several reports' summaries; the uncached ones in ONE request (PERF-001).
+
+    A report WCL can't return (deleted, private) fails the whole batched GraphQL request
+    with ``RuntimeError``; callers fall back to :func:`load_report_summary` per code.
+    """
+    codes = [c.strip() for c in codes]
+
+    async def load(missing: list[int]) -> list[ReportSummary | None]:
+        variables = {f"c{j}": codes[i] for j, i in enumerate(missing)}
+        data = await wcl_client.get_async_client().query(report_summaries_query(len(missing)), variables)
+        reports = ((data.get("data") or {}).get("reportData")) or {}
+        return [
+            _summary_from(codes[i], reports[f"r{j}"]) if reports.get(f"r{j}") else None
+            for j, i in enumerate(missing)
+        ]
+
+    return await get_many_or_load(
+        CacheFamily.REPORT_SUMMARY, [keys.report_summary(c) for c in codes], ReportSummary, load,
+        ttl=_summary_ttl,
+    )
 
 
 def _fight_ids(fight_id: int) -> list[int] | None:
@@ -110,55 +214,40 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
                "fights": [{id, name, encounterID, difficulty, kill,
                            averageItemLevel, players:[names]}]} or an error.
     """
-    query = """
-    query ReportFights($code: String!) {
-      reportData { report(code: $code) {
-        title
-        startTime
-        zone { id name }
-        guild { name }
-        masterData { actors(type: "Player") { id name subType } }
-        fights {
-          id name encounterID difficulty kill
-          startTime endTime fightPercentage averageItemLevel size friendlyPlayers
-        }
-      } }
-    }
-    """.strip()
     try:
-        data = await wcl_client.get_async_client().query(query, {"code": report_code})
+        summary = await load_report_summary(report_code)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
-
-    report = ((data.get("data") or {}).get("reportData") or {}).get("report")
-    if not report:
+    if summary is None:
         return {"status": "error", "error_message": f"No report '{report_code}'."}
 
-    actors = ((report.get("masterData") or {}).get("actors")) or []
-    players = {a["id"]: {"name": a["name"], "class": a.get("subType")} for a in actors}
-    fights = []
-    for f in report.get("fights", []):
-        names = [players[i]["name"] for i in (f.get("friendlyPlayers") or []) if i in players]
-        fights.append(
-            {
-                "id": f["id"],
-                "name": f["name"],
-                "encounterID": f.get("encounterID"),
-                "difficulty": f.get("difficulty"),
-                "kill": f.get("kill"),
-                "averageItemLevel": f.get("averageItemLevel"),
-                "size": f.get("size"),
-                "players": names,
-            }
-        )
+    players = {pid: {"name": p.name, "class": p.class_name} for pid, p in summary.players.items()}
+    fights = [
+        {
+            "id": f.id,
+            "name": f.name,
+            "encounterID": f.encounter_id,
+            "difficulty": f.difficulty,
+            "kill": f.kill,
+            "averageItemLevel": f.average_item_level,
+            "size": f.size,
+            "players": [players[i]["name"] for i in f.player_ids if i in players],
+        }
+        for f in summary.fights
+    ]
+    zone = (
+        {"id": summary.zone_id, "name": summary.zone_name}
+        if summary.zone_id is not None or summary.zone_name is not None
+        else None
+    )
     return with_envelope(
         {
             "status": "success",
-            "title": report.get("title"),
-            "zone": report.get("zone"),
+            "title": summary.title,
+            "zone": zone,
             # Also lets the backend label a tracked raid without a second query (PERF-016).
-            "guild": (report.get("guild") or {}).get("name"),
-            "start_time_ms": report.get("startTime"),
+            "guild": summary.guild_name,
+            "start_time_ms": summary.start_time_ms,
             "players": players,
             "fights": await _acap(fights),
         },
@@ -212,29 +301,18 @@ async def get_report_metadata(report_code: str) -> dict[str, Any]:
         dict: {"status": "success", "title", "zone", "guild", "start_time_ms"} or
             an error dict. ``zone``/``guild`` may be ``None`` for some reports.
     """
-    query = """
-    query ReportMeta($code: String!) {
-      reportData { report(code: $code) {
-        title
-        startTime
-        zone { name }
-        guild { name }
-      } }
-    }
-    """.strip()
     try:
-        data = await wcl_client.get_async_client().query(query, {"code": report_code})
+        summary = await load_report_summary(report_code)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
-    report = ((data.get("data") or {}).get("reportData") or {}).get("report")
-    if not report:
+    if summary is None:
         return {"status": "error", "error_message": f"No report '{report_code}'."}
     return {
         "status": "success",
-        "title": report.get("title"),
-        "zone": (report.get("zone") or {}).get("name"),
-        "guild": (report.get("guild") or {}).get("name"),
-        "start_time_ms": report.get("startTime"),
+        "title": summary.title,
+        "zone": summary.zone_name,
+        "guild": summary.guild_name,
+        "start_time_ms": summary.start_time_ms,
     }
 
 
@@ -295,7 +373,13 @@ async def get_report_table(
         "abilityID": ability_id or None,
     }
     try:
-        table = await _report_field(report_code, field, var_decls, variables, "table")
+        if source_id:
+            table = await _player_table(
+                report_code, field, var_decls, variables,
+                keys.report_player(report_code, source_id, data_type, fight_id, ability_id, hostility_type),
+            )
+        else:  # whole-raid tables are large and rarely repeated: not cached
+            table = await _report_field(report_code, field, var_decls, variables, "table")
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if table is None:
@@ -304,6 +388,26 @@ async def get_report_table(
         {"status": "success", "data_type": data_type, "table": await _acap(table)},
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
+
+
+async def _player_table(
+    code: str, field: str, var_decls: str, variables: dict[str, Any], key: str
+) -> Any:
+    """One player's table (``report_player``); ``endTime`` rides along to pick the TTL."""
+    end_time: dict[str, int | None] = {"ms": None}
+
+    async def load() -> PlayerTable | None:
+        report = await _report_fields(code, f"endTime {field}", var_decls, variables)
+        if report is None or report.get("table") is None:
+            return None
+        end_time["ms"] = report.get("endTime")
+        return PlayerTable(data=report["table"])
+
+    cached = await get_or_load(
+        CacheFamily.REPORT_PLAYER, key, PlayerTable, load,
+        ttl=lambda _: _report_ttl(CacheFamily.REPORT_PLAYER, end_time["ms"]),
+    )
+    return None if cached is None else cached.data
 
 
 async def get_report_events(
@@ -516,12 +620,104 @@ async def get_report_player_details(report_code: str, fight_id: int = 0) -> dict
 
 # --- Individual character history ---------------------------------------------
 
-def _server_slug(server: str) -> str:
-    return server.strip().lower().replace(" ", "-").replace("'", "")
+_server_slug = server_slug  # feature 014: moved to normalize (shared with the cache keys)
+
+
+def _character_ref_from(char: dict[str, Any], name: str, server: str, region: str) -> CharacterRef:
+    srv = char.get("server") or {}
+    return CharacterRef(
+        id=char["id"],
+        name=char.get("name") or name.strip(),
+        realm=srv.get("slug") or server_slug(server),
+        region=((srv.get("region") or {}).get("slug") or region).strip().lower(),
+        class_id=char.get("classID"),
+    )
+
+
+async def resolve_character(name: str, server: str, region: str) -> CharacterRef | None:
+    """A character's WCL identity, or None when WCL has no such character (``char_id``).
+
+    Cached for everyone for a day; an unknown name is remembered briefly, so a mistyped
+    name asked again costs no WCL request.
+    """
+
+    async def load() -> CharacterRef | None:
+        variables = {"name": name.strip(), "server": server_slug(server), "region": region.strip().upper()}
+        data = await wcl_client.get_async_client().query(CHARACTER_REF, variables)
+        char = ((data.get("data") or {}).get("characterData") or {}).get("character")
+        return _character_ref_from(char, name, server, region) if char else None
+
+    return await get_or_load(CacheFamily.CHAR_ID, keys.char_id(region, server, name), CharacterRef, load)
+
+
+async def resolve_characters(chars: Sequence[tuple[str, str, str]]) -> list[CharacterRef | None]:
+    """:func:`resolve_character` for several (name, server, region); unknown ones in ONE request."""
+
+    async def load(missing: list[int]) -> list[CharacterRef | None]:
+        variables: dict[str, Any] = {}
+        for j, i in enumerate(missing):
+            name, server, region = chars[i]
+            variables.update({f"n{j}": name.strip(), f"s{j}": server_slug(server), f"r{j}": region.strip().upper()})
+        data = await wcl_client.get_async_client().query(character_refs_query(len(missing)), variables)
+        nodes = ((data.get("data") or {}).get("characterData")) or {}
+        return [
+            _character_ref_from(nodes[f"c{j}"], *chars[i]) if nodes.get(f"c{j}") else None
+            for j, i in enumerate(missing)
+        ]
+
+    return await get_many_or_load(
+        CacheFamily.CHAR_ID, [keys.char_id(r, s, n) for n, s, r in chars], CharacterRef, load
+    )
+
+
+async def _character_rankings(
+    name: str, server: str, region: str, scope: str, field_call: str, var_decls: str,
+    variables: dict[str, Any], key_for: Any, force_refresh: bool,
+) -> tuple[CharacterRankings, str | None] | dict[str, Any]:
+    """Shared body of the two character-ranking tools: resolve, then a cached lookup by id.
+
+    Returns (rankings, refresh outcome) — the outcome is "done", "skipped_recent" or None when
+    no refresh was asked — or the error dict the tool should return.
+    """
+    not_found = {"status": "error", "error_message": f"Character '{name}-{server}' ({region}) not found."}
+    try:
+        char = await resolve_character(name, server, region)
+        if char is None:
+            return not_found
+        refresh = None
+        if force_refresh:  # shared entry: one forced refresh per user per character per minute
+            refresh = "done" if await try_claim_refresh(get_refresh_actor(), char.id) else "skipped_recent"
+        query = (
+            f"query Char{scope.title()}($id: Int!{var_decls}) {{ characterData {{ "
+            f"character(id: $id) {{ name {field_call} }} }} }}"
+        )
+
+        async def load() -> CharacterRankings | None:
+            data = await wcl_client.get_async_client().query(query, {"id": char.id, **variables})
+            found = ((data.get("data") or {}).get("characterData") or {}).get("character")
+            if not found:
+                return None
+            field = "zoneRankings" if scope == "zone" else "encounterRankings"
+            return CharacterRankings(name=found.get("name") or char.name, scope=scope, rankings=found.get(field))
+
+        ranked = await get_or_load(
+            CacheFamily.CHAR_OVERVIEW, key_for(char.id), CharacterRankings, load,
+            force_refresh=refresh == "done",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
+    return (ranked, refresh) if ranked is not None else not_found
+
+
+def _with_refresh(result: dict[str, Any], refresh: str | None) -> dict[str, Any]:
+    if refresh is not None:
+        result["refresh"] = refresh
+    return result
 
 
 async def get_character_zone_rankings(
-    name: str, server: str, region: str, zone_id: int = 0, metric: str = "dps", difficulty: int = 0
+    name: str, server: str, region: str, zone_id: int = 0, metric: str = "dps", difficulty: int = 0,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     """Get one player's parse percentiles across a whole raid zone.
 
@@ -532,42 +728,39 @@ async def get_character_zone_rankings(
         zone_id (int): Raid zone id (0 = current/default zone).
         metric (str): 'dps', 'hps', etc.
         difficulty (int): Difficulty id (0 = default, e.g. 4=Heroic, 5=Mythic).
+        force_refresh (bool): True only when the user explicitly asks to refresh or check
+            again; bypasses the cached copy (at most once a minute per character).
 
     Returns:
-        dict: {"status": "success", "zoneRankings": {...}} or an error.
+        dict: {"status": "success", "zoneRankings": {...}} or an error. With
+            force_refresh, "refresh" is "done" or "skipped_recent" (refreshed moments ago).
     """
     if metric not in METRICS:
         return {"status": "error", "error_message": f"Bad metric '{metric}'.", "valid": METRICS}
     # metric is inlined as a validated enum literal because zoneRankings and
     # encounterRankings expect different metric enum types.
-    query = f"""
-    query CharZone($name: String!, $server: String!, $region: String!,
-                   $zoneID: Int, $difficulty: Int) {{
-      characterData {{ character(name: $name, serverSlug: $server, serverRegion: $region) {{
-        name classID
-        zoneRankings(zoneID: $zoneID, metric: {metric}, difficulty: $difficulty)
-      }} }}
-    }}
-    """.strip()
-    variables = {
-        "name": name, "server": _server_slug(server), "region": region.upper(),
-        "zoneID": zone_id or None, "difficulty": difficulty or None,
-    }
-    try:
-        data = await wcl_client.get_async_client().query(query, variables)
-    except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
-    char = ((data.get("data") or {}).get("characterData") or {}).get("character")
-    if not char:
-        return {"status": "error", "error_message": f"Character '{name}-{server}' ({region}) not found."}
+    ranked = await _character_rankings(
+        name, server, region, "zone",
+        f"zoneRankings(zoneID: $zoneID, metric: {metric}, difficulty: $difficulty)",
+        ", $zoneID: Int, $difficulty: Int",
+        {"zoneID": zone_id or None, "difficulty": difficulty or None},
+        lambda cid: keys.char_zone(cid, zone_id, metric, difficulty),
+        force_refresh,
+    )
+    if isinstance(ranked, dict):
+        return ranked
+    ranked, refresh = ranked
     return with_envelope(
-        {"status": "success", "name": char.get("name"), "zoneRankings": await _acap(char.get("zoneRankings"))},
+        _with_refresh(
+            {"status": "success", "name": ranked.name, "zoneRankings": await _acap(ranked.rankings)}, refresh
+        ),
         Provenance(metric=metric, difficulty=difficulty or None),
     )
 
 
 async def get_character_encounter_rankings(
-    name: str, server: str, region: str, encounter_id: int, metric: str = "dps", difficulty: int = 0
+    name: str, server: str, region: str, encounter_id: int, metric: str = "dps", difficulty: int = 0,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     """Get one player's parse history on a single boss encounter.
 
@@ -578,34 +771,31 @@ async def get_character_encounter_rankings(
         encounter_id (int): The boss encounter id.
         metric (str): 'dps', 'hps', etc.
         difficulty (int): Difficulty id (0 = default).
+        force_refresh (bool): True only when the user explicitly asks to refresh or check
+            again; bypasses the cached copy (at most once a minute per character).
 
     Returns:
-        dict: {"status": "success", "encounterRankings": {...}} or an error.
+        dict: {"status": "success", "encounterRankings": {...}} or an error. With
+            force_refresh, "refresh" is "done" or "skipped_recent" (refreshed moments ago).
     """
     if metric not in METRICS:
         return {"status": "error", "error_message": f"Bad metric '{metric}'.", "valid": METRICS}
-    query = f"""
-    query CharEnc($name: String!, $server: String!, $region: String!,
-                  $encounterID: Int!, $difficulty: Int) {{
-      characterData {{ character(name: $name, serverSlug: $server, serverRegion: $region) {{
-        name classID
-        encounterRankings(encounterID: $encounterID, metric: {metric}, difficulty: $difficulty)
-      }} }}
-    }}
-    """.strip()
-    variables = {
-        "name": name, "server": _server_slug(server), "region": region.upper(),
-        "encounterID": encounter_id, "difficulty": difficulty or None,
-    }
-    try:
-        data = await wcl_client.get_async_client().query(query, variables)
-    except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
-    char = ((data.get("data") or {}).get("characterData") or {}).get("character")
-    if not char:
-        return {"status": "error", "error_message": f"Character '{name}-{server}' ({region}) not found."}
+    ranked = await _character_rankings(
+        name, server, region, "encounter",
+        f"encounterRankings(encounterID: $encounterID, metric: {metric}, difficulty: $difficulty)",
+        ", $encounterID: Int!, $difficulty: Int",
+        {"encounterID": encounter_id, "difficulty": difficulty or None},
+        lambda cid: keys.char_enc(cid, encounter_id, metric, difficulty),
+        force_refresh,
+    )
+    if isinstance(ranked, dict):
+        return ranked
+    ranked, refresh = ranked
     return with_envelope(
-        {"status": "success", "name": char.get("name"), "encounterRankings": await _acap(char.get("encounterRankings"))},
+        _with_refresh(
+            {"status": "success", "name": ranked.name, "encounterRankings": await _acap(ranked.rankings)},
+            refresh,
+        ),
         Provenance(encounter_id=encounter_id, metric=metric, difficulty=difficulty or None),
     )
 

@@ -17,7 +17,6 @@ import pytest
 
 from backend.tests.wcl_fakes import mock_async_client
 from wcl_agent import wcl_client
-from wcl_agent.cache import get_cache
 from wcl_agent.report_tools import get_report_events, get_report_table
 
 pytestmark = pytest.mark.perf
@@ -31,7 +30,7 @@ BIG = {"data": {"reportData": {"report": {"table": {"data": {"entries": _ROWS}},
 
 async def test_loop_lag_while_four_turns_pull_large_payloads(monkeypatch):
     """4 turns, each looping over 1.3 MB lookups with realistic WCL latency (0.2-0.6 s),
-    nothing cached so every call parses. The startup heap is frozen as the backend does."""
+    nothing cached (feature 014: the client never caches) so every call parses. The startup heap is frozen as the backend does."""
     body = json.dumps(BIG).encode()
     assert len(body) > 1_000_000
 
@@ -41,8 +40,6 @@ async def test_loop_lag_while_four_turns_pull_large_payloads(monkeypatch):
 
     client = mock_async_client(handler)
     monkeypatch.setattr(wcl_client, "get_async_client", lambda: client)
-    get_cache().clear()
-    monkeypatch.setattr(get_cache(), "maxbytes", 0)  # nothing cached: every call parses
     gc.collect()
     gc.freeze()  # as backend.app.main does after startup
 

@@ -234,3 +234,31 @@ def test_flatten_report_rankings_defaults_and_empty():
     )
     assert rows[0].population == "rankings" and rows[0].timeframe == "historical"
     assert rows[0].duration_s is None and rows[0].encounter_id is None
+
+
+async def test_leaderboard_pages_after_the_first_are_fetched_together(monkeypatch):
+    """PERF-005: pages 2..N run concurrently; pages past the end are dropped."""
+    import asyncio
+
+    from backend.tests.wcl_fakes import install
+    from wcl_agent.tools import _fetch_rankings
+
+    inflight = peak = 0
+
+    async def responder(query, variables):
+        nonlocal inflight, peak
+        inflight += 1
+        peak = max(peak, inflight)
+        await asyncio.sleep(0.02)
+        inflight -= 1
+        page = variables["page"]
+        more = page < 3  # the board ends on page 3
+        rankings = [{"amount": page}] if page <= 3 else []
+        return {"data": {"worldData": {"encounter": {"characterRankings": {
+            "page": page, "hasMorePages": more, "rankings": rankings}}}}}
+
+    install(monkeypatch, responder)
+    sel = {"encounterID": 1, "difficultyID": 5, "partition": None}
+    entries, more = await _fetch_rankings(sel, "dps", None, None, 5)
+    assert [e["amount"] for e in entries] == [1, 2, 3] and more is False
+    assert peak >= 2  # pages 2..5 overlapped

@@ -5,8 +5,9 @@ result (each up to ~60 kB), so the prompt grows with every turn. Before each req
 agent's before-model callback replaces large tool results from turns older than the most
 recent ``WCL_CONTEXT_KEEP_TURNS`` (default 2: the current and the previous turn) with a
 compact stub. The stub keeps what the evidence rules rely on — ``status``, ``provenance``,
-``completeness`` — plus short top-level fields, and says the full data can be fetched again
-(WCL lookups are cached, so that is usually free).
+``completeness`` — plus short top-level fields, and says the full data can be fetched again.
+Since feature 014 only character and report-summary lookups are cached, so the note tells
+the model a re-fetch usually costs a new Warcraft Logs request.
 
 Only the request is changed. ADK's request contents are shallow copies whose nested
 objects are shared with the stored session events, so trimming builds new ``Content`` and
@@ -33,8 +34,8 @@ _PREVIEW_CHARS = 600
 _MAX_SCALAR_CHARS = 200
 _KEPT_KEYS = ("status", "error_message", "provenance", "completeness")
 ELIDED_NOTE = (
-    "Full result from an earlier turn omitted to save context. Call the tool again if you "
-    "need its detail; lookups are cached."
+    "Full result from an earlier turn omitted to save context. Use the preview if it answers "
+    "the question; calling the tool again costs a new Warcraft Logs request."
 )
 
 

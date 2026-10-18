@@ -16,7 +16,8 @@ from google.adk.tools import ToolContext
 
 from .constants import CLASS_SPECS, METRICS, normalize_class_name
 from .provenance import Completeness, Provenance, with_envelope
-from .queries import ENCOUNTER_RANKINGS, MENU_DISCOVERY
+from .menu import load_world_zones
+from .queries import ENCOUNTER_RANKINGS
 from . import wcl_client
 from .aio import gather_settled, unwrap
 
@@ -51,9 +52,8 @@ async def _fetch_rankings(
     lower-ranked parses remain beyond what was fetched.
     """
     client = wcl_client.get_async_client()
-    entries: list[dict[str, Any]] = []
-    has_more = False
-    for page in range(1, num_pages + 1):
+
+    async def fetch(page: int) -> dict[str, Any]:
         variables = {
             "encounterID": sel["encounterID"],
             "difficulty": sel["difficultyID"],
@@ -64,11 +64,21 @@ async def _fetch_rankings(
             "partition": sel["partition"],
         }
         data = await client.query(ENCOUNTER_RANKINGS, variables)
-        blob = data["data"]["worldData"]["encounter"]["characterRankings"] or {}
-        entries.extend(blob.get("rankings", []))
-        has_more = bool(blob.get("hasMorePages"))
-        if not has_more:
-            break
+        return data["data"]["worldData"]["encounter"]["characterRankings"] or {}
+
+    # Page 1 says whether more exist; pages 2..N are then fetched together rather than one
+    # after another (PERF-005, 2026-10-18). Pages past the board's end are dropped.
+    first = await fetch(1)
+    entries: list[dict[str, Any]] = list(first.get("rankings", []))
+    has_more = bool(first.get("hasMorePages"))
+    if has_more and num_pages > 1:
+        rest = await gather_settled(*(fetch(p) for p in range(2, num_pages + 1)))
+        for result in rest:
+            blob = unwrap(result)
+            entries.extend(blob.get("rankings", []))
+            has_more = bool(blob.get("hasMorePages"))
+            if not has_more:
+                break
     return entries, has_more
 
 
@@ -174,7 +184,7 @@ async def find_encounter(query: str) -> dict[str, Any]:
             zone_id, difficulties:[{id,name}], default_partition} ]} or an error.
     """
     try:
-        data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
+        zones = await load_world_zones()
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
 
@@ -184,7 +194,7 @@ async def find_encounter(query: str) -> dict[str, Any]:
     q = q.strip()
 
     matches: list[dict[str, Any]] = []
-    for zone in data["data"]["worldData"]["zones"]:
+    for zone in zones:
         for enc in zone.get("encounters") or []:
             name = enc["name"].lower().replace("'", "")
             if q and q in name:

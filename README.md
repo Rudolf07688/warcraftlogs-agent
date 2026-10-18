@@ -279,7 +279,6 @@ The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours wor
 | `WCL_MAX_CONCURRENCY` | `6` | WCL requests in flight at once, process-wide |
 | `WCL_CONTEXT_KEEP_TURNS` | `2` | turns (current included) whose tool results reach the model in full |
 | `WCL_CONTEXT_STUB_MIN_CHARS` | `1500` | older tool results larger than this are stubbed |
-| `WCL_CACHE_MAX_BYTES` | `134217728` | byte bound on the WCL result cache (128 MB) |
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `10` / `20` / `10` | DB connection pool (shared with the ADK session store) |
 | `WCL_GUIDE_MAX_CONCURRENCY` | `2` | background guide / guild-summary generations at once |
 
@@ -291,9 +290,9 @@ kills. Click one to start the bounded raid overview in a new chat; it also becom
 tracked raid in the sidebar.
 
 - Raids are **stored** per workspace. Opening the page shows them at once and, at most every
-  15 minutes (or when your own characters change), refreshes in the background: one
-  Warcraft Logs request lists every character's recent reports, then details are fetched
-  only for new or still-live raids. A raid whose log ended over 2 h ago is final and never
+  15 minutes (or when your own characters change), refreshes in the background: each
+  character's recent reports are listed (from the shared cache when fresh, feature 014),
+  then details are fetched only for new or still-live raids. A raid whose log ended over 2 h ago is final and never
   fetched again.
 - The refresh claim is a database row, so only one instance refreshes a workspace at a
   time, and a refresh that never finishes is reclaimed after 5 minutes. **Retry** appears
@@ -327,6 +326,42 @@ docker build --target prod -t wcl-frontend frontend/
 
 Or set `target: prod` and `ports: ["8080:80"]` on the `frontend` service in
 `docker-compose.yml`.
+
+### Shared Warcraft Logs cache in Redis (feature 014)
+
+Warcraft Logs data is public, so it is cached **once for everyone** in Redis instead of per
+process (this replaces the old in-process cache and its per-tenant scoping). Seven key
+families, each with its own freshness, reached only through `wcl_agent.cache.get_or_load`:
+
+| Family | What | Fresh for |
+|---|---|---|
+| `char_id` | name/realm/region → character id ("not found" remembered 60 s) | 24 h |
+| `char_overview` | a character's zone / boss rankings | 10 min |
+| `char_reports` | a character's recent reports (welcome page) | 5 min |
+| `report_summary` | a report's fights, kills/wipes and roster | 24 h (2 min while still being logged) |
+| `report_player` | one player's table in a report | 24 h (2 min while still being logged) |
+| `oauth_token` | the WCL API token | until 60 s before it expires |
+| `world_zones` | zones, encounters, difficulties (patch label, encounter lookup) | 1 h |
+
+Leaderboards, whole-raid tables, events, graphs and `run_wcl_graphql` are **not** cached.
+
+- **Redis is optional.** Without `REDIS_URL` (or with `WCL_CACHE_ENABLED=false`) every
+  lookup goes to Warcraft Logs; if Redis goes down mid-run, lookups fall back to Warcraft
+  Logs within 250 ms and stop trying Redis for 5 s.
+- Ten simultaneous misses on one entry make **one** Warcraft Logs request (a short lock).
+- "Check again" / "refresh" makes the agent bypass the cache for that character — at most
+  once a minute per user and character.
+- Every real request logs its API cost: `wcl_cost op=… points_this_hour=… delta=…`.
+  Rate-limit (429) and server errors are retried twice with backoff.
+- **Stats** (platform admins): `GET /api/admin/cache-stats?days=7` — per-family hits, misses,
+  hit rate, average load time and an `ok` / `review` status, plus Redis memory and evictions.
+
+`docker compose up` starts Redis (`redis:8-alpine`, 256 MB, LRU eviction, no persistence)
+and points the backend at it. Settings (all optional, defaults in `.env.example`):
+`REDIS_URL`, `WCL_CACHE_ENABLED`, `WCL_CACHE_TTL_<FAMILY>`, `WCL_CACHE_UNFINISHED_TTL`,
+`WCL_CACHE_JITTER`, `WCL_CACHE_LOCK_MS`, `WCL_CACHE_LOCK_WAIT_MS`, `WCL_NEG_CACHE_TTL`,
+`WCL_METRICS_RETENTION_DAYS`. Design: [documentation/redis_cache_spec.md](documentation/redis_cache_spec.md);
+spec: `specs/014-redis-wcl-cache/`.
 
 ## Quick checks
 

@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from wcl_agent.cache import set_scope_prefix as set_cache_scope
+from wcl_agent.cache import set_refresh_actor
 
 from wcl_agent.model_retry import ModelRateLimited
 
@@ -242,9 +242,9 @@ async def _handle_turn(
         await apply_tenant_scope(session, identity)  # re-scope after commit
         await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_msg.seq))
 
-        # Scope the WCL result cache to this tenant (FR-019) for everything this turn fetches,
-        # including current_patch() while building the preamble below (PERF-009).
-        set_cache_scope(str(tenant_id))
+        # WCL data is public and cached for every tenant alike (feature 014 supersedes
+        # FR-019); only the forced-refresh limit is per user, for this turn (US4).
+        set_refresh_actor(str(identity.user_id))
         preamble = await _build_turn_preamble(session, tenant_id)
 
     # Stream the agent response, accumulating tokens into the final content.

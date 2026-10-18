@@ -576,3 +576,32 @@ class ActionMessageOut(BaseModel):
     """Generic message envelope for actions with no resource body (e.g. reset-password)."""
 
     message: str
+
+
+# --- Shared WCL cache statistics (feature 014, contracts/cache-stats-api.md) ---------------
+
+
+class FamilyStats(BaseModel):
+    hits: int
+    misses: int
+    neg_hits: int
+    lock_timeouts: int
+    errors: int
+    redis_errors: int
+    hit_rate: float | None  # None when the window saw no lookups
+    avg_load_ms: float | None
+    status: Literal["ok", "review", "no_data"]
+
+
+class RedisHealth(BaseModel):
+    keyspace_hit_rate: float | None
+    evicted_keys: int
+    used_memory_mb: float
+
+
+class CacheStats(BaseModel):
+    window_days: int
+    enabled: bool  # WCL_CACHE_ENABLED and REDIS_URL set
+    available: bool  # Redis reachable right now
+    families: dict[str, FamilyStats]  # all seven families, always present
+    redis: RedisHealth | None

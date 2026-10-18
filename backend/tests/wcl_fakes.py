@@ -32,9 +32,7 @@ class FakeClient:
         self._responder = responder
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def query(
-        self, query: str, variables: dict[str, Any] | None = None, *, cache: bool = True
-    ) -> dict[str, Any]:
+    async def query(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
         variables = variables or {}
         self.calls.append((query, variables))
         result = self._responder(query, variables)

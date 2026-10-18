@@ -3,8 +3,9 @@
 OAuth2 client credentials + GraphQL over ``httpx.AsyncClient`` (feature 013, QA PERF-201).
 One :class:`AsyncWCLClient` per event loop (:func:`get_async_client`), so asyncio primitives
 and HTTP pools are never shared across loops. Every query goes through
-:meth:`AsyncWCLClient.query`, the single chokepoint for caching, single-flight, timeouts and
-the lane limiter (contracts/wcl-async-client.md G1-G9).
+:meth:`AsyncWCLClient.query`, the single chokepoint for single-flight, timeouts, retries,
+API-cost logging and the lane limiter (contracts/wcl-async-client.md G1-G9). Result caching
+moved out in feature 014: callers use the typed key families in :mod:`wcl_agent.cache`.
 
 Lanes (PERF-211): background work (guides, the patch lookup, recent raids) runs inside
 :func:`background_lane` and may hold at most ``WCL_BACKGROUND_CONCURRENCY`` of the
@@ -14,19 +15,25 @@ Lanes (PERF-211): background work (guides, the patch lookup, recent raids) runs 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import random
+import re
+import time
 import weakref
 from collections import deque
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
 
-from .cache import _env_int, cache_key, get_cache, is_rate_limit, ttl_for
+from .cache import CacheFamily, _env_int, aclose_redis, get_or_load, keys
+from .cache_models import OAuthToken
 
 logger = logging.getLogger(__name__)
 
@@ -160,15 +167,133 @@ def _query_timeout() -> int:
     return max(1, _env_int("WCL_QUERY_TIMEOUT_S", DEFAULT_QUERY_TIMEOUT_S))
 
 
-# Bearer tokens by client id, shared across loops: a token is valid ~1 year, so a fresh
-# loop (CLI, tests) reuses it instead of authenticating again.
-_tokens: dict[str, str] = {}
+# Bearer tokens by client id, shared across loops: a fresh loop (CLI, tests) reuses one
+# instead of authenticating again. Feature 014: the memo sits in front of the shared
+# ``oauth_token`` cache entry, so a Redis outage never means an OAuth request per WCL call.
+_tokens: dict[str, OAuthToken] = {}
+_TOKEN_MARGIN_S = 60  # renew this long before expiry
+_DEFAULT_TOKEN_LIFETIME_S = 3600  # if the token response has no expires_in
+
+# feature 014 (FR-017): retry rate-limited and server errors, with backoff.
+MAX_RETRIES = 2
+_MAX_RETRY_AFTER_S = 10.0
+
+# feature 014 (FR-016): every request also asks for the hour's points budget, under an
+# alias that can't clash with a caller's own rateLimitData selection. The latest snapshot
+# answers rate-limit checks without a request of their own (PERF-009).
+_COST_ALIAS = "_cost"
+_COST_FIELD = f"{_COST_ALIAS}: rateLimitData {{ limitPerHour pointsSpentThisHour pointsResetIn }}"
+_COST_RE = re.compile(rb'"_cost"\s*:\s*(\{[^{}]*\})')
+_OP_RE = re.compile(r"^\s*query\s+(\w+)")
+_last_points: float | None = None
+BUDGET_MAX_AGE_S = 30.0  # a snapshot younger than this answers acheck_rate_limit
+
+
+@dataclass(frozen=True)
+class _Budget:
+    limit_per_hour: float
+    spent_this_hour: float
+    reset_in_s: float
+    seen_at: float  # time.monotonic()
+
+
+_budget: _Budget | None = None
+# After a 429 whose Retry-After is longer than we'd wait, every call fails fast until then
+# instead of retrying into a budget that is already spent (PERF-004).
+_blocked_until = 0.0
+
+
+def _with_cost(query: str) -> str:
+    """Insert the cost field into the operation's top-level selection set.
+
+    Queries with fragments are left alone: their first top-level ``{`` may not be the
+    operation's.
+    """
+    if "fragment " in query:
+        return query
+    depth = 0
+    for i, ch in enumerate(query):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "{" and depth == 0:
+            return f"{query[: i + 1]} {_COST_FIELD}{query[i + 1 :]}"
+    return query
+
+
+def _log_cost(query: str, content: bytes) -> None:
+    """Log the points this hour and the change since this process last saw them, and keep
+    the budget snapshot."""
+    global _last_points, _budget
+    match = _COST_RE.search(content)
+    if match is None:
+        return
+    try:
+        cost = json.loads(match.group(1))
+        points = float(cost["pointsSpentThisHour"])
+    except (ValueError, KeyError, TypeError):
+        return
+    try:
+        _budget = _Budget(
+            float(cost["limitPerHour"]), points, float(cost["pointsResetIn"]), time.monotonic()
+        )
+    except (KeyError, TypeError, ValueError):
+        pass
+    last = _last_points
+    _last_points = points
+    # Points reset hourly: a drop means a new hour, so the whole value is this request's.
+    delta = "-" if last is None else f"{points - last if points >= last else points:g}"
+    op = _OP_RE.match(query)
+    logger.info(
+        "wcl_cost op=%s points_this_hour=%g delta=%s", op.group(1) if op else "anonymous", points, delta
+    )
+
+
+def _retryable(status: int) -> bool:
+    return status == 429 or status >= 500
+
+
+def _retry_after(resp: httpx.Response) -> float | None:
+    after = resp.headers.get("Retry-After")
+    if not after:
+        return None
+    try:
+        return max(0.0, float(after))
+    except ValueError:
+        return None
+
+
+def _retry_delay(resp: httpx.Response, attempt: int) -> float:
+    after = _retry_after(resp)
+    if after is not None:
+        return min(_MAX_RETRY_AFTER_S, after)
+    return 0.5 * 2**attempt + random.uniform(0, 0.25)
+
+
+def _blocked_response() -> httpx.Response:
+    """A synthetic 429 for calls made while the budget is known to be spent."""
+    wait = max(1, int(_blocked_until - time.monotonic()))
+    return httpx.Response(
+        429, headers={"Retry-After": str(wait)}, request=httpx.Request("POST", GRAPHQL_URL)
+    )
+
+
+def _flight_key(query: str, variables: dict[str, Any]) -> str:
+    """Identity of a request for single-flight: the full query plus all variables, sorted."""
+    serialized = json.dumps(variables, sort_keys=True, default=str)
+    return hashlib.sha256(f"{query} {serialized}".encode()).hexdigest()
 
 
 async def _loads(content: bytes) -> dict[str, Any]:
     if len(content) > _PARSE_OFF_LOOP_BYTES:
-        return await asyncio.to_thread(json.loads, content)
-    return json.loads(content)
+        payload = await asyncio.to_thread(json.loads, content)
+    else:
+        payload = json.loads(content)
+    data = payload.get("data")
+    if isinstance(data, dict):
+        data.pop(_COST_ALIAS, None)  # injected by _with_cost; callers never see it
+    return payload
 
 
 class AsyncWCLClient:
@@ -186,27 +311,25 @@ class AsyncWCLClient:
             timeout=HTTP_TIMEOUT, limits=httpx.Limits(max_connections=16), transport=transport
         )
         self._auth_lock = asyncio.Lock()
-        # Single-flight (G3/G4): cache key -> [shared fetch task, waiter count].
+        # Single-flight (G3/G4): request key -> [shared fetch task, waiter count].
         self._flights: dict[str, list[Any]] = {}
 
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def query(
-        self, query: str, variables: dict[str, Any] | None = None, *, cache: bool = True
-    ) -> dict[str, Any]:
-        """Run a GraphQL query and return its payload (a fresh dict, owned by the caller)."""
+    async def query(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Run a GraphQL query and return its payload (a fresh dict, owned by the caller).
+
+        Results are not cached here (feature 014): callers that want caching go through
+        ``cache.get_or_load`` with a typed key family. Identical concurrent queries still
+        share one request (single-flight).
+        """
         variables = variables or {}
-        if not cache or is_rate_limit(query):
-            return await _loads(await self._fetch(query, variables, None))
-        key = cache_key(query, variables)
+        key = _flight_key(query, variables)
         while True:
-            hit = get_cache().get(key)
-            if hit is not None:
-                return await _loads(hit)
             flight = self._flights.get(key)
             if flight is None:
-                task = asyncio.ensure_future(self._fetch(query, variables, key))
+                task = asyncio.ensure_future(self._fetch(query, variables))
                 flight = self._flights[key] = [task, 0]
                 task.add_done_callback(lambda t, k=key: self._drop_flight(k, t))
             task = flight[0]
@@ -231,22 +354,51 @@ class AsyncWCLClient:
         if flight is not None and flight[0] is task:
             del self._flights[key]
 
+    def _memo(self, stale: str | None) -> str | None:
+        memo = _tokens.get(self.client_id)
+        if memo is None or memo.access_token == stale:
+            return None
+        if memo.expires_at - _TOKEN_MARGIN_S <= time.time():
+            return None
+        return memo.access_token
+
     async def _token(self, stale: str | None = None) -> str:
-        token = _tokens.get(self.client_id)
-        if token and token != stale:
+        """Bearer token: process memo, then the shared ``oauth_token`` entry, then OAuth.
+
+        ``stale`` is a token WCL just rejected (401): it is never returned again, and the
+        shared entry is reloaded instead of read.
+        """
+        token = self._memo(stale)
+        if token:
             return token
         async with self._auth_lock:  # concurrent first calls fetch one token
-            token = _tokens.get(self.client_id)
-            if token and token != stale:
+            token = self._memo(stale)
+            if token:
                 return token
-            resp = await self._http.post(
-                TOKEN_URL,
-                data={"grant_type": "client_credentials"},
-                auth=(self.client_id, self.client_secret),
+            loaded = await get_or_load(
+                CacheFamily.OAUTH_TOKEN,
+                keys.OAUTH_TOKEN,
+                OAuthToken,
+                self._request_token,
+                ttl=lambda t: int(t.expires_at - time.time()) - _TOKEN_MARGIN_S,
+                force_refresh=stale is not None,
             )
-            resp.raise_for_status()
-            token = _tokens[self.client_id] = resp.json()["access_token"]
-            return token
+            if loaded is None or loaded.access_token == stale:
+                # Another process's copy was the rejected one: fetch our own.
+                loaded = await self._request_token()
+            _tokens[self.client_id] = loaded
+            return loaded.access_token
+
+    async def _request_token(self) -> OAuthToken:
+        resp = await self._http.post(
+            TOKEN_URL,
+            data={"grant_type": "client_credentials"},
+            auth=(self.client_id, self.client_secret),
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        lifetime = int(body.get("expires_in") or _DEFAULT_TOKEN_LIFETIME_S)
+        return OAuthToken(access_token=body["access_token"], expires_at=time.time() + lifetime)
 
     async def _post(self, query: str, variables: dict[str, Any], token: str) -> httpx.Response:
         return await self._http.post(
@@ -255,24 +407,43 @@ class AsyncWCLClient:
             headers={"Authorization": f"Bearer {token}"},
         )
 
-    async def _fetch(self, query: str, variables: dict[str, Any], key: str | None) -> bytes:
-        async with asyncio.timeout(_query_timeout()):
-            token = await self._token()
+    async def _fetch(self, query: str, variables: dict[str, Any]) -> bytes:
+        global _blocked_until
+        if time.monotonic() < _blocked_until:
+            _blocked_response().raise_for_status()
+        sent = _with_cost(query)
+        async with asyncio.timeout(_query_timeout()) as deadline:
             limiter = _limiter()
-            async with limiter.slot() as lane:
-                logger.debug("wcl inflight=%d lane=%s", limiter.in_use, lane)
-                resp = await self._post(query, variables, token)
-                if resp.status_code == 401:  # expired or revoked: refresh once and retry
-                    token = await self._token(stale=token)
-                    resp = await self._post(query, variables, token)
+            for attempt in range(MAX_RETRIES + 1):
+                token = await self._token()
+                async with limiter.slot() as lane:
+                    logger.debug("wcl inflight=%d lane=%s", limiter.in_use, lane)
+                    resp = await self._post(sent, variables, token)
+                    if resp.status_code == 401:  # expired or revoked: refresh once and retry
+                        token = await self._token(stale=token)
+                        resp = await self._post(sent, variables, token)
+                if not _retryable(resp.status_code) or attempt == MAX_RETRIES:
+                    break
+                after = _retry_after(resp)
+                if resp.status_code == 429 and after is not None and after > _MAX_RETRY_AFTER_S:
+                    # The hourly budget is spent: retrying can't succeed, so fail now and let
+                    # every other call fail fast until it resets (PERF-004).
+                    _blocked_until = time.monotonic() + after
+                    break
+                # The backoff waits outside the slot, so it never holds back other queries.
+                delay = _retry_delay(resp, attempt)
+                when = deadline.when()
+                if when is not None and delay >= when - asyncio.get_running_loop().time():
+                    break  # the wait would outlast the query timeout: fail with this response
+                logger.info("wcl %d, retry %d/%d in %.1fs", resp.status_code, attempt + 1, MAX_RETRIES, delay)
+                await asyncio.sleep(delay)
         resp.raise_for_status()
         content = resp.content
+        _log_cost(query, content)
         if b'"errors"' in content:
             payload = json.loads(content)
             if "errors" in payload:
                 raise RuntimeError(json.dumps(payload["errors"], indent=2))
-        if key is not None:
-            get_cache().set(key, content, ttl_for(query, variables), size=len(content))
         return content
 
 
@@ -301,17 +472,31 @@ def get_async_client() -> AsyncWCLClient:
 
 
 async def aclose_clients() -> None:
-    """Close every loop's client and HTTP pool (FastAPI lifespan shutdown)."""
+    """Close every loop's client and HTTP pool, and the cache's Redis clients (lifespan shutdown)."""
     clients = list(_clients.items())
     _clients.clear()
     for _loop, client in clients:
         await client.aclose()
+    await aclose_redis()
 
 
 RATE_LIMIT_QUERY = "{ rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn } }"
 
 
-async def acheck_rate_limit() -> dict[str, Any]:
-    """Return the current API points budget (limit / spent / reset seconds)."""
+async def acheck_rate_limit(max_age_s: float = BUDGET_MAX_AGE_S) -> dict[str, Any]:
+    """Return the current API points budget (limit / spent / reset seconds).
+
+    Every WCL response carries the budget, so a snapshot younger than ``max_age_s`` answers
+    without a request of its own (PERF-009).
+    """
+    budget = _budget
+    if budget is not None:
+        age = time.monotonic() - budget.seen_at
+        if age <= max_age_s:
+            return {
+                "limitPerHour": budget.limit_per_hour,
+                "pointsSpentThisHour": budget.spent_this_hour,
+                "pointsResetIn": max(0, round(budget.reset_in_s - age)),
+            }
     data = await get_async_client().query(RATE_LIMIT_QUERY)
     return data["data"]["rateLimitData"]

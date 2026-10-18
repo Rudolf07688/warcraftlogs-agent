@@ -48,7 +48,7 @@ async def test_rate_limited_turn_sends_frames_and_persists_no_partial(
         raise ModelRateLimited(5, 40.0, RuntimeError("429 RESOURCE_EXHAUSTED"))
 
     monkeypatch.setattr(ws_mod, "stream_response", rate_limited_stream)
-    monkeypatch.setattr(ws_mod, "set_cache_scope", lambda *_: None)
+    monkeypatch.setattr(ws_mod, "set_refresh_actor", lambda *_: None)
     sock = _FakeSocket()
     turn = ChatTurn(conversation_id=None, model="gemini-3.6-flash", content="How did we do?")
 
@@ -83,7 +83,7 @@ async def test_next_turn_after_rate_limit_is_processed_normally(as_user, patched
 
     monkeypatch.setattr(ws_mod, "stream_response", stream)
     monkeypatch.setattr(ws_mod, "generate_followups", no_suggestions)
-    monkeypatch.setattr(ws_mod, "set_cache_scope", lambda *_: None)
+    monkeypatch.setattr(ws_mod, "set_refresh_actor", lambda *_: None)
     identity = _identity(as_user)
 
     first = _FakeSocket()
@@ -111,7 +111,7 @@ async def test_other_errors_keep_agent_error_and_partial(as_user, patched_db, mo
         raise RuntimeError("vertex exploded")
 
     monkeypatch.setattr(ws_mod, "stream_response", broken)
-    monkeypatch.setattr(ws_mod, "set_cache_scope", lambda *_: None)
+    monkeypatch.setattr(ws_mod, "set_refresh_actor", lambda *_: None)
     sock = _FakeSocket()
     await ws_mod._handle_turn(sock, ChatTurn(model="gemini-3.6-flash", content="q"), _identity(as_user))
     assert sock.frames[-1]["code"] == "agent_error"

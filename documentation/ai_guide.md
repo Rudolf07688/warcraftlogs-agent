@@ -39,6 +39,7 @@ Agent: On Heroic Ula'tek this season, Marksmanship leads (median ~306k dps, p95 
 | Agent framework | **Google ADK** (`google-adk`, installed 2.10.0) | Docs: <https://adk.dev> |
 | LLM | **Gemini** (`gemini-3.6-flash`) via **Vertex AI** | Auth = gcloud **ADC**, global endpoint. |
 | Data source | **Warcraft Logs v2 GraphQL API** | OAuth2 client-credentials. |
+| Cache | **Redis** (`redis.asyncio`), optional | Shared WCL cache, feature 014 (§19). Tests use `fakeredis`. |
 | Analysis | **pandas** (3.x) | Percentile/quantile math + groupby. |
 | Packaging | hatchling; console script `wcl` | `uv run wcl` or activate venv then `wcl`. |
 | Frontend | **React** + **Tailwind CSS v4** + **shadcn/ui** | Build UI from shadcn registry items found via the shadcn MCP; hand-built only when none fits (constitution Principle VII). Generated files in `frontend/src/components/ui/`. |
@@ -348,11 +349,8 @@ Implemented in `specs/005-guild-context-artifacts/`. Summary for future agents:
   slot (remark-math + rehype-katex); KaTeX CSS imported in `main.tsx`. The PDF
   renders block `$$…$$` as matplotlib-mathtext images and unwraps inline math to
   italics (`services/pdf_report.py`). Currency like "$5" is never treated as math.
-- **WCL query cache** (`wcl_agent/cache.py`): an in-process TTL+LRU cache behind the
-  single `WCLClient.query` chokepoint — transparent to all tools, deep-copied on
-  read/write. Two tiers: report-scoped (~24h, `WCL_CACHE_TTL_REPORT_S`) vs
-  leaderboard/other (~1h, `WCL_CACHE_TTL_LEADERBOARD_S`); `rateLimitData` always
-  bypasses (zero cached budget).
+- **WCL query cache**: *superseded by feature 014* — the in-process cache behind
+  `query()` is gone; see §19 for the shared Redis cache.
 - **Per-message PDF**: `GET /api/conversations/{id}/messages/{message_id}/report.pdf`
   (`api/reports.py`) renders one agent reply + its originating question + that
   message's charts/graphs, excluding other messages.
@@ -366,8 +364,6 @@ New env vars (also in `.env.example`):
 
 ```
 WCL_GUIDE_MODEL=gemini-3.6-flash   # web-search-capable model for background guides
-WCL_CACHE_TTL_REPORT_S=86400       # report-scoped (immutable) cache TTL
-WCL_CACHE_TTL_LEADERBOARD_S=3600   # leaderboard/volatile cache TTL
 ```
 
 ## 13. Feature 006 — multi-tenancy (invite-only accounts & private workspaces)
@@ -395,8 +391,9 @@ Implemented in `specs/006-multi-tenancy/`. Summary for future agents:
   after a mid-handler commit. Every `repository.py` function takes keyword-only `tenant_id`;
   no row is fetched by id alone (foreign/absent → `None` → 404).
 - **WS** (`api/ws.py`): the handshake authenticates (cookie + Origin) before `accept()`,
-  re-validates each turn (mid-session disable takes effect), scopes captures + the WCL cache
-  key (`wcl_agent.cache.set_scope_prefix`) + ADK `user_id = str(tenant_id)`.
+  re-validates each turn (mid-session disable takes effect), scopes captures + ADK
+  `user_id = str(tenant_id)`. (The WCL cache key used to be tenant-scoped too; feature 014
+  made WCL data a shared, cross-tenant cache — see §19.)
 - **Founder bootstrap**: `backend/cli/bootstrap_admin.py` (no HTTP path) creates the first
   platform admin; it must run between `alembic upgrade 0002_auth_tenancy` and `upgrade head`
   (the `0003` backfill needs the founder). **`backend/cli/init_db.py` orchestrates the whole
@@ -569,9 +566,10 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
 - **Refresh** (`services/recent_raids.py`): `maybe_start_refresh` runs one conditional
   `UPDATE … RETURNING` claim (`repo.claim_refresh`; gate: not running or stale > 5 min, and
   never finished / > 15 min ago / own-character set changed / forced after a failure),
-  commits, then `background.spawn`s `run_recent_raid_refresh`. That run: one aliased
-  `recentReports` request (`cache=False`), upsert, then details for new or non-final raids
-  only, 10 per request. Final = log ended > 2 h before the fetch. Errors become short codes
+  commits, then `background.spawn`s `run_recent_raid_refresh`. That run: each own
+  character's `recentReports` (feature 014: `char_id` + `char_reports` families, run
+  concurrently), upsert, then details for new or non-final raids only, from the shared
+  `report_summary` entry, 10 at a time. Final = log ended > 2 h before the fetch. Errors become short codes
   (`wcl_unavailable`, `rate_limited`, `timeout`, `unknown`). All WCL calls are in
   `background_lane()`; no DB session is held across a WCL await.
 - **API**: `GET /api/recent-raids` never waits for WCL. `POST /api/recent-raids/refresh`
@@ -583,3 +581,42 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
   tab is hidden, gives up after 3 minutes).
 - **Tests**: the SQLite test engine is one shared connection, so `test_recent_raids.py`
   queues spawned refreshes and runs them in `drain()` instead of concurrently with requests.
+
+## 19. Feature 014 — shared Redis cache for Warcraft Logs data
+
+Implemented in `specs/014-redis-wcl-cache/` (design: `documentation/redis_cache_spec.md`).
+
+- **One way in**: `wcl_agent.cache.get_or_load(family, key, model, loader, ttl=, force_refresh=)`.
+  Values are Pydantic models from `wcl_agent/cache_models.py`; keys only from `cache.keys`
+  (never a user/tenant/conversation id — WCL data is public and shared by all tenants,
+  superseding feature 006 FR-019). `loader()` returning `None` = "not found", cached 60 s.
+- **Families**: `char_id`, `char_overview`, `char_reports`, `report_summary`,
+  `report_player`, `oauth_token`, `world_zones` (README table). Call sites:
+  `report_tools.resolve_character` / the two character-ranking tools /
+  `load_report_summary` (also behind `get_report_metadata` and recent-raid details) /
+  per-player `get_report_table`; `menu.load_world_zones` (patch, `find_encounter`, menu);
+  `recent_raids._character_reports`; `AsyncWCLClient._token` (process memo in front).
+  Adding an eighth family needs logged evidence (the `wcl_cost` lines).
+- **Behaviour**: TTL × U(1, 1.1) jitter (none on the token); `SET lock:{key} NX PX` so N
+  concurrent misses load once (losers poll ≤ 2 s, then load without writing:
+  `lock_timeout`); corrupt values are deleted and reloaded; any `RedisError` → loader
+  directly, `redis_error` counted (flushed later) and a 5 s per-loop circuit. One Redis
+  client per event loop (like the WCL client), closed by `aclose_clients()`.
+- **Client** (`wcl_client.py`): no result caching any more (single-flight stays); 429/5xx
+  retried twice with backoff + `Retry-After`; every query carries
+  `_cost: rateLimitData { pointsSpentThisHour }` (stripped before callers see it) and logs
+  `wcl_cost`.
+- **Metrics/stats**: `wcl:metrics:v1:{family}:{YYYYMMDD}` hashes (35 days);
+  `GET /api/admin/cache-stats?days=N` (`api/cache_stats.py`, platform admin) via
+  `cache.read_stats` / pure `cache.summarize`. INFO-less Redis → `redis: null`.
+- **Performance (QA 2026-10-18)**: `char_id` (1 h) and `world_zones` (5 min) are memoised
+  in-process in front of Redis; same-process lookups of one key share one load; outcomes are
+  counted in memory and flushed every 2 s; values > 256 KB decode off the loop;
+  `get_many_or_load` batches the recent-raids refresh (aliased queries, ~3 requests);
+  leaderboard pages 2..N run concurrently; a 429 with a long `Retry-After` fails fast and
+  blocks further calls until then; `acheck_rate_limit` answers from the budget every
+  response now carries (≤ 30 s old).
+- **Forced refresh**: `force_refresh=True` on the character tools; limited by
+  `chat:refresh:{user}:{char}` (60 s). `ws.py` sets the turn's user with `set_refresh_actor`.
+- **Tests**: Redis is off unless a test takes the `fake_redis` fixture (conftest); use
+  `DeadRedis` (test_wcl_cache.py) for outage paths.

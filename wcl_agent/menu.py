@@ -10,8 +10,25 @@ from __future__ import annotations
 
 from typing import Any
 
+from .cache import CacheFamily, get_or_load, keys
+from .cache_models import WorldZones
 from .queries import MENU_DISCOVERY
 from . import wcl_client
+
+
+async def load_world_zones() -> list[dict[str, Any]]:
+    """Every zone with its encounters, difficulties and partitions (``world_zones``, feature 014).
+
+    The one way code reads the zone list: the patch preamble runs on every chat turn, so this
+    is cached for everyone (1h by default).
+    """
+
+    async def load() -> WorldZones:
+        data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
+        return WorldZones(zones=((data.get("data") or {}).get("worldData") or {}).get("zones") or [])
+
+    zones = await get_or_load(CacheFamily.WORLD_ZONES, keys.WORLD_ZONES, WorldZones, load)
+    return zones.zones if zones is not None else []
 
 
 def _prompt_choice(title: str, options: list[str]) -> int:
@@ -44,8 +61,7 @@ async def select_encounter() -> dict[str, Any]:
     ``encounterName``, ``difficultyID``, ``difficultyName``, ``partition``.
     """
     print("Fetching Warcraft Logs zones...")
-    data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
-    zones: list[dict[str, Any]] = data["data"]["worldData"]["zones"]
+    zones = await load_world_zones()
 
     # Prefer current (non-frozen) raids, but keep a fallback so selection never
     # ends up empty.

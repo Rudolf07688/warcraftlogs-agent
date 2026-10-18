@@ -116,10 +116,24 @@ class Settings(BaseSettings):
     wcl_model_retry_budget_s: float = 90.0
     wcl_turn_round_cap: int = 6
 
-    # WCL query cache TTLs in seconds (US4). Report-scoped data is effectively immutable
-    # (~24h); leaderboard/ranking data is volatile (~1h).
-    wcl_cache_ttl_report_s: int = 86400
-    wcl_cache_ttl_leaderboard_s: int = 3600
+    # feature 014: shared Redis cache for WCL data (also read by wcl_agent.cache via
+    # os.getenv; documented here). No REDIS_URL, or WCL_CACHE_ENABLED=false, means no
+    # cache: every lookup goes straight to WCL. TTLs are per key family, in seconds; the
+    # OAuth token always follows its own expiry. See contracts/config-and-compose.md.
+    redis_url: str = ""
+    wcl_cache_enabled: bool = True
+    wcl_cache_ttl_char_id: int = 86400
+    wcl_cache_ttl_char_overview: int = 600
+    wcl_cache_ttl_char_reports: int = 300
+    wcl_cache_ttl_report_summary: int = 86400
+    wcl_cache_ttl_report_player: int = 86400
+    wcl_cache_ttl_world_zones: int = 3600
+    wcl_cache_unfinished_ttl: int = 120  # reports still being logged
+    wcl_cache_jitter: float = 0.10  # TTL × U(1, 1 + jitter)
+    wcl_cache_lock_ms: int = 90000  # loader lock lifetime; longer than the 75 s query timeout
+    wcl_cache_lock_wait_ms: int = 2000  # how long a lock loser polls for the winner's value
+    wcl_neg_cache_ttl: int = 60  # "character not found" marker
+    wcl_metrics_retention_days: int = 35
 
     # feature 013: WCL lanes and timeouts (also read by wcl_agent.wcl_client via os.getenv).
     # Background work (guides, patch lookup, recent raids) holds at most this many of the

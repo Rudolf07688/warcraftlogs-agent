@@ -87,3 +87,6 @@
   - Default is no filter - all characters - more general overview unless asked specifically in chat
     - e.g. "How did my mage do on ..."
       - Bonus premium goal: the ai is able to change the UI filter button (as if the user clicked the filters in the UI) when a user asks a targeted question.
+- Every single fetch must be stored in the db
+  - Over time we will have saved all relavent data, building up a massive database of information
+  - I want to structure the app so that 80% of questions don't require external api calls (fast)

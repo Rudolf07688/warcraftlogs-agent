@@ -10,18 +10,10 @@ import pytest
 
 from backend.tests.wcl_fakes import gql_response, mock_async_client
 from wcl_agent import wcl_client
-from wcl_agent.cache import get_cache
 from wcl_agent.wcl_client import LaneLimiter, _limiter, background_lane
 
 REPORT_Q = "query($code: String) { reportData { report(code: $code) { title } } }"
 RATE_Q = "{ rateLimitData { limitPerHour } }"
-
-
-@pytest.fixture(autouse=True)
-def _clean_cache():
-    get_cache().clear()
-    yield
-    get_cache().clear()
 
 
 def counting(payload_for=lambda n: {"data": {"value": n}}):
@@ -34,26 +26,33 @@ def counting(payload_for=lambda n: {"data": {"value": n}}):
     return calls, handler
 
 
-async def test_cache_hits_are_equal_but_distinct_objects():
+async def test_the_client_never_caches_results():
+    """Feature 014: caching lives in typed key families, not in the client (W1)."""
     calls, handler = counting()
     client = mock_async_client(handler)
-    first = await client.query(REPORT_Q, {"code": "ABC"})
-    first["data"]["value"] = "MUTATED"
-    second = await client.query(REPORT_Q, {"code": "ABC"})
-    third = await client.query(REPORT_Q, {"code": "ABC"})
-    assert calls["n"] == 1
-    assert second == {"data": {"value": 1}} and second is not third
+    await client.query(RATE_Q)
+    await client.query(RATE_Q)
+    first = await client.query(REPORT_Q, {"code": "X"})
+    second = await client.query(REPORT_Q, {"code": "X"})
+    assert calls["n"] == 4
+    assert first == {"data": {"value": 3}} and second == {"data": {"value": 4}}
     await client.aclose()
 
 
-async def test_rate_limit_and_cache_false_always_reach_the_network():
-    calls, handler = counting()
-    client = mock_async_client(handler)
-    await client.query(RATE_Q)
-    await client.query(RATE_Q)
-    await client.query(REPORT_Q, {"code": "X"}, cache=False)
-    await client.query(REPORT_Q, {"code": "X"}, cache=False)
-    assert calls["n"] == 4
+async def test_a_failed_fetch_fails_all_its_waiters_and_the_next_call_refetches():
+    calls = {"n": 0}
+
+    async def flaky(request):
+        calls["n"] += 1
+        await asyncio.sleep(0.1)
+        if calls["n"] == 1:
+            return httpx.Response(400, content=b"bad")
+        return gql_response({"data": {"value": calls["n"]}})
+
+    client = mock_async_client(flaky)
+    results = await asyncio.gather(*(client.query(REPORT_Q, {"code": "FL"}) for _ in range(3)), return_exceptions=True)
+    assert calls["n"] == 1 and all(isinstance(r, httpx.HTTPStatusError) for r in results)
+    assert await client.query(REPORT_Q, {"code": "FL"}) == {"data": {"value": 2}}
     await client.aclose()
 
 
@@ -196,7 +195,7 @@ async def test_big_payloads_parse_correctly():
     client = mock_async_client(lambda r: gql_response(big))
     assert len(json.dumps(big)) > 2_000_000
     assert await client.query(REPORT_Q, {"code": "BIG"}) == big
-    assert await client.query(REPORT_Q, {"code": "BIG"}) == big  # from the bytes cache
+    assert await client.query(REPORT_Q, {"code": "BIG"}) == big  # a fresh parse each time
     await client.aclose()
 
 
@@ -214,7 +213,8 @@ async def test_requests_respect_the_concurrency_cap(monkeypatch):
 
     async def run():  # a fresh loop builds its limiter from the patched env
         client = mock_async_client(handler)
-        await asyncio.gather(*(client.query(RATE_Q) for _ in range(8)))
+        # distinct requests: identical ones would share one fetch (single-flight)
+        await asyncio.gather(*(client.query(REPORT_Q, {"code": f"C{i}"}) for i in range(8)))
         await client.aclose()
 
     await asyncio.to_thread(asyncio.run, run())
@@ -298,3 +298,206 @@ async def test_background_lane_context_reaches_the_limiter():
     assert lane == "background"
     limiter.release(lane)
     assert await limiter.acquire() == "interactive"
+
+
+# --- feature 014: retries, API cost logging, shared token ------------------------
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    """Record backoff delays instead of sleeping them."""
+    delays: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(delay, *args, **kwargs):
+        delays.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr(wcl_client.asyncio, "sleep", fake_sleep)
+    return delays
+
+
+async def test_429_is_retried_then_succeeds(no_sleep):
+    statuses = iter([429, 200])
+
+    def handler(request):
+        status = next(statuses)
+        return gql_response({"data": {"ok": status}}, status=status)
+
+    c = mock_async_client(handler)
+    assert await c.query("query A { x }") == {"data": {"ok": 200}}
+    assert len(no_sleep) == 1
+
+
+async def test_5xx_gives_up_after_two_retries(no_sleep):
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(503, content=b"down")
+
+    c = mock_async_client(handler)
+    with pytest.raises(httpx.HTTPStatusError):
+        await c.query("query A { x }")
+    assert calls["n"] == 3  # first try + MAX_RETRIES
+    assert no_sleep[1] > no_sleep[0]  # exponential backoff
+
+
+async def test_retry_after_is_honoured(no_sleep):
+    statuses = iter([(429, "3"), (503, None), (200, None)])
+
+    def handler(request):
+        status, after = next(statuses)
+        headers = {"Retry-After": after} if after else {}
+        return httpx.Response(status, content=b'{"data": {}}', headers=headers)
+
+    await mock_async_client(handler).query("query A { x }")
+    assert no_sleep[0] == 3.0 and len(no_sleep) == 2
+
+
+async def test_spent_budget_fails_fast_and_blocks_later_calls(no_sleep):
+    """PERF-004: a Retry-After longer than we'd wait means the hour's budget is spent."""
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(429, content=b"spent", headers={"Retry-After": "1800"})
+
+    client = mock_async_client(handler)
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.query("query A { x }")
+    assert calls["n"] == 1 and no_sleep == []  # no retries into a spent budget
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        await client.query("query B { y }")
+    assert calls["n"] == 1  # blocked without a request
+    assert err.value.response.status_code == 429
+
+
+async def test_backoff_longer_than_the_deadline_is_not_waited(no_sleep, monkeypatch):
+    monkeypatch.setenv("WCL_QUERY_TIMEOUT_S", "2")
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(429, content=b"slow down", headers={"Retry-After": "5"})
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await mock_async_client(handler).query("query A { x }")
+    assert calls["n"] == 1 and no_sleep == []
+
+
+async def test_400_is_not_retried():
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(400, content=b"bad")
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await mock_async_client(handler).query("query A { x }")
+    assert calls["n"] == 1
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "query ReportQ($code: String!) { reportData { report(code: $code) { title } } }",
+        "{ worldData { zones { id } } }",
+    ],
+)
+async def test_cost_field_is_injected_logged_and_stripped(query, caplog):
+    sent: list[str] = []
+
+    def handler(request):
+        sent.append(json.loads(request.content)["query"])
+        cost = {"limitPerHour": 3600, "pointsSpentThisHour": 12.5, "pointsResetIn": 900}
+        return gql_response({"data": {"_cost": cost, "real": 1}})
+
+    wcl_client._last_points = 10.0
+    with caplog.at_level("INFO", logger="wcl_agent.wcl_client"):
+        result = await mock_async_client(handler).query(query)
+    assert "_cost: rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn }" in sent[0]
+    assert result == {"data": {"real": 1}}  # never visible to callers
+    line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("wcl_cost"))
+    assert "points_this_hour=12.5" in line and "delta=2.5" in line
+    assert ("op=ReportQ" in line) == query.startswith("query ReportQ")
+
+
+def test_queries_with_fragments_are_not_rewritten():
+    q = "fragment F on Report { title } query Q { reportData { report(code: \"x\") { ...F } } }"
+    assert wcl_client._with_cost(q) == q
+
+
+async def test_token_is_shared_through_the_cache(fake_redis):
+    token_posts = {"n": 0}
+
+    async def route(request):
+        if str(request.url) == wcl_client.TOKEN_URL:
+            token_posts["n"] += 1
+            return httpx.Response(200, json={"access_token": "shared", "expires_in": 3600})
+        return gql_response({"data": {}})
+
+    wcl_client._tokens.pop("shared-client", None)
+    first = wcl_client.AsyncWCLClient("shared-client", "s", transport=httpx.MockTransport(route))
+    await first.query("query A { x }")
+    wcl_client._tokens.pop("shared-client", None)  # a fresh process: empty memo
+    second = wcl_client.AsyncWCLClient("shared-client", "s", transport=httpx.MockTransport(route))
+    await second.query("query A { x }")
+    assert token_posts["n"] == 1
+    assert 0 < await fake_redis.ttl("wcl:v1:oauth:token") <= 3600 - 60
+
+
+async def test_401_reloads_the_shared_token(fake_redis):
+    issued = iter(["old", "new"])
+    seen: list[str] = []
+
+    async def route(request):
+        if str(request.url) == wcl_client.TOKEN_URL:
+            return httpx.Response(200, json={"access_token": next(issued), "expires_in": 3600})
+        seen.append(request.headers["Authorization"])
+        if request.headers["Authorization"] == "Bearer old":
+            return httpx.Response(401)
+        return gql_response({"data": {}})
+
+    wcl_client._tokens.pop("rotating", None)
+    c = wcl_client.AsyncWCLClient("rotating", "s", transport=httpx.MockTransport(route))
+    await c.query("query A { x }")
+    assert seen == ["Bearer old", "Bearer new"]
+    assert b"new" in await fake_redis.get("wcl:v1:oauth:token")
+
+
+async def test_expired_memo_is_renewed():
+    issued = iter(["a", "b"])
+
+    async def route(request):
+        if str(request.url) == wcl_client.TOKEN_URL:
+            return httpx.Response(200, json={"access_token": next(issued), "expires_in": 30})
+        return gql_response({"data": {}})
+
+    wcl_client._tokens.pop("short", None)
+    c = wcl_client.AsyncWCLClient("short", "s", transport=httpx.MockTransport(route))
+    assert await c._token() == "a"
+    assert await c._token() == "b"  # 30s lifetime is inside the 60s renewal margin
+
+
+async def test_rate_limit_check_reuses_the_last_response_budget():
+    """PERF-009: every response carries the budget, so a fresh snapshot needs no request."""
+    sent: list[str] = []
+
+    def handler(request):
+        sent.append(json.loads(request.content)["query"])
+        cost = {"limitPerHour": 3600, "pointsSpentThisHour": 100, "pointsResetIn": 900}
+        return gql_response({"data": {"_cost": cost, "rateLimitData": {
+            "limitPerHour": 3600, "pointsSpentThisHour": 100, "pointsResetIn": 900}}})
+
+    client = mock_async_client(handler)
+    wcl_client._clients[asyncio.get_running_loop()] = client
+    try:
+        await client.query("query A { x }")
+        assert await wcl_client.acheck_rate_limit() == {
+            "limitPerHour": 3600.0, "pointsSpentThisHour": 100.0, "pointsResetIn": 900}
+        assert len(sent) == 1  # answered from the snapshot
+        await wcl_client.acheck_rate_limit(max_age_s=0)  # too old: asks WCL
+        assert len(sent) == 2
+    finally:
+        wcl_client._clients.pop(asyncio.get_running_loop(), None)

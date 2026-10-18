@@ -34,7 +34,7 @@ async def acheck_rate_limit() -> dict   # the sync check_rate_limit() is removed
 | # | Guarantee | Requirement |
 |---|---|---|
 | G1 | No blocking I/O. Every network call is an `await` on `httpx.AsyncClient`. | FR-018 |
-| G2 | **Cache**: a hit returns `json.loads(stored_bytes)`, a fresh object on every call (payloads over 256 KB are parsed with `asyncio.to_thread`). A miss stores `resp.content` (bytes) with the existing `ttl_for` rules. `rateLimitData` and `cache=False` skip the cache. | FR-022 |
+| G2 | ~~**Cache**~~ — *withdrawn by feature 014*: the client no longer caches results; see `specs/014-redis-wcl-cache/contracts/cache-client.md`. Original text: **Cache**: a hit returns `json.loads(stored_bytes)`, a fresh object on every call (payloads over 256 KB are parsed with `asyncio.to_thread`). A miss stores `resp.content` (bytes) with the existing `ttl_for` rules. `rateLimitData` and `cache=False` skip the cache. | FR-022 |
 | G3 | **Single-flight**: concurrent identical cache keys share one fetch task. Each caller `await`s `asyncio.shield(task)`. | FR-022 |
 | G4 | **Cancellation**: a cancelled caller stops waiting at once. The shared task is cancelled only when its last waiter has gone, which frees its slot. | FR-019, SC-007 |
 | G5 | **Timeout**: each fetch is bounded by `asyncio.timeout(WCL_QUERY_TIMEOUT_S=75)` around the slot plus the request. HTTP timeouts are `connect=5`, `read=60`. A timeout raises `TimeoutError` to every waiter and frees the slot. | FR-021 |

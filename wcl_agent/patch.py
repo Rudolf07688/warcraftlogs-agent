@@ -1,7 +1,7 @@
 """Current game patch and guide freshness (feature 009, US5 — research R8).
 
 ``current_patch()`` reads the default partition name of the newest non-frozen raid
-zone that offers Heroic difficulty (e.g. ``"12.1"``) through the cached WCL client.
+zone that offers Heroic difficulty (e.g. ``"12.1"``) from the shared zone list.
 Mythic+ zones have no Heroic difficulty and season-named partitions, so they are
 excluded naturally. ``guide_freshness`` compares a guide's stated patch with it.
 """
@@ -12,9 +12,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from . import wcl_client
-from .menu import _default_partition
-from .queries import MENU_DISCOVERY
+from .menu import _default_partition, load_world_zones
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +46,7 @@ def current_patch_from_zones(zones: list[dict[str, Any]]) -> str | None:
 async def current_patch() -> str | None:
     """Name of the current raid partition (the live patch), or None when unknown."""
     try:
-        data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
-        zones = ((data.get("data") or {}).get("worldData") or {}).get("zones") or []
-        return current_patch_from_zones(zones)
+        return current_patch_from_zones(await load_world_zones())
     except Exception as exc:  # noqa: BLE001 - freshness degrades to "unknown"
         logger.warning("current_patch lookup failed: %s", exc)
         return None
@@ -66,9 +62,7 @@ def raid_zone_ids_from(zones: list[dict[str, Any]]) -> set[int]:
 
 async def raid_zone_ids() -> set[int]:
     """Ids of every raid zone, from the cached zone list (feature 013)."""
-    data = await wcl_client.get_async_client().query(MENU_DISCOVERY)
-    zones = ((data.get("data") or {}).get("worldData") or {}).get("zones") or []
-    return raid_zone_ids_from(zones)
+    return raid_zone_ids_from(await load_world_zones())
 
 
 def parse_patch(value: str | None) -> tuple[int, int] | None:

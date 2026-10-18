@@ -20,6 +20,7 @@ from wcl_agent.wcl_client import aclose_clients
 from .agent_runner import set_session_service
 from .api import (
     admin_users,
+    cache_stats,
     auth,
     conversations,
     greeting,
@@ -206,6 +207,7 @@ install_error_handlers(app)
 
 app.include_router(auth.router)
 app.include_router(admin_users.router)
+app.include_router(cache_stats.router)
 app.include_router(models.router)
 app.include_router(conversations.router)
 app.include_router(profile.router)

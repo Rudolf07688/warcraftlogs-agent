@@ -2,10 +2,12 @@
 
 A refresh has two Warcraft Logs steps (research R1, R2), both in the background lane:
 
-1. **List**: one aliased ``recentReports`` request for every own character, uncached so new
-   logs show up. Reports are merged by code across characters.
-2. **Details**: only for raid reports that are new or not final yet, batched 10 per request.
-   A report whose log ended over 2 h before the fetch is final and never fetched again.
+1. **List**: every own character's ``recentReports`` in one aliased request (shared cache
+   ``char_reports``, 5 min, so new logs still show up promptly). Reports are merged by code
+   across characters.
+2. **Details**: only for raid reports that are new or not final yet, from the shared
+   ``report_summary`` entries, the uncached ones 10 per request. A report whose log ended
+   over 2 h before the fetch is final and never fetched again.
 
 Coordination across instances is the database claim (``repo.claim_refresh``); no DB session
 is held across a WCL await.
@@ -19,15 +21,18 @@ import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from wcl_agent.cache import CacheFamily, get_many_or_load, keys
+from wcl_agent.cache_models import CharacterReports, RecentReport, ReportSummary
+from wcl_agent.normalize import FINAL_AFTER
 from wcl_agent.patch import raid_zone_ids
-from wcl_agent.queries import recent_reports_query, report_details_query
-from wcl_agent.report_tools import _server_slug
+from wcl_agent.queries import character_reports_query
+from wcl_agent.report_tools import load_report_summaries, resolve_characters
 from wcl_agent.wcl_client import background_lane, get_async_client
 
 from ..config import settings
@@ -40,7 +45,6 @@ from .recent_raid_types import ListedReport, ReportDetails
 logger = logging.getLogger(__name__)
 
 RAID_DIFFICULTIES = frozenset({1, 3, 4, 5})  # LFR, Normal, Heroic, Mythic
-FINAL_AFTER = timedelta(hours=2)
 DETAIL_BATCH = 10
 
 
@@ -54,94 +58,117 @@ def _ms(value: Any) -> datetime:
     return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
 
 
+def _reports_from(node: dict[str, Any] | None) -> CharacterReports | None:
+    if node is None:
+        return None
+    items = ((node.get("recentReports") or {}).get("data")) or []
+    return CharacterReports(
+        reports=[
+            RecentReport(
+                code=item["code"],
+                title=item.get("title") or item["code"],
+                start_time_ms=item["startTime"],
+                end_time_ms=item["endTime"],
+                zone_id=(item.get("zone") or {}).get("id"),
+                zone_name=(item.get("zone") or {}).get("name"),
+                guild_name=(item.get("guild") or {}).get("name"),
+            )
+            for item in items
+            if item.get("code") and item.get("startTime") is not None and item.get("endTime") is not None
+        ]
+    )
+
+
 async def fetch_listed_reports(
     chars: Sequence[UserCharacter], raid_zones: set[int]
 ) -> list[ListedReport]:
-    """The list step: every own character's recent reports in one request, merged by code."""
+    """The list step: every own character's recent reports, merged by code.
+
+    Batched (PERF-001): the characters' ids come from one request at most (usually cached),
+    and every uncached report list from one more. A WCL failure fails the step unchanged
+    (the caller maps it to an error).
+    """
     if not chars:
         return []
-    variables: dict[str, Any] = {"limit": settings.recent_raids_limit}
-    for i, c in enumerate(chars):
-        variables[f"n{i}"] = c.name
-        variables[f"s{i}"] = _server_slug(c.server)
-        variables[f"r{i}"] = c.region.upper()
-    data = await get_async_client().query(recent_reports_query(len(chars)), variables, cache=False)
-    by_alias = ((data.get("data") or {}).get("characterData")) or {}
+    refs = await resolve_characters([(c.name, c.server, c.region) for c in chars])
+    known = [(c, ref) for c, ref in zip(chars, refs) if ref is not None]
+    if not known:
+        return []
+    limit = settings.recent_raids_limit
 
+    async def load(missing: list[int]) -> list[CharacterReports | None]:
+        variables: dict[str, Any] = {f"id{j}": known[i][1].id for j, i in enumerate(missing)}
+        variables["limit"] = limit
+        data = await get_async_client().query(character_reports_query(len(missing)), variables)
+        nodes = ((data.get("data") or {}).get("characterData")) or {}
+        return [_reports_from(nodes.get(f"c{j}")) for j in range(len(missing))]
+
+    lists = await get_many_or_load(
+        CacheFamily.CHAR_REPORTS,
+        [keys.char_reports(ref.id, limit) for _, ref in known],
+        CharacterReports,
+        load,
+    )
     merged: dict[str, ListedReport] = {}
-    for i, c in enumerate(chars):
-        node = by_alias.get(f"c{i}")  # null: character not found on WCL
-        items = ((node or {}).get("recentReports") or {}).get("data") or []
-        for item in items:
-            code = item.get("code")
-            if not code or item.get("startTime") is None or item.get("endTime") is None:
-                continue
-            prev = merged.get(code)
+    for (c, _), listed in zip(known, lists):
+        for item in listed.reports if listed is not None else []:
+            prev = merged.get(item.code)
             if prev is not None:
-                merged[code] = replace(prev, character_ids=prev.character_ids | {c.id})
+                merged[item.code] = replace(prev, character_ids=prev.character_ids | {c.id})
                 continue
-            zone = item.get("zone") or {}
-            zone_id = zone.get("id")
-            merged[code] = ListedReport(
-                code=code,
-                title=item.get("title") or code,
-                zone_id=zone_id,
-                zone_name=zone.get("name"),
-                guild_name=(item.get("guild") or {}).get("name"),
-                started_at=_ms(item["startTime"]),
-                ended_at=_ms(item["endTime"]),
+            merged[item.code] = ListedReport(
+                code=item.code,
+                title=item.title,
+                zone_id=item.zone_id,
+                zone_name=item.zone_name,
+                guild_name=item.guild_name,
+                started_at=_ms(item.start_time_ms),
+                ended_at=_ms(item.end_time_ms),
                 character_ids=frozenset({c.id}),
-                is_raid=zone_id in raid_zones,
+                is_raid=item.zone_id in raid_zones,
             )
     return list(merged.values())
 
 
-def _details_from(report: dict[str, Any], raid_zones: set[int]) -> ReportDetails:
-    fights = [
-        f
-        for f in report.get("fights") or []
-        if f.get("encounterID") and f.get("difficulty") in RAID_DIFFICULTIES
-    ]
-    pulled = {f["encounterID"] for f in fights}
-    killed = {f["encounterID"] for f in fights if f.get("kill") is True}
-    zone_id = (report.get("zone") or {}).get("id")
+def _details_from(summary: ReportSummary, raid_zones: set[int]) -> ReportDetails:
+    fights = [f for f in summary.fights if f.encounter_id and f.difficulty in RAID_DIFFICULTIES]
+    pulled = {f.encounter_id for f in fights}
+    killed = {f.encounter_id for f in fights if f.kill is True}
     return ReportDetails(
-        ended_at=_ms(report["endTime"]),
-        difficulty=max((f["difficulty"] for f in fights), default=None),
+        ended_at=_ms(summary.end_time_ms),
+        difficulty=max((f.difficulty for f in fights if f.difficulty is not None), default=None),
         bosses_pulled=len(pulled),
         bosses_killed=len(killed),
-        is_raid=zone_id in raid_zones,
+        is_raid=summary.zone_id in raid_zones,
     )
 
 
 async def fetch_report_details(
     codes: Sequence[str], raid_zones: set[int]
 ) -> dict[str, ReportDetails]:
-    """The detail step for up to ``DETAIL_BATCH`` codes in one (cached) request.
+    """The detail step for up to ``DETAIL_BATCH`` codes: uncached ones in one request.
 
-    A report WCL can't return (deleted, made private) is skipped and stays non-final.
+    A report WCL can't return (deleted, made private) is skipped and stays non-final; it
+    fails the batched GraphQL request, so the batch then falls back to one request each.
+    An HTTP-level failure fails the step unchanged.
     """
     if not codes:
         return {}
-    variables = {f"c{i}": code for i, code in enumerate(codes)}
     try:
-        data = await get_async_client().query(report_details_query(len(codes)), variables)
+        summaries = await load_report_summaries(codes)
     except RuntimeError:
         if len(codes) == 1:
             logger.info("recent raids: report %s unavailable, skipped", codes[0])
             return {}
-        # One bad report fails the whole batch's GraphQL: fall back to one request each.
         out: dict[str, ReportDetails] = {}
         for code in codes:
             out.update(await fetch_report_details([code], raid_zones))
         return out
-    reports = ((data.get("data") or {}).get("reportData")) or {}
-    out = {}
-    for i, code in enumerate(codes):
-        report = reports.get(f"r{i}")
-        if report and report.get("endTime") is not None:
-            out[code] = _details_from(report, raid_zones)
-    return out
+    return {
+        code: _details_from(summary, raid_zones)
+        for code, summary in zip(codes, summaries)
+        if summary is not None
+    }
 
 
 async def _refresh(tenant_id: uuid.UUID, chars: Sequence[UserCharacter]) -> None:

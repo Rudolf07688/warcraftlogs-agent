@@ -1,4 +1,4 @@
-# Local full-stack: db + backend (FastAPI) + frontend (Vite).
+# Local full-stack: db + redis (shared WCL cache) + backend (FastAPI) + frontend (Vite).
 # Secrets/config come from the root .env (env_file). Bring up with:  docker compose up --build
 services:
   db:
@@ -22,6 +22,28 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:8-alpine
+    # Disposable WCL cache (feature 014): bounded memory, LRU eviction, no persistence —
+    # recreating the container just empties the cache.
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: .
@@ -34,10 +56,14 @@ services:
       DATABASE_OWNER_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       # Vertex AI via the mounted Application Default Credentials (read-only).
       GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
+      # Shared WCL cache (feature 014); overrides the host-side REDIS_URL from .env.
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ${HOME}/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"

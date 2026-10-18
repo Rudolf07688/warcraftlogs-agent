@@ -1,4 +1,4 @@
-"""Async WCL tools: concurrency, cancellation and tenant scope (PERF-001/002, feature 013)."""
+"""Async WCL tools: concurrency, cancellation and per-turn context (PERF-001/002, feature 013)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from wcl_agent import wcl_client
 from wcl_agent.agent import TOOLS, build_agent
 from wcl_agent.aio import gather_settled, unwrap
 from wcl_agent.benchmark import compare_player_to_cohort
-from wcl_agent.cache import TTLCache, get_cache, get_scope_prefix, set_scope_prefix
+from wcl_agent.cache import get_refresh_actor, set_refresh_actor
 from wcl_agent.report_tools import get_report_table
 from wcl_agent.tools import compare_specs
 from wcl_agent.wcl_client import _limiter
@@ -42,7 +42,7 @@ async def test_tool_calls_overlap_on_the_loop_without_threads(monkeypatch):
     seen: list[tuple[int, str]] = []
 
     async def slow(query, variables):
-        seen.append((threading.get_ident(), get_scope_prefix()))
+        seen.append((threading.get_ident(), get_refresh_actor()))
         await asyncio.sleep(0.3)
         return {"data": {"reportData": {"report": {"table": {"data": {}}}}}}
 
@@ -56,7 +56,7 @@ async def test_tool_calls_overlap_on_the_loop_without_threads(monkeypatch):
             ticks += 1
 
     async def turn():
-        set_scope_prefix("tenant-a")
+        set_refresh_actor("user-a")
         return await asyncio.gather(
             get_report_table("ABC", "Casts", fight_id=1),
             get_report_table("ABC", "Deaths", fight_id=1),
@@ -72,7 +72,7 @@ async def test_tool_calls_overlap_on_the_loop_without_threads(monkeypatch):
     assert elapsed < 0.5  # overlapped, not 0.6 s back to back
     assert ticks >= 5  # the loop kept running while the lookups waited
     assert all(tid == loop_thread for tid, _ in seen)  # no worker threads
-    assert all(scope == "tenant-a" for _, scope in seen)  # the cache scope travels with await
+    assert all(actor == "user-a" for _, actor in seen)  # the turn's context travels with await
 
 
 # --- gather_settled ------------------------------------------------------------------
@@ -122,31 +122,6 @@ async def test_cancelling_gather_settled_cancels_every_child():
     assert cancelled == 3
 
 
-# --- thread safety --------------------------------------------------------------
-
-
-def test_ttl_cache_survives_concurrent_access():
-    cache = TTLCache(maxsize=8)
-    errors: list[BaseException] = []
-
-    def hammer(n: int):
-        try:
-            for i in range(2000):
-                key = f"k{(n + i) % 20}"
-                cache.set(key, f"v{i}".encode(), ttl=60)  # values are raw bytes
-                cache.get(key)
-        except BaseException as exc:  # noqa: BLE001
-            errors.append(exc)
-
-    threads = [threading.Thread(target=hammer, args=(n,)) for n in range(16)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    assert errors == []
-    assert len(cache) <= 8
-
-
 # The WCL concurrency cap is covered against the async client's lane limiter in
 # test_wcl_async.py (feature 013).
 
@@ -154,19 +129,19 @@ def test_ttl_cache_survives_concurrent_access():
 # --- PERF-002: compare_player_to_cohort fans out ---------------------------------
 
 
-async def test_compare_player_to_cohort_fans_out_and_keeps_tenant_scope(monkeypatch):
+async def test_compare_player_to_cohort_fans_out_and_keeps_turn_context(monkeypatch):
     base = make_responder()
     scopes: list[str] = []
 
     async def slow(query, variables):
-        scopes.append(get_scope_prefix())
+        scopes.append(get_refresh_actor())
         await asyncio.sleep(0.1)
         return base(query, variables)
 
     fake = install(monkeypatch, slow)
 
     async def run():
-        set_scope_prefix("tenant-b")  # in this task's context only
+        set_refresh_actor("user-b")  # in this task's context only
         return await compare_player_to_cohort(PLAYER_CODE, FIGHT, "Hrslkks")
 
     start = time.monotonic()
@@ -177,7 +152,7 @@ async def test_compare_player_to_cohort_fans_out_and_keeps_tenant_scope(monkeypa
     serial = 0.1 * len(fake.calls)  # context + budget + 3 pages + casts + deaths + 5 members
     assert len(fake.calls) >= 10
     assert elapsed < serial * 0.6, (elapsed, serial)
-    assert scopes and all(s == "tenant-b" for s in scopes)  # no cross-tenant cache keys
+    assert scopes and all(s == "user-b" for s in scopes)  # the fan-out keeps the turn's context
 
 
 # --- SC-007: an abandoned turn stops its lookups --------------------------------
@@ -193,7 +168,6 @@ async def test_cancelling_a_tool_stops_its_lookup_and_frees_the_slot(monkeypatch
 
     client = mock_async_client(never)
     monkeypatch.setattr(wcl_client, "get_async_client", lambda: client)
-    get_cache().clear()
 
     task = asyncio.create_task(get_report_table("HANG", "Casts", fight_id=1))
     await asyncio.wait_for(started.wait(), 5)

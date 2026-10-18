@@ -59,7 +59,7 @@ async def test_no_transaction_is_open_while_the_model_streams(as_user, patched_d
     monkeypatch.setattr(ws_mod, "tenant_scope", counting_scope)
     monkeypatch.setattr(ws_mod, "stream_response", stream)
     monkeypatch.setattr(ws_mod, "generate_followups", suggest)
-    monkeypatch.setattr(ws_mod, "set_cache_scope", lambda *_: None)
+    monkeypatch.setattr(ws_mod, "set_refresh_actor", lambda *_: None)
     sock = _FakeSocket()
 
     task = await ws_mod._handle_turn(
@@ -163,7 +163,7 @@ async def test_next_turn_cancels_pending_suggestions(as_user, patched_db, monkey
 
     monkeypatch.setattr(ws_mod, "stream_response", stream)
     monkeypatch.setattr(ws_mod, "generate_followups", slow_suggestions)
-    monkeypatch.setattr(ws_mod, "set_cache_scope", lambda *_: None)
+    monkeypatch.setattr(ws_mod, "set_refresh_actor", lambda *_: None)
     raw = _FakeSocket()
     sock = ws_mod._TurnSocket(raw)
     identity = _identity(as_user.tenant_id)

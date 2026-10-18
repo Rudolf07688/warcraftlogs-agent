@@ -16,7 +16,6 @@ from backend.app.db.models import RecentRaid, RecentRaidRefresh
 from backend.app.services import background
 from backend.app.services import recent_raids as svc
 from wcl_agent import wcl_client
-from wcl_agent.cache import get_cache
 
 RAID_ZONE, MPLUS_ZONE = 53, 99
 HOUR_MS = 3_600_000
@@ -47,40 +46,57 @@ def report(code: str, *, zone: int = RAID_ZONE, ended_hours_ago: float = 20) -> 
 
 
 FIGHTS = [
-    {"encounterID": 1, "kill": False, "difficulty": 4},
-    {"encounterID": 1, "kill": True, "difficulty": 4},
-    {"encounterID": 2, "kill": False, "difficulty": 5},
-    {"encounterID": 3, "kill": True, "difficulty": 108},  # not a raid difficulty: ignored
+    {"id": 1, "name": "A", "encounterID": 1, "kill": False, "difficulty": 4},
+    {"id": 2, "name": "A", "encounterID": 1, "kill": True, "difficulty": 4},
+    {"id": 3, "name": "B", "encounterID": 2, "kill": False, "difficulty": 5},
+    {"id": 4, "name": "C", "encounterID": 3, "kill": True, "difficulty": 108},  # not a raid difficulty
+    {"id": 5, "name": "Trash", "encounterID": 0, "kill": None, "difficulty": None},  # trash: ignored
 ]
 
 
 class FakeWCL:
-    """Answers the zone list, the aliased recentReports and the aliased report details."""
+    """Answers the zone list and the batched character, recentReports and report-summary
+    queries (aliased c0, c1, … / r0, r1, …)."""
 
     def __init__(self, reports_by_name: dict[str, list[dict[str, Any]]]):
         self.reports_by_name = reports_by_name
-        self.calls: list[tuple[str, dict[str, Any], bool]] = []
+        self.calls: list[tuple[str, dict[str, Any]]] = []
         self.gate: asyncio.Event | None = None
         self.fail: BaseException | None = None
+        self.ids: dict[int, str] = {}
 
     def count(self, needle: str) -> int:
-        return sum(1 for q, _, _ in self.calls if needle in q)
+        return sum(1 for q, _ in self.calls if needle in q)
 
-    async def query(self, query: str, variables: dict | None = None, *, cache: bool = True):
+    async def query(self, query: str, variables: dict | None = None):
         variables = variables or {}
-        self.calls.append((query, variables, cache))
+        self.calls.append((query, variables))
         if self.gate is not None and "recentReports" in query:
             await self.gate.wait()
         if self.fail is not None and "worldData" not in query:
             raise self.fail
         if "worldData" in query:
             return ZONES
-        if "recentReports" in query:
+        if "query ResolveCharacters" in query:
             out = {}
             i = 0
             while f"n{i}" in variables:
-                items = self.reports_by_name.get(variables[f"n{i}"])
-                out[f"c{i}"] = None if items is None else {"recentReports": {"data": items}}
+                name = variables[f"n{i}"]
+                if name in self.reports_by_name:
+                    char_id = 1000 + sorted(self.reports_by_name).index(name)
+                    self.ids[char_id] = name
+                    server = {"slug": variables[f"s{i}"], "region": {"slug": variables[f"r{i}"].lower()}}
+                    out[f"c{i}"] = {"id": char_id, "name": name, "server": server}
+                else:
+                    out[f"c{i}"] = None
+                i += 1
+            return {"data": {"characterData": out}}
+        if "recentReports" in query:
+            out = {}
+            i = 0
+            while f"id{i}" in variables:
+                items = self.reports_by_name[self.ids[variables[f"id{i}"]]]
+                out[f"c{i}"] = {"recentReports": {"data": items}}
                 i += 1
             return {"data": {"characterData": out}}
         if "reportData" in query:
@@ -88,8 +104,7 @@ class FakeWCL:
             out = {}
             i = 0
             while f"c{i}" in variables:
-                r = known[variables[f"c{i}"]]
-                out[f"r{i}"] = {"endTime": r["endTime"], "zone": r["zone"], "fights": FIGHTS}
+                out[f"r{i}"] = {**known[variables[f"c{i}"]], "masterData": {"actors": []}, "fights": FIGHTS}
                 i += 1
             return {"data": {"reportData": out}}
         raise AssertionError(f"unexpected query: {query[:60]}")
@@ -99,8 +114,7 @@ class FakeWCL:
 def fake_wcl(monkeypatch):
     fake = FakeWCL({})
     monkeypatch.setattr(svc, "get_async_client", lambda: fake)
-    monkeypatch.setattr(wcl_client, "get_async_client", lambda: fake)  # patch.raid_zone_ids
-    get_cache().clear()
+    monkeypatch.setattr(wcl_client, "get_async_client", lambda: fake)  # zones, characters, reports
     return fake
 
 
@@ -171,9 +185,8 @@ async def test_refresh_stores_raids_with_details_and_leaves_out_non_raids(
     assert raid["is_final"] is True
     assert raid["characters"] == [{"name": "Alpha", "server": "Twilight's Hammer", "region": "eu"}]
 
-    [list_call] = [c for c in fake_wcl.calls if "recentReports" in c[0]]
-    assert list_call[1]["s0"] == "twilights-hammer" and list_call[1]["r0"] == "EU"
-    assert list_call[2] is False  # the list step bypasses the cache
+    [ref_call] = [c for c in fake_wcl.calls if "query ResolveCharacters" in c[0]]
+    assert ref_call[1]["s0"] == "twilights-hammer" and ref_call[1]["r0"] == "EU"
     async with patched_db() as s:  # the Mythic+ report is stored, just not listed
         codes = set((await s.execute(select(RecentRaid.report_code))).scalars())
     assert codes == {"RAID1", "MPLUS1"}
@@ -190,7 +203,8 @@ async def test_one_report_from_two_characters_is_listed_once_with_both(
     body = (await as_user.client.get("/api/recent-raids")).json()
     assert len(body["raids"]) == 1  # SC-005
     assert sorted(c["name"] for c in body["raids"][0]["characters"]) == ["Alpha", "Beta"]
-    assert fake_wcl.count("recentReports") == 1  # one request for every character
+    assert fake_wcl.count("recentReports") == 1  # one request for every character (PERF-001)
+    assert fake_wcl.count("ResolveCharacters") == 1
 
 
 async def test_bosses_null_until_details(patched_db, as_user, fake_wcl):
@@ -247,6 +261,7 @@ async def test_list_step_raises_http_errors_unchanged(monkeypatch, patched_db, a
             raise httpx.ConnectError("down")
 
     monkeypatch.setattr(svc, "get_async_client", lambda: Boom())
+    monkeypatch.setattr(wcl_client, "get_async_client", lambda: Boom())
     with pytest.raises(httpx.ConnectError):
         await svc.fetch_listed_reports([alpha], set())
 
@@ -269,16 +284,14 @@ async def test_final_reports_are_never_fetched_again(as_user, patched_db, fake_w
     fake_wcl.reports_by_name = {"Alpha": [report("OLD1"), report("OLD2", ended_hours_ago=48)]}
     await as_user.client.get("/api/recent-raids")
     await drain()
-    assert fake_wcl.count("reportData") == 1
+    assert fake_wcl.count("reportData") == 1  # both summaries in one request (PERF-001)
 
     await reopen_gate(patched_db, as_user.tenant_id)
-    fake_wcl.calls.clear()
-    get_cache().clear()  # prove the skip comes from storage, not the WCL cache
+    fake_wcl.calls.clear()  # tests run without the shared cache: the skip comes from storage
     await as_user.client.get("/api/recent-raids")
     await drain()
     assert fake_wcl.count("reportData") == 0  # FR-012 / SC-004
-    list_calls = [c for c in fake_wcl.calls if "recentReports" in c[0]]
-    assert len(list_calls) == 1 and list_calls[0][2] is False
+    assert fake_wcl.count("recentReports") == 1
 
 
 async def test_a_live_report_stays_non_final_and_is_fetched_again(as_user, patched_db, fake_wcl):
@@ -291,7 +304,6 @@ async def test_a_live_report_stays_non_final_and_is_fetched_again(as_user, patch
 
     await reopen_gate(patched_db, as_user.tenant_id)
     fake_wcl.calls.clear()
-    get_cache().clear()
     await as_user.client.get("/api/recent-raids")
     await drain()
     assert fake_wcl.count("reportData") == 1
@@ -328,6 +340,7 @@ async def test_rate_limits_are_reported_as_such(as_user, patched_db, fake_wcl):
 async def test_a_hanging_refresh_times_out(as_user, patched_db, fake_wcl, monkeypatch):
     monkeypatch.setattr(settings, "recent_raids_refresh_timeout_s", 1)
     await add_own(patched_db, as_user.tenant_id, "Alpha")
+    fake_wcl.reports_by_name = {"Alpha": []}  # known to WCL, so its reports are listed
     fake_wcl.gate = asyncio.Event()  # never released
     await as_user.client.get("/api/recent-raids")
     await asyncio.wait_for(drain(), 5)
@@ -383,3 +396,31 @@ async def test_retry_needs_csrf(as_user, patched_db):
     headers = {k: v for k, v in as_user.client.headers.items() if k != "x-csrf-token"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=headers) as c:
         assert (await c.post("/api/recent-raids/refresh")).status_code == 403
+
+
+async def test_a_bad_report_falls_back_to_one_request_each(patched_db, as_user, fake_wcl):
+    """One report WCL can't return fails the batch; the others still get their details."""
+    fake_wcl.reports_by_name = {"Alpha": [report("GOOD"), report("GONE")]}
+    real = fake_wcl.query
+
+    async def query(q, variables=None):
+        if "reportData" in q and "GONE" in (variables or {}).values():
+            fake_wcl.calls.append((q, variables or {}))
+            raise RuntimeError("report GONE is private")
+        return await real(q, variables)
+
+    fake_wcl.query = query
+    details = await svc.fetch_report_details(["GOOD", "GONE"], {RAID_ZONE})
+    assert set(details) == {"GOOD"}
+    assert fake_wcl.count("reportData") == 3  # the failed batch, then one per code
+
+
+async def test_cached_lists_and_summaries_skip_wcl(patched_db, as_user, fake_wcl, fake_redis):
+    [alpha] = await add_own(patched_db, as_user.tenant_id, "Alpha")
+    fake_wcl.reports_by_name = {"Alpha": [report("R1"), report("R2")]}
+    for _ in range(2):
+        listed = await svc.fetch_listed_reports([alpha], {RAID_ZONE})
+        await svc.fetch_report_details([r.code for r in listed], {RAID_ZONE})
+    assert fake_wcl.count("ResolveCharacters") == 1
+    assert fake_wcl.count("recentReports") == 1
+    assert fake_wcl.count("reportData") == 1  # second pass: every summary from the cache

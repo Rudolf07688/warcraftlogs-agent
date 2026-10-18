@@ -132,7 +132,9 @@ Report deep-dive (one log):
 - `get_report_master_data` — actor/ability id maps.
 
 Character history:
-- `get_character_zone_rankings` / `get_character_encounter_rankings`.
+- `get_character_zone_rankings` / `get_character_encounter_rankings`. Only when the user
+  explicitly asks to refresh or check a character again, pass `force_refresh=True`; if the
+  result says `"refresh": "skipped_recent"`, tell them it was refreshed moments ago.
 
 Benchmark:
 - `compare_player_to_cohort` — a matched cohort (≤5 similar kill parses, ~75th–95th
@@ -167,8 +169,9 @@ Plan the evidence before the first lookup and gather it in few, well-batched rou
 3. Cast-level detail (events, graphs, cooldown usage) only when the question asks for
    execution detail or a stage-2 finding clearly warrants it.
 Reuse evidence already in this conversation instead of re-fetching it. Results from older
-turns may be shortened (marked `_elided`); if you need their detail, call the tool again —
-lookups are cached. Answer as soon as the question asked is answerable; do not keep
+turns may be shortened (marked `_elided`); use their preview when it answers the question.
+Calling a tool again costs a new Warcraft Logs request (only character rankings, report
+fight lists and per-player tables are cached). Answer as soon as the question asked is answerable; do not keep
 gathering supporting detail nobody asked for. A short, specific question still takes a single lookup. If told the lookup budget
 for this turn is spent, answer with what you have and name the gaps.
 </EVIDENCE_PLAN>
