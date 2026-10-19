@@ -1,33 +1,26 @@
 <!--
 SYNC IMPACT REPORT
-Version change: 1.1.0 → 1.2.0
-Bump rationale: MINOR — a new principle (VIII) is added and the workflow section gains a
-  matching gate. No existing principle is removed or redefined.
+Version change: 1.2.0 → 1.3.0
+Bump rationale: MINOR — Principle VIII's sizing rule changes materially: the allowed estimates
+  go from 0/1/2/4/8 to 1/2/3/5, and the epic threshold becomes "too big for one 5-point
+  story". No principle is removed.
 
-Modified principles: none (I–VII unchanged)
+Modified principles:
+  - VIII. Backlog Sync: todo.md ⇄ Shortcut Board — sizing bullet only.
 
-Added principles:
-  - VIII. Backlog Sync: todo.md ⇄ Shortcut Board
-
-Modified sections:
-  - Development Workflow & Quality Gates: new "Backlog sync gate" and "Ticket state" gates.
-
+Added sections: none
 Removed sections: none
 
 Templates reviewed for consistency:
-  ✅ .specify/templates/plan-template.md  — Constitution Check gate is generic; Principle VIII
-     is picked up from here. No edit.
-  ✅ .specify/templates/spec-template.md  — specs are unaffected. No edit.
-  ✅ .specify/templates/tasks-template.md — Polish phase gains a backlog-sync task.
-  ✅ .specify/templates/checklist-template.md — generic. No edit.
+  ✅ .specify/templates/plan-template.md, spec-template.md, tasks-template.md,
+     checklist-template.md — no estimate scale referenced. No edit.
   ⚠ .specify/templates/commands/ — directory does not exist in this repo; nothing to check.
-  ✅ README.md — Notes section points at Principle VIII and `/shortcut-sync`.
-  ✅ documentation/ai_guide.md — new §21 "Backlog: todo.md ⇄ Shortcut".
-  ✅ .claude/agents/shortcut-sync.md + .claude/skills/shortcut-sync/SKILL.md — new sync
-     sub-agent and its `/shortcut-sync` command.
+  ✅ documentation/ai_guide.md — §21 sizing line updated.
+  ✅ .claude/agents/shortcut-sync.md — board facts and step 4 updated.
+  ✅ README.md — no estimate scale referenced. No edit.
 
 Deferred / follow-up TODOs:
-  - None open.
+  - None open. (The Shortcut workspace estimate scale is a UI setting the owner changes.)
 -->
 
 # WCL Agent App Constitution
@@ -151,9 +144,9 @@ board catching up to `todo.md` and `todo.md` reflecting finished work.
   section MUST eventually have a matching story or epic on the board.
 - When committing a feature, new or changed `todo.md` bullets picked up in that change
   MUST be turned into tickets (or existing tickets updated) as part of the commit.
-- Sizing uses the workspace scale 0/1/2/4/8. A bullet estimated at 8 points or more
-  becomes an epic named after the bullet, split into stories of 4 points or less. Stories
-  carry area labels.
+- Story estimates MUST be one of **1, 2, 3 or 5** points. A bullet too big for a single
+  5-point story becomes an epic named after the bullet, split into stories from that
+  scale. Stories carry area labels.
 - Board columns and who moves tickets:
   **Backlog** (all unstarted work) → **Shortlist** (owner's priorities and likely next
   work) → **In Progress** (an implementer moves a ticket here *before* starting work) →
@@ -228,4 +221,4 @@ reviews, and implementations MUST verify compliance with these principles.
 - **Runtime guidance**: `documentation/ai_guide.md` and `README.md` provide
   operational guidance and MUST stay consistent with this constitution.
 
-**Version**: 1.2.0 | **Ratified**: 2026-10-01 | **Last Amended**: 2026-10-19
+**Version**: 1.3.0 | **Ratified**: 2026-10-01 | **Last Amended**: 2026-10-19

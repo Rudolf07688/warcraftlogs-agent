@@ -689,8 +689,8 @@ Principle VIII).
 - **Columns**: Backlog → Shortlist (owner's picks; tickets get the active iteration) →
   In Progress (move here *before* starting) → Under Review (implementation complete,
   waiting for live human testing) → Done (owner only).
-- **Sizing**: estimates are 0/1/2/4/8. A bullet at 8+ points becomes an epic named after
-  the bullet, with stories of 4 points or less. Stories carry area labels (`ai`, `ui`,
+- **Sizing**: story estimates are 1, 2, 3 or 5 only. A bullet too big for one 5-point
+  story becomes an epic named after the bullet. Stories carry area labels (`ai`, `ui`,
   `ux`, `backend`, `data`, `infra`, `reports`, `security`, `performance`, `refactor`).
 - **Strikethrough**: when Done tickets fully cover a `todo.md` bullet, the line becomes
   `~~line~~`.

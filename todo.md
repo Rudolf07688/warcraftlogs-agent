@@ -30,14 +30,6 @@
   - Over time we will have saved all relavent data, building up a massive database of information
   - I want to structure the app so that 80% of questions don't require external api calls (fast)
 - Unstructured directory `./wcl_agent/*.py`
-- **Fix Class guides**
-  - Hallucinations
-    - Add better grounding
-    - Add an agent to review the guide after generation and agent must fix it first.
-      - Current datetime and exact patch version must be sent to agent context 
-  - Devourer DH spec not showing
-- Show that report is being generated / downloaded while waiting
-  - Feels like it doesn't work
 **[ UI / Design ]**
 - Chat interface redesign
   - mayby rather single-lane chat
@@ -117,5 +109,15 @@ Medium findings still open:
   - Background fetch of your character's most recent raids.
     - Must be stored since it won't change
   - Clicking on one opens up a new chat.
+
+# ----- Phase 7 ----- #
+- ~~**Fix Class guides**~~
+  - ~~Hallucinations~~
+    - ~~Add better grounding~~
+    - ~~Add an agent to review the guide after generation and agent must fix it first.~~
+      - ~~Current datetime and exact patch version must be sent to agent context~~
+  - ~~Devourer DH spec not showing~~
+- ~~Show that report is being generated / downloaded while waiting~~
+  - ~~Feels like it doesn't work~~
 
 

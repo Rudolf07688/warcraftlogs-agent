@@ -18,7 +18,8 @@ below, then return a short report.
 - Iteration: use the team's **active** iteration (`iterations-get-active` with the Team 1
   id). On 2026-10-19 that was "WCL App Q4 2026" (id 161, 2026-10-19 → 2026-12-31). If no
   iteration is active, report it and skip the iteration step.
-- Estimates use the scale **0, 1, 2, 4, 8** only.
+- Story estimates MUST be **1, 2, 3 or 5**. Never use any other value, even if Shortcut's
+  picker offers it.
 - Labels by area: `ai` (agent), `ui` (frontend), `ux` (design/interaction), `backend`,
   `data` (Postgres/Redis/schemas), `infra`, `reports` (PDF), `security`, `performance`,
   `refactor`.
@@ -50,9 +51,11 @@ below, then return a short report.
 4. **Create what's missing.** For each open item (or sub-bullet) with no ticket:
    - Write a user story ("As a …, I want …, so that …"), plus an `Area:` line and a
      `Todo: "<bullet text>"` line in the description.
-   - Estimate it. Under 8 points: create one story. 8 or more: create an epic named after
-     the bullet (description `Todo: "<full bullet text>"`) and split the work into stories
-     of 4 points or less.
+   - Estimate it with 1, 2, 3 or 5. If it fits in one story of 5 points or less, create
+     one story. If it's bigger, create an epic named after the bullet (description
+     `Todo: "<full bullet text>"`) and split the work into stories of 1, 2, 3 or 5 points.
+   - If you find an existing story with an estimate outside 1/2/3/5, list it under "Needs a
+     decision" with a suggested value. Don't change it.
    - Create on Team 1 in **Backlog** (`workflow_state_id` Backlog). Use type `bug` for
      defects and QA findings, `chore` for spikes, docs and refactors, and `feature`
      otherwise. Then set the estimate and labels.
