@@ -15,7 +15,6 @@
 - Add a "spin up sub-agent" tool call
   - Agent creates an agent with a prompt (all tools available)
   - Long term: Give subagent REPL enviroment
-- Make rendering smoother
 - Upload warcraftlogs file directly
 - Rework Raids page
   - Make tabs instead of dropdown

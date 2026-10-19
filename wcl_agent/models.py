@@ -389,11 +389,33 @@ def _http_status(exc: BaseException) -> int | None:
     return None
 
 
+def _is_transient(exc: BaseException, status: int | None) -> bool:
+    """A 5xx (504 DEADLINE_EXCEEDED included), a timeout or a dropped connection."""
+    if status is not None:
+        return status >= 500
+    if isinstance(exc, TimeoutError):
+        return True
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - google-genai depends on httpx
+        httpx = None
+    if httpx is not None and isinstance(exc, httpx.TransportError):
+        return True
+    try:
+        import anthropic
+    except ImportError:  # pragma: no cover - optional provider
+        return False
+    return isinstance(exc, anthropic.APIConnectionError)
+
+
 def check_model(call: Callable[[], object], model_id: str = "") -> ProbeOutcome:
     """Run one probe call and classify the result (catalog path, research R3).
 
-    Only 429 is retried: here it means "this class has no quota", so ``model_retry``'s
-    wider rate-limit test (which also waits out 503 / 529) is deliberately not reused.
+    A 429 is retried once after ``_QUOTA_RETRY_S``: still 429 means "this class has no
+    quota". A transient error is retried once at once: the first call to a newly released
+    model can take longer than the probe timeout while the second answers in ~2 s (live
+    2026-10-19: gemini-3.8-flash took 14.8 s cold, then 504'd a 10 s probe at boot). A
+    400 is not retried: it means the model rejects the request (e.g. no tool support).
     """
     for attempt in (1, 2):
         try:
@@ -409,6 +431,9 @@ def check_model(call: Callable[[], object], model_id: str = "") -> ProbeOutcome:
                     time.sleep(_QUOTA_RETRY_S)
                     continue
                 return ProbeOutcome.NO_QUOTA
+            if attempt == 1 and _is_transient(exc, status):
+                logger.info("model '%s' probe hit a transient error, retrying once: %s", model_id, exc)
+                continue
             logger.info("model '%s' did not pass the probe: %s", model_id, exc)
             return ProbeOutcome.FAILED
     return ProbeOutcome.NO_QUOTA  # pragma: no cover - the loop always returns

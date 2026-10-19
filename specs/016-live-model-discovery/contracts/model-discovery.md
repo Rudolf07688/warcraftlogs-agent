@@ -66,7 +66,8 @@ Probe layer (blocking, run in threads):
 
 ```python
 def check_model(call: Callable[[], object]) -> ProbeOutcome: ...
-    # 404/403 → not_enabled; 429 → sleep 2 s, retry once → no_quota; other → failed
+    # 404/403 → not_enabled; 429 → sleep 2 s, retry once → no_quota;
+    # 5xx / timeout / connection error → retry once at once → failed; other → failed
 def _probe_gemini(client, model_id) -> bool: ...      # unchanged signature (static path)
 def _probe_anthropic(client, model_id) -> bool: ...   # unchanged signature (static path)
 ```

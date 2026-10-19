@@ -65,8 +65,11 @@ sorting on the catalog's `versionId` (it is a release tag, not a model generatio
   error by HTTP status: genai `APIError.code`, anthropic `APIStatusError.status_code`.
   - `404` / `403` → `NOT_ENABLED`
   - `429` → sleep 2 s, retry once; still `429` → `NO_QUOTA`
-  - anything else, including timeouts, `400` (no tool support) and `503`/`529` →
-    `FAILED`
+  - a transient error (any 5xx such as `504 DEADLINE_EXCEEDED` / `503` / `529`, a
+    timeout, a dropped connection) → retry once at once; still failing → `FAILED`
+    (added 2026-10-19: the first call to a newly released model can run past the 10 s
+    probe timeout while the next one answers in ~2 s, so `gemini-3.8-flash` was lost at boot)
+  - anything else, including `400` (no tool support) → `FAILED`
   - success → `PASSED`
 
 **Rationale**: The chat agent always sends function declarations, so a model that rejects

@@ -292,13 +292,36 @@ def test_429_then_success_passes(sleeps):
     assert sleeps == [2]
 
 
-@pytest.mark.parametrize(
-    "error",
-    [http_error("google", 400), http_error("google", 503), http_error("anthropic", 529),
-     TimeoutError("slow"), RuntimeError("boom")],
-)
-def test_other_errors_fail(error, sleeps):
-    assert check_model(_call(error)) is ProbeOutcome.FAILED
+@pytest.mark.parametrize("error", [http_error("google", 400), RuntimeError("boom")])
+def test_other_errors_fail_without_retry(error, sleeps):
+    assert check_model(_call(error, None)) is ProbeOutcome.FAILED
+    assert sleeps == []
+
+
+TRANSIENT = [
+    http_error("google", 504), http_error("google", 503), http_error("anthropic", 529),
+    TimeoutError("slow"), httpx.ReadTimeout("slow"),
+    anthropic.APITimeoutError(httpx.Request("POST", "https://vertex.test")),
+]
+
+
+@pytest.mark.parametrize("error", TRANSIENT)
+def test_transient_error_then_success_passes(error, sleeps):
+    """A cold first call to a new model (504 at the probe deadline) gets one more try."""
+    assert check_model(_call(error, None)) is ProbeOutcome.PASSED
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("error", TRANSIENT)
+def test_persistent_transient_error_fails_after_one_retry(error, sleeps):
+    calls: list[int] = []
+
+    def call():
+        calls.append(1)
+        raise error
+
+    assert check_model(call) is ProbeOutcome.FAILED
+    assert len(calls) == 2
     assert sleeps == []
 
 

@@ -120,7 +120,7 @@ At startup the operator sees one summary line (how many models, and whether they
 - The configured default model did not survive discovery: the newest flash model becomes the default.
 - No flash model survived either: the first model in class order becomes the default.
 - A probe hangs: it is abandoned after its timeout and treated as a failure for that version.
-- A transient error (not "not found", not "no quota") on a probe: treated as a failure for that version only; the next version is tried.
+- A transient error (not "not found", not "no quota") on a probe: retried once at once (a newly released model's first call can outlast the timeout); if it fails again it is treated as a failure for that version only and the next version is tried.
 - A player's saved conversation references a model that is no longer offered: it is rejected as an invalid model, exactly as when the list changes today.
 - The catalog lists a model the project can use but the catalog listing itself is refused (permission error): fall back to the configured lists (User Story 3).
 
@@ -192,7 +192,7 @@ At startup the operator sees one summary line (how many models, and whether they
 - **SC-001**: A newly released, enabled model in a configured class appears in the dropdown within six hours (or at the next restart with the stored result cleared), with zero configuration edits.
 - **SC-002**: 100% of models shown in the dropdown complete a chat turn that includes a tool call, with no "not found" or quota error on that first turn.
 - **SC-003**: With the catalog unreachable, startup completes and the dropdown is non-empty in 100% of runs, with exactly one catalog warning in the log.
-- **SC-004**: A startup that misses the stored result spends no more than about 10 seconds on verification calls beyond the catalog listing; a startup that finds a stored result spends no time on listing or verification.
+- **SC-004**: A startup that misses the stored result spends no more than about 10 seconds on verification calls beyond the catalog listing (about 20 seconds when a verification call times out and is retried once); a startup that finds a stored result spends no time on listing or verification.
 - **SC-005**: On the current project, the dropdown shows exactly the expected Gemini picks (pro: `gemini-3.1-pro-preview`, `gemini-2.5-pro`; flash: `gemini-3.8-flash`, `gemini-3.7-flash`; flash-lite: `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`) and the log reports "no quota" for each Claude class until Claude quota is granted.
 - **SC-006**: An operator can determine, from the startup log alone, which models were chosen for every class and why any class is empty.
 - **SC-007**: Chat, class guides, reports, greeting and suggestions all succeed with the model location set to global and the general region set to `europe-west1`.
