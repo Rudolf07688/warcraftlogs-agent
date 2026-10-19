@@ -425,6 +425,9 @@ from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rat
   web app's selectable list is discovered at startup (see
   [Model discovery](#model-discovery-feature-016)). ADK drives Claude on Vertex
   natively (registered in `wcl_agent/agent.py`).
+- Planned work lives on the Shortcut "Team 1" board and is kept in sync with `todo.md`
+  (constitution Principle VIII). Run `/shortcut-sync` in Claude Code to reconcile them;
+  add `dry-run` to preview the changes.
 
 ## Model discovery (feature 016)
 

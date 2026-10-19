@@ -1,3 +1,63 @@
+# ----- To Do ----- #
+- Deployment / Hosting Plan
+- Implement redis - confirm browser cache usage. 
+- ~~Rate limit llm for 429s (Done: 011)~~
+  ~~- Also catch 429 timeouts as tool errors so it doesn't break the agent loop~~
+- ~~[Small] Add option to add a multiple characters~~
+- PDF reports still look terrible with some html/markdown markers visible
+  - Need to use proper pdf generation
+- ~~Dashboard from previous pulled stats~~
+  - ~~Use this data as cache layer to answer questions (maybe fill in a template?)~~ -> Redis
+- Add symmantic search vector store
+  - Look for data related to the user's query or whatever the agent decides would be a good search term.
+  - Essentially used as a cache to speed up api call waiting.
+  - Agent must be able to run more than one search terms in parallel
+- Add a "spin up sub-agent" tool call
+  - Agent creates an agent with a prompt (all tools available)
+  - Long term: Give subagent REPL enviroment
+- Make rendering smoother
+- Upload warcraftlogs file directly
+- Rework Raids page
+  - Make tabs instead of dropdown
+  - Show previously pulled data from that raid (participents, duration, my character's parse etc)
+  - Add button to start a new chat with the current "analyze this raid" message
+- Agent skills for how to assess WoW numbers in terms of performance
+- Select which character this chat is about ("filter") with checkboxes on every chat
+  - Default is no filter - all characters - more general overview unless asked specifically in chat
+    - e.g. "How did my mage do on ..."
+      - Bonus premium goal: the ai is able to change the UI filter button (as if the user clicked the filters in the UI) when a user asks a targeted question.
+- Every single fetch must be stored in the db
+  - Over time we will have saved all relavent data, building up a massive database of information
+  - I want to structure the app so that 80% of questions don't require external api calls (fast)
+- Unstructured directory `./wcl_agent/*.py`
+- **Fix Class guides**
+  - Hallucinations
+    - Add better grounding
+    - Add an agent to review the guide after generation and agent must fix it first.
+      - Current datetime and exact patch version must be sent to agent context 
+  - Devourer DH spec not showing
+- Show that report is being generated / downloaded while waiting
+  - Feels like it doesn't work
+**[ UI / Design ]**
+- Chat interface redesign
+  - mayby rather single-lane chat
+  - Scroll to top of the question-message once answer is fully complete.
+- Slightly increase default font size
+- Showing to many recent raids in the welcome chat
+  - Rather include some recent m+ runs as well when available
+  - 6 raids and 6 dungeons max (most recent ones, in order)
+- In the left side bar, previous conversations must be above the "Raids" section.
+  - Generate conversation name based on the messages
+
+## QA Hits
+Medium findings still open:
+- PERF-001: the app waits for model discovery before serving anything.
+- SEC-003: remote images in model output can leak data.
+- SEC-004: the login rate limit is shared by all users behind the proxy.
+- SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty.
+
+---
+# Done 
 # ----- Phase 1 ----- #
 
 1. Keep track of raid encounters I have previously asked about - give date/time on the UI and sort by that so I know which raids I'm looking at. 
@@ -59,60 +119,3 @@
   - Clicking on one opens up a new chat.
 
 
-# ----- Phase X ----- #
-- Deployment / Hosting Plan
-- Implement redis - confirm browser cache usage. 
-- ~~Rate limit llm for 429s (Done: 011)~~
-  ~~- Also catch 429 timeouts as tool errors so it doesn't break the agent loop~~
-- ~~[Small] Add option to add a multiple characters~~
-- PDF reports still look terrible with some html/markdown markers visible
-  - Need to use proper pdf generation
-- ~~Dashboard from previous pulled stats~~
-  - ~~Use this data as cache layer to answer questions (maybe fill in a template?)~~ -> Redis
-- Add symmantic search vector store
-  - Look for data related to the user's query or whatever the agent decides would be a good search term.
-  - Essentially used as a cache to speed up api call waiting.
-  - Agent must be able to run more than one search terms in parallel
-- Add a "spin up sub-agent" tool call
-  - Agent creates an agent with a prompt (all tools available)
-  - Long term: Give subagent REPL enviroment
-- Make rendering smoother
-- Upload warcraftlogs file directly
-- Rework Raids page
-  - Make tabs instead of dropdown
-  - Show previously pulled data from that raid (participents, duration, my character's parse etc)
-  - Add button to start a new chat with the current "analyze this raid" message
-- Agent skills for how to assess WoW numbers in terms of performance
-- Select which character this chat is about ("filter") with checkboxes on every chat
-  - Default is no filter - all characters - more general overview unless asked specifically in chat
-    - e.g. "How did my mage do on ..."
-      - Bonus premium goal: the ai is able to change the UI filter button (as if the user clicked the filters in the UI) when a user asks a targeted question.
-- Every single fetch must be stored in the db
-  - Over time we will have saved all relavent data, building up a massive database of information
-  - I want to structure the app so that 80% of questions don't require external api calls (fast)
-- Unstructured directory `./wcl_agent/*.py`
-- **Fix Class guides**
-  - Hallucinations
-    - Add better grounding
-    - Add an agent to review the guide after generation and agent must fix it first.
-      - Current datetime and exact patch version must be sent to agent context 
-  - Devourer DH spec not showing
-- Show that report is being generated / downloaded while waiting
-  - Feels like it doesn't work
-**[ UI / Design ]**
-- Chat interface redesign
-  - mayby rather single-lane chat
-  - Scroll to top of the question-message once answer is fully complete.
-- Slightly increase default font size
-- Showing to many recent raids in the welcome chat
-  - Rather include some recent m+ runs as well when available
-  - 6 raids and 6 dungeons max (most recent ones, in order)
-- In the left side bar, previous conversations must be above the "Raids" section.
-  - Generate conversation name based on the messages
-
-# QA Hits
-Medium findings still open:
-- PERF-001: the app waits for model discovery before serving anything.
-- SEC-003: remote images in model output can leak data.
-- SEC-004: the login rate limit is shared by all users behind the proxy.
-- SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty.

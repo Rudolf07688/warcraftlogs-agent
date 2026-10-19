@@ -1,37 +1,32 @@
 <!--
 SYNC IMPACT REPORT
-Version change: 1.0.0 → 1.1.0
-Bump rationale: MINOR — a new principle (VII) is added and the stack/workflow sections gain
-  matching guidance. No existing principle is removed or redefined.
+Version change: 1.1.0 → 1.2.0
+Bump rationale: MINOR — a new principle (VIII) is added and the workflow section gains a
+  matching gate. No existing principle is removed or redefined.
 
-Modified principles: none (I–VI unchanged)
+Modified principles: none (I–VII unchanged)
 
 Added principles:
-  - VII. Shared UI Components via the shadcn/ui MCP
+  - VIII. Backlog Sync: todo.md ⇄ Shortcut Board
 
 Modified sections:
-  - Technology Stack & Standards: Frontend line now names React + Tailwind CSS v4 +
-    shadcn/ui and where generated components live.
-  - Development Workflow & Quality Gates: new "UI reuse check" gate.
+  - Development Workflow & Quality Gates: new "Backlog sync gate" and "Ticket state" gates.
 
 Removed sections: none
 
 Templates reviewed for consistency:
-  ✅ .specify/templates/plan-template.md  — Constitution Check gate is generic ("gates
-     determined based on constitution file"); Principle VII is picked up from here. No edit.
-  ✅ .specify/templates/spec-template.md  — specs stay technology-agnostic; the principle
-     applies at plan/implement time. No edit.
-  ✅ .specify/templates/tasks-template.md — generic task categories; no principle-specific
-     task type required. No edit.
+  ✅ .specify/templates/plan-template.md  — Constitution Check gate is generic; Principle VIII
+     is picked up from here. No edit.
+  ✅ .specify/templates/spec-template.md  — specs are unaffected. No edit.
+  ✅ .specify/templates/tasks-template.md — Polish phase gains a backlog-sync task.
   ✅ .specify/templates/checklist-template.md — generic. No edit.
   ⚠ .specify/templates/commands/ — directory does not exist in this repo; nothing to check.
-  ✅ README.md — Feature 010 section now points at Principle VII and the MCP workflow.
-  ✅ documentation/ai_guide.md — §2 Tech stack gains a Frontend row naming the rule; the
-     Python row is corrected from 3.13 to the pinned 3.14.
+  ✅ README.md — Notes section points at Principle VIII and `/shortcut-sync`.
+  ✅ documentation/ai_guide.md — new §21 "Backlog: todo.md ⇄ Shortcut".
+  ✅ .claude/agents/shortcut-sync.md + .claude/skills/shortcut-sync/SKILL.md — new sync
+     sub-agent and its `/shortcut-sync` command.
 
 Deferred / follow-up TODOs:
-  - RESOLVED: Python version — `.python-version` now pins 3.14, matching the stack.
-  - RESOLVED: FastAPI backend and React frontend now exist (no longer target-only).
   - None open.
 -->
 
@@ -146,6 +141,35 @@ UI is the exception, not the default.
 per control keeps screens consistent and accessible, and the MCP makes the reuse check
 fast enough to do every time instead of re-inventing controls per screen.
 
+### VIII. Backlog Sync: todo.md ⇄ Shortcut Board
+
+`todo.md` is the owner's committed scratchpad for quick ideas. The **Shortcut "Team 1"
+board** is the system of record for planned work. The two MUST be kept in sync, with the
+board catching up to `todo.md` and `todo.md` reflecting finished work.
+
+- `todo.md` is tracked in git. Every open (not struck-through) bullet in its "To Do"
+  section MUST eventually have a matching story or epic on the board.
+- When committing a feature, new or changed `todo.md` bullets picked up in that change
+  MUST be turned into tickets (or existing tickets updated) as part of the commit.
+- Sizing uses the workspace scale 0/1/2/4/8. A bullet estimated at 8 points or more
+  becomes an epic named after the bullet, split into stories of 4 points or less. Stories
+  carry area labels.
+- Board columns and who moves tickets:
+  **Backlog** (all unstarted work) → **Shortlist** (owner's priorities and likely next
+  work) → **In Progress** (an implementer moves a ticket here *before* starting work) →
+  **Under Review** (implementation complete, waiting for live human testing) → **Done**.
+  Only the owner moves tickets into Shortlist or Done. Agents MUST NOT mark a ticket Done.
+- Every ticket in Shortlist (and later states) MUST be assigned to the team's active
+  iteration.
+- When a ticket reaches Done and it fully covers a `todo.md` bullet (or sub-bullet), that
+  line MUST be wrapped in strikethrough (`~~line~~`). Partial coverage leaves the line
+  as-is. Sync never deletes the owner's text, and never deletes or archives tickets.
+- `/shortcut-sync` runs the reconciliation on demand (the `shortcut-sync` sub-agent).
+
+**Rationale**: The owner thinks fastest in a plain file, while planning and review need a
+board. Defined sync points and ownership of each column keep both trustworthy, without
+duplicate tickets or lost ideas.
+
 ## Technology Stack & Standards
 
 The project standardizes on the following stack; deviations require a recorded
@@ -178,6 +202,11 @@ exception (see Governance).
 - **UI reuse check**: before building a frontend component, search the shadcn registry
   through the shadcn MCP and use a fitting item; record any hand-built exception in the
   plan (Principle VII).
+- **Ticket state**: move the ticket being worked to In Progress before starting, and to
+  Under Review when implementation is complete (Principle VIII).
+- **Backlog sync gate**: a feature commit includes syncing `todo.md` with the Shortcut
+  board (`/shortcut-sync`), so new bullets become tickets and Done tickets are struck
+  through (Principle VIII).
 - **Verification**: each increment is run/tested/demonstrated before it is
   considered done.
 - **Commit discipline**: commits are scoped and descriptive; secrets are never
@@ -199,4 +228,4 @@ reviews, and implementations MUST verify compliance with these principles.
 - **Runtime guidance**: `documentation/ai_guide.md` and `README.md` provide
   operational guidance and MUST stay consistent with this constitution.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-01 | **Last Amended**: 2026-10-12
+**Version**: 1.2.0 | **Ratified**: 2026-10-01 | **Last Amended**: 2026-10-19

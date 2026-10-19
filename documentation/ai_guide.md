@@ -679,3 +679,21 @@ Implemented in `specs/015-grounded-class-guides/` (grounding plan:
   (reviewer schema `_ReviewDraft`), fake whole runs with `backend/tests/guide_fakes.fake_pipeline`;
   conftest keeps the stale scan inside its throttle window.
 
+
+## 21. Backlog: todo.md ⇄ Shortcut
+
+Planned work is tracked on the Shortcut **"Team 1"** board (workspace FRL-Personal). The
+owner jots ideas in `todo.md`, and the board is kept in sync with it (constitution
+Principle VIII).
+
+- **Columns**: Backlog → Shortlist (owner's picks; tickets get the active iteration) →
+  In Progress (move here *before* starting) → Under Review (implementation complete,
+  waiting for live human testing) → Done (owner only).
+- **Sizing**: estimates are 0/1/2/4/8. A bullet at 8+ points becomes an epic named after
+  the bullet, with stories of 4 points or less. Stories carry area labels (`ai`, `ui`,
+  `ux`, `backend`, `data`, `infra`, `reports`, `security`, `performance`, `refactor`).
+- **Strikethrough**: when Done tickets fully cover a `todo.md` bullet, the line becomes
+  `~~line~~`.
+- **Sync**: `/shortcut-sync` (`.claude/skills/shortcut-sync/`) runs the `shortcut-sync`
+  sub-agent (`.claude/agents/shortcut-sync.md`). Run it when committing a feature. Pass
+  `dry-run` to preview.

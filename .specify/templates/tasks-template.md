@@ -157,6 +157,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
+- [ ] TXXX Sync `todo.md` with the Shortcut board (`/shortcut-sync`) and move this feature's tickets to Under Review (constitution Principle VIII)
 
 ---
 
