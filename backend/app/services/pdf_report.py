@@ -17,8 +17,10 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 import nh3
 from markdown_it import MarkdownIt
@@ -26,8 +28,10 @@ from matplotlib.figure import Figure
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 from weasyprint import CSS, HTML
+from weasyprint.text.fonts import FontConfiguration
 from weasyprint.urls import URLFetcher
 
+from . import report_theme as theme
 from .charts import figure_to_svg
 
 logger = logging.getLogger(__name__)
@@ -94,7 +98,7 @@ def _math_html(latex: str, *, display: bool) -> str:
     render concurrently in worker threads.
     """
     fig = Figure(figsize=(0.01, 0.01))
-    fig.text(0, 0, f"${latex}$", fontsize=12.5 if display else 10)
+    fig.text(0, 0, f"${latex}$", fontsize=12.5 if display else 10, color=theme.CREAM)
     try:
         svg = figure_to_svg(fig, pad_inches=0.02)
     except Exception:  # noqa: BLE001 - mathtext can't parse every LaTeX; fall back to text
@@ -419,82 +423,153 @@ def findings_to_html(markdown: str) -> str:
     return _wrap_long_tokens(markup)
 
 
-# One clean, neutral style with tavern-brown accents only (clarify Q2, FR-013/014).
-# Emoji come from fontconfig fallback: naming an emoji font here makes Pango 1.56 draw
-# digits, '#' and '*' as its keycap glyphs.
-_FONTS = '"DejaVu Sans", "Noto Sans CJK SC", sans-serif'
-_ACCENT = "#4b2e1e"
+# The chat's look (owner's choice 2026-10-20): the "Tavern Hearth" theme of the agent
+# messages, dark page included. Cinzel headings and Alegreya Sans body ship with the app
+# (OFL, assets/fonts) so host and container render alike. Emoji come from fontconfig
+# fallback: naming an emoji font here makes Pango 1.56 draw digits, '#' and '*' as keycaps.
+_FONT_DIR = (Path(__file__).resolve().parent.parent / "assets" / "fonts").resolve()
+_FONTS = '"Alegreya Sans", "DejaVu Sans", "Noto Sans CJK SC", sans-serif'
+_DISPLAY = '"Cinzel", "DejaVu Serif", serif'
+_FONT_FACES = (
+    ("Cinzel", "Cinzel-Variable.ttf", "400 900", "normal"),
+    ("Alegreya Sans", "AlegreyaSans-Regular.ttf", "400", "normal"),
+    ("Alegreya Sans", "AlegreyaSans-Italic.ttf", "400", "italic"),
+    ("Alegreya Sans", "AlegreyaSans-Medium.ttf", "500", "normal"),
+    ("Alegreya Sans", "AlegreyaSans-Bold.ttf", "700", "normal"),
+)
+_FONT_FACE_CSS = "".join(
+    f'@font-face {{ font-family: "{family}"; src: url("{(_FONT_DIR / file).as_uri()}"); '
+    f"font-weight: {weight}; font-style: {style}; }}\n"
+    for family, file, weight, style in _FONT_FACES
+)
+_T = theme
 
-REPORT_CSS = f"""
+REPORT_CSS = _FONT_FACE_CSS + f"""
 @page {{
   size: A4;
   margin: 20mm 18mm 18mm;
-  @top-center {{ content: string(title); font-family: {_FONTS}; font-size: 8pt; color: #777; }}
+  background: {_T.OAK};
+  @top-center {{ content: string(title); font-family: {_FONTS}; font-size: 8pt; color: {_T.TAN}; }}
   @bottom-right {{
     content: "Page " counter(page) " of " counter(pages);
-    font-family: {_FONTS}; font-size: 8pt; color: #777;
+    font-family: {_FONTS}; font-size: 8pt; color: {_T.TAN};
   }}
 }}
 @page :first {{ @top-center {{ content: none; }} }}
 
-html {{ background: #fff; }}
-body {{ font-family: {_FONTS}; font-size: 10pt; line-height: 1.45; color: #1f1f1f;
+html {{ background: {_T.OAK}; }}
+body {{ font-family: {_FONTS}; font-size: 10.5pt; line-height: 1.55; color: {_T.CREAM};
         overflow-wrap: break-word; }}
-a {{ color: #2b5d8a; }}
+a {{ color: {_T.GLOW}; text-decoration: underline; }}
+strong, b {{ font-weight: 700; color: #f6efe0; }}
 
 /* Title block */
-.title-block {{ border-bottom: 1.5pt solid {_ACCENT}; padding-bottom: 6pt; margin-bottom: 12pt; }}
-.report-title {{ string-set: title content(); color: {_ACCENT}; font-size: 20pt; margin: 0 0 4pt; }}
-.meta {{ color: #555; font-size: 9pt; margin: 0; }}
-.question {{ margin: 8pt 0 0; font-style: italic; }}
-.partial-note {{ border: 0.75pt solid #b8a07e; background: #f3ece0; padding: 4pt 8pt; font-size: 9pt; }}
+.title-block {{ border-bottom: 0.75pt solid {_T.GOLD}; padding-bottom: 8pt; margin-bottom: 14pt; }}
+.report-title {{ string-set: title content(); font-family: {_DISPLAY}; font-weight: 700;
+                 letter-spacing: 0.03em; color: {_T.GLOW}; font-size: 20pt; margin: 0 0 4pt; }}
+.meta {{ color: {_T.TAN}; font-size: 9pt; margin: 0; }}
+.question {{ margin: 10pt 0 0; padding: 6pt 10pt; background: {_T.CARD}; border-left: 3pt solid {_T.GOLD};
+             border-radius: 0 6pt 6pt 0; font-style: italic; color: {_T.CREAM}; }}
+.partial-note {{ border-left: 3pt solid {_T.EMBER}; background: {_T.CARD}; padding: 5pt 10pt;
+                 border-radius: 0 6pt 6pt 0; font-size: 9pt; color: {_T.CREAM}; }}
 
 /* Headings stay with what follows them (FR-010) */
-h1, h2, h3, h4 {{ color: {_ACCENT}; line-height: 1.2; break-after: avoid; }}
-h1 {{ font-size: 16pt; margin: 14pt 0 6pt; }}
-h2 {{ font-size: 13.5pt; margin: 14pt 0 5pt; }}
-h3 {{ font-size: 11.5pt; margin: 10pt 0 4pt; }}
-h4 {{ font-size: 10pt; margin: 8pt 0 3pt; }}
+h1, h2, h3, h4 {{ font-family: {_DISPLAY}; letter-spacing: 0.03em; line-height: 1.25; break-after: avoid; }}
+h1 {{ font-size: 16pt; color: {_T.GLOW}; margin: 16pt 0 6pt; }}
+h2 {{ font-size: 13pt; font-weight: 700; color: {_T.GOLD}; margin: 18pt 0 6pt; }}
+h3 {{ font-size: 11pt; font-weight: 600; color: {_T.CREAM}; margin: 12pt 0 4pt; }}
+h4 {{ font-size: 10pt; font-weight: 600; color: {_T.TAN}; margin: 10pt 0 3pt; }}
 p {{ margin: 0 0 6pt; orphans: 2; widows: 2; }}
-tr, figure, pre, blockquote, p.math {{ break-inside: avoid; }}
+tr, figure, pre, blockquote, p.math, .kpi, li.tl {{ break-inside: avoid; }}
 thead {{ display: table-header-group; }}
+
+/* Content elements (US1) */
+ul, ol {{ padding-left: 16pt; margin: 4pt 0 8pt; }}
+li {{ margin: 2pt 0; }}
+li::marker {{ color: {_T.GOLD}; }}
+li > ul, li > ol {{ margin: 1pt 0; }}
+ul.contains-task-list {{ padding-left: 4pt; }}
+li.task-list-item {{ list-style: none; }}
+span.task-box {{ margin-right: 4pt; color: {_T.GOLD}; }}
+code {{ font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; color: {_T.CREAM};
+        background: {_T.OAK}; border: 0.75pt solid {_T.BORDER}; padding: 0 3pt; border-radius: 3pt; }}
+pre {{ font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; white-space: pre-wrap;
+       background: {_T.OAK}; border: 0.75pt solid {_T.BORDER}; padding: 8pt 10pt; border-radius: 6pt; }}
+pre code {{ background: none; border: none; padding: 0; }}
+blockquote {{ margin: 8pt 0; padding: 2pt 0 2pt 10pt; border-left: 3pt solid {_T.GOLD}; color: {_T.TAN}; }}
+hr {{ border: none; border-top: 0.75pt solid {_T.BORDER}; margin: 12pt 0; }}
+img.math-inline {{ vertical-align: middle; }}
+p.math {{ text-align: center; margin: 8pt 0; }}
+
+/* Tables: the chat's rounded cards (Streamdown) */
+table {{ width: 100%; border-collapse: separate; border-spacing: 0; margin: 8pt 0 12pt; font-size: 9pt;
+         background: {_T.CARD}; border: 0.75pt solid {_T.BORDER}; border-radius: 6pt; }}
+th, td {{ padding: 4pt 7pt; vertical-align: top; text-align: left; }}
+th {{ background: {_T.RAISED}; color: {_T.CREAM}; font-weight: 700; border-bottom: 0.75pt solid {_T.BORDER}; }}
+th:first-child {{ border-top-left-radius: 6pt; }}
+th:last-child {{ border-top-right-radius: 6pt; }}
+td {{ border-top: 0.5pt solid {_T.BORDER}; }}
+tbody tr:first-child td {{ border-top: none; }}
+tbody tr:nth-child(even) td {{ background: {_T.ZEBRA}; }}
+.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+table.wide {{ font-size: 7.5pt; }}
+table.wide th, table.wide td {{ padding: 2.5pt 3.5pt; }}
+
+/* Report components (see _components) */
+.kpis {{ display: flex; flex-wrap: wrap; gap: 6pt; margin: 4pt 0 12pt; }}
+.kpi {{ flex: 1 1 28%; background: {_T.CARD}; border: 0.75pt solid {_T.BORDER}; border-radius: 6pt;
+        padding: 7pt 9pt; }}
+.kpi-value, .kpi-label, .kpi-note {{ display: block; }}  /* block, not flex: wrapped lines grow */
+.kpi-value {{ font-size: 17pt; font-weight: 700; line-height: 1.1; color: {_T.GLOW};
+              font-variant-numeric: tabular-nums; }}
+.kpi-label {{ font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+              color: {_T.TAN}; margin-top: 3pt; }}
+.kpi-note {{ font-size: 8pt; color: {_T.TAN}; }}
+.callout {{ background: {_T.CARD}; border-left: 3pt solid {_T.GOLD}; border-radius: 0 6pt 6pt 0;
+            padding: 7pt 11pt; color: {_T.CREAM}; }}
+.callout-warning {{ border-left-color: {_T.EMBER}; }}
+.callout-label {{ font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+                  color: {_T.GOLD}; margin-bottom: 2pt; }}
+.callout-warning .callout-label {{ color: {_T.EMBER}; }}
+li.tl {{ list-style: none; margin: 0; padding: 3pt 0; border-bottom: 0.5pt solid {_T.BORDER}; }}
+.tl-time {{ display: inline-block; width: 32pt; font-weight: 700; color: {_T.GOLD};
+            font-variant-numeric: tabular-nums; }}
+ol.actions {{ list-style: none; padding-left: 0; counter-reset: act; }}
+ol.actions > li {{ counter-increment: act; position: relative; padding: 5pt 0 5pt 24pt; margin: 0;
+                   border-bottom: 0.5pt solid {_T.BORDER}; }}
+ol.actions > li::before {{ content: counter(act); position: absolute; left: 0; top: 5pt; width: 15pt;
+                           height: 15pt; border-radius: 7.5pt; background: {_T.GOLD}; color: {_T.ON_GOLD};
+                           font-size: 8pt; font-weight: 700; text-align: center; line-height: 15pt; }}
+ol.actions > li > strong:first-child {{ display: block; color: {_T.CREAM}; }}
 
 /* Charts section (FR-012) */
 .charts {{ break-before: page; }}
-figure {{ margin: 0 0 14pt; }}
+figure {{ margin: 0 0 16pt; padding: 8pt; background: {_T.CARD}; border: 0.75pt solid {_T.BORDER};
+          border-radius: 6pt; }}
 figure img {{ width: 100%; }}
-figcaption {{ font-size: 9pt; color: #444; margin-top: 3pt; }}
-.charts-omitted {{ font-style: italic; color: #777; }}
-.chart-unavailable {{ font-style: italic; color: #777; border: 0.75pt dashed #b8a07e;
-                      padding: 18pt; text-align: center; margin: 0; }}
-th {{ background: {_ACCENT}; color: #fff; text-align: left; }}
-tbody tr:nth-child(even) {{ background: #f3ece0; }}
+figcaption {{ font-size: 9pt; color: {_T.TAN}; margin-top: 4pt; }}
+.charts-omitted {{ font-style: italic; color: {_T.TAN}; }}
+.chart-unavailable {{ font-style: italic; color: {_T.TAN}; border: 0.75pt dashed {_T.BORDER};
+                      border-radius: 6pt; padding: 18pt; text-align: center; margin: 0; }}
 """
 
-REPORT_CSS += """
-/* Content elements (US1) */
-ul, ol { padding-left: 16pt; margin: 4pt 0 6pt; }
-li { margin: 1.5pt 0; }
-li > ul, li > ol { margin: 1pt 0; }
-ul.contains-task-list { padding-left: 4pt; }
-li.task-list-item { list-style: none; }
-span.task-box { margin-right: 4pt; }
-code { font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt;
-       background: #f2f2f2; padding: 0 2pt; border-radius: 2pt; }
-pre { font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; white-space: pre-wrap;
-      background: #f2f2f2; padding: 6pt 8pt; border-radius: 3pt; }
-pre code { background: none; padding: 0; }
-blockquote { margin: 6pt 0; padding: 2pt 0 2pt 10pt; border-left: 3pt solid #b8a07e; color: #444; }
-hr { border: none; border-top: 0.75pt solid #b8a07e; margin: 10pt 0; }
-img.math-inline { vertical-align: middle; }
-p.math { text-align: center; margin: 8pt 0; }
-table { width: 100%; border-collapse: collapse; margin: 6pt 0 10pt; font-size: 9pt; }
-th, td { border: 0.5pt solid #b8a07e; padding: 3pt 5pt; vertical-align: top; }
-table.wide { font-size: 7.5pt; }
-table.wide th, table.wide td { padding: 2pt 3pt; }
-"""
 
-_FETCHER = URLFetcher(allowed_protocols={"data"})
+class _ReportFetcher(URLFetcher):
+    """Renderer-owned resources only: ``data:`` (equations, charts) and the bundled fonts.
+
+    ``file:`` is allowed solely for paths that resolve inside ``assets/fonts`` (traversal
+    is resolved first); there is no base URL, so relative URLs never resolve (R6).
+    """
+
+    def fetch(self, url, headers=None):
+        if url.lower().startswith("file:"):
+            path = Path(url2pathname(urlsplit(url).path)).resolve()
+            if not path.is_relative_to(_FONT_DIR):
+                raise ValueError(f"file URL outside the report fonts: {url}")
+        return super().fetch(url, headers)
+
+
+_FETCHER = _ReportFetcher(allowed_protocols={"data", "file"})
 
 
 def _charts_html(figures: tuple[ReportFigure, ...], omitted: int = 0) -> str:
@@ -547,12 +622,19 @@ def _document_html(doc: ReportDocument) -> str:
     )
 
 
+def _layout(document_html: str):
+    """Lay the document out with the report stylesheet and the bundled fonts."""
+    fonts = FontConfiguration()  # per render: reports render concurrently in threads
+    css = CSS(string=REPORT_CSS, url_fetcher=_FETCHER, font_config=fonts)
+    return HTML(string=document_html, base_url=None, url_fetcher=_FETCHER).render(
+        stylesheets=[css], font_config=fonts
+    )
+
+
 def render_report_pdf(doc: ReportDocument) -> bytes:
     """Render the report to PDF bytes. Raises on failure; never returns a partial file."""
     started = time.perf_counter()
-    rendered = HTML(string=_document_html(doc), base_url=None, url_fetcher=_FETCHER).render(
-        stylesheets=[CSS(string=REPORT_CSS)]
-    )
+    rendered = _layout(_document_html(doc))
     pdf = rendered.write_pdf()
     logger.info(
         "pdf rendered scope=%s pages=%d figures=%d ms=%d",

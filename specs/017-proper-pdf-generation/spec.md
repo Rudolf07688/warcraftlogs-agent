@@ -146,7 +146,7 @@ Charts from the conversation (Warcraft Logs graphs the analyst pulled and charts
 - **SC-004**: In a report of at least 5 pages with at least 2 tables that span a page break, no content is cut off at a margin, no heading is left alone at the bottom of a page, and every continued table repeats its header.
 - **SC-005**: A typical report (one findings document plus up to 5 charts) is ready to download in no more time than today, and in under 30 seconds end to end, including the findings rewrite.
 - **SC-006**: When asked to compare an old and a new report of the same conversation, the project owner prefers the new one, and judges it "something I'd share with my raid lead".
-- **SC-007**: A report printed in black and white has every chart series and table row band distinguishable.
+- **SC-007**: A report printed in black and white has every chart series and table row band distinguishable. *(Relaxed 2026-10-20: the owner chose a dark page that matches the chat. Series still differ by line style, marker or hatch, but the dark page is not designed for greyscale printing.)*
 - **SC-008**: Error outcomes are unchanged: a forced generation failure gives a clear error and no file in 100% of attempts.
 
 ## Assumptions

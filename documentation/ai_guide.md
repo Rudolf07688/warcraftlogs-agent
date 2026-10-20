@@ -741,7 +741,13 @@ synthesis (feature 007), both endpoints, file names and fail-closed errors are a
   builder, used for graph source links and the benchmark tool.
 - **Deps**: `weasyprint`, `markdown-it-py`, `mdit-py-plugins`, `nh3` (test: `pypdf`);
   `reportlab` and the unused `markdown` were removed. The Docker image adds Pango/HarfBuzz,
-  Noto CJK and Noto Color Emoji (DejaVu was already there).
+  Noto CJK and Noto Color Emoji (DejaVu was already there). Cinzel and Alegreya Sans ship in
+  `backend/app/assets/fonts/` (OFL) and load through `@font-face`.
+- **Look (2026-10-20)**: the PDF copies the chat's agent-message theme, dark page included.
+  Colours live in `services/report_theme.py` (hex versions of the frontend's oklch tokens).
+  Charts and equations draw in cream on transparent backgrounds. `_FETCHER` allows `data:` plus
+  `file:` URLs inside the fonts directory only. No emoji font may be named in a CSS font stack
+  (Pango 1.56 draws digits as keycaps).
 - **Tests**: `backend/tests/fixtures/findings/*.md` (23 docs: one per element/edge case plus
   7 real agent answers) are rendered and checked with pypdf for leftover markup and
   clickable links; plus `findings_to_html` units, a fetch-lockdown test, title block, page

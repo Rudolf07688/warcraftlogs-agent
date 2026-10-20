@@ -21,6 +21,7 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import StrMethodFormatter
 
 from ..schemas import ChartSpec
+from . import report_theme as theme
 
 _MAX_SERIES = 12
 _MAX_POINTS = 500
@@ -78,9 +79,9 @@ def figure_to_svg(fig: Figure, *, pad_inches: float = 0.1) -> bytes:
     return buf.getvalue()
 
 
-# PDF print style (FR-015/FR-017): every series differs by line style and marker (or
-# hatch, for bars) as well as colour, so charts still read when printed in greyscale.
-_COLORS = ("#4b2e1e", "#2b5d8a", "#b8862b", "#4f7a3a", "#8a2b4f", "#6b6b6b")
+# PDF style: the chat's dark tavern theme (report_theme). Every series also differs by
+# line style and marker (or hatch, for bars), so series stay apart without colour.
+_COLORS = (theme.GOLD, theme.CREAM, theme.BLUE, theme.GREEN, theme.EMBER, theme.TAN)
 _LINES = (("-", "o"), ("--", "s"), (":", "^"), ("-.", "D"))
 # Line patterns only: dot/circle hatches cost WeasyPrint ~300 ms and ~180 KB per chart.
 _HATCHES = ("", "//", "\\\\", "xx", "--", "||")
@@ -96,7 +97,10 @@ def _new_axes():
     ax = fig.subplots()
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
-    ax.tick_params(labelsize=8, colors="#444")
+    for side in ("bottom", "left"):
+        ax.spines[side].set_color(theme.TAN)
+    # Colours are set per figure, never via rcParams: reports render in worker threads.
+    ax.tick_params(labelsize=8, colors=theme.CREAM)
     return fig, ax
 
 
@@ -111,14 +115,14 @@ def _line(ax, name: str, xs: list, ys: list, style) -> None:
 def _finish(fig: Figure, ax, *, x_label: str = "", y_label: str = "", n_series: int = 1) -> bytes:
     """Shared axes styling for every PDF chart. The title goes in the HTML caption."""
     if x_label:
-        ax.set_xlabel(x_label, fontsize=9)
+        ax.set_xlabel(x_label, fontsize=9, color=theme.CREAM)
     if y_label:
-        ax.set_ylabel(y_label, fontsize=9)
+        ax.set_ylabel(y_label, fontsize=9, color=theme.CREAM)
     if n_series > 1:
-        ax.legend(fontsize="x-small", loc="best", frameon=False)
+        ax.legend(fontsize="x-small", loc="best", frameon=False, labelcolor=theme.CREAM)
     if max(abs(v) for v in ax.get_ylim()) >= 10_000:
         ax.yaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))  # 1,234,567 DPS
-    ax.grid(True, alpha=0.25, linewidth=0.6)
+    ax.grid(True, color=theme.TAN, alpha=0.2, linewidth=0.6)
     fig.tight_layout()
     return figure_to_svg(fig)
 
@@ -131,7 +135,7 @@ def chart_spec_to_svg(spec: ChartSpec) -> bytes:
         width = 0.8 / max(len(bounded), 1)
         for i, ((name, _xs, ys), (color, _line_style, hatch)) in enumerate(zip(bounded, _styles())):
             offsets = [p + i * width for p in range(len(ys))]
-            ax.bar(offsets, ys, width=width, label=name, color=color, hatch=hatch, edgecolor="#ffffff")
+            ax.bar(offsets, ys, width=width, label=name, color=color, hatch=hatch, edgecolor=theme.OAK)
         # Label the x ticks with the first series' x values when categorical.
         if bounded:
             _, xs0, ys0 = bounded[0]

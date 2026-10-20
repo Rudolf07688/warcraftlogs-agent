@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import re
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -289,13 +292,9 @@ def test_forged_maths_placeholders_are_inert():
 
 def _table_overflow(markdown: str) -> float:
     """How far (px) the widest table sticks out past the page content box."""
-    from weasyprint import CSS, HTML
-
     from backend.app.services import pdf_report as pr
 
-    doc = HTML(string=pr._document_html(_doc(markdown)), base_url=None, url_fetcher=pr._FETCHER).render(
-        stylesheets=[CSS(string=pr.REPORT_CSS)]
-    )
+    doc = pr._layout(pr._document_html(_doc(markdown)))
     worst = float("-inf")
     for page in doc.pages:
         box = page._page_box
@@ -382,14 +381,58 @@ def test_font_stacks_never_name_an_emoji_font():
     assert stacks and not any("emoji" in s.lower() for s in stacks)
 
 
-def test_digits_use_the_text_font():
-    pdf = render_report_pdf(_doc("Season 2: 140.8k DPS, #1 parse, 3*4"))
-    fonts = {
+def _embedded_fonts(pdf: bytes) -> set[str]:
+    return {
         str(f.get_object().get("/BaseFont"))
         for page in PdfReader(io.BytesIO(pdf)).pages
         for f in (page["/Resources"].get("/Font") or {}).values()
     }
+
+
+def test_digits_use_the_text_font():
+    fonts = _embedded_fonts(render_report_pdf(_doc("Season 2: 140.8k DPS, #1 parse, 3*4")))
     assert not any("Emoji" in f for f in fonts), fonts
+
+
+def test_report_uses_the_chat_fonts():
+    # Cinzel headings and Alegreya Sans body, bundled with the app like the chat's theme.
+    fonts = _embedded_fonts(render_report_pdf(_doc("## Summary\n\nBody text, *italic* and **bold**.")))
+    assert any("Cinzel" in f for f in fonts), fonts
+    assert any("Alegreya-Sans" in f for f in fonts), fonts
+
+
+def test_fetcher_only_reads_the_bundled_fonts():
+    from backend.app.services import pdf_report as pr
+
+    font = (pr._FONT_DIR / "Cinzel-Variable.ttf").as_uri()
+    assert pr._FETCHER.fetch(font)
+    for url in (
+        "file:///etc/hostname",
+        pr._FONT_DIR.as_uri() + "/../../../../pyproject.toml",
+        "http://127.0.0.1:9/x.ttf",
+    ):
+        with pytest.raises(Exception):
+            pr._FETCHER.fetch(url)
+
+
+@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs poppler's pdftoppm")
+def test_page_background_is_dark_oak(tmp_path):
+    from backend.app.services import report_theme as theme
+
+    (tmp_path / "r.pdf").write_bytes(render_report_pdf(_doc("x")))
+    subprocess.run(["pdftoppm", "-r", "20", "-f", "1", "-l", "1", "-png", str(tmp_path / "r.pdf"), str(tmp_path / "p")], check=True)
+    png = next(tmp_path.glob("p*.png")).read_bytes()
+    from PIL import Image
+
+    corner = Image.open(io.BytesIO(png)).convert("RGB").getpixel((2, 2))
+    assert corner == tuple(int(theme.OAK[i : i + 2], 16) for i in (1, 3, 5))
+
+
+def test_equations_are_cream_on_the_dark_page():
+    from backend.app.services import report_theme as theme
+
+    svg = base64.b64decode(re.search(r"base64,([^\"]+)", findings_to_html("$a^2$")).group(1)).decode()
+    assert theme.CREAM in svg and "#000000" not in svg
 
 
 # --- Report components (renderer-owned classes) ----------------------------------------

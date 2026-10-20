@@ -137,3 +137,14 @@ def test_six_series_bar_chart_report_stays_small():
         figures=(ReportFigure("Bars", chart_spec_to_svg(spec)),),
     )
     assert len(render_report_pdf(doc)) < 60_000
+
+
+def test_chart_text_and_bar_edges_suit_the_dark_page():
+    from backend.app.services import report_theme as theme
+
+    svg = chart_spec_to_svg(ChartSpec.model_validate(
+        {"kind": "bar", "title": "DPS", "x_label": "Ability", "series": [
+            {"name": "A", "x": ["a", "b"], "y": [1, 2]}, {"name": "B", "x": ["a", "b"], "y": [2, 3]}]}
+    )).decode()
+    assert theme.CREAM in svg and theme.OAK in svg
+    assert "#ffffff" not in svg.lower() and "#444444" not in svg

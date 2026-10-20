@@ -37,7 +37,7 @@ def findings_to_html(markdown: str) -> str
 
 ### Fetch policy
 
-Only `data:` URLs are fetched, and only the renderer's own images (equations, charts) use them. `http:`, `https:`, `file:` and anything else raise inside WeasyPrint, and the resource is skipped. The document has no `base_url`, so relative URLs never resolve (R6).
+`_FETCHER` (`_ReportFetcher`) fetches only `data:` URLs, which the renderer's own images (equations, charts) use, and `file:` URLs that resolve inside `backend/app/assets/fonts/` (the bundled fonts, loaded by `@font-face`; `../` traversal is resolved before the check). `http:`, `https:`, any other `file:` path and everything else raise inside WeasyPrint, and the resource is skipped. The document has no `base_url`, so relative URLs never resolve (R6).
 
 ## Document structure (HTML)
 
@@ -73,8 +73,9 @@ Behaviour the CSS must provide (FR-008 to FR-014). The exact values are design d
 | `h1–h4 { break-after: avoid }`, `figure, tr, pre, blockquote { break-inside: avoid }` | No orphaned headings or split rows (FR-010) |
 | `thead { display: table-header-group }` | Header repeats after a break (FR-010) |
 | `table { width: 100%; table-layout: auto }`, cells `overflow-wrap: anywhere`; `pre { white-space: pre-wrap }`; `body { overflow-wrap: anywhere }` | Nothing goes past the margins (FR-011) |
-| `body` font stack: `"DejaVu Sans", "Noto Sans CJK SC", "Noto Color Emoji", sans-serif`; `code, pre`: `"DejaVu Sans Mono"`; the same stack inside the `@page` margin boxes | FR-007 and a consistent style (FR-013) |
-| White page; near-black text; tavern brown `#4b2e1e` on the title, headings, table header row and rules only; table banding `#f3ece0`; light borders `#b8a07e` | Clean, neutral style with tavern accents (FR-013, FR-014) |
+| Fonts bundled in `backend/app/assets/fonts/` (OFL) and loaded with `@font-face` through a per-render `FontConfiguration`: **Cinzel** for the title and headings (0.03em tracking), **Alegreya Sans** for the body. Body stack `"Alegreya Sans", "DejaVu Sans", "Noto Sans CJK SC", sans-serif`; `code, pre`: `"DejaVu Sans Mono"`. **No emoji font in any stack**: Pango 1.56 would draw digits, `#` and `*` as keycaps; emoji come from fontconfig fallback | FR-007 and a consistent style (FR-013) |
+| **The chat's "Tavern Hearth" theme, dark page included** (owner's choice 2026-10-20, replacing the earlier white page). Colours are `report_theme` constants, converted from the frontend's oklch tokens: oak page, card-coloured tables and KPI cards, cream text, gold headings, glow-gold title, links and KPI values. Tables are rounded cards with a raised header row and zebra rows. Charts and equations draw in cream on transparent backgrounds | Matches the agent messages in the chat (FR-013, FR-014) |
+| Components: `.kpis`/`.kpi` cards, `.callout` (tip/note/warning), `.num` columns (right-aligned, tabular figures), `li.tl` timeline rows, `ol.actions` numbered action rows | Report components (`pdf_report._components`) |
 | `.task-list-item { list-style: none }` with the checkbox inline | Fixes the spike gap |
 | `.charts { break-before: page }` | Charts start on a new page (FR-012) |
 
