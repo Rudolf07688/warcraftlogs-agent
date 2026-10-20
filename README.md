@@ -48,6 +48,9 @@ Agent: On Heroic Ula'tek this season, across 500 logged Hunter parses ...
    ```bash
    uv sync
    ```
+   PDF reports need Pango and a few fonts from the system (the Docker image has them).
+   On Debian/Ubuntu: `sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0
+   libharfbuzz-subset0 fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji`.
 
 > Prefer an AI Studio API key instead of Vertex? Set
 > `GOOGLE_GENAI_USE_VERTEXAI=FALSE` and `GOOGLE_API_KEY=...` in `.env`.
@@ -152,7 +155,8 @@ CSRF token (sent as `X-CSRF-Token` on unsafe requests). Full verification steps 
   if Vertex is unreachable. Since feature 016 the candidates come from Vertex's own
   catalog (see [Model discovery](#model-discovery-feature-016)).
 - **PDF export** — download any conversation as a PDF with the written analysis
-  plus the graphs the agent fetched (rendered with matplotlib + reportlab).
+  plus the graphs the agent fetched (rendered with WeasyPrint since feature 017; see
+  [Proper PDF reports](#proper-pdf-reports-feature-017)).
 
 ### Enhancements (feature 004 — Phase 3)
 
@@ -401,6 +405,29 @@ guide is rendered from the same verified claims.
   (off until the maintainer has reviewed the guide sites' terms), `WCL_GUIDE_TALENT_NAMES_URL`,
   `WOW_VERSION_URL`, `WOW_NEWS_URL`. Migration `0011_guide_content_types` keeps existing
   guides as Raid guides marked `legacy`. Spec: `specs/015-grounded-class-guides/`.
+
+### Proper PDF reports (feature 017)
+
+Both PDF downloads (whole conversation and single answer) are rendered from the findings
+document as **Markdown → sanitised HTML → print CSS → PDF**, replacing the old hand-written
+ReportLab converter that left `**`, `#` and tags on the page.
+
+- **Text**: markdown-it-py (CommonMark + tables, strikethrough, task lists) renders every
+  element properly, and links are clickable. Equations are typeset with matplotlib
+  mathtext as SVG; anything it can't parse falls back to plain text. "$5" stays as text.
+- **Safety**: raw HTML in model output is cleaned with nh3 (basic formatting kept, scripts
+  and frames dropped). Remote images become their alt text. WeasyPrint may only load
+  `data:` URLs, so nothing is fetched from the network or the server's disk.
+- **Layout**: a title block (title, scope, UTC time, the question for a single answer, and a
+  note when the answer was interrupted), a running header from page 2, "Page X of Y",
+  headings kept with their content, table headers repeated after page breaks, and long
+  codes and URLs wrapped inside the margins. One clean style with tavern-brown accents.
+- **Charts**: a Charts section on a new page after the findings, numbered and captioned
+  ("Figure 1 — …", with a source link). Charts are vector SVG; series differ by line
+  style, marker or hatch, so they still read in black and white. A chart that can't be
+  drawn shows "Chart unavailable" instead of failing the report.
+- Each render logs `pdf rendered scope=… pages=… figures=… ms=…`. Spec:
+  `specs/017-proper-pdf-generation/`.
 
 ## Quick checks
 

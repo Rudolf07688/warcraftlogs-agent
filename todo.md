@@ -29,6 +29,13 @@
   - Over time we will have saved all relavent data, building up a massive database of information
   - I want to structure the app so that 80% of questions don't require external api calls (fast)
 - Unstructured directory `./wcl_agent/*.py`
+- API rate limits
+  - The agent is making too many requests to build the class guides, running out of request before completing the guide.
+  - We must put together some agent skill or pattern to help the agent find the information it needs quicker and easier.
+- If current model returns 429 errors, switch to the second available model in class
+  - If already switch, switch back to the first model
+    - If it still gives 429s then report that to the user and ask to try again in a bit.
+
 **[ UI / Design ]**
 - Chat interface redesign
   - mayby rather single-lane chat
@@ -39,6 +46,13 @@
   - 6 raids and 6 dungeons max (most recent ones, in order)
 - In the left side bar, previous conversations must be above the "Raids" section.
   - Generate conversation name based on the messages
+- On account creation take the player straight to the profile page and ask them to fill in at least one character
+  - not forced / skippable
+  - Also include a simple selector to select their main class
+    - Also select main content (Raid / M+ or both)
+    - This will start generating guides for that spec in the background.
+- Pinnabable chats
+  - In chat window and sidebar.
 
 ## QA Hits
 Medium findings still open:

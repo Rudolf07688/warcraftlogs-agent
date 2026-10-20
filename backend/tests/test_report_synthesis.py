@@ -69,3 +69,17 @@ def test_build_input_includes_question_for_message_scope():
     )
     assert "Originating question" in text
     assert "what was the parse?" in text
+
+
+def test_generate_caps_output_tokens(monkeypatch):
+    # QA SEC-003: the findings call has an output budget.
+    seen = {}
+
+    class FakeModels:
+        def generate_content(self, *, model, contents, config):
+            seen["config"] = config
+            return type("R", (), {"text": "## Summary\n\nok"})()
+
+    monkeypatch.setattr("wcl_agent.vertex.genai_client", lambda: type("C", (), {"models": FakeModels()})())
+    assert rs._generate("m", "p") == "## Summary\n\nok"
+    assert seen["config"].max_output_tokens == rs._MAX_OUTPUT_TOKENS

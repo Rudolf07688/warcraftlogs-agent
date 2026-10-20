@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Bound the synchronous download: synthesis must never hang a request (FR-019).
 _TIMEOUT_S = 60.0
+# Cap the output too (QA SEC-003). On thinking models this budget includes thinking
+# tokens, so it is generous; the renderer also caps the body at 60 k characters.
+_MAX_OUTPUT_TOKENS = 16_384
 # Cap the input fed to the model so very long conversations stay within limits; oldest
 # messages are dropped first so the most recent findings are always included (edge case).
 _MAX_INPUT_CHARS = 24_000
@@ -71,10 +74,16 @@ def _build_input(messages: list[dict], *, scope: str, question: str | None) -> s
 
 def _generate(model: str, prompt: str) -> str:
     """Blocking one-shot genai call (run via ``to_thread``). Non-web-search."""
+    from google.genai import types
+
     from wcl_agent.vertex import genai_client
 
     client = genai_client()
-    resp = client.models.generate_content(model=model, contents=prompt)
+    resp = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(max_output_tokens=_MAX_OUTPUT_TOKENS),
+    )
     return (getattr(resp, "text", "") or "").strip()
 
 

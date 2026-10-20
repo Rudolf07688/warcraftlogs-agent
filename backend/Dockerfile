@@ -1,11 +1,15 @@
 # Backend: FastAPI + ADK agent (Python 3.14)
 FROM python:3.14-slim
 
-# Runtime libs for matplotlib/reportlab chart rendering on the slim base
-# (fonts + freetype/png). manylinux wheels mostly bundle these, but installing
-# them keeps PDF/graph rendering robust across base-image changes.
+# Runtime libs for PDF reports on the slim base: Pango/HarfBuzz for WeasyPrint,
+# freetype/png for matplotlib charts and maths. Fonts: DejaVu (Latin, Greek,
+# Cyrillic), Noto CJK (KR/TW/CN character and realm names) and Noto Color Emoji,
+# so no glyph renders as a box.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libfreetype6 libpng16-16 fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+        libfreetype6 libpng16-16 \
+        fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # uv for fast, locked installs

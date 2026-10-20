@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import uuid
+
+from pypdf import PdfReader
 
 from backend.app.api import reports as reports_module
 from backend.app.db import repository as repo
@@ -50,6 +53,11 @@ async def test_message_report_is_scoped_and_valid(as_user, session_factory, monk
     assert resp.headers["content-type"] == "application/pdf"
     assert "wcl-message-" in resp.headers["content-disposition"]
     assert resp.content[:4] == b"%PDF"
+    # Only this answer's chart is included (FR-021).
+    text = "".join(p.extract_text() for p in PdfReader(io.BytesIO(resp.content)).pages)
+    assert "Figure 1 — DPS" in text
+    other = await as_user.client.get(f"/api/conversations/{conv_id}/messages/{_a2_id}/report.pdf")
+    assert "Figure 1" not in "".join(p.extract_text() for p in PdfReader(io.BytesIO(other.content)).pages)
 
 
 async def test_message_report_synthesizes_only_target_reply(as_user, session_factory, monkeypatch):
@@ -87,3 +95,20 @@ async def test_message_report_404_for_user_message(as_user, session_factory):
 
     resp = await as_user.client.get(f"/api/conversations/{conv_id}/messages/{user_id}/report.pdf")
     assert resp.status_code == 404
+
+
+async def test_message_report_marks_partial_answer_and_shows_question(as_user, session_factory, monkeypatch):
+    _mock_synthesis(monkeypatch)
+    tid = as_user.tenant_id
+    async with session_factory() as s:
+        conv = await repo.create_conversation(s, model="gemini-3.6-flash", tenant_id=tid)
+        await repo.add_message(s, conv.id, "user", "Why did we wipe on Fyrakk?", tenant_id=tid)
+        a = await repo.add_message(s, conv.id, "agent", "Half an answer", "partial", tenant_id=tid)
+        await s.commit()
+        conv_id, a_id = str(conv.id), str(a.id)
+
+    resp = await as_user.client.get(f"/api/conversations/{conv_id}/messages/{a_id}/report.pdf")
+    assert resp.status_code == 200
+    first = PdfReader(io.BytesIO(resp.content)).pages[0].extract_text()
+    assert "partial answer" in first
+    assert "Why did we wipe on Fyrakk?" in first

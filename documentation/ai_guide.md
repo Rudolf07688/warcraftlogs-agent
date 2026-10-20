@@ -325,8 +325,8 @@ for future agents:
   client is built at `vertex.model_location()` (`WCL_MODEL_LOCATION`, default `global`),
   never at `GOOGLE_CLOUD_LOCATION`.
 - **PDF export**: `captured_graphs` table + `services/graphs.py` capture graph JSON
-  during chat; `services/pdf_report.py` renders analysis + matplotlib charts;
-  `api/reports.py` streams it. (Feature 007 inserts a findings-synthesis step before
+  during chat; `services/pdf_report.py` renders analysis + charts (WeasyPrint since
+  feature 017, §22); `api/reports.py` streams it. (Feature 007 inserts a findings-synthesis step before
   the render — the PDF body is now an analytic findings document, not the transcript.)
 - **Testing note**: ORM uses portable column types (`Uuid`, `JSON`/`JSONB`
   variant) so `backend/tests/` run on in-memory SQLite (`conftest.py`); live
@@ -347,13 +347,13 @@ Implemented in `specs/005-guild-context-artifacts/`. Summary for future agents:
   `ws._handle_tool_end` persists it, derives a Plotly figure
   (`services/charts.chart_spec_to_plotly`), and emits an `artifact` frame; the
   frontend renders it via a lazy-loaded `PlotlyArtifact`. The same spec renders to
-  matplotlib for the PDF (`chart_spec_to_matplotlib`) — one spec, two renderers.
+  matplotlib SVG for the PDF (`chart_spec_to_svg`, feature 017) — one spec, two renderers.
   Captures are linked to their agent message at turn end via
   `repo.assign_message_seq_to_turn_captures` and re-render on reload.
 - **Math/LaTeX**: `StreamMarkdown` enables Streamdown's first-class `plugins.math`
   slot (remark-math + rehype-katex); KaTeX CSS imported in `main.tsx`. The PDF
-  renders block `$$…$$` as matplotlib-mathtext images and unwraps inline math to
-  italics (`services/pdf_report.py`). Currency like "$5" is never treated as math.
+  typesets inline and block maths as matplotlib-mathtext SVG, falling back to plain
+  text (`services/pdf_report.py`, §22). Currency like "$5" is never treated as math.
 - **WCL query cache**: *superseded by feature 014* — the in-process cache behind
   `query()` is gone; see §19 for the shared Redis cache.
 - **Per-message PDF**: `GET /api/conversations/{id}/messages/{message_id}/report.pdf`
@@ -431,7 +431,7 @@ empty metadata store + unset roles reproduce feature-006 behavior byte-for-byte.
   one-shot, non-web-search `genai` call off the event loop (`to_thread` + `wait_for`
   timeout, `WCL_REPORT_MODEL`) that turns the in-scope messages into a findings document.
   `api/reports._synthesize_and_render` is the shared pipeline for both scopes; the result
-  feeds the unchanged `render_report_pdf` as a single synthetic agent message. Fail-closed:
+  becomes `ReportDocument.body_markdown` for `render_report_pdf` (§22). Fail-closed:
   synthesis error/timeout/empty output → `500`, no partial file (the model emits its own
   "no substantive findings" doc for chit-chat).
 - **Role-aware profile (US4)**: nullable `user_characters.raid_role` override column
@@ -697,3 +697,52 @@ Principle VIII).
 - **Sync**: `/shortcut-sync` (`.claude/skills/shortcut-sync/`) runs the `shortcut-sync`
   sub-agent (`.claude/agents/shortcut-sync.md`). Run it when committing a feature. Pass
   `dry-run` to preview.
+
+## 22. Feature 017 — proper PDF generation
+
+Implemented in `specs/017-proper-pdf-generation/`. Only the rendering changed; the findings
+synthesis (feature 007), both endpoints, file names and fail-closed errors are as before.
+
+- **Input**: `api/reports._synthesize_and_render` builds a frozen `ReportDocument` (title,
+  scope, `generated_at`, `body_markdown`, `question`, `partial`, `figures`) and runs
+  `render_report_pdf(doc)` in `asyncio.to_thread`. `partial` comes from the source message's
+  status (single-answer scope). `_figures` turns captured graphs (first) and artifacts into
+  `ReportFigure`s; a chart that fails to validate or draw becomes `svg=None` and prints
+  "Chart unavailable".
+- **Pipeline** (`services/pdf_report.py`): `findings_to_html` = markdown-it-py (CommonMark +
+  table, strikethrough, `tasklists`, `dollarmath` with `allow_space/allow_digits=False`) →
+  maths render rules (mathtext → SVG `data:` image, fallback `_unwrap_latex_text`) → task
+  boxes as ☑/☐ → `nh3.clean` allow-list → remote `<img>` → alt text → `ol start` counter fix →
+  zero-width break points in tokens of 30+ characters (text only, never attributes). Then a
+  small HTML shell (title block, partial note, findings, Charts section) and `REPORT_CSS`
+  (CSS Paged Media: running header via `string-set`, `counter(pages)`, `break-after: avoid`,
+  repeated `thead`) go to WeasyPrint with `URLFetcher(allowed_protocols={"data"})` and no
+  `base_url`, so no network or `file:` fetches can happen.
+- **Charts** (`services/charts.py`): `chart_spec_to_svg` and `graph_to_svg` share one print
+  style (colour + line style/marker or hatch per series, thousands separators, legend only
+  for 2+ series, title in the HTML caption). All PDF figures use the object-oriented
+  `matplotlib.figure.Figure` API, never pyplot, because renders run concurrently in threads.
+  `chart_spec_to_plotly` is unchanged.
+- **Render limits (QA follow-ups)**: only the renderer's own images reach WeasyPrint. Equations
+  are swapped in from placeholders after nh3, and every `<img>` the model wrote (including
+  `data:` SVG or PNG) becomes its alt text; `data` is not an allowed URL scheme. Caps: findings
+  output 16 k tokens, body 60 k characters, 200 rows per table, equations 300 characters / 60
+  per report. Tables get extra break points in 15+ character tokens and `class="wide"` at 7+
+  columns. `api/reports` runs all CPU-bound report work on one dedicated thread
+  (`_RENDER_POOL`, `ThreadPoolExecutor(max_workers=1)`), never on the default executor the chat
+  path shares. `_figures` (plain `GraphSource`/`ChartSource` inputs) runs alongside the findings
+  call and submits each chart as its own job, so a waiting render gets in after at most one
+  chart; a report without charts never queues. At most 20 figures per report (the rest are
+  noted as "N more charts not shown"); the chart step has a 60 s deadline, after which charts
+  print "Chart unavailable"; the PDF render has a 90 s timeout (queue wait included), then
+  `500`. Caption `source` links are only drawn for http(s) URLs. Bar hatches are line
+  patterns only (dot hatches cost about 300 ms per chart in WeasyPrint).
+- **Links**: `wcl_agent.benchmark.report_link(code, fight_id=None)` is the one WCL report URL
+  builder, used for graph source links and the benchmark tool.
+- **Deps**: `weasyprint`, `markdown-it-py`, `mdit-py-plugins`, `nh3` (test: `pypdf`);
+  `reportlab` and the unused `markdown` were removed. The Docker image adds Pango/HarfBuzz,
+  Noto CJK and Noto Color Emoji (DejaVu was already there).
+- **Tests**: `backend/tests/fixtures/findings/*.md` (23 docs: one per element/edge case plus
+  7 real agent answers) are rendered and checked with pypdf for leftover markup and
+  clickable links; plus `findings_to_html` units, a fetch-lockdown test, title block, page
+  numbers, running header, repeated table header, Charts section and chart style tests.

@@ -241,8 +241,10 @@ def aggregate_measures(
 # --- The tool ---------------------------------------------------------------------
 
 
-def _fight_link(code: str, fight_id: int) -> str:
-    return f"https://www.warcraftlogs.com/reports/{code}#fight={fight_id}"
+def report_link(code: str, fight_id: int | None = None) -> str:
+    """Warcraft Logs URL for a report, or one fight in it (shared with the PDF report)."""
+    url = f"https://www.warcraftlogs.com/reports/{code}"
+    return f"{url}#fight={fight_id}" if fight_id is not None else url
 
 
 def _player_block(resolved, row: PercentileContext | None, extra: dict[str, Any]) -> dict[str, Any]:
@@ -518,7 +520,7 @@ async def compare_player_to_cohort(
                 "item_level": e.get("bracketData"),
                 "report_code": code,
                 "fight_id": fid,
-                "link": _fight_link(code, fid) if code and fid else None,
+                "link": report_link(code, fid) if code and fid else None,
             }
         )
         if not code or not fid:
@@ -551,7 +553,7 @@ async def compare_player_to_cohort(
                 "alive_s": alive_s,
                 "rate_basis": "alive_time",
                 "percentile": asdict(row),
-                "link": _fight_link(report_code, fight_id),
+                "link": report_link(report_code, fight_id),
             },
         ),
         "cohort": {
