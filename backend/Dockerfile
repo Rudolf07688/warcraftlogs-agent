@@ -9,7 +9,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
         libfreetype6 libpng16-16 \
-        fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji \
+        fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji fonts-inter fonts-ebgaramond \
     && rm -rf /var/lib/apt/lists/*
 
 # uv for fast, locked installs

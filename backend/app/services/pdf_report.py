@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import html
+import itertools
 import logging
 import re
 import time
@@ -166,10 +167,18 @@ _OL_START = re.compile(r'<ol start="(\d+)">')
 _IMG_ATTR = re.compile(r'(src|alt)="([^"]*)"')
 
 
+# The only classes kept from the model's HTML: markdown-it's own task-list markup. The
+# report components' classes are added after sanitising, so they are always the
+# renderer's (QA SEC-006).
+_MODEL_CLASSES = {"contains-task-list", "task-list-item", "task-list-item-checkbox", "task-box"}
+
+
 def _keep_attribute(element: str, attribute: str, value: str) -> str | None:
     # Table cells may only carry markdown-it's column alignment.
     if attribute == "style":
         return value if _ALIGN_STYLE.match(value) else None
+    if attribute == "class":
+        return " ".join(c for c in value.split() if c in _MODEL_CLASSES) or None
     return value
 
 
@@ -246,6 +255,121 @@ def _mark_wide_tables(markup: str) -> str:
     return _TABLE_BLOCK.sub(mark, markup)
 
 
+# --- Report components ---------------------------------------------------------------
+# The synthesis prompt asks for these in plain Markdown; each pass below turns one into
+# renderer-owned markup after sanitising. Content that doesn't follow the convention
+# stays an ordinary list, quote or table.
+
+_GLANCE = re.compile(r"(<h2>At a Glance</h2>\s*)<ul>\n(.*?)</ul>", re.DOTALL | re.IGNORECASE)
+_GLANCE_ITEM = re.compile(r"<li>(?:<strong>(.*?):?</strong>:?\s*)?(.*?)</li>", re.DOTALL)
+_KPI_NOTE = re.compile(r"^(.*?)\s*\((.*)\)$", re.DOTALL)
+
+
+def _kpi_cards(markup: str) -> str:
+    """``## At a Glance`` + ``- **Label:** value (note)`` items become KPI cards."""
+
+    def card(m: re.Match) -> str:
+        label, value = m.group(1) or "", m.group(2).strip()
+        note = ""
+        if n := _KPI_NOTE.match(value):
+            value, note = n.group(1), n.group(2)
+        return (
+            f'<div class="kpi"><span class="kpi-value">{value}</span>'
+            f'<span class="kpi-label">{label}</span>'
+            + (f'<span class="kpi-note">{note}</span>' if note else "")
+            + "</div>"
+        )
+
+    def grid(m: re.Match) -> str:
+        if "<ul" in m.group(2) or "<ol" in m.group(2):  # nested lists: leave as a list
+            return m.group(0)
+        return f'{m.group(1)}<div class="kpis">{_GLANCE_ITEM.sub(card, m.group(2)).replace(chr(10), "")}</div>'
+
+    return _GLANCE.sub(grid, markup)
+
+
+_CALLOUT = re.compile(r"<blockquote>\s*<p>\[!(TIP|NOTE|WARNING)\]\s*(?:</p>\s*<p>)?")
+_CALLOUT_LABELS = {"TIP": "Key takeaway", "NOTE": "Note", "WARNING": "Caveat"}
+
+
+def _callouts(markup: str) -> str:
+    """GitHub-style ``> [!TIP]`` / ``[!NOTE]`` / ``[!WARNING]`` quotes become callout boxes."""
+
+    def box(m: re.Match) -> str:
+        kind = m.group(1)
+        return (
+            f'<blockquote class="callout callout-{kind.lower()}">'
+            f'<p class="callout-label">{_CALLOUT_LABELS[kind]}</p><p>'
+        )
+
+    return _CALLOUT.sub(box, markup)
+
+
+_TABLE = re.compile(r"<table\b[^>]*>.*?</table>", re.DOTALL)
+_ROW = re.compile(r"<tr>(.*?)</tr>", re.DOTALL)
+_CELL = re.compile(r"<(t[dh])((?: style=\"[^\"]*\")?)>(.*?)</\1>", re.DOTALL)
+_NUMBER = re.compile(r"^[~≈<>+±▲▼−–-]?\s*\d[\d.,:]*\s*(?:%|[kKMB]|ms|s|m|x|×)?$")
+_BLANK_CELLS = {"", "—", "–", "-", "n/a", "N/A"}
+
+
+def _cell_text(inner: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", inner)).strip()
+
+
+def _is_number(text: str) -> bool:
+    # A trailing note such as "12.30% (92 procs)" doesn't stop a cell counting as numeric.
+    return bool(_NUMBER.match(re.sub(r"\s*\(.*\)$", "", text)))
+
+
+def _numeric_columns(markup: str) -> str:
+    """Right-align table columns that hold only numbers (tabular figures, ``class="num"``).
+
+    A column alignment the model set explicitly is kept; its inline style wins in the CSS.
+    """
+
+    def table(m: re.Match) -> str:
+        rows = [_CELL.findall(r) for r in _ROW.findall(m.group(0))]
+        numeric = set()
+        for col in range(max((len(r) for r in rows), default=0)):
+            texts = [_cell_text(r[col][2]) for r in rows[1:] if col < len(r)]
+            filled = [t for t in texts if t not in _BLANK_CELLS]
+            if filled and all(map(_is_number, filled)):
+                numeric.add(col)
+        if not numeric:
+            return m.group(0)
+
+        def cell(c: re.Match) -> str:
+            return f'<{c.group(1)} class="num"{c.group(2)}>{c.group(3)}</{c.group(1)}>'
+
+        def row(rm: re.Match) -> str:
+            col = itertools.count()
+            return f"<tr>{_CELL.sub(lambda c: cell(c) if next(col) in numeric else c.group(0), rm.group(1))}</tr>"
+
+        return _ROW.sub(row, m.group(0))
+
+    return _TABLE.sub(table, markup)
+
+
+_TIMELINE_ITEM = re.compile(r"<li><code>(\d{1,2}:\d{2}(?::\d{2})?)</code>\s*(?:[:—–-]\s*)?")
+
+
+def _timeline(markup: str) -> str:
+    """List items that open with a backticked ``mm:ss`` become timeline rows."""
+    return _TIMELINE_ITEM.sub(r'<li class="tl"><span class="tl-time">\1</span>', markup)
+
+
+_ACTIONS = re.compile(r"(<h2>[^<]*Recommendation[^<]*</h2>\s*)<ol\b", re.IGNORECASE)
+
+
+def _action_list(markup: str) -> str:
+    """The numbered list under Recommendations becomes a list of action rows."""
+    return _ACTIONS.sub(r'\1<ol class="actions"', markup)
+
+
+def _components(markup: str) -> str:
+    return _action_list(_timeline(_numeric_columns(_callouts(_kpi_cards(markup)))))
+
+
 # Render limits (QA SEC-003): real findings are well under 10 k characters.
 _MAX_BODY_CHARS = 60_000
 _MAX_TABLE_ROWS = 200
@@ -289,14 +413,16 @@ def findings_to_html(markdown: str) -> str:
         url_schemes={"http", "https", "mailto"},
         link_rel=None,
     )
-    markup = _mark_wide_tables(_OL_START.sub(_ol_counter, _images_to_text(clean)))
+    markup = _components(_mark_wide_tables(_OL_START.sub(_ol_counter, _images_to_text(clean))))
     slots = env.get("math", [])
     markup = _MATH_SLOT.sub(lambda m: slots[int(m.group(1))], markup)
     return _wrap_long_tokens(markup)
 
 
 # One clean, neutral style with tavern-brown accents only (clarify Q2, FR-013/014).
-_FONTS = '"DejaVu Sans", "Noto Sans CJK SC", "Noto Color Emoji", sans-serif'
+# Emoji come from fontconfig fallback: naming an emoji font here makes Pango 1.56 draw
+# digits, '#' and '*' as its keycap glyphs.
+_FONTS = '"DejaVu Sans", "Noto Sans CJK SC", sans-serif'
 _ACCENT = "#4b2e1e"
 
 REPORT_CSS = f"""

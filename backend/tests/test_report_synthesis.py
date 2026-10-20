@@ -83,3 +83,9 @@ def test_generate_caps_output_tokens(monkeypatch):
     monkeypatch.setattr("wcl_agent.vertex.genai_client", lambda: type("C", (), {"models": FakeModels()})())
     assert rs._generate("m", "p") == "## Summary\n\nok"
     assert seen["config"].max_output_tokens == rs._MAX_OUTPUT_TOKENS
+
+
+def test_prompt_describes_the_report_components():
+    # The PDF renderer styles these conventions (pdf_report._components).
+    for marker in ("## At a Glance", "**Label:** value (short context)", "> [!TIP]", "`04:05`", "## Recommendations"):
+        assert marker in rs._SYSTEM, marker

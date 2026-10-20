@@ -371,3 +371,77 @@ def test_caption_links_only_http():
 def test_omitted_charts_are_noted():
     text = "\n".join(_pages(render_report_pdf(_doc("x", figures=(_fig("A"),), figures_omitted=3))))
     assert "3 more charts not shown" in text
+
+
+def test_font_stacks_never_name_an_emoji_font():
+    # Pango 1.56 (the container) draws digits, '#' and '*' with an emoji font named in the
+    # stack: grey keycap glyphs. Emoji still render through fontconfig fallback.
+    from backend.app.services.pdf_report import REPORT_CSS
+
+    stacks = re.findall(r"font-family:\s*([^;}]+)", REPORT_CSS)
+    assert stacks and not any("emoji" in s.lower() for s in stacks)
+
+
+def test_digits_use_the_text_font():
+    pdf = render_report_pdf(_doc("Season 2: 140.8k DPS, #1 parse, 3*4"))
+    fonts = {
+        str(f.get_object().get("/BaseFont"))
+        for page in PdfReader(io.BytesIO(pdf)).pages
+        for f in (page["/Resources"].get("/Font") or {}).values()
+    }
+    assert not any("Emoji" in f for f in fonts), fonts
+
+
+# --- Report components (renderer-owned classes) ----------------------------------------
+
+
+def test_at_a_glance_list_becomes_kpi_cards():
+    out = findings_to_html(
+        "## At a Glance\n\n- **Overall DPS:** 140.8k (65th percentile)\n- **Deaths:** 0\n\n## Summary\n\nText."
+    )
+    assert '<div class="kpis">' in out and out.count('<div class="kpi">') == 2
+    assert '<span class="kpi-value">140.8k</span>' in out
+    assert '<span class="kpi-label">Overall DPS</span>' in out
+    assert '<span class="kpi-note">65th percentile</span>' in out
+    assert "<ul>" not in out  # the Summary paragraph is untouched
+
+
+def test_other_lists_are_not_kpi_cards():
+    assert "kpis" not in findings_to_html("## Key Findings\n\n- **DPS:** 140.8k\n")
+
+
+def test_alert_blockquotes_become_callouts():
+    out = findings_to_html("> [!TIP]\n> Use Blur early.\n\n> [!WARNING] Only one log.\n\n> Plain quote.")
+    assert '<blockquote class="callout callout-tip"><p class="callout-label">Key takeaway</p><p>' in out
+    assert '<blockquote class="callout callout-warning"><p class="callout-label">Caveat</p><p>Only one log.' in out
+    assert "<blockquote>\n<p>Plain quote." in out
+    assert "[!" not in out
+
+
+def test_numeric_table_columns_are_marked():
+    out = findings_to_html(
+        "| Ability | Damage | Share | Note |\n|---|:-:|---|---|\n"
+        "| Eradicate | 42.39M | 23.15% | top |\n| Void Ray | 32.71M | — | 89 casts |\n"
+    )
+    assert out.count('class="num"') == 6  # Damage + Share: header and both rows
+    assert "<td>Eradicate</td>" in out and "<td>89 casts</td>" in out
+    assert '<td class="num" style="text-align:center">42.39M</td>' in out  # explicit alignment kept
+
+
+def test_timestamped_list_items_become_timeline_rows():
+    out = findings_to_html("- `04:05` Took 1.08M damage.\n- `36:12` — Boss wipe.\n- Not a timestamp.")
+    assert '<li class="tl"><span class="tl-time">04:05</span>Took 1.08M damage.</li>' in out
+    assert '<span class="tl-time">36:12</span>Boss wipe.' in out
+    assert "<li>Not a timestamp.</li>" in out
+
+
+def test_recommendations_list_becomes_action_list():
+    out = findings_to_html("## Recommendations\n\n1. **Use Blur early:** before Razor Dive.\n")
+    assert '<ol class="actions">' in out
+
+
+def test_model_classes_cannot_fake_components():
+    # SEC-006: only markdown-it's task-list classes survive from the model's HTML.
+    out = findings_to_html('<div class="kpis report-title">x</div>\n\n- [x] done')
+    assert "kpis" not in out and "report-title" not in out
+    assert 'class="task-list-item"' in out
