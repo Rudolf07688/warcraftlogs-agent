@@ -38,6 +38,17 @@ Not mine: `repository.py` (read-only import of `_insert`), `conftest.py`, `CLAUD
 - The migration chain needs 019's `0012` for a live test: cherry-pick it temporarily
   and don't commit it. 019 merges before 020.
 
-## Where implementation starts
+## Implementation status (2026-10-25)
 
-T002 (settings) in `tasks.md`, then T004 (client sink).
+All tasks T001–T020 done. Results:
+
+- Full suite: **953 passed, 3 skipped, 1 deselected** (baseline 926 + 27 new: 12 client,
+  6 store, 9 writer).
+- Live Postgres 17 on port 15418, with 019's `0012` copied in temporarily and removed
+  afterwards (not committed). `upgrade head` → `downgrade -1` (table gone, version 0012) →
+  `upgrade head` all succeed. `\d raw_fetches` shows the 7 columns, PK `query_key`, btree
+  `ix_raw_fetches_report_code` and GIN `ix_raw_fetches_report_codes`. `wcl_app` has
+  `arwd`.
+- As the runtime role `wcl_app`, the writer stores through the real client: `_cost` is
+  stripped by `#-` (`has_cost = false`). The out-of-order pair keeps the newer row.
+  `report_codes ? 'B2'` finds the batch row through a Bitmap Index Scan on the GIN index.

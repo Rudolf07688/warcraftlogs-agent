@@ -60,4 +60,4 @@ async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> N
 | R1 | One row per `query_key`. A newer `fetched_at` replaces every non-key column, and an older one is ignored. |
 | R2 | The stored `payload` is the response body decoded by the database, without `data._cost`. |
 | R3 | `report_codes` = `report_codes(query, variables)`; `report_code` is set only when that list has exactly one entry. |
-| R4 | Flushes but does not commit. The caller owns the transaction, as in the other repositories. |
+| R4 | Executes the statement but does not commit: the caller owns the transaction, as in the other repositories. |

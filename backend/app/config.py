@@ -168,6 +168,13 @@ class Settings(BaseSettings):
     wcl_background_concurrency: int = 2
     wcl_query_timeout_s: int = 75
 
+    # feature 020: every successful WCL response is upserted into `raw_fetches` by a
+    # background writer. At most this many responses / MB of response bytes wait to be
+    # written; beyond that new ones are dropped (and counted in the log), never blocked.
+    wcl_fetch_persist_enabled: bool = True
+    wcl_fetch_persist_queue_max: int = 500
+    wcl_fetch_persist_queue_mb: int = 64
+
     # feature 013: welcome-page recent raids. A refresh starts at most every
     # `refresh_min_s`; a `running` claim older than `stale_s` is reclaimable (crash/restart).
     recent_raids_refresh_min_s: int = 900
