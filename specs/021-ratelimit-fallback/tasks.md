@@ -19,10 +19,10 @@ symbol edit run GitNexus `impact` upstream; `detect_changes` before each commit.
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T002 Add `model_class(model_id) -> tuple[str, str] | None` and `sibling_model(model, served) -> str | None` in wcl_agent/llm/models.py, reusing `_GEMINI_RE` / `_CLAUDE_RE` (a `name@version` id is classified by its name). Peers are the served ids of the same class in served order: first peer → second (or None); any other peer → first; unknown or unserved → None
+- [ ] T002 Add `model_class(model_id) -> tuple[str, str] | None` and `sibling_model(model, served) -> str | None` in wcl_agent/llm/models.py, reusing `_GEMINI_RE` / `_CLAUDE_RE` (a `name@version` id is classified by its name). Peers are the served ids of the same class in served order: first peer → second (or None); any other peer → first; unknown or unserved → None; plus `class_label(model_id)` ("Gemini flash", "Claude sonnet", None for unknown ids)
 - [ ] T003 [P] Add `fallback_model_for(app, model) -> str | None` in backend/app/model_state.py: `sibling_model(model, get_model_state(app)[0])`
 - [ ] T004 Add `TurnStats` fields `fallback_model`, `switched_to` and `switch_index` (all `None` by default) in wcl_agent/llm/model_retry.py
-- [ ] T005 Tests for T002/T003 in backend/tests/test_model_fallback.py: newest → second, second → newest, three versions (third → newest), single-model class → None (Claude), Claude `@version` ids, unknown id → None, model not served → None, and `fallback_model_for` over a fake `app.state` and over no state (settings fallback)
+- [ ] T005 Tests for T002/T003 (and `class_label`) in backend/tests/test_model_fallback.py: newest → second, second → newest, three versions (third → newest), single-model class → None (Claude), Claude `@version` ids, unknown id → None, model not served → None, and `fallback_model_for` over a fake `app.state` and over no state (settings fallback)
 
 **Checkpoint**: sibling rule tested; nothing behaves differently yet.
 
@@ -50,8 +50,9 @@ symbol edit run GitNexus `impact` upstream; `detect_changes` before each commit.
 **Independent test**: both models 429 → `ModelRateLimited` after exactly one switch; the socket sends `rate_limited`, and the next turn works.
 
 - [ ] T014 [US2] Wrapper tests in backend/tests/test_model_fallback.py for both providers: both A and B 429 → `ModelRateLimited` raised, one `model_fallback` record, the attempts on B equal the policy's attempts, and no further switch; `fallback_model=None` (Claude single-model class) → `ModelRateLimited` with no record and no B call
-- [ ] T015 [US2] Plumb the sibling in backend/app/api/ws.py: `chat()` computes `fallback_model_for(ws.app, turn.model)` after `is_valid_model`, `_start_turn(..., fallback_model=)` passes it to `_handle_turn(..., fallback_model: str | None = None)`, which passes it to `stream_response`. The rate-limited branch stays unchanged
-- [ ] T016 [US2] Socket tests in backend/tests/test_model_fallback_ws.py (the `_FakeSocket` + `as_user` pattern from test_ws_rate_limit.py): `_handle_turn(..., fallback_model=B)` hands `fallback_model=B` to `stream_response`; a stream that raises `ModelRateLimited` after a `model_fallback` record → frames end with the `rate_limited` error (feature 011 wording) and only the user message is stored; the next turn on the same conversation completes with `done`
+- [ ] T015 [US2] Plumb the sibling in backend/app/api/ws.py: `chat()` computes `fallback_model_for(ws.app, turn.model)` after `is_valid_model`, `_start_turn(..., fallback_model=)` passes it to `_handle_turn(..., fallback_model: str | None = None)`, which passes it to `stream_response`. In the loop, set a local `switched` flag when a `model_fallback` record arrives. In the `ModelRateLimited` branch send `BOTH_RATE_LIMITED_MESSAGE.format(label=class_label(turn.model))` when switched (and a label exists), else `RATE_LIMITED_MESSAGE` unchanged; the code stays `rate_limited`
+- [ ] T016 [US2] Socket tests in backend/tests/test_model_fallback_ws.py (the `_FakeSocket` + `as_user` pattern from test_ws_rate_limit.py): `_handle_turn(..., fallback_model=B)` hands `fallback_model=B` to `stream_response`; a stream that raises `ModelRateLimited` after a `model_fallback` record → the `rate_limited` error carries "Both Gemini flash models are rate-limited right now. Please try again in about a minute." and only the user message is stored; without a `model_fallback` record → the feature 011 message unchanged (SC-010); the next turn on the same conversation completes with `done`
+- [ ] T016a [US2] SC-007 history test in backend/tests/test_model_fallback_history.py: a real ADK `Runner` with `InMemorySessionService` and a minimal `Agent` (one dummy async tool, `make_before_model_callback`) whose model is `RetryingGemini(model=A, client=<fake genai client>)`, driven through `agent_runner.stream_response(..., fallback_model=B)` with `_get_runner` patched to it. Script: A returns a function call, A then 429s, B answers text. Assert the session events hold exactly one user message, one function call, one function response and one final answer, and the yielded tokens hold the answer once
 
 **Checkpoint**: end-to-end backend fallback live (minus the typed frame forward).
 
@@ -76,7 +77,7 @@ symbol edit run GitNexus `impact` upstream; `detect_changes` before each commit.
 ## Phase 6: Polish
 
 - [ ] T026 [P] One line at the `model_retry.py` entry in documentation/ai_guide.md: "… + 429 fallback to the same-class sibling (feature 021)"
-- [ ] T027 Full suite green (`uv run --extra test pytest -q`); confirm `test_model_retry.py`, `test_runner_retry.py`, `test_ws_rate_limit.py`, the greeting and the guide tests are unchanged (`git diff --stat cc3c783 -- <those files>` empty)
+- [ ] T027 Full suite green (`uv run --extra test pytest -q`); confirm `test_model_retry.py`, `test_runner_retry.py`, `test_ws_rate_limit.py`, `test_conversation_titles.py`, the greeting and the guide/guide_pipeline tests are unchanged (`git diff --stat cc3c783 -- backend/tests` lists only the new 021 test files) (SC-008)
 - [ ] T028 Re-index the worktree and run `detect-changes --scope all`; check that the changed files ⊆ the granted list; restore `CLAUDE.md` and `.specify/feature.json` before committing
 - [ ] T029 Mark tasks done, update checkpoint.md, and send the scrum master the hand-off (branch, base, commits, files, tests, risks, how to verify each AC per quickstart.md)
 

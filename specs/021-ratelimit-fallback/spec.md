@@ -66,18 +66,19 @@ connection and its history stay intact, and the next message is processed normal
 must always get an answer or a clear message.
 
 **Independent Test**: Make both models of a class refuse every request. The turn ends with
-the "try again shortly" message after at most one switch, and a following message (with
+the "Both <class> models …" message after at most one switch, and a following message (with
 the provider accepting again) gets a normal answer on the same connection.
 
 **Acceptance Scenarios**:
 
 1. **Given** a turn whose model and its sibling are both rate limited, **When** the retry
-   policy is exhausted on the sibling, **Then** the player sees the "try again shortly"
-   message and the turn makes no further switch.
+   policy is exhausted on the sibling, **Then** the player sees "Both <class> models are
+   rate-limited right now. Please try again in about a minute." and the turn makes no
+   further switch.
 2. **Given** a turn on a model whose class has only one served model (e.g. a Claude class),
    **When** it is still rate limited after the retry policy, **Then** the player sees the
-   "try again shortly" message straight away, with no switch.
-3. **Given** a turn that ended with the "try again shortly" message, **When** the player
+   feature 011 message unchanged, straight away, with no switch.
+3. **Given** a turn that ended with a rate-limit message, **When** the player
    sends another message, **Then** it is processed normally on the same connection, and
    no half-written reply from the failed turn is in the conversation history.
 
@@ -110,13 +111,13 @@ answer streams, and the notice stays next to that answer after the turn complete
   exactly as it does today (the partial reply is kept once and reported as an agent
   error). Changing that is out of scope.
 - The sibling answers but later in the same turn is rate limited as well: the turn has
-  already used its one switch, so the player gets the "try again shortly" message.
+  already used its one switch, so the player gets the "Both <class> models …" message.
 - After a switch, every later model request of the same turn goes to the sibling; the turn
   does not bounce back and forth.
 - A class served by three or more versions (a larger configured keep count): the newest
   model falls back to the second newest; any other model falls back to the newest.
 - Model discovery is degraded or in static mode and the served list has no second model of
-  the class: there is no sibling, so the player gets the "try again shortly" message.
+  the class: there is no sibling, so the player gets the feature 011 message.
 - Helper calls (greeting, follow-up suggestions, conversation titles, guide pipeline,
   guild summaries) keep today's behaviour: they never switch models.
 - The player closes the connection during a switch: the turn is abandoned as today, and
@@ -134,9 +135,12 @@ answer streams, and the notice stays next to that answer after the turn complete
   the class it is the newest.
 - **FR-003**: A turn MUST switch model at most once. After the switch, all remaining
   model requests of that turn MUST go to the sibling.
-- **FR-004**: When there is no sibling, or the sibling is also still rate limited after
-  the retry policy, the system MUST end the turn with a plain-language in-chat message
-  asking the player to try again shortly, with no provider wording.
+- **FR-004**: When there is no sibling, the system MUST end the turn with the feature 011
+  message unchanged ("The model is rate-limited right now. Please try again in about a
+  minute."). When a switch was made and the sibling is also still rate limited after the
+  retry policy, it MUST end the turn with "Both <class> models are rate-limited right
+  now. Please try again in about a minute." (<class> as in "Gemini flash"). Both use the
+  error code `rate_limited` and contain no provider wording.
 - **FR-005**: After a turn ends with that message, the connection and the conversation
   MUST stay usable, and the next message MUST be processed normally.
 - **FR-006**: A switch MUST NOT re-run lookups already done in the turn, and MUST NOT
@@ -157,7 +161,7 @@ answer streams, and the notice stays next to that answer after the turn complete
 - **FR-012**: The fallback MUST follow one rule for Gemini and Anthropic (Claude) models:
   the sibling is another served model of the same publisher and class. A Claude class
   served by one model (today's configuration) has no sibling and goes straight to the
-  "try again shortly" message (decision 7).
+  feature 011 message (decision 7).
 
 ### Key Entities
 
@@ -183,6 +187,17 @@ answer streams, and the notice stays next to that answer after the turn complete
 - **SC-005**: Every switch shows the player a notice naming both models.
 - **SC-006**: Helper calls (titles, suggestions, greeting, guide pipeline) show no change
   in behaviour: their existing tests pass unchanged.
+- **SC-007** *(product owner acceptance check 1)*: After a switch, the conversation's
+  stored model history holds the turn exactly once: one user message, each tool call and
+  result once, and the answer once. A test shows this with a real session store.
+- **SC-008** *(acceptance check 2)*: The conversation-title job (feature 019) and the guide
+  pipeline behave exactly as before. Their existing tests pass with no edits, and they
+  never switch models.
+- **SC-009** *(acceptance check 3)*: Both the Gemini and the Anthropic call paths are
+  tested with fake rate-limit errors (a switch case and a no-switch case each), with no
+  live provider call.
+- **SC-010**: Both end-of-turn messages are tested: the feature 011 message when there is
+  no sibling, and the "Both <class> models …" message when the sibling was tried.
 
 ## Assumptions
 
@@ -194,7 +209,7 @@ answer streams, and the notice stays next to that answer after the turn complete
   naming rules discovery uses.
 - The sibling needs no extra startup probe: it is already a served model, so it passed
   discovery.
-- The existing "try again shortly" wording from feature 011 is reused unchanged, whether
-  there was no sibling or the sibling was busy too.
+- The feature 011 wording is reused unchanged when there is no sibling; a busy sibling
+  gets the distinct "Both <class> models …" message.
 - Tests use fake rate-limit errors for both providers; no live provider call is needed.
 - No database change: the fallback is a per-turn runtime decision.

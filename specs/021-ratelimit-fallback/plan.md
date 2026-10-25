@@ -71,6 +71,8 @@ files (3 held by 022 or needing a product owner exception), 1 line in ai_guide
 
 - `model_class(model_id) -> tuple[str, str] | None` and
   `sibling_model(model, served) -> str | None` (data-model.md). Pure; no I/O.
+- `class_label(model_id) -> str | None`: "Gemini flash" / "Claude sonnet", for the
+  "Both <class> models …" message.
 - `model_state.fallback_model_for(app, model) -> str | None`:
   `sibling_model(model, get_model_state(app)[0])`.
 
@@ -111,9 +113,15 @@ files (3 held by 022 or needing a product owner exception), 1 line in ai_guide
   passes it through `_start_turn(..., fallback_model=)` into
   `_handle_turn(..., fallback_model=None)` and on to `stream_response`. Existing tests
   that call `_handle_turn(sock, turn, identity)` keep working.
-- Forward `kind == "model_fallback"` as `ModelFallbackFrame(**record)`.
-- The rate-limited branch is unchanged, with the same `RATE_LIMITED_MESSAGE` (Q4 = A) and
-  no partial persisted.
+- Forward `kind == "model_fallback"` as `ModelFallbackFrame(**record)`, and remember
+  that this turn switched (a local flag set from the record).
+- Rate-limited branch (Q4, product owner split): no partial is persisted, as today. The
+  message is `RATE_LIMITED_MESSAGE` (feature 011, unchanged) when the turn did not switch,
+  and `BOTH_RATE_LIMITED_MESSAGE.format(label=class_label(turn.model))` ("Both Gemini
+  flash models are rate-limited right now. Please try again in about a minute.") when it
+  did. Both keep the code `rate_limited`, since the frontend shows `error.message` as is
+  and needs no distinction. The flag comes from the record the socket already sees, so
+  `ModelRateLimited` and the runner stay unchanged.
 - The title hook, suggestions and `DoneFrame` are untouched.
 
 ### 5. Frontend
@@ -130,18 +138,19 @@ files (3 held by 022 or needing a product owner exception), 1 line in ai_guide
 
 | File | Change | Ownership |
 |---|---|---|
-| `wcl_agent/llm/models.py` | `model_class`, `sibling_model` | tentative grant (021) |
+| `wcl_agent/llm/models.py` | `model_class`, `sibling_model`, `class_label` | tentative grant (021) |
 | `wcl_agent/llm/model_retry.py` | `TurnStats` fields, `generate_with_fallback`, signature guard, wrapper bodies | tentative grant (021) |
 | `backend/app/model_state.py` | `fallback_model_for` | tentative grant (021) |
 | `backend/app/agent_runner.py` | `fallback_model` keyword, stats line | tentative grant (021) |
-| `backend/app/api/ws.py` | plumb `fallback_model`, forward frame | tentative grant (021) |
+| `backend/app/api/ws.py` | plumb `fallback_model`, forward frame, split rate-limit message | tentative grant (021) |
 | `backend/app/schemas.py` | append `ModelFallbackFrame` | **held by 022**, needed for slice 4 |
 | `backend/tests/test_model_fallback.py` (new) | sibling, wrappers (Gemini + Anthropic fake clients), runner | new |
-| `backend/tests/test_model_fallback_ws.py` (new) | socket: frame forwarded, one stored reply, rate_limited then next turn | new |
+| `backend/tests/test_model_fallback_ws.py` (new) | socket: frame forwarded, one stored reply, both rate-limit messages, next turn works | new |
+| `backend/tests/test_model_fallback_history.py` (new) | SC-007: a real ADK `Runner` + `InMemorySessionService` + `RetryingGemini` over a fake client: tool round on A, 429, switch to B; session events hold the turn exactly once | new |
 | `frontend/src/api/wsClient.ts` | `Frame` member | tentative grant (021) |
 | `frontend/src/types.ts` | `Message.fallback` | **held by 022** |
 | `frontend/src/App.tsx` | frame handler, attach on done | **held by 022** |
-| `frontend/src/components/MessageList.tsx` | the note | **product owner exception** (plan says untouched) |
+| `frontend/src/components/MessageList.tsx` | the note | allowed by the product owner (granted with this list) |
 | `frontend/src/toolLabels.ts` | `fallbackLabel` | unlisted, request |
 | `documentation/ai_guide.md` | one line at the `model_retry.py` entry (line 111) | request (1 line) |
 | `specs/021-ratelimit-fallback/**` | spec artifacts | 021 |

@@ -14,9 +14,9 @@ the type ignore it.
   token or tool frame of that request.
 - `model_retry` frames may come before it (retries on the original model) and after it
   (retries on the sibling).
-- The turn then ends as usual with `done`, or with
-  `{"type": "error", "code": "rate_limited", "message": <feature 011 wording>}` if the
-  sibling stays rate limited too. No further `model_fallback` follows in that turn.
+- The turn then ends as usual with `done`, or, if the sibling stays rate limited too, with
+  `{"type": "error", "code": "rate_limited", "message": "Both <class> models are rate-limited right now. Please try again in about a minute."}`
+  (`<class>` such as "Gemini flash"). No further `model_fallback` follows in that turn.
 - When the class has no sibling, no `model_fallback` is sent; the turn ends with the
   `rate_limited` error exactly as in feature 011.
 
