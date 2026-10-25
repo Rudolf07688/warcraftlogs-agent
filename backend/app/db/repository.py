@@ -98,6 +98,31 @@ async def delete_conversation(
     return result.rowcount > 0
 
 
+async def set_conversation_pinned(
+    session: AsyncSession, conv_id: uuid.UUID, pinned: bool, *, tenant_id: uuid.UUID
+) -> Conversation | None:
+    """Pin or unpin a conversation (feature 019 / sc-165); ``None`` when it isn't this
+    tenant's. A repeated pin keeps the original pin time, and ``updated_at`` is set to
+    itself so pinning never reorders the list by activity (FR-009)."""
+    pinned_at = (
+        func.coalesce(Conversation.pinned_at, datetime.now(timezone.utc)) if pinned else None
+    )
+    result = await session.execute(
+        update(Conversation)
+        .where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
+        .values(pinned_at=pinned_at, updated_at=Conversation.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        return None
+    row = await session.execute(
+        select(Conversation)
+        .where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
+        .execution_options(populate_existing=True)
+    )
+    return row.scalar_one()
+
+
 async def _next_seq(session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID) -> int:
     result = await session.execute(
         select(func.coalesce(func.max(Message.seq), -1)).where(

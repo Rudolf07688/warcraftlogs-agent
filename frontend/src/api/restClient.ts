@@ -228,6 +228,14 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
   return { ...raw, messages };
 }
 
+// Feature 019: pin or unpin a chat (tenant-scoped; returns the updated row).
+export async function updateConversation(
+  id: string,
+  body: { pinned: boolean },
+): Promise<Conversation> {
+  return send("PATCH", `/api/conversations/${id}`, body, { csrf: true });
+}
+
 export async function deleteConversation(id: string): Promise<void> {
   await send("DELETE", `/api/conversations/${id}`, undefined, { csrf: true });
 }

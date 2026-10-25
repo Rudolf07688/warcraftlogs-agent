@@ -69,13 +69,13 @@ Before T009: move sc-165 to In Progress (Shortcut).
 
 ### Tests for User Story 2
 
-- [ ] T009 [P] [US2] Write repository tests in `backend/tests/test_conversation_pinning.py`:
+- [X] T009 [P] [US2] Write repository tests in `backend/tests/test_conversation_pinning.py`:
   - pin sets `pinned_at`, unpin clears it;
   - a repeated pin keeps the first `pinned_at`;
   - `updated_at` is unchanged by pin and unpin;
   - a foreign tenant id or a missing id returns `None` and changes nothing;
   - `create_conversation` sets the explicit/auto `title_source`.
-- [ ] T010 [P] [US2] Add API tests, marked `pytest.mark.xfail(strict=True, reason="PATCH needs ConversationUpdate in schemas.py (phase B)")` until T012/T013 land, to `backend/tests/test_conversation_pinning.py` (`as_user`, plus a `tenant_b` fixture via `make_authed_client`, as in `test_tenant_isolation.py`):
+- [X] T010 [P] [US2] Add API tests, marked `pytest.mark.xfail(strict=True, reason="PATCH needs ConversationUpdate in schemas.py (phase B)")` until T012/T013 land, to `backend/tests/test_conversation_pinning.py` (`as_user`, plus a `tenant_b` fixture via `make_authed_client`, as in `test_tenant_isolation.py`):
   - PATCH `{pinned:true}` returns 200 with `pinned_at` set, and the GET list shows it;
   - PATCH `{pinned:false}` clears it;
   - PATCH on tenant B's conversation is 404, and B's row is unchanged;
@@ -91,23 +91,23 @@ Before T009: move sc-165 to In Progress (Shortcut).
 
 ### Implementation for User Story 2
 
-- [ ] T011 [US2] Add `set_conversation_pinned(session, conv_id, pinned, *, tenant_id) -> Conversation | None` to `backend/app/db/repository.py`. It is one UPDATE scoped by id and tenant, with `pinned_at = coalesce(pinned_at, now_utc)` or `None` and `updated_at = Conversation.updated_at`. On 0 rows it returns `None`; otherwise it returns the row via a `populate_existing` select (data-model.md)
+- [X] T011 [US2] Add `set_conversation_pinned(session, conv_id, pinned, *, tenant_id) -> Conversation | None` to `backend/app/db/repository.py`. It is one UPDATE scoped by id and tenant, with `pinned_at = coalesce(pinned_at, now_utc)` or `None` and `updated_at = Conversation.updated_at`. On 0 rows it returns `None`; otherwise it returns the row via a `populate_existing` select (data-model.md)
 - [ ] T012 [US2] ⧗schemas (phase B, first): add `pinned_at: datetime | None = None` to `ConversationOut`, and a new `ConversationUpdate(pinned: bool)` with `extra="forbid"`, in `backend/app/schemas.py` (run `impact` on `ConversationOut` first: HIGH, additive; coordinate the hunk with dev-a-018)
 - [ ] T013 [US2] ⧗schemas (phase B, first): add `PATCH /api/conversations/{conv_id}` (`require_csrf`, `get_tenant_db`, 404 `not_found` on `None`, returns `ConversationOut`) to `backend/app/api/conversations.py`, and update the module docstring's verb list
-- [ ] T014 [US2] Run `uv run --extra test pytest -q` until T009, T010a and the whole suite are green, with T010 xfailing strictly (in phase B, after T012/T013: T010 passing with the marker removed)
-- [ ] T015 [P] [US2] Add `pinned_at?: string | null` (optional until the phase B schema returns it) to `Conversation` in `frontend/src/types.ts`, and `updateConversation(id, body: { pinned: boolean }): Promise<Conversation>` (PATCH, `csrf: true`) to `frontend/src/api/restClient.ts`
-- [ ] T016 [US2] In `frontend/src/components/Sidebar.tsx`:
+- [X] T014 [US2] Run `uv run --extra test pytest -q` until T009, T010a and the whole suite are green, with T010 xfailing strictly (in phase B, after T012/T013: T010 passing with the marker removed)
+- [X] T015 [P] [US2] Add `pinned_at?: string | null` (optional until the phase B schema returns it) to `Conversation` in `frontend/src/types.ts`, and `updateConversation(id, body: { pinned: boolean }): Promise<Conversation>` (PATCH, `csrf: true`) to `frontend/src/api/restClient.ts`
+- [X] T016 [US2] In `frontend/src/components/Sidebar.tsx`:
   - add an `onTogglePin(id, pinned)` prop;
   - split `conversations` into the pinned ones (sorted by `pinned_at` desc) and the rest (server order);
   - render a "Pinned" group label and its items first, only when at least one chat is pinned;
   - add a per-entry `Toggle` (`ui/toggle`, `size="sm"`, `LuPin`, `aria-label` "Pin chat" or "Unpin chat", `pressed={!!c.pinned_at}`, so Radix sets `aria-pressed`) beside delete. It is hidden until hover or `focus-visible` unless pressed, keyboard reachable (FR-004a), with `stopPropagation` on click and keydown so the row's select doesn't fire;
   - pull the entry rendering into one local function shared by both groups (no duplicated markup).
-- [ ] T017 [US2] In `frontend/src/App.tsx`:
+- [X] T017 [US2] In `frontend/src/App.tsx`:
   - add `togglePin(id, pinned)`, which calls `updateConversation`, replaces that conversation in `conversations` state, and calls `refreshConversations()` on error;
   - pass it to `<Sidebar onTogglePin>`;
   - add a header `Toggle` (`LuPin`, `aria-label` and `title` "Pin chat" or "Unpin chat", `aria-pressed` via `pressed`, FR-004a) next to the PDF button, shown when the `activeId` conversation is in the list, with `pressed` derived from its `pinned_at`.
-- [ ] T018 [US2] Run `npm run build` in `frontend/`, then run the shadcn MCP audit checklist (`get_audit_checklist`) and fix what it flags
-- [ ] T019 [US2] Commit the US2 slice after GitNexus `detect-changes --scope all` in the worktree, and check ownership
+- [X] T018 [US2] Run `npm run build` in `frontend/`, then run the shadcn MCP audit checklist (`get_audit_checklist`) and fix what it flags
+- [X] T019 [US2] Commit the US2 slice after GitNexus `detect-changes --scope all` in the worktree, and check ownership
 
 **Checkpoint**: US1 and US2 both work. The pin state survives a reload and a re-login.
 
