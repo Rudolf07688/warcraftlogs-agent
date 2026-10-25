@@ -104,3 +104,5 @@ Timestamped log of gates, grants, spawns and merges (scrum master).
 | 2026-10-25T16:47Z | hand-off | 024 final head 47281b5 (docs line fixed; checkpoint line 5 verified). Sent to the product owner. |
 | 2026-10-25T16:53Z | accept | Product owner ACCEPTED 024 at 47281b5 (decision 36). Owner live-test item: raid-less welcome view with stored M+ runs. |
 | 2026-10-25T16:53Z | merge | 024 merged (72c2d14, no conflicts). Sprint: pytest 1064/3/1; build green; GitNexus --force compare vs fc52c86: 9 files, 4 flows, medium. All fix grants released. Next: product owner QA re-run, then /shortcut-sync and final detect-changes. |
+| 2026-10-25T16:55Z | sync | /shortcut-sync (shortcut-sync sub-agent, sprint worktree): board and todo.md already consistent; no ticket created or moved, todo.md unchanged (no stories in Done yet). |
+| 2026-10-25T16:55Z | final | Final GitNexus --force detect-changes over the whole sprint 4923785..c06e514: 202 files, 975 symbols, 145 flows, critical (expected: the 018 restructure plus the per-feature hubs accepted at each gate). 8 merges: 018–025. pytest 1064/3/1, build green. Waiting for the product owner's QA re-run verdict. |
