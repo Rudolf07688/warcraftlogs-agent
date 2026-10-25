@@ -147,9 +147,20 @@ export interface RecentRaidsRefresh {
   last_error: string | null;
 }
 
+export interface RecentMplusRun {
+  report_code: string;
+  fight_id: number;
+  dungeon: string;
+  key_level: number;
+  started_at: string;
+  timed: boolean;
+  characters: RecentRaidCharacter[];
+}
+
 export interface RecentRaidsResponse {
   has_characters: boolean;
   raids: RecentRaid[];
+  mplus_runs: RecentMplusRun[];
   refresh: RecentRaidsRefresh;
 }
 

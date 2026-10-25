@@ -143,6 +143,10 @@ def _summary_from(code: str, report: dict[str, Any]) -> ReportSummary:
                 kill=f.get("kill"),
                 average_item_level=f.get("averageItemLevel"),
                 size=f.get("size"),
+                start_time_ms=f.get("startTime"),
+                keystone_level=f.get("keystoneLevel"),
+                keystone_bonus=f.get("keystoneBonus"),
+                keystone_time_ms=f.get("keystoneTime"),
                 player_ids=list(f.get("friendlyPlayers") or []),
             )
             for f in report.get("fights") or []

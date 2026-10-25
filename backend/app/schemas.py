@@ -260,6 +260,18 @@ class RecentRaidOut(BaseModel):
     characters: list[RecentRaidCharacterOut]
 
 
+class RecentMplusRunOut(BaseModel):
+    """A completed Mythic+ keystone run (feature 022, contracts/rest-recent-mplus.md)."""
+
+    report_code: str
+    fight_id: int
+    dungeon: str
+    key_level: int
+    started_at: datetime
+    timed: bool
+    characters: list[RecentRaidCharacterOut]
+
+
 class RecentRaidsRefreshOut(BaseModel):
     status: Literal["idle", "running", "succeeded", "failed"]
     last_success_at: datetime | None
@@ -270,6 +282,7 @@ class RecentRaidsRefreshOut(BaseModel):
 class RecentRaidsResponse(BaseModel):
     has_characters: bool
     raids: list[RecentRaidOut]  # newest first, raids only
+    mplus_runs: list[RecentMplusRunOut] = []  # newest first; empty means no section
     refresh: RecentRaidsRefreshOut
 
 

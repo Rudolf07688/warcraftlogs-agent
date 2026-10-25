@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { LuCalendarClock, LuRefreshCw, LuSkull, LuSwords, LuUsers } from "react-icons/lu";
+import { LuCalendarClock, LuRefreshCw, LuSkull, LuSwords, LuTimer, LuUsers } from "react-icons/lu";
 import { getRecentRaids, refreshRecentRaids } from "../api/restClient";
-import type { RecentRaid, RecentRaidsResponse } from "../types";
+import type { RecentMplusRun, RecentRaid, RecentRaidsResponse } from "../types";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -59,6 +59,7 @@ function agoText(iso: string): string {
 
 interface Props {
   onInvestigate: (reportCode: string) => void;
+  onInvestigateMplus: (reportCode: string, fightId: number) => void;
   disabled: boolean;
 }
 
@@ -105,7 +106,78 @@ const RaidCard = memo(function RaidCard({
   );
 });
 
-function WelcomePanelImpl({ onInvestigate, disabled }: Props) {
+const MplusCard = memo(function MplusCard({
+  run,
+  disabled,
+  onInvestigate,
+}: {
+  run: RecentMplusRun;
+  disabled: boolean;
+  onInvestigate: (reportCode: string, fightId: number) => void;
+}) {
+  return (
+    <Item asChild variant="outline" className="raid-card">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onInvestigate(run.report_code, run.fight_id)}
+        title="Investigate this Mythic+ run in a new chat"
+      >
+        <ItemContent className="raid-card-content">
+          <ItemTitle className="raid-card-title">
+            <span className="raid-card-zone">
+              {run.dungeon} +{run.key_level}
+            </span>
+            <Badge variant={run.timed ? "default" : "secondary"}>
+              {run.timed ? "Timed" : "Depleted"}
+            </Badge>
+          </ItemTitle>
+          <ItemDescription className="raid-card-meta">
+            <span>
+              <LuCalendarClock aria-hidden /> {whenText(run.started_at)}
+            </span>
+            <span>
+              <LuUsers aria-hidden /> {run.characters.map((c) => c.name).join(", ")}
+            </span>
+          </ItemDescription>
+        </ItemContent>
+      </button>
+    </Item>
+  );
+});
+
+function MplusSection({
+  runs,
+  disabled,
+  onInvestigate,
+}: {
+  runs: RecentMplusRun[];
+  disabled: boolean;
+  onInvestigate: (reportCode: string, fightId: number) => void;
+}) {
+  if (runs.length === 0) return null;
+  return (
+    <>
+      <header className="welcome-panel-header">
+        <h2 className="welcome-panel-title">
+          <LuTimer aria-hidden /> Your recent Mythic+ runs
+        </h2>
+      </header>
+      <div className="raid-grid">
+        {runs.map((run) => (
+          <MplusCard
+            key={`${run.report_code}-${run.fight_id}`}
+            run={run}
+            disabled={disabled}
+            onInvestigate={onInvestigate}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function WelcomePanelImpl({ onInvestigate, onInvestigateMplus, disabled }: Props) {
   const [data, setData] = useState<RecentRaidsResponse | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -209,6 +281,7 @@ function WelcomePanelImpl({ onInvestigate, disabled }: Props) {
   }
 
   const { raids, refresh } = data;
+  const mplusRuns = data.mplus_runs ?? [];
   const running = refresh.status === "running";
   const failed = refresh.status === "failed";
 
@@ -239,6 +312,7 @@ function WelcomePanelImpl({ onInvestigate, disabled }: Props) {
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
+        <MplusSection runs={mplusRuns} disabled={disabled} onInvestigate={onInvestigateMplus} />
       </section>
     );
   }
@@ -279,6 +353,7 @@ function WelcomePanelImpl({ onInvestigate, disabled }: Props) {
           />
         ))}
       </div>
+      <MplusSection runs={mplusRuns} disabled={disabled} onInvestigate={onInvestigateMplus} />
     </section>
   );
 }

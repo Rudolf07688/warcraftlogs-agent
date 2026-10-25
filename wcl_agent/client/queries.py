@@ -139,7 +139,8 @@ def character_reports_query(n: int) -> str:
 REPORT_SUMMARY_FIELDS = (
     "title startTime endTime zone { id name } guild { name } "
     'masterData { actors(type: "Player") { id name subType } } '
-    "fights { id name encounterID difficulty kill averageItemLevel size friendlyPlayers }"
+    "fights { id name encounterID difficulty kill averageItemLevel size friendlyPlayers "
+    "startTime keystoneLevel keystoneBonus keystoneTime }"
 )
 
 REPORT_SUMMARY = (

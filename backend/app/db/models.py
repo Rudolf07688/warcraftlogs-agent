@@ -742,3 +742,52 @@ class RawFetch(Base):
     report_codes: Mapped[list] = mapped_column(_JSON, nullable=False, server_default=text("'[]'"))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     payload: Mapped[dict] = mapped_column(_JSON, nullable=False)
+
+
+class RecentMplusRun(Base):
+    """A completed Mythic+ keystone fight found in a report an own character was logged in
+    (feature 022). One row per (report, fight): a report can hold several keys. Stored for
+    good, a finished run never changes."""
+
+    __tablename__ = "recent_mplus_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "report_code", "fight_id", name="uq_recent_mplus_run_tenant_fight"
+        ),
+        Index("ix_recent_mplus_runs_tenant_started", "tenant_id", "started_at"),
+        CheckConstraint("key_level > 0", name="ck_recent_mplus_run_level"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    report_code: Mapped[str] = mapped_column(String(32))
+    fight_id: Mapped[int] = mapped_column(Integer)
+    dungeon: Mapped[str] = mapped_column(String(120))
+    key_level: Mapped[int] = mapped_column(SmallInteger)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    timed: Mapped[bool] = mapped_column(Boolean)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class RecentMplusRunCharacter(Base):
+    """Links a recent M+ run to an own character that took part (feature 022). Deleting the
+    character cascades the link away, so the run stops showing."""
+
+    __tablename__ = "recent_mplus_run_characters"
+    __table_args__ = (
+        Index("ix_recent_mplus_run_characters_tenant_char", "tenant_id", "character_id"),
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("recent_mplus_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_characters.id", ondelete="CASCADE"), primary_key=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )

@@ -180,6 +180,9 @@ class Settings(BaseSettings):
     recent_raids_refresh_min_s: int = 900
     recent_raids_stale_s: int = 300
     recent_raids_limit: int = 20
+    # Welcome page display caps (feature 022); the limit above is the WCL listing depth.
+    recent_raids_shown: int = 6
+    recent_mplus_shown: int = 6
     recent_raids_refresh_timeout_s: int = 120
 
     @property
