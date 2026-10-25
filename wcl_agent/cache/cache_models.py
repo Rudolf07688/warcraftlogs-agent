@@ -60,6 +60,11 @@ class FightSummary(BaseModel):
     kill: bool | None = None
     average_item_level: float | None = None
     size: int | None = None
+    # Mythic+ keystone fights (feature 022); start is relative to the report start.
+    start_time_ms: int | None = None
+    keystone_level: int | None = None
+    keystone_bonus: int | None = None
+    keystone_time_ms: int | None = None
     player_ids: list[int] = []
 
 

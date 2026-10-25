@@ -25,7 +25,7 @@ VII: Welcome M+ card reuses the existing shadcn `Item`/`Badge` used by `RaidCard
 ## Design
 
 1. **Caps (FR-001/002).** New settings `recent_raids_shown = 6`, `recent_mplus_shown = 6` (`config.py`). `recent_raids_limit` (20) keeps its meaning: WCL listing depth, plus the cap on how many raid reports get details per refresh (`_refresh`'s `[: recent_raids_limit]` slice is left as is; shrinking it to 6 would leave older raids without details for no gain). The API passes `recent_raids_shown` to `repo.list_recent_raids`.
-2. **Query (WCL).** `REPORT_SUMMARY_FIELDS` fights gain `startTime keystoneLevel keystoneBonus keystoneTime`. `FightSummary` gains `start_time_ms`, `keystone_level`, `keystone_bonus`, `keystone_time_ms` (optional); `_summary_from` in `wcl_agent/tools/report_tools.py` maps them. The `report_summary` cache key moves `v1` to `v2` so summaries cached without keystone fields are not served (24 h TTL otherwise).
+2. **Query (WCL).** `REPORT_SUMMARY_FIELDS` fights gain `startTime keystoneLevel keystoneBonus keystoneTime`. `FightSummary` gains `start_time_ms`, `keystone_level`, `keystone_bonus`, `keystone_time_ms` (optional); `_summary_from` in `wcl_agent/tools/report_tools.py` maps them. The `report_summary` cache key gains a `:keystone` suffix (the `wcl:v1:` prefix is a pinned convention) so summaries cached without keystone fields are not served (24 h TTL otherwise).
 3. **Detail step.** `_refresh` also takes the newest `MPLUS_REPORT_BATCH = 10` non-raid reports in `need` (new or not final), fetches their summaries with the existing `fetch_report_details` batching, and extracts runs: a fight with `keystone_level > 0` and `kill is True` is a completed run (abandoned and unfinished are dropped); `timed = keystone_bonus >= 1`; dungeon = fight name, falling back to the report zone name; `started_at = report start + fight start`. Rows are upserted (`ON CONFLICT DO NOTHING`, run key `(tenant_id, report_code, fight_id)`) with character links copied from the report's `ListedReport.character_ids`. A run is final once stored.
 4. **Read.** `repo.list_recent_mplus_runs(tenant, limit)` mirrors `list_recent_raids` (two queries, only runs linked to an existing own character). `GET /api/recent-raids` returns `mplus_runs` next to `raids`, still never waiting on WCL. No M+ rows means an empty list and no section.
 5. **Kickoff.** `POST /api/recent-raids/mplus/{report_code}/{fight_id}/investigate` (CSRF; the run must be one of the tenant's own stored runs, else 404) creates the conversation with title `M+ <dungeon> +<level>` (explicit via `create_conversation(title=...)`) and returns `InvestigateResponse`. `mplus_kickoff_prompt_for(report_code, fight_id, dungeon, level)` lives in `api/recent_raids.py` beside it; wording per FR-016. The frontend sends it as the first turn, as for raids.
@@ -52,7 +52,7 @@ backend/app/config.py                         # 2 display-cap settings          
 backend/migrations/versions/0014_recent_mplus_runs.py   # new, down_revision 0013_raw_fetches
 wcl_agent/client/queries.py                   # keystone fields in REPORT_SUMMARY_FIELDS
 wcl_agent/cache/cache_models.py               # FightSummary keystone fields
-wcl_agent/cache/cache.py                      # report_summary key v1 -> v2
+wcl_agent/cache/cache.py                      # report_summary key suffix :keystone
 wcl_agent/tools/report_tools.py               # _summary_from maps keystone fields
 frontend/src/components/WelcomePanel.tsx, frontend/src/types.ts,
 frontend/src/api/restClient.ts, frontend/src/App.tsx
@@ -77,4 +77,4 @@ specs/022-welcome-mplus/**
 | `_refresh` | HIGH (4 processes, all the 013 refresh flow itself: `run_recent_raid_refresh`, `maybe_start_refresh`, API list and refresh) | Edited by this feature on purpose; covered by `test_recent_raids.py` plus new M+ tests; the raid path is unchanged and asserted by the existing tests |
 | `repository.list_recent_raids` | LOW | Single caller `api.recent_raids.list_recent_raids`; signature unchanged |
 
-WCL cost: the four added fields are scalars on fights already requested. WCL charges query points per object fetched, not per scalar field, so the summary query's cost is unchanged for every caller. Payload grows by roughly 4 small numbers per fight.
+WCL cost (an assumption, not measured; the owner should compare the `wcl_cost` log lines live): the four added fields are scalars on fights already requested. WCL charges query points per object fetched, not per scalar field, so the summary query's cost is unchanged for every caller. Payload grows by roughly 4 small numbers per fight.

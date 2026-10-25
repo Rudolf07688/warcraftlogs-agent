@@ -185,7 +185,8 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
 
     @staticmethod
     def report_summary(code: str) -> str:
-        return f"wcl:v1:report:{code.strip()}:summary"
+        # ":keystone" retires summaries cached before the keystone fields existed (feature 022).
+        return f"wcl:v1:report:{code.strip()}:summary:keystone"
 
     @staticmethod
     def report_player(

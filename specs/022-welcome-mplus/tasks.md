@@ -5,14 +5,14 @@ Tests are requested (spec SC-007). WCL responses are faked; no live calls. Tasks
 
 ## Phase 1: Setup
 
-- [ ] T001 Run GitNexus `impact` upstream on `fetch_report_details`, `upsert_listed_reports`, `RecentRaidsResponse`, `investigate_raid` and note the risk in the plan (`specs/022-welcome-mplus/plan.md`)
+- [X] T001 Run GitNexus `impact` upstream on `fetch_report_details`, `upsert_listed_reports`, `RecentRaidsResponse`, `investigate_raid` and note the risk in the plan (`specs/022-welcome-mplus/plan.md`)
 
 ## Phase 2: Foundational (blocks all stories)
 
-- [ ] T002 Add keystone fields `startTime keystoneLevel keystoneBonus keystoneTime` to the fights selection of `REPORT_SUMMARY_FIELDS` in `wcl_agent/client/queries.py`
-- [ ] T003 Add optional `start_time_ms`, `keystone_level`, `keystone_bonus`, `keystone_time_ms` to `FightSummary` in `wcl_agent/cache/cache_models.py`
-- [ ] T004 Map the new fields in `_summary_from` in `wcl_agent/tools/report_tools.py`
-- [ ] T005 Bump the `report_summary` key from `v1` to `v2` in `wcl_agent/cache/cache.py`; fix `backend/tests/test_wcl_cache.py` / `test_cache_families.py` only if they pin the literal
+- [X] T002 Add keystone fields `startTime keystoneLevel keystoneBonus keystoneTime` to the fights selection of `REPORT_SUMMARY_FIELDS` in `wcl_agent/client/queries.py`
+- [X] T003 Add optional `start_time_ms`, `keystone_level`, `keystone_bonus`, `keystone_time_ms` to `FightSummary` in `wcl_agent/cache/cache_models.py`
+- [X] T004 Map the new fields in `_summary_from` in `wcl_agent/tools/report_tools.py`
+- [X] T005 Bump the `report_summary` key to `...:summary:keystone` (keeps the `wcl:v1:` prefix convention that a test pins) in `wcl_agent/cache/cache.py`; fix `backend/tests/test_wcl_cache.py` / `test_cache_families.py` only if they pin the literal
 - [ ] T006 [after 020] Add settings `recent_raids_shown = 6` and `recent_mplus_shown = 6` in `backend/app/config.py`
 
 ## Phase 3: User Story 1 - 6 latest raids (P1)
