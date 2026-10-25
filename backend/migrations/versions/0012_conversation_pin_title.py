@@ -34,7 +34,17 @@ def upgrade() -> None:
         "conversations",
         sa.Column("title_source", sa.String(10), nullable=False, server_default="auto"),
     )
-    op.execute("UPDATE conversations SET title_source = 'legacy'")
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        # 0004 FORCEs RLS on conversations, so the owner is bound by its own tenant policy
+        # and, without SUPERUSER/BYPASSRLS, the backfill would match no rows. Lift FORCE for
+        # the UPDATE only; Alembic runs this revision in one transaction and Postgres DDL is
+        # transactional, so a failure rolls FORCE back to its previous state.
+        op.execute("ALTER TABLE conversations NO FORCE ROW LEVEL SECURITY")
+        op.execute("UPDATE conversations SET title_source = 'legacy'")
+        op.execute("ALTER TABLE conversations FORCE ROW LEVEL SECURITY")
+    else:
+        op.execute("UPDATE conversations SET title_source = 'legacy'")
 
 
 def downgrade() -> None:
