@@ -719,3 +719,26 @@ class RecentRaidRefresh(Base):
     )
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     character_set: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class RawFetch(Base):
+    """One Warcraft Logs GraphQL response, kept for DB-first reads (feature 020).
+
+    GLOBAL, no RLS: Warcraft Logs data is public, like the shared Redis cache. One row per
+    ``query_key`` (the client's single-flight key: query text plus sorted variables); a
+    newer fetch replaces the row. ``report_codes`` lists every report the query names
+    (batches too); ``report_code`` is set only when there is exactly one.
+    """
+
+    __tablename__ = "raw_fetches"
+    __table_args__ = (
+        Index("ix_raw_fetches_report_codes", "report_codes", postgresql_using="gin"),
+    )
+
+    query_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    operation_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    params: Mapped[dict] = mapped_column(_JSON, nullable=False)
+    report_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    report_codes: Mapped[list] = mapped_column(_JSON, nullable=False, server_default=text("'[]'"))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict] = mapped_column(_JSON, nullable=False)

@@ -6,6 +6,8 @@ and HTTP pools are never shared across loops. Every query goes through
 :meth:`AsyncWCLClient.query`, the single chokepoint for single-flight, timeouts, retries,
 API-cost logging and the lane limiter (contracts/wcl-async-client.md G1-G9). Result caching
 moved out in feature 014: callers use the typed key families in :mod:`wcl_agent.cache.cache`.
+Every successful network call is also offered to the fetch sink (feature 020), which the
+backend app sets to persist raw responses; the package itself stays DB-free.
 
 Lanes (PERF-211): background work (guides, the patch lookup, recent raids) runs inside
 :func:`background_lane` and may hold at most ``WCL_BACKGROUND_CONCURRENCY`` of the
@@ -24,10 +26,11 @@ import re
 import time
 import weakref
 from collections import deque
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 import httpx
@@ -244,9 +247,8 @@ def _log_cost(query: str, content: bytes) -> None:
     _last_points = points
     # Points reset hourly: a drop means a new hour, so the whole value is this request's.
     delta = "-" if last is None else f"{points - last if points >= last else points:g}"
-    op = _OP_RE.match(query)
     logger.info(
-        "wcl_cost op=%s points_this_hour=%g delta=%s", op.group(1) if op else "anonymous", points, delta
+        "wcl_cost op=%s points_this_hour=%g delta=%s", operation_name(query) or "anonymous", points, delta
     )
 
 
@@ -283,6 +285,62 @@ def _flight_key(query: str, variables: dict[str, Any]) -> str:
     """Identity of a request for single-flight: the full query plus all variables, sorted."""
     serialized = json.dumps(variables, sort_keys=True, default=str)
     return hashlib.sha256(f"{query} {serialized}".encode()).hexdigest()
+
+
+def operation_name(query: str) -> str | None:
+    """The ``query <Name>`` of a GraphQL document, or None for an anonymous query."""
+    match = _OP_RE.match(query)
+    return match.group(1) if match else None
+
+
+_REPORT_CODE_RE = re.compile(r'report\(\s*code\s*:\s*(?:\$(\w+)|"([^"]*)")')
+
+
+def report_codes(query: str, variables: dict[str, Any]) -> list[str]:
+    """Every report a query names (``report(code: $var)`` or a literal), in order, deduplicated."""
+    codes: list[str] = []
+    for var, literal in _REPORT_CODE_RE.findall(query):
+        value = variables.get(var) if var else literal
+        code = value.strip() if isinstance(value, str) else ""
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+
+# --- Fetch sink (feature 020): every successful WCL response, offered for persistence ---
+
+
+@dataclass(frozen=True)
+class FetchedResponse:
+    """One successful network call: the raw body (``data._cost`` still inside) and its query."""
+
+    query_key: str  # _flight_key(query, variables)
+    query: str
+    variables: dict[str, Any]
+    content: bytes
+    fetched_at: datetime
+
+
+FetchSink = Callable[[FetchedResponse], None]
+# Process-wide, like the token memo. Set by the backend app (fetch persistence); None
+# everywhere else (CLI, evals, tests), so a fetch then costs one ``is None`` check.
+_fetch_sink: FetchSink | None = None
+
+
+def set_fetch_sink(sink: FetchSink | None) -> None:
+    global _fetch_sink
+    _fetch_sink = sink
+
+
+def _offer(key: str, query: str, variables: dict[str, Any], content: bytes) -> None:
+    """Hand a response to the sink. Must stay O(1); a broken sink never fails the fetch."""
+    sink = _fetch_sink
+    if sink is None:
+        return
+    try:
+        sink(FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc)))
+    except Exception as exc:  # noqa: BLE001 - persistence is best effort (FR-007)
+        logger.debug("wcl fetch sink failed: %s", exc)
 
 
 async def _loads(content: bytes) -> dict[str, Any]:
@@ -329,7 +387,7 @@ class AsyncWCLClient:
         while True:
             flight = self._flights.get(key)
             if flight is None:
-                task = asyncio.ensure_future(self._fetch(query, variables))
+                task = asyncio.ensure_future(self._fetch(query, variables, key))
                 flight = self._flights[key] = [task, 0]
                 task.add_done_callback(lambda t, k=key: self._drop_flight(k, t))
             task = flight[0]
@@ -407,7 +465,7 @@ class AsyncWCLClient:
             headers={"Authorization": f"Bearer {token}"},
         )
 
-    async def _fetch(self, query: str, variables: dict[str, Any]) -> bytes:
+    async def _fetch(self, query: str, variables: dict[str, Any], key: str) -> bytes:
         global _blocked_until
         if time.monotonic() < _blocked_until:
             _blocked_response().raise_for_status()
@@ -444,6 +502,7 @@ class AsyncWCLClient:
             payload = json.loads(content)
             if "errors" in payload:
                 raise RuntimeError(json.dumps(payload["errors"], indent=2))
+        _offer(key, query, variables, content)
         return content
 
 
