@@ -108,7 +108,7 @@ wcl_agent/
     guides_tool.py         # get_coaching_brief
   llm/                     # chat models
     models.py              # startup model discovery + validation
-    model_retry.py         # rate-limit retry loop, RetryingGemini / RetryingClaude
+    model_retry.py         # rate-limit retry loop, RetryingGemini / RetryingClaude, 429 fallback to the same-class sibling (021)
     vertex.py              # model location, client kwargs, Model Garden catalog
     genai_compat.py        # force-build google-genai serializers
     context_trim.py        # stub old tool results in the model context

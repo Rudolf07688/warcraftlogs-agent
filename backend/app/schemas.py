@@ -85,6 +85,17 @@ class ModelRetryFrame(BaseModel):
     wait_s: float
 
 
+class ModelFallbackFrame(BaseModel):
+    """Feature 021: the turn's model stayed rate-limited, so the turn continues on its
+    same-class sibling. Sent at most once per turn (see contracts/websocket-model-fallback.md).
+    Additive — clients that do not know the type ignore it.
+    """
+
+    type: Literal["model_fallback"] = "model_fallback"
+    from_model: str
+    to_model: str
+
+
 class RaidTrackedFrame(BaseModel):
     """Emitted after a raid is upserted so the UI can refresh its Raids list."""
 

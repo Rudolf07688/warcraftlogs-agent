@@ -64,6 +64,8 @@ export interface Message {
   encounters?: Encounter[];
   // US2: interactive charts the agent produced during this turn.
   artifacts?: ChartArtifact[];
+  // Feature 021: the turn moved to the same-class sibling model (live session only).
+  fallback?: { from: string; to: string };
 }
 
 // US2: an agent-declared chart, rendered inline as an interactive Plotly figure.

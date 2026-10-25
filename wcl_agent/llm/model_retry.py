@@ -12,6 +12,10 @@ turn and installs it in the ``current_turn`` ContextVar. ADK runs the model call
 parallel tool calls) in tasks spawned from the turn's task, which inherit the context, so
 the model wrapper and the ``before_model_callback`` always find the right turn. Without a
 turn (the CLI, unit tests) everything degrades to "retry with the policy, notify nobody".
+
+Feature 021: when a chat turn's request stays rate limited after the retries, the wrappers
+switch it once to the same-class sibling model (``generate_with_fallback``); the chat
+socket sets the sibling on the turn's ``TurnStats``.
 """
 
 from __future__ import annotations
@@ -86,6 +90,11 @@ class TurnStats:
     last_cached_tokens: int | None = None
     # Old tool results replaced by stubs across the turn's requests (context_trim).
     trimmed_results: int = 0
+    # Feature 021: the same-class sibling this turn may switch to once (set by the chat
+    # socket only), the model it switched to, and the request length at the switch.
+    fallback_model: str | None = None
+    switched_to: str | None = None
+    switch_index: int | None = None
 
     def record_prompt_tokens(self, count: int | None, cached: int | None = None) -> None:
         if count is None:
@@ -237,6 +246,77 @@ async def generate_with_retry(
             attempt += 1
 
 
+# Google's documented stand-in for a function-call thought signature from another model.
+_FOREIGN_SIGNATURE = b"skip_thought_signature_validator"
+
+
+def _route_to_sibling(llm_request: LlmRequest, stats: TurnStats) -> None:
+    """Point this request at the turn's sibling model (feature 021).
+
+    Gemini validates the current turn's function-call thought signatures, and the parts
+    before the switch were signed by the other version, so a Gemini request gets the
+    documented bypass value on those parts. Only this request's copies change: its
+    contents belong to the stored session events, which are never mutated.
+    """
+    llm_request.model = stats.switched_to
+    if is_anthropic_model(stats.switched_to) or stats.switch_index is None:
+        return
+    contents = llm_request.contents
+    starts = user_turn_indices(contents)
+    if not starts:
+        return
+    for i in range(starts[-1], min(stats.switch_index, len(contents))):
+        parts = contents[i].parts or []
+        if not any(p.thought_signature for p in parts):
+            continue
+        contents[i] = contents[i].model_copy(
+            update={
+                "parts": [
+                    p.model_copy(update={"thought_signature": _FOREIGN_SIGNATURE})
+                    if p.thought_signature
+                    else p
+                    for p in parts
+                ]
+            }
+        )
+
+
+async def generate_with_fallback(
+    inner: Callable[[], AsyncGenerator[Any, None]],
+    llm_request: LlmRequest,
+    policy: RetryPolicy,
+) -> AsyncGenerator[Any, None]:
+    """``generate_with_retry``, then at most once per turn the same-class sibling (021).
+
+    Acts only on the chat turn's own model (``llm_request.model == stats.model``), so the
+    web-search sub-agent and helper calls are untouched. ``inner`` reads
+    ``llm_request.model`` on each call, as ADK's Gemini and Claude do. When the request is
+    still rate limited and nothing was yielded (``ModelRateLimited``), the turn switches to
+    ``stats.fallback_model``: one ``model_fallback`` record, then this request and every
+    later one of the turn go to the sibling. A rate limit on the sibling propagates.
+    """
+    stats = current_turn.get()
+    own = stats is not None and llm_request.model == stats.model
+    if own and stats.switched_to:
+        _route_to_sibling(llm_request, stats)
+    try:
+        async for response in generate_with_retry(inner, policy):
+            yield response
+        return
+    except ModelRateLimited:
+        if not (own and stats.fallback_model and stats.switched_to is None):
+            raise
+    stats.switched_to = stats.fallback_model
+    stats.switch_index = len(llm_request.contents)
+    logger.warning(
+        "model %s still rate-limited; switching this turn to %s", stats.model, stats.switched_to
+    )
+    stats.emit({"type": "model_fallback", "from_model": stats.model, "to_model": stats.switched_to})
+    _route_to_sibling(llm_request, stats)
+    async for response in generate_with_retry(inner, policy):
+        yield response
+
+
 class RetryingGemini(Gemini):
     """ADK ``Gemini`` with the shared retry loop; the SDK's own retries are disabled."""
 
@@ -252,8 +332,9 @@ class RetryingGemini(Gemini):
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
     ) -> AsyncGenerator[LlmResponse, None]:
-        async for response in generate_with_retry(
+        async for response in generate_with_fallback(
             lambda: super(RetryingGemini, self).generate_content_async(llm_request, stream),
+            llm_request,
             self.policy,
         ):
             yield response
@@ -286,8 +367,9 @@ if _Claude is not None:
         async def generate_content_async(
             self, llm_request: LlmRequest, stream: bool = False
         ) -> AsyncGenerator[LlmResponse, None]:
-            async for response in generate_with_retry(
+            async for response in generate_with_fallback(
                 lambda: super(RetryingClaude, self).generate_content_async(llm_request, stream),
+                llm_request,
                 self.policy,
             ):
                 yield response

@@ -233,6 +233,46 @@ def is_catalog_id(model_id: str) -> bool:
     return False
 
 
+def model_class(model_id: str) -> tuple[str, str] | None:
+    """``(publisher, class)`` of a served id by the discovery naming rules, else None.
+
+    A dated Claude id (``name@version``) is classified by its name.
+    """
+    name = model_id.partition("@")[0]
+    if match := _GEMINI_RE.match(name):
+        return "google", match.group(3)
+    if match := _CLAUDE_RE.match(name):
+        return "anthropic", match.group(1)
+    return None
+
+
+def class_label(model_id: str) -> str | None:
+    """``"Gemini flash"`` / ``"Claude sonnet"`` for a user-facing message, else None."""
+    found = model_class(model_id)
+    if found is None:
+        return None
+    publisher, cls = found
+    return f"{'Gemini' if publisher == 'google' else 'Claude'} {cls}"
+
+
+def sibling_model(model: str, served: Sequence[str]) -> str | None:
+    """The served model a rate-limited ``model`` falls back to (feature 021), or None.
+
+    Peers are the served ids of the same publisher and class, in served order (newest
+    first in catalog mode). The first peer falls back to the second; any other peer
+    falls back to the first. A class with one served model has no sibling.
+    """
+    found = model_class(model)
+    if found is None:
+        return None
+    peers = [m for m in served if model_class(m) == found]
+    if model not in peers:
+        return None
+    if peers[0] != model:
+        return peers[0]
+    return peers[1] if len(peers) > 1 else None
+
+
 def choose_default(models: Sequence[str], configured: str, classes: Sequence[ClassResult]) -> str:
     """The configured default if served, else the newest flash, else the first model."""
     if configured in models:
