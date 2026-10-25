@@ -270,3 +270,14 @@ Each entry gives the date, the question, the answer and the reason.
     sets them to `legacy` with FORCE restored, and an injected failure rolls everything
     back. The migration tests pass 3/3. The docs cover SPEC-003, 004, 005, 007 and 009.
     SPEC-008 and the 022 checkpoint wording belong to 024.
+36. **Q: Accept fix 024 (FN-1, FN-2, SPEC-006, SPEC-008, the SPEC-004 remainder)?**
+    A: ACCEPT at 47281b5. Checked myself: pytest gives 1064 passed / 3 skipped / 1
+    deselected. I read the service diff: the raid step and the M+ step have separate
+    `timeout_at` scopes under one deadline, only the raid step can fail the refresh,
+    M+ errors are logged (an outer cancellation still propagates), and a report whose
+    fetch failed isn't marked final. WelcomePanel shows stored runs in the running,
+    idle, failed and empty states, with the skeleton only when there's nothing to
+    show. Characters are matched per fight by name, falling back to the report-level
+    set.
+    The accepted behaviour change: an M+-only failure records `succeeded` and goes
+    only to the server log. Owner live test: the raid-less view in a browser.
