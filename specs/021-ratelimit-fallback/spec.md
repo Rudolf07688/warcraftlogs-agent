@@ -107,7 +107,8 @@ answer streams, and the notice stays next to that answer after the turn complete
 
 - The rate limit hits after part of a model response has already streamed (mid-stream):
   no switch is made for that response, since a retry would duplicate text; the turn fails
-  as it does today.
+  exactly as it does today (the partial reply is kept once and reported as an agent
+  error). Changing that is out of scope.
 - The sibling answers but later in the same turn is rate limited as well: the turn has
   already used its one switch, so the player gets the "try again shortly" message.
 - After a switch, every later model request of the same turn goes to the sibling; the turn
@@ -141,22 +142,22 @@ answer streams, and the notice stays next to that answer after the turn complete
 - **FR-006**: A switch MUST NOT re-run lookups already done in the turn, and MUST NOT
   store or show any part of the reply twice.
 - **FR-007**: When a switch happens, the player MUST see a notice in the chat naming the
-  model that answered and the model that was rate limited. [NEEDS CLARIFICATION: should
-  the notice survive a page reload (stored with the reply), or only show in the live
-  session?]
+  model that answered and the model that was rate limited: a status line while the switch
+  happens, then a notice line under the reply that answered. The notice lives in the live
+  session only; it is not stored, so a reload does not show it.
 - **FR-008**: The model selector MUST keep showing the player's chosen model after a
-  switch. [NEEDS CLARIFICATION: does the next turn start on the chosen model again, or
-  stay on the sibling that answered?]
+  switch, and the next turn MUST start on the chosen model again (with its own single
+  switch available).
 - **FR-009**: Helper model calls outside the chat turn (greeting, follow-up suggestions,
   conversation titles, guide pipeline, guild summaries) MUST behave exactly as before and
   never switch models.
 - **FR-010**: Non-rate-limit failures MUST NOT trigger a switch.
 - **FR-011**: The per-turn stats log line MUST record whether a switch happened and to
   which model.
-- **FR-012**: The fallback MUST work the same way for Gemini and for Anthropic (Claude)
-  models. [NEEDS CLARIFICATION: if an operator configures a Claude class to serve two
-  versions, should it fall back like Gemini, or should Claude always go straight to the
-  "try again shortly" message as decision 7 states for today's one-model classes?]
+- **FR-012**: The fallback MUST follow one rule for Gemini and Anthropic (Claude) models:
+  the sibling is another served model of the same publisher and class. A Claude class
+  served by one model (today's configuration) has no sibling and goes straight to the
+  "try again shortly" message (decision 7).
 
 ### Key Entities
 
@@ -193,6 +194,7 @@ answer streams, and the notice stays next to that answer after the turn complete
   naming rules discovery uses.
 - The sibling needs no extra startup probe: it is already a served model, so it passed
   discovery.
-- The existing "try again shortly" wording from feature 011 is reused.
+- The existing "try again shortly" wording from feature 011 is reused unchanged, whether
+  there was no sibling or the sibling was busy too.
 - Tests use fake rate-limit errors for both providers; no live provider call is needed.
 - No database change: the fallback is a per-turn runtime decision.

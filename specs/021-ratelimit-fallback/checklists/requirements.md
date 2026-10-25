@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,5 +31,4 @@
 
 ## Notes
 
-- Three [NEEDS CLARIFICATION] markers (FR-007 notice persistence, FR-008 next-turn model,
-  FR-012 two-model Claude classes) go to the scrum master in `/speckit-clarify`.
+- Clarified 2026-10-25 (see spec Clarifications); Q1, Q2, Q4 provisional until the product owner answers.
