@@ -265,6 +265,7 @@ work.
 | 20 | sc-137 Design single-lane chat layout | 2 | Medium | Must precede sc-138 and needs the owner's review of the mockup. |
 | 21 | sc-138 Implement single-lane chat layout | 5 | Medium | Rebuilds the chat window, so chat-window features (139, 140, 144, 118) come after it. |
 | 22 | sc-139 Message actions in the new layout | 2 | Medium | Part of the redesign. |
+| 22a | sc-175 Mobile layout: collapsible sidebar on narrow screens | 3 | Medium | Found while accepting 023; the 390px overflow predates it. Do it with the sc-138 redesign so the layout shell is rebuilt once. |
 | 23 | sc-140 Scroll to question on completion | 1 | Medium | Do it in the new layout, or it gets written twice. |
 | 24 | sc-144 Character filter checkboxes | 5 | Medium | Lives in the chat header, so after the redesign. |
 | 25 | sc-145 (Stretch) Agent sets the character filter | 5 | Low | Needs sc-144. |

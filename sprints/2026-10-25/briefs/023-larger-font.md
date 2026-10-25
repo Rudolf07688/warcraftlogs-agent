@@ -59,3 +59,14 @@ check Tailwind's `text-*` utilities in components (they're `rem`-based).
   a careful note on what you checked and how.
 - No backend changes, so `pytest` should stay at the sprint baseline (1022/3/1).
 - Shortcut: move sc-152 to In Progress when you start. Reply "ACK" to every grant.
+
+## Product owner's pre-answer (decision 30, verbatim intent)
+
+1. First commit: a mechanical px→rem pass over the font-size declarations in `styles.css`
+   and `index.css`. It must render identically at the current root, and you show that by
+   comparing before and after (computed sizes or screenshots).
+2. Second commit: one root bump, one step.
+
+Scope is font sizes only. Spacing, borders and layout px stay as they are. ACs 1–3 still
+apply. The estimate stays at 1. If something would really push it past that, ask
+before widening the scope.

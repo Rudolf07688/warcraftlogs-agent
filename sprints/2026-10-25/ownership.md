@@ -65,4 +65,5 @@ security brief moved to `briefs/withdrawn/`.
 | `frontend/src/components/WelcomePanel.tsx`, `frontend/src/types.ts`, `frontend/src/api/restClient.ts`, `frontend/src/App.tsx` | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |
 | `backend/migrations/versions/0014_recent_mplus_runs.py` (down_revision `0013_raw_fetches`), `backend/tests/test_recent_mplus.py` (new), `backend/tests/test_recent_raids.py`, `backend/tests/test_wcl_cache.py` + `test_cache_families.py` (only if pinning v1 key), `specs/022-welcome-mplus/**` | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |
 | `backend/app/db/models.py` (append only), `backend/app/config.py` (2 settings) | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |
-| `frontend/src/styles.css`, `frontend/src/index.css`, `specs/023-larger-font/**` | dev-b-023 | 023 | tentative | 2026-10-25 |
+| `frontend/src/styles.css`, `frontend/src/index.css`, `specs/023-larger-font/**` | dev-b-023 | 023 | released (merged ea186a2) | 2026-10-25 |
+| `frontend/src/components/Sidebar.tsx` (line 154, `text-[11px]` → `text-[0.6875rem]` only) | dev-b-023 | 023 | released (merged ea186a2) | 2026-10-25 |

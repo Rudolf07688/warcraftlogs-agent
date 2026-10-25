@@ -214,3 +214,32 @@ Each entry gives the date, the question, the answer and the reason.
     one step; no horizontal overflow or clipped text at 1280px and 390px in the sidebar,
     composer, welcome panel (raid and M+ cards) and chat messages; the frontend build
     is green.
+30. **Q (023, raised ahead of clarify): `styles.css` hard-codes about 20 px font sizes, so
+    a root change alone won't reach them. How do we meet AC 1 ("one place")?**
+    A: Two steps, in two commits:
+    1. A mechanical px→rem pass over the font sizes, which renders identically at the
+       current root. Check by comparing before and after at the old root.
+    2. One root bump.
+    After that, every future size change is one line, which is the intent of AC 1.
+    Font sizes only; spacing and layout px stay as they are. The estimate stays at 1
+    point.
+31. **Q (023): AC 2 at 390px can't hold. Do we accept 023 anyway, or hold it until a
+    mobile layout lands?**
+    A: Accept 023, but only on AC 2 as amended: no new overflow at 1280px, and no
+    regression beyond the existing 390px overflow. This is a ruling on the AC, not the
+    feature acceptance itself, which waits for the hand-off.
+    Why: the 390px overflow is pre-existing. I looked at the base screenshot myself:
+    the sidebar doesn't collapse, so the main column is crushed at any font size. 023
+    adds only about 25–30px to it. Holding a 1-point CSS change for a 3-point layout
+    story would gain nothing.
+    Filed sc-175, "Mobile layout: collapsible sidebar on narrow screens": 3 points,
+    ui/ux, epic 105, Priority Medium. It's ranked next to the chat redesign (sc-137/138)
+    so the layout shell is rebuilt once.
+32. **Q: Accept 023 at 8cd7d2f?** A: REJECT, with one fix.
+    `html { font-size: 17px }` is an absolute root. It overrides the user's browser or
+    OS default font-size preference, which the app respected until now (the root was
+    unset). That is an accessibility regression. Fix: `html { font-size: 106.25% }`.
+    That is 17px at the 16px default, so it renders identically to 8cd7d2f, but it
+    still scales with the user's setting. Everything else is accepted as is (the 36
+    exact px→rem conversions, the single Sidebar line, AC 2 per decision 31).
+33. **Q: Accept 023 at 8a8ce50?** A: ACCEPT. The root is now `106.25%` (one line plus a comment), which fixes the decision 32 point. sc-152 is done for this sprint.
