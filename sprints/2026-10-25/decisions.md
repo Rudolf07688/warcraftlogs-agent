@@ -55,3 +55,28 @@ Each entry gives the date, the question, the answer and the reason.
    Caveat: sc-158 (login limit behind a proxy) should be pulled forward before any
    shared deployment (sc-146). This is recorded in the plan's risks and the sc-146
    rationale, not escalated: nothing is being deployed this sprint.
+
+## 2026-10-25: Feature 019 (sidebar & conversations) clarify answers
+
+9. **Q1: What order do pinned chats appear in?** A: Most recently pinned first.
+   Why: the group stays stable while you chat. Drag-to-order is extra scope with no
+   request behind it.
+10. **Q2: Is a pin per tenant or per user?** A: Per tenant (workspace), like
+    conversations today.
+    Why: conversations have no owner-user column. Per-user pins would need a join
+    table for a case (a shared workspace with several users) that doesn't happen in
+    practice yet. Revisit if multi-user workspaces become real.
+11. **Q3: Where does the Pinned group go?** A: A "Pinned" sub-group at the top of the
+    Conversations section. It collapses with the section, the count stays the total,
+    and it is hidden when nothing is pinned.
+    Why: one list, no extra toggle, and a minimal change to the sidebar.
+12. **Q4: What does the pin control look like?** A: A pin icon button next to the
+    delete ✕. It shows on hover or focus, and stays visible (filled) while the chat is
+    pinned. It uses the existing shadcn Button and a react-icons icon, with no new
+    dependency. The open chat's header also gets a pin toggle next to "PDF".
+    Why: no dependency or lockfile change, and it matches the existing delete
+    affordance. It must be keyboard reachable with an aria-label ("Pin chat" /
+    "Unpin chat").
+13. **Q5: Are chats that predate this feature renamed?** A: No. Generation fires only
+    on a chat's first complete reply, so old chats keep their names.
+    Why: no heuristic, so there's no risk of renaming an old raid investigation.

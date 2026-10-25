@@ -118,5 +118,6 @@ Phase 2 (after 018 merges):
 - sc-155: say in the plan how the background task is owned (the existing
   `services/background.py` pattern?), how "at most once" is enforced (a DB condition,
   not in-memory), and how the sidebar learns the new title (AC 7).
+- Shortcut: move sc-154 to In Progress when you start. Move sc-165 and sc-155 only when work on each story starts (product owner rule).
 - Before hand-off, re-index **your worktree** and run `detect-changes`. Restore
   `CLAUDE.md` and `.specify/feature.json` before every commit.
