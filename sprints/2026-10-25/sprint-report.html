@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WCL App Sprint 2026-10-25</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one column report, sticky tab bar, each tab a focused panel; point sizes use WoW item-quality colours. */
+:root{
+  --bg:#f5f6f9; --surface:#ffffff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+img{max-width:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+h1,h2,h3{font-family:var(--f-display);font-stretch:85%;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,5vw,42px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:22px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:68ch}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+
+header.top{padding-block:40px 20px;display:grid;gap:12px}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg);font-weight:600}
+.lede{font-size:18px;color:var(--fg)}
+
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:28px}
+.tablist{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding-block:6px}
+.tablist::-webkit-scrollbar{display:none}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 14px;border-radius:8px;cursor:pointer;white-space:nowrap;display:flex;gap:8px;align-items:center}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);background:var(--accent-soft)}
+.tab .count{font:600 12px var(--f-mono);background:var(--sunk);color:var(--muted);border-radius:99px;padding:1px 7px}
+.tab[aria-selected="true"] .count{background:var(--surface);color:var(--accent)}
+
+section.panel{display:grid;gap:28px}
+.block{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+
+/* KPI strip */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:4px;align-content:start}
+.kpi .v{font:700 32px/1.1 var(--f-display);font-stretch:85%;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:16px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.two>*{min-width:0}
+.chart svg{width:100%;height:auto;display:block}
+.chart .cap{font-size:14px;color:var(--muted)}
+
+/* points pill in item-quality colours */
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;padding:0 8px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);align-items:center}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:.03em;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.neutral{background:var(--sunk);color:var(--muted)}
+.pill.acc{background:var(--accent-soft);color:var(--accent)}
+
+/* Delivered */
+.filters{display:flex;flex-wrap:wrap;gap:8px}
+.chip{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:600 14px var(--f-body);padding:6px 12px;border-radius:99px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.feat{display:grid;gap:10px}
+.feat-head{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:baseline}
+.feat-head .fid{font:600 13px var(--f-mono);color:var(--muted)}
+.feat-head h3{flex:1 1 260px}
+.stories{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.stories li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.stories .sid{font:600 13px var(--f-mono);color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+details.more summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:14px}
+details.more ul{margin:8px 0 0;padding-left:20px;color:var(--fg)}
+details.more li{margin:3px 0}
+
+/* tables */
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+td.n,th.n{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.heat{display:inline-block;min-width:34px;text-align:center;border-radius:6px;padding:2px 6px;font-weight:600}
+.h0{color:var(--muted)}
+.hh{background:var(--bad-soft);color:var(--bad)}
+.hm{background:var(--warn-soft);color:var(--warn)}
+.hl{background:var(--sunk);color:var(--fg)}
+tr.total td{font-weight:700;border-bottom:0}
+
+.list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.item{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.item>div{min-width:0}
+.item .t{font-weight:600}
+.item .d{color:var(--muted);font-size:15px}
+.sev{width:4px;align-self:stretch;border-radius:4px;background:var(--line)}
+.sev.high{background:var(--bad)}.sev.med{background:var(--warn)}.sev.low{background:var(--muted)}.sev.good{background:var(--ok)}
+
+/* Backlog */
+.bl{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:baseline;padding:11px 4px;border-bottom:1px solid var(--line)}
+.bl .sid{font:600 13px var(--f-mono)}
+.bl .nm{min-width:0}
+.bl .why{grid-column:2 / -1;color:var(--muted);font-size:14px}
+
+/* Checklist */
+.progress{height:10px;background:var(--sunk);border-radius:99px;overflow:hidden}
+.progress>div{height:100%;background:var(--ok);width:0;transition:width .25s}
+.check{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;cursor:pointer}
+.check input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--ok);cursor:pointer}
+.check .t{font-weight:600}
+.check .d{color:var(--muted);font-size:15px}
+.check.done .t{text-decoration:line-through;color:var(--muted)}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:600 14px var(--f-body);padding:7px 14px;border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Scope flow */
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.flow>.card{display:grid;gap:8px;align-content:start}
+.flow .big{font:700 28px var(--f-display);font-stretch:85%}
+.delta{font:700 14px var(--f-mono)}
+.delta.plus{color:var(--ok)}.delta.minus{color:var(--bad)}
+
+.foot{color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+.foot code,.mono-inline{font-family:var(--f-mono);font-size:13px;background:var(--sunk);padding:1px 6px;border-radius:4px;overflow-wrap:anywhere}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">WCL Agent App · Sprint review</div>
+    <h1>Sprint 2026-10-25</h1>
+    <p class="lede">23 of 21 planned points shipped across six features, plus four quality fixes from the end-of-sprint QA sweep. Everything is merged to <span class="mono-inline">main</span> and waiting for a live test.</p>
+    <div class="meta">
+      <span>Board <b>Shortcut · Team 1</b></span>
+      <span>Iteration <b>WCL App Q4 2026</b></span>
+      <span>Base <b class="mono">4923785</b></span>
+      <span>Merged as <b class="mono">e63a80c</b></span>
+      <span>Status <b>Under Review, not pushed</b></span>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Report sections">
+    <div class="tablist" role="tablist">
+      <button class="tab" role="tab" id="t-overview" aria-controls="overview" data-tab="overview">Overview</button>
+      <button class="tab" role="tab" id="t-delivered" aria-controls="delivered" data-tab="delivered">Delivered <span class="count">9</span></button>
+      <button class="tab" role="tab" id="t-quality" aria-controls="quality" data-tab="quality">Quality</button>
+      <button class="tab" role="tab" id="t-scope" aria-controls="scope" data-tab="scope">Scope</button>
+      <button class="tab" role="tab" id="t-backlog" aria-controls="backlog" data-tab="backlog">New backlog <span class="count">16</span></button>
+      <button class="tab" role="tab" id="t-checks" aria-controls="checks" data-tab="checks">Live checks <span class="count" id="checkCount">0/9</span></button>
+    </div>
+  </nav>
+
+  <!-- OVERVIEW -->
+  <section class="panel" id="overview" role="tabpanel" aria-labelledby="t-overview">
+    <div class="kpis">
+      <div class="kpi"><span class="eyebrow">Points</span><span class="v num">23 <small>/ 21 target</small></span><span class="s">9 stories, all Under Review</span></div>
+      <div class="kpi"><span class="eyebrow">Backend tests</span><span class="v num">1064</span><span class="s">up from 926 (+138), all passing</span></div>
+      <div class="kpi"><span class="eyebrow">QA findings</span><span class="v num">0 <small>critical</small></span><span class="s">2 high · 5 medium · 19 low</span></div>
+      <div class="kpi"><span class="eyebrow">Fixed before ship</span><span class="v num">4</span><span class="s">rest filed as 11 deferred tickets</span></div>
+      <div class="kpi"><span class="eyebrow">Schema</span><span class="v num">3 <small>migrations</small></span><span class="s">0012 to 0014, tested on Postgres</span></div>
+    </div>
+
+    <div class="two">
+      <div class="card chart block">
+        <div><h3>Points accepted through the day</h3><p class="cap">Cumulative story points at each acceptance, against the 21-point target.</p></div>
+        <div id="burnup"></div>
+      </div>
+      <div class="card chart block">
+        <div><h3>Backend test suite</h3><p class="cap">Passing tests after each merge. No existing test was weakened.</p></div>
+        <div id="tests"></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>Headlines</h2>
+      <ul class="list">
+        <li class="item"><span class="sev good"></span><div><div class="t">The agent codebase is reorganised</div><div class="d"><span class="mono-inline">wcl_agent/</span> moved from one flat folder of 25 modules into six sub-packages (client, cache, tools, guides, llm, game). There's no behaviour change, and the test count matched before and after.</div></div></li>
+        <li class="item"><span class="sev good"></span><div><div class="t">Chats are easier to find</div><div class="d">Conversations sit above Raids in the sidebar. Chats can be pinned, and new chats get a short generated name after their first reply.</div></div></li>
+        <li class="item"><span class="sev good"></span><div><div class="t">The local data store has started</div><div class="d">Every successful Warcraft Logs response is now kept in the database. That lays the groundwork for answering questions without calling the API.</div></div></li>
+        <li class="item"><span class="sev good"></span><div><div class="t">Fewer dead ends on rate limits</div><div class="d">When a model keeps returning 429s, the chat switches once to the other model in the same class and says so under the reply.</div></div></li>
+        <li class="item"><span class="sev good"></span><div><div class="t">The welcome page shows Mythic+ runs</div><div class="d">The welcome page lists up to 6 recent raids and up to 6 recent M+ runs, and clicking a run opens a focused M+ review chat.</div></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- DELIVERED -->
+  <section class="panel" id="delivered" role="tabpanel" aria-labelledby="t-delivered" hidden>
+    <div class="block">
+      <div class="filters" role="group" aria-label="Filter by area">
+        <button class="chip" data-f="all" aria-pressed="true">All</button>
+        <button class="chip" data-f="backend" aria-pressed="false">Backend</button>
+        <button class="chip" data-f="frontend" aria-pressed="false">Frontend</button>
+        <button class="chip" data-f="data" aria-pressed="false">Database</button>
+        <button class="chip" data-f="ai" aria-pressed="false">Agent / models</button>
+      </div>
+      <div class="legend"><span>Story points in item-quality colours:</span><span><i class="pts p1">1</i>uncommon</span><span><i class="pts p2">2</i>rare</span><span><i class="pts p3">3</i>epic</span><span><i class="pts p5">5</i>legendary</span></div>
+    </div>
+    <div class="block" id="featList"></div>
+  </section>
+
+  <!-- QUALITY -->
+  <section class="panel" id="quality" role="tabpanel" aria-labelledby="t-quality" hidden>
+    <div class="block">
+      <h2>End-of-sprint QA sweep</h2>
+      <p>Four review agents covered everything the sprint changed: spec conformance, bugs, performance and security. Nothing critical turned up.</p>
+      <div class="card tbl-wrap">
+        <table>
+          <thead><tr><th>Review</th><th class="n">Critical</th><th class="n">High</th><th class="n">Medium</th><th class="n">Low</th></tr></thead>
+          <tbody>
+            <tr><td>Spec conformance</td><td class="n"><span class="heat h0">0</span></td><td class="n"><span class="heat hh">1</span></td><td class="n"><span class="heat hm">1</span></td><td class="n"><span class="heat hl">7</span></td></tr>
+            <tr><td>Bugs</td><td class="n"><span class="heat h0">0</span></td><td class="n"><span class="heat h0">0</span></td><td class="n"><span class="heat hm">2</span></td><td class="n"><span class="heat hl">3</span></td></tr>
+            <tr><td>Performance</td><td class="n"><span class="heat h0">0</span></td><td class="n"><span class="heat hh">1</span></td><td class="n"><span class="heat hm">2</span></td><td class="n"><span class="heat hl">6</span></td></tr>
+            <tr><td>Security</td><td class="n"><span class="heat h0">0</span></td><td class="n"><span class="heat h0">0</span></td><td class="n"><span class="heat h0">0</span></td><td class="n"><span class="heat hl">3</span></td></tr>
+            <tr class="total"><td>Total</td><td class="n">0</td><td class="n">2</td><td class="n">5</td><td class="n">19</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>Fixed before shipping</h2>
+      <ul class="list">
+        <li class="item"><span class="sev high"></span><div><div class="t">Stored M+ runs disappeared for players without raids <span class="pill bad">High</span></div><div class="d">While a refresh ran or after it failed, the welcome page hid the stored runs, and a failed M+ fetch failed the whole refresh. Now the runs always show, and an M+-only failure is logged without failing the raids.</div></div></li>
+        <li class="item"><span class="sev med"></span><div><div class="t">Old chats could be auto-renamed after an upgrade <span class="pill warn">Medium</span></div><div class="d">On a database where migrations don't run as a superuser, the step that protects existing chat names silently did nothing. It's fixed and verified on Postgres, including rollback on failure.</div></div></li>
+        <li class="item"><span class="sev med"></span><div><div class="t">M+ runs listed the wrong characters <span class="pill warn">Medium</span></div><div class="d">Each run named every one of your characters in the log. It now names only the ones who were in that key.</div></div></li>
+        <li class="item"><span class="sev low"></span><div><div class="t">Documentation drift <span class="pill neutral">Low</span></div><div class="d">The README, developer guide and feature specs now describe what was actually built. Three small doc follow-ups remain as sc-193.</div></div></li>
+      </ul>
+    </div>
+
+    <div class="two">
+      <div class="card block">
+        <h3>How it was verified</h3>
+        <ul class="list" style="gap:6px">
+          <li>The full backend suite passes on <span class="mono-inline">main</span>: 1064 passed, 3 skipped.</li>
+          <li>The frontend production build is green.</li>
+          <li>All three migrations went up, down and up again on a throwaway Postgres.</li>
+          <li>Each workspace sees only its own pins, titles and M+ runs (row-level security checked).</li>
+          <li>After a model switch, chat history records each turn exactly once, checked with the real agent framework.</li>
+          <li>A second review pass confirmed all four fixes.</li>
+        </ul>
+      </div>
+      <div class="card block">
+        <h3>Known limits accepted</h3>
+        <ul class="list" style="gap:6px">
+          <li><b>Phone width:</b> the page scrolls sideways because the sidebar never collapses. This predates the sprint, and the fix is filed as sc-175.</li>
+          <li><b>M+-only failure:</b> there's no Retry button. It retries by itself at the next scheduled refresh, about 15 minutes later.</li>
+          <li><b>Fallback timing:</b> the switch happens only after the normal retries, about 30 seconds (sc-176).</li>
+          <li><b>Switch notice:</b> it's shown live but not saved, so it's gone after a reload.</li>
+          <li><b>Mid-stream 429s:</b> they don't switch models, to avoid duplicating text.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCOPE -->
+  <section class="panel" id="scope" role="tabpanel" aria-labelledby="t-scope" hidden>
+    <div class="flow">
+      <div class="card"><span class="eyebrow">First plan</span><span class="big num">22 pts</span><p>It included two security fixes: blocking remote images in model output (sc-157) and a per-client login limit behind a proxy (sc-158).</p></div>
+      <div class="card"><span class="eyebrow">Re-plan</span><span class="big num">22 pts</span><p>Existing QA tickets moved to a lower-priority <span class="mono-inline">qa-deferred</span> lane, which took out sc-157/158 <span class="delta minus">−7</span>. In came raw fetch storage and the welcome M+ runs <span class="delta plus">+7</span>.</p></div>
+      <div class="card"><span class="eyebrow">Stretch</span><span class="big num">+1 pt</span><p>The larger default font (sc-152) was pulled in when one track ran out of work.</p></div>
+      <div class="card"><span class="eyebrow">Delivered</span><span class="big num">23 pts</span><p>All nine stories are merged and Under Review. Nothing planned was dropped.</p></div>
+    </div>
+    <div class="block">
+      <h2>Order of delivery</h2>
+      <p>Foundations went first so later features build on them instead of being reworked: the module restructure, then fetch storage, then the features that use it. The welcome M+ runs came after fetch storage so their data is stored too.</p>
+      <div class="card tbl-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Feature</th><th>Builds on</th><th class="n">Pts</th></tr></thead>
+          <tbody>
+            <tr><td class="num">1</td><td>Module restructure</td><td>—</td><td class="n">5</td></tr>
+            <tr><td class="num">2</td><td>Sidebar, pins, generated names</td><td>Restructure (name generation)</td><td class="n">7</td></tr>
+            <tr><td class="num">3</td><td>Raw fetch storage</td><td>Restructure, sidebar migration</td><td class="n">4</td></tr>
+            <tr><td class="num">4</td><td>Welcome M+ runs</td><td>Fetch storage</td><td class="n">3</td></tr>
+            <tr><td class="num">5</td><td>Larger default font</td><td>—</td><td class="n">1</td></tr>
+            <tr><td class="num">6</td><td>429 model fallback</td><td>Restructure, sidebar</td><td class="n">3</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card block">
+      <h3>Carried forward</h3>
+      <p>The two security fixes are back in the backlog with a ready-made spec on branch <span class="mono-inline">parked/sc-157-158-security-spec</span>. Pull sc-158 forward before any shared deployment (sc-146).</p>
+    </div>
+  </section>
+
+  <!-- BACKLOG -->
+  <section class="panel" id="backlog" role="tabpanel" aria-labelledby="t-backlog" hidden>
+    <div class="block">
+      <div class="filters" role="group" aria-label="Filter tickets">
+        <button class="chip" data-b="all" aria-pressed="true">All 16</button>
+        <button class="chip" data-b="watch" aria-pressed="false">Needs attention</button>
+        <button class="chip" data-b="follow" aria-pressed="false">Follow-ups</button>
+        <button class="chip" data-b="qa" aria-pressed="false">QA-deferred</button>
+      </div>
+      <p class="eyebrow" style="text-transform:none;letter-spacing:0;font-weight:400">QA-deferred tickets carry the <span class="mono-inline">qa-deferred</span> label and rank below all other work. Each was checked against existing QA tickets so none are duplicates.</p>
+    </div>
+    <div class="card" id="blList" style="padding-block:4px"></div>
+  </section>
+
+  <!-- LIVE CHECKS -->
+  <section class="panel" id="checks" role="tabpanel" aria-labelledby="t-checks" hidden>
+    <div class="block">
+      <h2>Before marking stories Done</h2>
+      <p>These need a real browser, Vertex models or Warcraft Logs credentials, which the sprint didn't have. Ticks are saved in this browser only.</p>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div class="progress" style="flex:1 1 200px" aria-hidden="true"><div id="bar"></div></div>
+        <span class="num" id="progressText">0 of 9</span>
+        <button class="btn" id="resetChecks" type="button">Clear ticks</button>
+      </div>
+    </div>
+    <div class="list" id="checkList"></div>
+  </section>
+
+  <p class="foot" style="margin-top:40px">Sprint records live in <code>sprints/2026-10-25/</code> on <code>main</code>: the plan, 39 product decisions, the QA triage and the delivery log. The QA reports are in <code>wcl-worktrees/sprint/qa-reports/2026-10-25/</code>.</p>
+</div>
+
+<script>
+(function(){
+  const SC = id => "https://app.shortcut.com/frl-personal/story/" + id;
+
+  /* ---------- Delivered features ---------- */
+  const features = [
+    {id:"018", title:"wcl_agent split into sub-packages", areas:["backend"], pts:5,
+     stories:[[150,5,"Restructure wcl_agent/*.py into sub-packages"]],
+     summary:"The 25 flat modules now live in client/, cache/, tools/, guides/, llm/ and game/. agent.py, cli.py and menu.py stay at the top.",
+     details:["All 22 moved files keep their git history.","Every import and test patch path was rewritten, and a checker confirms no old path remains.","The test count is identical before and after. The app builds and boots."],
+     tags:[["acc","No behaviour change"]]},
+    {id:"019", title:"Sidebar, pinned chats and generated names", areas:["frontend","backend","data","ai"], pts:7,
+     stories:[[154,1,"Sidebar: previous conversations above Raids"],[165,3,"Pinnable chats in chat window and sidebar"],[155,3,"Auto-generate conversation names"]],
+     summary:"Conversations sit above Raids. Pin a chat from the sidebar or the chat header, and pinned chats sit in a group at the top. New chats get a short title after their first complete reply.",
+     details:["Pins are stored per workspace and survive reload and re-login. Another workspace's chat returns 404.","Pinning doesn't change a chat's place in the activity order.","Titles are generated once per chat, in the background, with a 15-second cap. A failure keeps the first-message name, with no error shown.","Chats created with a name (raid or M+ investigations) and every chat from before the sprint keep their names.","The pin buttons are keyboard-reachable and labelled “Pin chat” / “Unpin chat”."],
+     tags:[["neutral","Migration 0012"],["warn","Live check"]]},
+    {id:"020", title:"Every Warcraft Logs fetch stored", areas:["backend","data"], pts:4,
+     stories:[[127,2,"Raw WCL fetch schema"],[128,2,"Write-through persistence of every WCL fetch"]],
+     summary:"Successful Warcraft Logs responses are written to a new raw_fetches table in the background. A fetch never waits for or fails on storage.",
+     details:["One row per distinct query, refreshed on refetch. An older response arriving late never overwrites a newer one.","Batched calls are stored as one row, with every report code they cover in an indexed list.","The queue is capped (500 items or 64 MB). When it's full, storage is skipped and a warning is logged at most once a minute.","Storage happens only in the web app, never from the CLI, evals or tests.","Three settings control it, documented in .env.example."],
+     tags:[["neutral","Migration 0013"],["warn","Live check"]]},
+    {id:"021", title:"429 fallback to the sibling model", areas:["backend","frontend","ai"], pts:3,
+     stories:[[164,3,"Fall back to the second model in the same class on 429s"]],
+     summary:"If a chat's model is still rate-limited after the normal retries, the turn continues on the other model in the same class. A note under the reply says which model answered.",
+     details:["It switches at most once per turn, and the next message starts on your chosen model again.","With no second model (Claude today) you see the usual “try again in about a minute”. If both models are limited you see “Both … models are rate-limited right now”.","Title generation, guides, greetings and guild summaries never switch.","Tested on both the Gemini and Claude code paths with simulated 429s."],
+     tags:[["warn","Live check"]]},
+    {id:"022", title:"Welcome page: 6 raids and 6 M+ runs", areas:["frontend","backend","data"], pts:3,
+     stories:[[153,3,"Welcome chat: max 6 raids + 6 M+ runs"]],
+     summary:"The welcome page lists up to 6 recent raids and up to 6 recent Mythic+ runs, newest first. Clicking a run opens a chat titled “M+ &lt;dungeon&gt; +&lt;level&gt;” with a focused review prompt.",
+     details:["One run is one key. A key that shows up under several of your characters is listed once.","Timed means at least one chest. Over-time keys show “Not timed”, and abandoned keys are hidden.","Runs come from the existing background refresh and are stored per workspace, so the page never waits on Warcraft Logs.","The M+ section is hidden when you have no runs."],
+     tags:[["neutral","Migration 0014"],["warn","Live check"]]},
+    {id:"023", title:"Slightly larger default font", areas:["frontend"], pts:1,
+     stories:[[152,1,"Slightly increase default font size"]],
+     summary:"Base text is one step larger (17px at the default browser size) and still follows your browser or OS text-size setting.",
+     details:["All 36 fixed pixel font sizes were converted to relative units that render identically, so future size changes are a one-line edit.","No new overflow at desktop width."],
+     tags:[["acc","Stretch story"]]}
+  ];
+  const featList = document.getElementById("featList");
+  featList.innerHTML = features.map(f => `
+    <article class="card feat" data-areas="${f.areas.join(" ")}">
+      <div class="feat-head"><span class="fid">${f.id}</span><h3>${f.title}</h3><span class="pts p${f.pts>=5?5:f.pts}" title="${f.pts} points">${f.pts}</span></div>
+      <p>${f.summary}</p>
+      <ul class="stories">${f.stories.map(s=>`<li><span class="pts p${s[1]}">${s[1]}</span><span><a class="sid" href="${SC(s[0])}" target="_blank" rel="noopener">sc-${s[0]}</a> ${s[2]}</span></li>`).join("")}</ul>
+      <div class="tags">${f.tags.map(t=>`<span class="pill ${t[0]}">${t[1]}</span>`).join("")}<span class="pill ok">Under Review</span></div>
+      <details class="more"><summary>Details</summary><ul>${f.details.map(d=>`<li>${d}</li>`).join("")}</ul></details>
+    </article>`).join("");
+  document.querySelectorAll("[data-f]").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-f]").forEach(b => b.setAttribute("aria-pressed", String(b===btn)));
+    const f = btn.dataset.f;
+    featList.querySelectorAll(".feat").forEach(el => { el.hidden = f!=="all" && !el.dataset.areas.split(" ").includes(f); });
+  }));
+
+  /* ---------- Backlog ---------- */
+  const tickets = [
+    [175,"follow","Mobile layout: collapsible sidebar on narrow screens","The real fix for the sideways scroll at phone width. Ranked next to the chat redesign.",true],
+    [171,"follow","wcl_agent follow-ups: de-stutter cache/cache.py and tools/tools.py, move load_world_zones out of menu.py","Small naming cleanup after the restructure."],
+    [172,"follow","ai_guide.md: fix stale facts (Python version, tool count, WCLClient singleton)",""],
+    [173,"follow","Add ruff (with isort rules) to the dev toolchain","A trial run found 28 existing issues."],
+    [174,"follow","Perf test test_wcl_loop_lag fails under -m perf","This failure predates the sprint."],
+    [178,"qa","QA SEC-001: guard raw_fetches against cross-tenant exposure before anything reads it","Nothing reads the table yet, but it must be guarded before sc-129 starts reading it.",true],
+    [177,"qa","QA PERF-002/003, SEC-003: raw_fetches write amplification, unbounded growth and writer edge cases","No size limit. Identical data is rewritten on every refetch.",true],
+    [176,"qa","QA PERF-001: switch to the sibling model sooner on 429s","Today the switch waits for the full retry schedule, about 30 seconds.",true],
+    [185,"qa","QA SEC-HARDEN: Postgres-backed tenant-isolation tests in CI and composite tenant FKs","These tests would have caught the migration bug automatically.",true],
+    [179,"qa","QA BUG-003/SEC-002: harden generated-title cleaning","Some model output is dropped or garbled, and titles can be steered by quoted content."],
+    [180,"qa","QA BUG-005/PERF-006/007: conversation-list state (stale refetch, title frame, pin round trip)",""],
+    [181,"qa","QA BUG-004: sidebar “last activity” order is really first-message order",""],
+    [182,"qa","QA PERF-004/005: make the welcome M+ refresh step cheaper",""],
+    [183,"qa","QA BUG-LEAD-022: welcome M+ edge cases","Covers the same key in two reports, a double-click, an unlinked run, and fight_id bounds. It also covers a manual retry for M+-only failures."],
+    [184,"qa","QA BUG-LEAD-021: web search after a model fallback may surface raw provider errors",""],
+    [193,"qa","QA SPEC-003/R01/R02: sprint doc follow-ups","README coverage of fetch storage, a guide note on the M+ failure rule, and a font note."]
+  ];
+  const blList = document.getElementById("blList");
+  blList.innerHTML = tickets.map(t => `
+    <div class="bl" data-kind="${t[1]}" data-watch="${t[4]?1:0}">
+      <a class="sid" href="${SC(t[0])}" target="_blank" rel="noopener">sc-${t[0]}</a>
+      <span class="nm">${t[2]}</span>
+      <span>${t[1]==="qa"?'<span class="pill neutral">qa-deferred</span>':'<span class="pill acc">follow-up</span>'}${t[4]?' <span class="pill warn">attention</span>':''}</span>
+      ${t[3]?`<span class="why">${t[3]}</span>`:""}
+    </div>`).join("");
+  document.querySelectorAll("[data-b]").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-b]").forEach(b => b.setAttribute("aria-pressed", String(b===btn)));
+    const k = btn.dataset.b;
+    blList.querySelectorAll(".bl").forEach(el => {
+      el.hidden = !(k==="all" || (k==="watch" && el.dataset.watch==="1") || el.dataset.kind===k);
+    });
+  }));
+
+  /* ---------- Live checks ---------- */
+  const checks = [
+    ["pins","Pin buttons","In the sidebar and the chat header: pin, unpin, reload, and use the keyboard.","sc-165"],
+    ["title","A real generated title","Start a new chat. After the first reply, the sidebar name should change to a short title.","sc-155"],
+    ["raw","raw_fetches is filling up","After a few chats, the new table should have rows.","sc-127/128"],
+    ["mplus","Your real M+ runs on the welcome page","Up to 6, newest first, with the right characters per key.","sc-153"],
+    ["depleted","A known over-time key shows “Not timed”","The Warcraft Logs handling of depleted keys wasn't confirmed against live data. If it's wrong, the run would be missing instead.","sc-153"],
+    ["cost","Warcraft Logs points cost unchanged","Compare the cost log for the report-summary query before and after. Four keystone fields were added.","sc-153"],
+    ["review","The M+ review chat","Click a run. It should open “M+ &lt;dungeon&gt; +&lt;level&gt;” with the review prompt.","sc-153"],
+    ["switch","A real 429 model switch","Serve two flash models, set WCL_MODEL_RETRY_ATTEMPTS=1, and send several broad questions quickly. Watch for the “⇄ Answered by” note and any Gemini 400 about thought signatures after tool calls.","sc-164"],
+    ["font","The larger font","At your usual window size, everything should read comfortably with nothing cut off.","sc-152"]
+  ];
+  const KEY = "sprint-2026-10-25-checks";
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch(e) { state = {}; }
+  const checkList = document.getElementById("checkList");
+  checkList.innerHTML = checks.map(c => `
+    <label class="check" for="chk-${c[0]}">
+      <input type="checkbox" id="chk-${c[0]}" data-k="${c[0]}">
+      <span><span class="t">${c[1]}</span> <span class="pill neutral">${c[3]}</span><br><span class="d">${c[2]}</span></span>
+    </label>`).join("");
+  function renderChecks(){
+    let n = 0;
+    checkList.querySelectorAll("input").forEach(i => {
+      i.checked = !!state[i.dataset.k];
+      i.closest(".check").classList.toggle("done", i.checked);
+      if (i.checked) n++;
+    });
+    document.getElementById("bar").style.width = (n/checks.length*100) + "%";
+    document.getElementById("progressText").textContent = n + " of " + checks.length;
+    document.getElementById("checkCount").textContent = n + "/" + checks.length;
+  }
+  checkList.addEventListener("change", e => {
+    if (!e.target.dataset.k) return;
+    state[e.target.dataset.k] = e.target.checked;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(err) {}
+    renderChecks();
+  });
+  document.getElementById("resetChecks").addEventListener("click", () => {
+    state = {};
+    try { localStorage.removeItem(KEY); } catch(err) {}
+    renderChecks();
+  });
+  renderChecks();
+
+  /* ---------- Charts ---------- */
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, text){ const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text!=null) e.textContent = text; return e; }
+  function toMin(t){ const [h,m] = t.split(":").map(Number); return h*60+m; }
+
+  function stepChart(host, opts){
+    const W=520, H=240, L=46, R=16, T=16, B=34;
+    const svg = el("svg",{viewBox:`0 0 ${W} ${H}`, role:"img", "aria-label":opts.label});
+    const x0=toMin(opts.xFrom), x1=toMin(opts.xTo);
+    const sx = m => L + (m-x0)/(x1-x0)*(W-L-R);
+    const sy = v => H-B - (v-opts.yMin)/(opts.yMax-opts.yMin)*(H-T-B);
+    opts.yTicks.forEach(v => {
+      svg.appendChild(el("line",{x1:L,x2:W-R,y1:sy(v),y2:sy(v),stroke:"var(--line)","stroke-width":1}));
+      svg.appendChild(el("text",{x:L-8,y:sy(v)+4,"text-anchor":"end","font-size":11,fill:"var(--muted)","font-family":"var(--f-mono)"},String(v)));
+    });
+    opts.xTicks.forEach(t => {
+      svg.appendChild(el("text",{x:sx(toMin(t)),y:H-B+18,"text-anchor":"middle","font-size":11,fill:"var(--muted)","font-family":"var(--f-mono)"},t));
+    });
+    if (opts.target!=null){
+      svg.appendChild(el("line",{x1:L,x2:W-R,y1:sy(opts.target),y2:sy(opts.target),stroke:"var(--warn)","stroke-width":1.5,"stroke-dasharray":"5 4"}));
+      svg.appendChild(el("text",{x:W-R,y:sy(opts.target)-6,"text-anchor":"end","font-size":11,fill:"var(--warn)","font-family":"var(--f-mono)"},"target "+opts.target));
+    }
+    const pts = opts.points.map(p => [sx(toMin(p[0])), sy(p[1]), p]);
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i=1;i<pts.length;i++){ d += ` H${pts[i][0]} V${pts[i][1]}`; }
+    const endX = sx(toMin(opts.xEnd));
+    d += ` H${endX}`;
+    const area = d + ` V${sy(opts.yMin)} H${pts[0][0]} Z`;
+    svg.appendChild(el("path",{d:area,fill:"var(--accent-soft)",stroke:"none"}));
+    svg.appendChild(el("path",{d,fill:"none",stroke:"var(--accent)","stroke-width":2.5,"stroke-linejoin":"round"}));
+    pts.forEach((p,i) => {
+      const last = i===pts.length-1;
+      const c = el("circle",{cx:p[0],cy:p[1],r:last?5:3.5,fill:last?"var(--accent)":"var(--surface)",stroke:"var(--accent)","stroke-width":2});
+      c.appendChild(el("title",{}, `${p[2][0]}  ${p[2][2]}: ${p[2][1]}`));
+      svg.appendChild(c);
+      if (p[2][3]){
+        const above = p[1] - 10;
+        svg.appendChild(el("text",{x:Math.min(p[0]+4, W-R-2),y:above,"text-anchor":p[0]>W-90?"end":"start","font-size":11,"font-weight":600,fill:"var(--fg)","font-family":"var(--f-mono)"},p[2][3]));
+      }
+    });
+    host.appendChild(svg);
+  }
+
+  stepChart(document.getElementById("burnup"),{
+    label:"Cumulative story points accepted from 0 at 13:46 to 23 at 16:02, above the target of 21",
+    xFrom:"13:30", xTo:"17:15", xEnd:"17:07", yMin:0, yMax:25, yTicks:[0,5,10,15,20,25],
+    xTicks:["14:00","15:00","16:00","17:00"], target:21,
+    points:[["13:46",0,"Plan set"],["14:26",5,"Restructure","5"],["14:55",12,"Sidebar & chats","12"],["15:08",16,"Fetch storage","16"],["15:30",19,"Welcome M+","19"],["15:49",20,"Font","20"],["16:02",23,"429 fallback","23"]]
+  });
+  stepChart(document.getElementById("tests"),{
+    label:"Passing backend tests rising from 926 to 1064 across the sprint",
+    xFrom:"13:30", xTo:"17:15", xEnd:"17:07", yMin:900, yMax:1080, yTicks:[900,945,990,1035,1080],
+    xTicks:["14:00","15:00","16:00","17:00"],
+    points:[["13:46",926,"Start","926"],["15:00",981,"Sidebar & chats"],["15:12",1008,"Fetch storage"],["15:34",1022,"Welcome M+"],["16:06",1060,"429 fallback"],["16:53",1064,"QA fixes","1064"]]
+  });
+
+  /* ---------- Tabs with #hash ---------- */
+  const tabs = [...document.querySelectorAll(".tab")];
+  const panels = tabs.map(t => document.getElementById(t.dataset.tab));
+  function show(name, focus){
+    if (!panels.some(p => p.id===name)) name = "overview";
+    tabs.forEach(t => { const on = t.dataset.tab===name; t.setAttribute("aria-selected", String(on)); t.tabIndex = on?0:-1; if (on && focus) t.focus(); });
+    panels.forEach(p => p.hidden = p.id!==name);
+    try { history.replaceState(null, "", "#"+name); } catch(e) {}
+  }
+  tabs.forEach((t,i) => {
+    t.addEventListener("click", () => show(t.dataset.tab));
+    t.addEventListener("keydown", e => {
+      if (e.key==="ArrowRight"||e.key==="ArrowLeft"){
+        const j = (i + (e.key==="ArrowRight"?1:-1) + tabs.length) % tabs.length;
+        show(tabs[j].dataset.tab, true); e.preventDefault();
+      }
+    });
+  });
+  show((location.hash||"").slice(1) || "overview");
+})();
+</script>
+</body>
+</html>
