@@ -1,5 +1,14 @@
 # Checkpoint: feature 019 (dev-b-019-v2)
 
+**Status 2026-10-25: phase B done and handed off.** The branch is rebased on the sprint tip
+f32b771 (after 018); `ast_refs.py` reports 0 findings. All 34 tasks are done. Full suite:
+981 passed, 3 skipped, 1 deselected, 0 xfail (926 existing tests unchanged + 55 new).
+Postgres API smoke on 18019/15419 (the pin flow, a foreign tenant gets 404, no CSRF gets 403,
+a bad body gets 422, the pin survives a re-login) passed. A live title generation check
+needs model credentials, so it is left to the product owner's live test. The phase A notes
+below are history.
+
+
 Resume from here after a context reset.
 
 ## Where things stand (2026-10-25, end of phase A)

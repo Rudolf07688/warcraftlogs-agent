@@ -183,8 +183,8 @@ the phase 2 grant, and move sc-155 to In Progress.
 ## Phase 7: Polish & Cross-Cutting
 
 - [X] T032 [P] Add one line each for the PATCH endpoint and the `conversation_title` frame to `documentation/ai_guide.md` (after 018 releases the file)
-- [ ] T033 Run quickstart manual checks 1–3 with the app on port 18019 (Redis on 16319 if needed), and check 4 (Postgres migration up, down, up) in a throwaway `docker run --rm -d` postgres:17 on port 15419 with dummy credentials (no compose, never the owner's `.env`); stop the containers afterwards and record the results in `checkpoint.md`
-- [ ] T034 Run final verification: re-index the worktree (`node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`), run `detect-changes --scope all` (not partial or truncated), check ownership with `git diff --name-only <base>...HEAD`, restore `CLAUDE.md` and `.specify/feature.json`, make the full suite and the build green, then hand off to the scrum master
+- [X] T033 Run quickstart manual checks 1–3 with the app on port 18019 (Redis on 16319 if needed), and check 4 (Postgres migration up, down, up) in a throwaway `docker run --rm -d` postgres:17 on port 15419 with dummy credentials (no compose, never the owner's `.env`); stop the containers afterwards and record the results in `checkpoint.md`
+- [X] T034 Run final verification: re-index the worktree (`node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`), run `detect-changes --scope all` (not partial or truncated), check ownership with `git diff --name-only <base>...HEAD`, restore `CLAUDE.md` and `.specify/feature.json`, make the full suite and the build green, then hand off to the scrum master
 
 ---
 
