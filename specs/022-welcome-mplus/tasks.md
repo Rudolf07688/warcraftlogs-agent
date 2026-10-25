@@ -27,7 +27,7 @@ Tests are requested (spec SC-007). WCL responses are faked; no live calls. Tasks
 **Independent test**: faked WCL summaries with keystone fights produce stored runs; GET returns at most 6, newest first, deduped, none when absent.
 
 - [ ] T009 [US2] [after 020] Append `RecentMplusRun` and `RecentMplusRunCharacter` to `backend/app/db/models.py` per data-model.md
-- [ ] T010 [US2] Write migration `backend/migrations/versions/0014_recent_mplus_runs.py` (down_revision `0013_raw_fetches`, tables, unique key, indexes, RLS enable + tenant policy and grants like 0010)
+- [X] T010 [US2] Write migration `backend/migrations/versions/0014_recent_mplus_runs.py` (down_revision `0013_raw_fetches`, tables, unique key, indexes, RLS enable + tenant policy and grants like 0010)
 - [ ] T011 [P] [US2] Add `MplusRun` dataclass to `backend/app/services/recent_raid_types.py`
 - [ ] T012 [US2] In `backend/app/services/recent_raids.py` add `extract_mplus_runs(summary)` (completed = `kill is True` and `keystone_level > 0`; timed = `keystone_bonus >= 1`; dungeon = fight name, else zone name; start = report start + fight start) and extend `_refresh` to fetch details for the newest `MPLUS_REPORT_BATCH = 10` non-raid reports needing details and store their runs with character links
 - [ ] T013 [US2] In `backend/app/db/repository.py` add `upsert_mplus_runs` (`ON CONFLICT DO NOTHING`, links only to live characters) and `list_recent_mplus_runs` (two queries mirroring `list_recent_raids`, only runs linked to an existing own character)
