@@ -135,7 +135,7 @@ choice, the reason, and the alternatives.
   `LuPin` and `LuPinOff` from `react-icons/lu`:
   - **Sidebar entry**: `size="sm"`, beside the delete button. Hidden until hover or focus
     like delete, and always visible when pressed. `onClick` stops propagation so the
-    row's select doesn't fire. `aria-label` is "Pin conversation" or "Unpin conversation".
+    row's select doesn't fire. `aria-label` is "Pin chat" or "Unpin chat", and Radix sets `aria-pressed` (FR-004a).
   - **Chat header**: shown when `activeId` is set and the conversation is in the list;
     `pressed` is derived from the list.
   - **Pinned group**: rendered inside the Conversations list only when at least one chat

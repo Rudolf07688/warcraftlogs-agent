@@ -10,6 +10,19 @@
 
 Shortcut stories: sc-154, sc-165, sc-155 (Team 1, iteration "WCL App Q4 2026").
 
+## Clarifications
+
+### Session 2026-10-25
+
+Answered by the product owner via the scrum master (sprint decisions.md entries 9–13).
+
+- Q: How is the Pinned group ordered? → A: Most recently pinned first.
+- Q: Are pins per workspace or per user? → A: Per workspace, like conversations.
+- Q: Where does the Pinned group sit? → A: A sub-group inside the Conversations section. It collapses with that section, the section count stays the total, and it is hidden when nothing is pinned.
+- Q: What is the sidebar pin control? → A: A pin button on each entry next to delete. It shows on hover or focus, and always shows when the chat is pinned. The chat header gets a pin button too. Product owner addition: both buttons must be keyboard reachable, with an accessible name "Pin chat" / "Unpin chat" and an exposed pressed state.
+- Q: Are chats that existed before this feature renamed? → A: No, they keep their names.
+- Product owner acceptance point: explicit titles (raid investigations, recent-raid kickoffs) are marked as explicit when the chat is created, so the keep-the-name rule holds for new chats as well as old ones.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Conversations first in the sidebar (Priority: P1, sc-154)
@@ -151,6 +164,12 @@ investigation: its raid name stays.
 - **FR-003**: Players MUST be able to pin and unpin a chat from its sidebar entry.
 - **FR-004**: Players MUST be able to pin and unpin the open chat from the chat header;
   the header control MUST show the current pin state.
+- **FR-004a**: Both pin controls (sidebar entry and chat header) MUST be keyboard
+  reachable and operable (Tab to focus, Enter or Space to toggle). They MUST have the
+  accessible name "Pin chat" when the chat is unpinned and "Unpin chat" when it is
+  pinned, and they MUST expose their pressed state to assistive technology (pressed =
+  pinned). A sidebar pin control that is visually hidden until hover MUST become
+  visible when it has keyboard focus.
 - **FR-005**: Pinned chats MUST appear in a "Pinned" group at the top of the
   Conversations list; the rest follow in the existing order (most recent activity
   first). No Pinned group is shown when nothing is pinned.
@@ -191,6 +210,11 @@ investigation: its raid name stays.
   and the system MUST NOT retry it later.
 - **FR-018**: Chats created with an explicit name (raid investigations, recent-raid
   kickoffs, or any future caller that names a chat on creation) MUST keep that name.
+  The chat MUST be marked as explicitly named at the moment it is created, by the one
+  shared creation path every naming caller goes through, so the rule holds for new chats
+  and not only for pre-existing ones. Automated tests MUST cover each kind of naming
+  caller: creating a chat with a name through the conversations API, investigating a
+  tracked raid, and investigating a recent raid from the welcome page.
 - **FR-019**: When a title is generated while the player's chat connection is open, the
   client MUST be told, and the sidebar (and header, where shown) MUST show the new name
   without a manual reload. If the connection is gone, the name appears the next time the
@@ -200,9 +224,11 @@ investigation: its raid name stays.
 **Quality**
 
 - **FR-021**: Automated backend tests MUST cover: pinning and unpinning, the pin order,
-  the not-found answer for another workspace's chat, the schema change and its rollback,
-  title generation with the model faked, the once-only rule, the explicit-name rule,
-  and the failure/rate-limit fallback.
+  the not-found answer for another workspace's chat, the schema change and its rollback
+  (including that a chat created after the change starts as default-named, or as
+  explicitly named when created with a name), title generation with the model faked,
+  the once-only rule, the explicit-name rule for each naming caller (FR-018), and the
+  failure/rate-limit fallback.
 
 ### Key Entities
 
@@ -240,9 +266,9 @@ investigation: its raid name stays.
 - The pin feature has no limit on the number of pinned chats; a player typically pins a
   handful.
 - Pins are per workspace (like the conversations themselves), not per individual user
-  within a shared workspace, matching how conversations are scoped today.
+  within a shared workspace (confirmed, Clarifications).
 - The Pinned group is part of the Conversations section (it collapses with it) and the
-  section count stays the total number of chats.
+  section count stays the total number of chats (confirmed, Clarifications).
 - The generated title is in the language of the player's first message.
 - There is no manual rename feature today; renaming by hand is out of scope.
 - "Lightweight model" means the same kind of fast, cheap model the app already uses for
