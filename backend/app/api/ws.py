@@ -16,13 +16,14 @@ from pydantic import ValidationError
 from wcl_agent.cache.cache import set_refresh_actor
 
 from wcl_agent.llm.model_retry import ModelRateLimited
+from wcl_agent.llm.models import class_label
 
 from ..agent_runner import stream_response
 from ..auth.csrf import origin_matches
 from ..auth.dependencies import authenticate_session
 from ..config import settings
 from ..db import repository as repo
-from ..model_state import is_valid_model
+from ..model_state import fallback_model_for, is_valid_model
 from ..scratch import TurnScratch
 from ..tenancy.context import RequestIdentity, apply_tenant_scope, tenant_scope
 from ..schemas import (
@@ -55,6 +56,11 @@ logger = logging.getLogger(__name__)
 # Feature 011 / FR-004: the only wording a player sees for an exhausted retry budget.
 RATE_LIMITED_MESSAGE = (
     "The model is rate-limited right now. Please try again in about a minute."
+)
+# Feature 021: the turn already switched to the same-class sibling, which is busy too, so
+# switching models by hand won't help either.
+BOTH_RATE_LIMITED_MESSAGE = (
+    "Both {label} models are rate-limited right now. Please try again in about a minute."
 )
 
 
@@ -214,10 +220,18 @@ async def _persist_partial(conv_id, tokens: list[str], identity: RequestIdentity
 
 
 async def _handle_turn(
-    ws: WebSocket, turn: ChatTurn, identity: RequestIdentity
+    ws: WebSocket,
+    turn: ChatTurn,
+    identity: RequestIdentity,
+    *,
+    fallback_model: str | None = None,
 ) -> asyncio.Task | None:
     """Run one chat turn. Returns the follow-up suggestions task when the turn finished,
-    else ``None``; the caller owns it (and cancels it when the next turn starts)."""
+    else ``None``; the caller owns it (and cancels it when the next turn starts).
+
+    ``fallback_model`` is the same-class sibling the turn may switch to once when its
+    model stays rate limited (feature 021).
+    """
     tenant_id = identity.tenant_id
     # PERF-006: one short tenant-scoped transaction to set the turn up. It closes (commits
     # and returns its connection to the pool) before the model streams; captures and the
@@ -254,6 +268,7 @@ async def _handle_turn(
     # US2: a per-turn scratch store holds each tool's full output on disk so large
     # concurrent results are preserved and picked up after every call completes.
     tokens: list[str] = []
+    switched = False  # feature 021: the turn moved to the sibling model
     scratch = TurnScratch(str(conv_id))
     try:
         async for record in stream_response(
@@ -264,6 +279,7 @@ async def _handle_turn(
             context_preamble=preamble or None,
             # ADK session state is isolated per tenant (feature 006, websocket.md).
             user_id=str(identity.tenant_id),
+            fallback_model=fallback_model,
         ):
             kind = record.get("type")
             if kind == "token":
@@ -278,6 +294,8 @@ async def _handle_turn(
             elif kind == "model_retry":
                 # Feature 011 / FR-003: the model is rate-limited; show "retrying".
                 await _send(ws, ModelRetryFrame(**record))
+            elif kind == "model_fallback":
+                switched = True
     except WebSocketDisconnect:
         # Client vanished mid-reply: keep what we have, can't send anything.
         await _persist_partial(conv_id, tokens, identity)
@@ -287,8 +305,10 @@ async def _handle_turn(
         # no provider wording, and no partial reply persisted (the user message stays,
         # so the player can simply resend).
         logger.warning("turn failed on model rate limit: %s", exc)
+        label = class_label(turn.model) if switched else None
+        message = BOTH_RATE_LIMITED_MESSAGE.format(label=label) if label else RATE_LIMITED_MESSAGE
         try:
-            await _send(ws, ErrorFrame(code="rate_limited", message=RATE_LIMITED_MESSAGE))
+            await _send(ws, ErrorFrame(code="rate_limited", message=message))
         except Exception:  # noqa: BLE001 - socket may already be gone
             pass
         return None
@@ -345,10 +365,16 @@ async def _send_suggestions(ws, turn: ChatTurn, final_text: str, message_id) -> 
         logger.debug("follow-up suggestions not sent", exc_info=True)
 
 
-async def _start_turn(sock: _TurnSocket, turn: ChatTurn, identity: RequestIdentity) -> None:
+async def _start_turn(
+    sock: _TurnSocket,
+    turn: ChatTurn,
+    identity: RequestIdentity,
+    *,
+    fallback_model: str | None = None,
+) -> None:
     """Start a turn on this socket: drop the previous turn's pending suggestions first."""
     sock.cancel_suggestions()
-    sock.suggestions = await _handle_turn(sock, turn, identity)
+    sock.suggestions = await _handle_turn(sock, turn, identity, fallback_model=fallback_model)
 
 
 async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
@@ -423,7 +449,9 @@ async def chat(ws: WebSocket) -> None:
             if not is_valid_model(ws.app, turn.model):
                 await _send(sock, ErrorFrame(code="invalid_model", message=f"Unknown model '{turn.model}'."))
                 continue
-            await _start_turn(sock, turn, identity)
+            await _start_turn(
+                sock, turn, identity, fallback_model=fallback_model_for(ws.app, turn.model)
+            )
     except WebSocketDisconnect:
         return
     finally:
