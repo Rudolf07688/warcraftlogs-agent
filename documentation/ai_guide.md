@@ -649,6 +649,7 @@ Implemented in `specs/014-redis-wcl-cache/` (design: `documentation/redis_cache_
   `chat:refresh:{user}:{char}` (60 s). `ws.py` sets the turn's user with `set_refresh_actor`.
 - **Tests**: Redis is off unless a test takes the `fake_redis` fixture (conftest); use
   `DeadRedis` (test_wcl_cache.py) for outage paths.
+- **Raw fetch store** (feature 020): every successful WCL network call (cache misses only) is offered by `AsyncWCLClient._fetch` to the process-wide sink `wcl_client.set_fetch_sink`; in the app it is `services/fetch_persistence.FetchWriter` (started/stopped in `lifespan`, 5 s drain), which upserts one row per query key into the global `raw_fetches` table (`report_codes` JSONB + GIN; the DB strips `data._cost`). Bounded by `WCL_FETCH_PERSIST_QUEUE_MAX`/`_QUEUE_MB` (drops are logged, never raised); `WCL_FETCH_PERSIST_ENABLED=false` turns it off. CLI, evals and tests leave the sink unset. Nothing reads the table yet (sc-129).
 
 ## 20. Feature 015 — grounded, patch-aware Raid and Mythic+ guides
 

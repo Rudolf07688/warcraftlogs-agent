@@ -35,8 +35,8 @@ Not mine: `repository.py` (read-only import of `_insert`), `conftest.py`, `CLAUD
 
 ## Open
 
-- The migration chain needs 019's `0012` for a live test: cherry-pick it temporarily
-  and don't commit it. 019 merges before 020.
+- None. 019 merged: the branch is rebased onto `sprint-2026-10-25` (6aa641d), and `0013`
+  now chains onto the real `0012`.
 
 ## Implementation status (2026-10-25)
 
@@ -52,3 +52,12 @@ All tasks T001–T020 done. Results:
 - As the runtime role `wcl_app`, the writer stores through the real client: `_cost` is
   stripped by `#-` (`has_cost = false`). The out-of-order pair keeps the newer row.
   `report_codes ? 'B2'` finds the batch row through a Bitmap Index Scan on the GIN index.
+
+## After the rebase onto 6aa641d
+
+- Full suite: **1008 passed, 3 skipped, 1 deselected** (new baseline 981 + 27).
+- `alembic heads`: `0013_raw_fetches` only. On fresh Postgres 17 with the committed `0012`:
+  upgrade head → downgrade -1 (no table, version 0012) → upgrade head, with all three
+  indexes present.
+- `specs/018-wcl-agent-subpackages/checks/ast_refs.py`: 0 findings.
+- `documentation/ai_guide.md` §19 has one "Raw fetch store" bullet (granted).
