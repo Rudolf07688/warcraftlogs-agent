@@ -93,3 +93,33 @@ Each entry gives the date, the question, the answer and the reason.
     `tools/tools.py`, move `load_world_zones`), sc-172 (stale facts in ai_guide), sc-173
     (ruff and isort), sc-174 (the perf test that fails at base). They aren't QA
     findings, so they don't get the qa-deferred label.
+
+## 2026-10-25: Feature 020 (fetch persistence) clarify answers
+
+16. **Q1: Do we keep the history of live (unfinished) report data?** A: No. Exactly one
+    row per query key, upserted on every fetch, which refreshes the payload and
+    fetched_at.
+    Why: the goal of epic 103 is to answer from local data, not to audit how a live
+    report changed. sc-129 reads the latest row, and judges finality from the report's
+    summary row (endTime vs fetched_at, the cache's existing 2-hour rule). A
+    finality lookup at write time would add cost and complexity for nothing anyone
+    reads. This meets F3 AC 4: a finished report never duplicates, and live data is
+    stored again by refreshing its row.
+17. **Q2: How are batched GraphQL calls (up to 10 reports) stored?** A: One row per
+    network call, as received. report_code is NULL when the call covers several
+    reports, and all the codes stay in params.
+    Why: rows mirror real queries, so sc-129 can serve the identical batch call by its
+    query key. Splitting into per-report rows is sc-130's job (normalized entities),
+    which will parse batch payloads. The params must hold the report codes in a
+    queryable form (for example a JSONB array) so sc-130 can find them.
+
+## 2026-10-25: Feature 019 acceptance
+
+18. **Q: Accept 019 (sc-154, sc-165, sc-155)?** A: ACCEPT.
+    Checked myself: backend tests 981 passed / 3 skipped / 1 deselected, frontend build
+    green. Read the diff: the migration and its legacy backfill, the conditional
+    once-only claim, the tenant-scoped PATCH, the hook after `done`, and the Toggle
+    a11y. A non-blocking note goes to the QA sweep: `conversation_titles` uses the
+    private `suggestions._get_client` / `_SUGGEST_MODEL`. A public accessor would be
+    cleaner. Live tests for the owner: the pin UI in a browser, and a real generated
+    title (needs model credentials).

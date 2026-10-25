@@ -33,17 +33,20 @@ Sprint branch: `sprint-2026-10-25` (base `4923785`). Worktrees: track A
 | `frontend/src/lib/classColors.ts` (line-2 comment only) | dev-a-018 | 018 | released (merged 36bce56) | 2026-10-25 |
 | `specs/018-wcl-agent-subpackages/**` | dev-a-018 | 018 | released (merged 36bce56) | 2026-10-25 |
 | `main.py`, `backend/tests/test_{grounding,prompt_contract,startup}.py`, `pyproject.toml`/`uv.lock` token | (was dev-a-018) | 018 | released (no edit needed) | 2026-10-25 |
-| `backend/migrations/versions/0012_conversation_pin_title.py` (down_revision `0011_guide_content_types`) | dev-b-019-v2 | 019 | granted | 2026-10-25 |
-| `backend/app/db/models.py` (Conversation), `backend/app/db/repository.py`, `backend/app/api/conversations.py` | dev-b-019-v2 | 019 | granted | 2026-10-25 |
-| `backend/tests/test_conversation_pinning.py`, `backend/tests/test_conversation_migration.py`, `backend/tests/test_conversation_titles.py` (new) | dev-b-019-v2 | 019 | granted | 2026-10-25 |
-| `frontend/src/components/Sidebar.tsx`, `frontend/src/App.tsx`, `frontend/src/types.ts`, `frontend/src/api/restClient.ts`, `frontend/src/api/wsClient.ts` | dev-b-019-v2 | 019 | granted | 2026-10-25 |
-| `backend/app/services/conversation_titles.py` (new) | dev-b-019-v2 | 019 | granted | 2026-10-25 |
-| `specs/019-sidebar-conversations/**` | dev-b-019-v2 | 019 | granted | 2026-10-25 |
-| `backend/app/schemas.py`, `backend/app/api/ws.py` (sc-155 hook), `backend/tests/conftest.py`, `documentation/ai_guide.md` (2 lines) | dev-b-019-v2 | 019 | granted (phase B) | 2026-10-25 |
-| next in line: `backend/app/agent_runner.py`, `backend/app/api/ws.py`, `wcl_agent` model_retry/models | F4 / 021 | 021 | queued: after 019 sc-155 merges | 2026-10-25 |
-| `wcl_agent/client/**`, `wcl_agent/cache/**`, new `backend/app/repositories/raw_fetches.py`, migration `0013_*`, `backend/app/config.py`, new `backend/tests/test_raw_fetch_*.py`, `specs/020-fetch-persistence/**` | dev-a-020 | 020 | tentative (F5/022 after 020 merges) | 2026-10-25 |
-| `backend/app/db/models.py` (append `RawFetch`) | dev-a-020 | 020 | queued: transfer from 019 once it declares models.py final | 2026-10-25 |
-| migration slots | 0012 → 019, 0013 → 020, 0014 → 022 (only if needed) | — | assigned | 2026-10-25 |
+| `backend/migrations/versions/0012_conversation_pin_title.py` (down_revision `0011_guide_content_types`) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
+| `backend/app/db/repository.py`, `backend/app/api/conversations.py` | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
+| `backend/app/db/models.py` (Conversation columns, done in dad5f8c) | dev-b-019-v2 | 019 | released (declared final; transferred to 020) | 2026-10-25 |
+| `backend/tests/test_conversation_pinning.py`, `backend/tests/test_conversation_migration.py`, `backend/tests/test_conversation_titles.py` (new) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
+| `frontend/src/components/Sidebar.tsx`, `frontend/src/App.tsx`, `frontend/src/types.ts`, `frontend/src/api/restClient.ts`, `frontend/src/api/wsClient.ts` | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
+| `backend/app/services/conversation_titles.py` (new) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
+| `specs/019-sidebar-conversations/**` | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
+| `backend/app/schemas.py`, `backend/app/api/ws.py` (sc-155 hook), `backend/tests/conftest.py`, `documentation/ai_guide.md` (2 lines) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
+| `backend/app/agent_runner.py`, `backend/app/api/ws.py`, `wcl_agent/llm/model_retry.py`, `wcl_agent/llm/models.py` | F4 / 021 | 021 | free, reserved for 021 (after 020 on track A) | 2026-10-25 |
+| `wcl_agent/client/wcl_client.py`, `backend/app/config.py` (3 settings), `backend/app/main.py` (lifespan), `.env.example` | dev-a-020 | 020 | granted | 2026-10-25 |
+| `backend/app/db/models.py` (append `RawFetch` at end only) | dev-a-020 | 020 | granted (transferred from 019) | 2026-10-25 |
+| `backend/migrations/versions/0013_raw_fetches.py` (down_revision `0012_conversation_pin_title`), `backend/app/repositories/raw_fetches.py`, `backend/app/services/fetch_persistence.py`, `backend/tests/test_raw_fetch_{client,store,writer}.py`, `specs/020-fetch-persistence/**` | dev-a-020 | 020 | granted | 2026-10-25 |
+| `wcl_agent/cache/**`, other `wcl_agent/client/**` | — | — | free (F5/022 needs wcl_client.py after 020 merges) | 2026-10-25 |
+| migration slots | 0012 → 019 (merged), 0013 → 020, 0014 → 022 (only if needed, down_revision 0013_raw_fetches) | — | assigned | 2026-10-25 |
 
 ## Withdrawn
 
@@ -53,3 +56,5 @@ Sprint branch: `sprint-2026-10-25` (base `4923785`). Worktrees: track A
 
 Note: plan revision 2 (decision 8) took sc-157 and sc-158 out of the sprint. The
 security brief moved to `briefs/withdrawn/`.
+| `backend/app/services/recent_raids.py`, `backend/app/services/recent_raid_types.py`, `backend/app/api/recent_raids.py`, `frontend/src/components/WelcomePanel.tsx`, `wcl_agent/client/queries.py`, `specs/022-welcome-mplus/**` (+ `types.ts`/`restClient.ts`/`App.tsx`/tests as needed) | dev-b-022 | 022 | tentative | 2026-10-25 |
+| `wcl_agent/client/wcl_client.py`, `backend/app/db/models.py`, migration `0014_*` | dev-b-022 | 022 | queued: only after 020 merges, only if needed | 2026-10-25 |
