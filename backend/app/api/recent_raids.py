@@ -21,7 +21,7 @@ from ..schemas import (
     RecentRaidsRefreshOut,
     RecentRaidsResponse,
 )
-from ..services.recent_raids import maybe_start_refresh
+from ..services.recent_raids import collapse_duplicate_runs, maybe_start_refresh
 from ..tenancy.context import RequestIdentity
 
 logger = logging.getLogger(__name__)
@@ -74,8 +74,12 @@ async def list_recent_raids(
     rows = await repo.list_recent_raids(
         db, tenant_id=identity.tenant_id, limit=settings.recent_raids_shown
     )
-    runs = await repo.list_recent_mplus_runs(
-        db, tenant_id=identity.tenant_id, limit=settings.recent_mplus_shown
+    # Over-fetch: the same key logged by two group members is stored once per log.
+    runs = collapse_duplicate_runs(
+        await repo.list_recent_mplus_runs(
+            db, tenant_id=identity.tenant_id, limit=settings.recent_mplus_shown * 4
+        ),
+        settings.recent_mplus_shown,
     )
     raids = [
         RecentRaidOut(

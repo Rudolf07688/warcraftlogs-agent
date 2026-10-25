@@ -143,12 +143,12 @@ def test_each_run_names_only_the_own_characters_in_that_fight():
         ),
         own,
     )
-    assert [r.character_ids for r in runs] == [
-        frozenset({alpha}),
-        frozenset({beta}),
-        frozenset({alpha, beta}),
-        frozenset({alpha, beta}),  # nothing matched: the report's own characters
-        frozenset({alpha, beta}),
+    assert [(r.fight_id, r.character_ids) for r in runs] == [
+        (1, frozenset({alpha})),
+        (2, frozenset({beta})),
+        (3, frozenset({alpha, beta})),
+        # 4: another group's key in a shared log is not listed
+        (5, frozenset({alpha, beta})),  # no roster at all: the report's own characters
     ]
 
 
@@ -216,6 +216,33 @@ async def test_runs_in_one_report_name_only_their_own_characters(as_user, patche
     body = await refresh(as_user.client)
     named = {r["key_level"]: sorted(c["name"] for c in r["characters"]) for r in body["mplus_runs"]}
     assert named == {8: ["Alpha"], 9: ["Alpha", "Beta"]}
+
+
+async def test_the_same_key_in_two_logs_is_listed_once(as_user, patched_db, mplus_wcl):
+    # Two group members both logged the key; their logs start it 25 s apart. A second run
+    # of the same dungeon and level 40 minutes later is a different key.
+    await add_own(patched_db, as_user.tenant_id, "Alpha")
+    mplus_wcl.reports_by_name = {"Alpha": [mplus_report("LOG1", 5), mplus_report("LOG2", 5)]}
+    mplus_wcl.fights_by_code = {
+        "LOG1": [key(1, start=0), key(2, start=2_400_000)],
+        "LOG2": [key(1, start=25_000)],
+    }
+    body = await refresh(as_user.client)
+    assert len(body["mplus_runs"]) == 2
+    assert [c["name"] for c in body["mplus_runs"][1]["characters"]] == ["Alpha"]
+
+
+async def test_other_groups_keys_in_a_shared_log_are_not_listed(as_user, patched_db, mplus_wcl):
+    # A guildmate's M+ log that also holds a raid pull: the own character is only in the
+    # raid pull, so the keys in that log belong to another group.
+    await add_own(patched_db, as_user.tenant_id, "Alpha")
+    mplus_wcl.reports_by_name = {"Alpha": [mplus_report("SHARED", 5)]}
+    mplus_wcl.actors_by_code = {"SHARED": {1: "Alpha", 2: "Stranger", 3: "Other"}}
+    raid_pull = {"id": 25, "name": "Boss", "encounterID": 3492, "kill": False, "difficulty": 4,
+                 "startTime": 7_200_000, "friendlyPlayers": [1, 2, 3]}
+    mplus_wcl.fights_by_code = {"SHARED": [key(1, players=[2, 3]), key(2, players=[2, 3]), raid_pull]}
+    body = await refresh(as_user.client)
+    assert body["mplus_runs"] == []
 
 
 async def test_a_removed_character_takes_its_runs_off_the_list(as_user, patched_db, mplus_wcl):

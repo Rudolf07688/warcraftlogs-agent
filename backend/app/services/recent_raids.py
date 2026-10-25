@@ -21,7 +21,7 @@ import logging
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -37,7 +37,7 @@ from wcl_agent.client.wcl_client import background_lane, get_async_client
 
 from ..config import settings
 from ..db import repository as repo
-from ..db.models import UserCharacter
+from ..db.models import RecentMplusRun, UserCharacter
 from ..tenancy.context import RequestIdentity, commit_and_rescope, set_scope, tenant_scope
 from . import background
 from .recent_raid_types import ListedReport, MplusRun, ReportDetails
@@ -150,12 +150,14 @@ def _fight_characters(
 ) -> frozenset[uuid.UUID]:
     """The own characters among a fight's players, matched by name (actors carry no server).
 
-    Falls back to all of the report's own characters when none match, so a run is never
-    left unnamed.
+    Empty when the fight's roster is known and none of them took part: a shared log (a
+    guildmate's, or one that also holds a raid pull) can contain other groups' keys. Only
+    a fight with no roster at all falls back to the report's own characters.
     """
     names = {summary.players[p].name.casefold() for p in fight.player_ids if p in summary.players}
-    present = frozenset(cid for cid, name in own.items() if name.casefold() in names)
-    return present or frozenset(own)
+    if not names:
+        return frozenset(own)
+    return frozenset(cid for cid, name in own.items() if name.casefold() in names)
 
 
 def extract_mplus_runs(summary: ReportSummary, own: Mapping[uuid.UUID, str]) -> list[MplusRun]:
@@ -164,20 +166,58 @@ def extract_mplus_runs(summary: ReportSummary, own: Mapping[uuid.UUID, str]) -> 
     ``own`` maps the report's own characters (id → name). Completed means a kill with a
     keystone level; an abandoned key is dropped. A key finished over the timer (depleted)
     is kept and not timed: ``keystoneBonus`` counts the upgrade chests, so 0 is depleted.
+    A key none of the own characters ran is dropped too.
     """
-    return [
-        MplusRun(
-            report_code=summary.code,
-            fight_id=f.id,
-            dungeon=f.name or summary.zone_name or "Mythic+",
-            key_level=f.keystone_level,
-            started_at=_ms(summary.start_time_ms + (f.start_time_ms or 0)),
-            timed=(f.keystone_bonus or 0) >= 1,
-            character_ids=_fight_characters(summary, f, own),
+    runs = []
+    for f in summary.fights:
+        if not (f.keystone_level and f.keystone_level > 0 and f.kill is True):
+            continue
+        present = _fight_characters(summary, f, own)
+        if not present:
+            continue
+        runs.append(
+            MplusRun(
+                report_code=summary.code,
+                fight_id=f.id,
+                dungeon=f.name or summary.zone_name or "Mythic+",
+                key_level=f.keystone_level,
+                started_at=_ms(summary.start_time_ms + (f.start_time_ms or 0)),
+                timed=(f.keystone_bonus or 0) >= 1,
+                character_ids=present,
+            )
         )
-        for f in summary.fights
-        if f.keystone_level and f.keystone_level > 0 and f.kill is True
-    ]
+    return runs
+
+
+SAME_KEY_WINDOW = timedelta(minutes=10)
+
+
+def collapse_duplicate_runs(
+    rows: Sequence[tuple[RecentMplusRun, list[UserCharacter]]], limit: int
+) -> list[tuple[RecentMplusRun, list[UserCharacter]]]:
+    """One entry per keystone when several logs hold it (two group members both logging).
+
+    ``rows`` are ``(run, characters)`` newest first. Runs of the same dungeon and key level
+    that start within ``SAME_KEY_WINDOW`` are one key: no key finishes that fast. The first
+    (newest) row is kept, with the characters of all its copies, and at most ``limit`` keys
+    are returned.
+    """
+    kept: list[tuple[RecentMplusRun, list[UserCharacter]]] = []
+    for run, chars in rows:
+        for i, (k, k_chars) in enumerate(kept):
+            if (
+                k.dungeon == run.dungeon
+                and k.key_level == run.key_level
+                and abs(k.started_at - run.started_at) < SAME_KEY_WINDOW
+            ):
+                seen = {c.id for c in k_chars}
+                kept[i] = (k, k_chars + [c for c in chars if c.id not in seen])
+                break
+        else:
+            if len(kept) == limit:
+                break
+            kept.append((run, list(chars)))
+    return kept
 
 
 async def fetch_report_summaries(codes: Sequence[str]) -> dict[str, ReportSummary]:
