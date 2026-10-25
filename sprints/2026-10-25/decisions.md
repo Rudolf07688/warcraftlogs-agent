@@ -243,3 +243,20 @@ Each entry gives the date, the question, the answer and the reason.
     still scales with the user's setting. Everything else is accepted as is (the 36
     exact px→rem conversions, the single Sidebar line, AC 2 per decision 31).
 33. **Q: Accept 023 at 8a8ce50?** A: ACCEPT. The root is now `106.25%` (one line plus a comment), which fixes the decision 32 point. sc-152 is done for this sprint.
+
+## 2026-10-25: Feature 021 acceptance
+
+34. **Q: Accept 021 (sc-164)?** A: ACCEPT, at e55f382, rebased on the sprint tip ef7dbbf.
+    Checked myself: pytest gives 1060 passed / 3 skipped / 1 deselected, and the build
+    is green. The tests diff holds only the 3 new files, so the 019 title, guide,
+    retry and rate-limit tests are untouched and pass. I read `generate_with_fallback`:
+    it acts only on the turn's own model and only on a `ModelRateLimited` with nothing
+    streamed; it switches at most once and keeps later requests on the sibling. The
+    Gemini signature bypass copies parts instead of mutating stored events.
+    `sibling_model` uses served order and the same publisher and class. The split
+    message (decision 25) is in ws.py. The history-once check (my check 1) runs on a
+    real ADK Runner.
+    Live risks for the owner (need Vertex): a Gemini 400 after a switch that follows
+    tool calls (the thought-signature bypass is unverified), and the notice is
+    live-only by design. Claude signatures aren't handled, which is moot while no
+    Claude class has a sibling.

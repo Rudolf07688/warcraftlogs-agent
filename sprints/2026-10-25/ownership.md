@@ -41,10 +41,10 @@ Sprint branch: `sprint-2026-10-25` (base `4923785`). Worktrees: track A
 | `backend/app/services/conversation_titles.py` (new) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
 | `specs/019-sidebar-conversations/**` | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
 | `backend/app/schemas.py`, `backend/app/api/ws.py` (sc-155 hook), `backend/tests/conftest.py`, `documentation/ai_guide.md` (2 lines) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
-| `wcl_agent/llm/models.py`, `wcl_agent/llm/model_retry.py`, `backend/app/model_state.py`, `backend/app/agent_runner.py`, `backend/app/api/ws.py` | dev-a-021 | 021 | granted | 2026-10-25 |
-| `frontend/src/api/wsClient.ts`, `frontend/src/components/MessageList.tsx` (PO exception, decision 27), `frontend/src/toolLabels.ts`, `documentation/ai_guide.md` (1 line) | dev-a-021 | 021 | granted | 2026-10-25 |
-| `backend/tests/test_model_fallback.py`, `test_model_fallback_ws.py`, `test_model_fallback_history.py` (new), `specs/021-ratelimit-fallback/**` | dev-a-021 | 021 | granted | 2026-10-25 |
-| `backend/app/schemas.py`, `frontend/src/types.ts`, `frontend/src/App.tsx` | dev-a-021 | 021 | granted (transferred at 022 merge) | 2026-10-25 |
+| `wcl_agent/llm/models.py`, `wcl_agent/llm/model_retry.py`, `backend/app/model_state.py`, `backend/app/agent_runner.py`, `backend/app/api/ws.py` | dev-a-021 | 021 | released (merged 8fd3d53) | 2026-10-25 |
+| `frontend/src/api/wsClient.ts`, `frontend/src/components/MessageList.tsx` (PO exception, decision 27), `frontend/src/toolLabels.ts`, `documentation/ai_guide.md` (1 line) | dev-a-021 | 021 | released (merged 8fd3d53) | 2026-10-25 |
+| `backend/tests/test_model_fallback.py`, `test_model_fallback_ws.py`, `test_model_fallback_history.py` (new), `specs/021-ratelimit-fallback/**` | dev-a-021 | 021 | released (merged 8fd3d53) | 2026-10-25 |
+| `backend/app/schemas.py`, `frontend/src/types.ts`, `frontend/src/App.tsx` | dev-a-021 | 021 | released (merged 8fd3d53) | 2026-10-25 |
 | `wcl_agent/client/wcl_client.py`, `backend/app/config.py` (3 settings), `backend/app/main.py` (lifespan), `.env.example` | dev-a-020 | 020 | released (merged 3be583d) | 2026-10-25 |
 | `backend/app/db/models.py` (append `RawFetch` at end only) | dev-a-020 | 020 | released (merged 3be583d) | 2026-10-25 |
 | `documentation/ai_guide.md` (1–3 lines) | dev-a-020 | 020 | released (merged 3be583d) | 2026-10-25 |
