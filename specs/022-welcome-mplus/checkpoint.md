@@ -7,3 +7,7 @@ Decisions: run = keystone fight (report+fight); completed = kill true and keysto
 Granted now: see scrum-master grant (recent_raids services/api/types, schemas.py, repository.py, queries.py, cache_models.py, cache.py key only, report_tools.py _summary_from only, frontend 4 files, migration 0014, test_recent_mplus.py, test_recent_raids.py, wcl cache tests if they pin v1, specs/022). Waiting on 020: models.py (append), config.py (2 settings). Keep schemas.py and App.tsx edits small (021 may need them); tell the scrum master when final.
 
 Start implementation at T001 in tasks.md. Open: live WCL semantics (depleted `kill`, fight name = dungeon) unverified; no live credentials.
+
+## Postgres / RLS verification (2026-10-25)
+
+Real Postgres 16 in `docker run --rm` on port 15419 (dummy credentials, no compose, no owner .env), stopped afterwards. `backend.cli.init_db` brought it to head; then `alembic downgrade -1` (0014 -> 0013_raw_fetches), `upgrade head` (back to 0014_recent_mplus_runs): all clean. As the runtime role `wcl_app` with `app.tenant_id` set: tenant A inserted a character, a run and a link under RLS; inserting a run for tenant B while scoped to A was rejected by the policy; tenant B saw only its own run and 0 links; tenant A saw only its own run and 1 link; with `app.tenant_id` unset both new tables returned 0 rows and an insert was rejected. Tenant privacy (FR-011) holds at the database level. No code changes were needed.
