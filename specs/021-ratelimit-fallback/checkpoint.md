@@ -41,3 +41,9 @@ tasks.md T001 → Phases 2–4 (T002–T016a). Phase 5 (T017–T025) waits for t
   in schemas.py, T018 forward it in ws.py (the `model_fallback` branch currently only sets
   `switched`), T019 frame assertion in test_switched_turn_stores_the_reply_once, T021 types.ts,
   T023 App.tsx, T024 MessageList.tsx note (shadcn search first), T025 build, T027–T029.
+
+## Done (2026-10-25)
+
+- Rebased onto sprint tip ee69ae4 (022 merged); Phase 5 committed (6d23209). All 29 tasks
+  done. Suite 1060 passed / 3 skipped / 1 deselected (1022 baseline + 38 new); frontend
+  build green. Handed off to the scrum master; sc-164 stays In Progress until told.

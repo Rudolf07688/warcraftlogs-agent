@@ -78,8 +78,8 @@ symbol edit run GitNexus `impact` upstream; `detect_changes` before each commit.
 
 - [X] T026 [P] One line at the `model_retry.py` entry in documentation/ai_guide.md: "… + 429 fallback to the same-class sibling (feature 021)"
 - [X] T027 Full suite green (`uv run --extra test pytest -q`); confirm `test_model_retry.py`, `test_runner_retry.py`, `test_ws_rate_limit.py`, `test_conversation_titles.py`, the greeting and the guide/guide_pipeline tests are unchanged (`git diff --stat cc3c783 -- backend/tests` lists only the new 021 test files) (SC-008)
-- [ ] T028 Re-index the worktree and run `detect-changes --scope all`; check that the changed files ⊆ the granted list; restore `CLAUDE.md` and `.specify/feature.json` before committing
-- [ ] T029 Mark tasks done, update checkpoint.md, and send the scrum master the hand-off (branch, base, commits, files, tests, risks, how to verify each AC per quickstart.md)
+- [X] T028 Re-index the worktree and run `detect-changes --scope all`; check that the changed files ⊆ the granted list; restore `CLAUDE.md` and `.specify/feature.json` before committing
+- [X] T029 Mark tasks done, update checkpoint.md, and send the scrum master the hand-off (branch, base, commits, files, tests, risks, how to verify each AC per quickstart.md)
 
 ## Dependencies
 
