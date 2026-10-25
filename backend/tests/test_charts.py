@@ -13,7 +13,7 @@ from backend.app.services.charts import (
     chart_spec_to_svg,
     graph_to_svg,
 )
-from wcl_agent.tools import create_chart
+from wcl_agent.tools.tools import create_chart
 
 # --- create_chart tool validation ---------------------------------------------
 

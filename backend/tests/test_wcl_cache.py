@@ -10,9 +10,9 @@ import asyncio
 
 import pytest
 
-from wcl_agent import cache
-from wcl_agent.cache import CacheFamily, get_or_load, keys
-from wcl_agent.cache_models import CharacterRef
+from wcl_agent.cache import cache
+from wcl_agent.cache.cache import CacheFamily, get_or_load, keys
+from wcl_agent.cache.cache_models import CharacterRef
 
 FAM = CacheFamily.CHAR_OVERVIEW  # not memoised, so every lookup reaches the Redis layer
 KEY = keys.char_zone(7, 0, "dps", 0)
@@ -211,7 +211,7 @@ def dead_redis(monkeypatch):
 
 async def test_redis_down_falls_back_to_the_loader(dead_redis, caplog):
     load = Loader()
-    with caplog.at_level("WARNING", logger="wcl_agent.cache"):
+    with caplog.at_level("WARNING", logger="wcl_agent.cache.cache"):
         assert await get_or_load(FAM, KEY, CharacterRef, load) == REF
         assert await get_or_load(FAM, KEY, CharacterRef, load) == REF
     assert load.calls == 2
@@ -318,7 +318,7 @@ async def test_failed_flush_keeps_the_counts(dead_redis):
 
 
 async def test_large_values_are_decoded_off_the_loop(fake_redis, monkeypatch):
-    from wcl_agent.cache_models import PlayerTable
+    from wcl_agent.cache.cache_models import PlayerTable
 
     big = PlayerTable(data=["x" * 100] * 4000)  # ~400 KB
     await get_or_load(FAM, KEY, PlayerTable, lambda: _value(big))

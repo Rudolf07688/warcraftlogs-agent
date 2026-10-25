@@ -19,7 +19,7 @@ from backend.app.services.guide_pipeline.briefing import (
 )
 from backend.tests.test_guide_meta import MENU_PAYLOAD
 from backend.tests.wcl_fakes import install
-from wcl_agent.cache_models import HotfixEntry, HotfixFeed, LiveVersion
+from wcl_agent.cache.cache_models import HotfixEntry, HotfixFeed, LiveVersion
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

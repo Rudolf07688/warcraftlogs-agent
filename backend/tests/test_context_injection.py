@@ -8,7 +8,7 @@ from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
 from backend.app import agent_runner
-from wcl_agent.model_retry import (
+from wcl_agent.llm.model_retry import (
     RetryPolicy,
     TurnStats,
     current_turn,

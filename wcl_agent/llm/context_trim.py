@@ -26,7 +26,7 @@ from typing import Any
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types as genai_types
 
-from .cache import _env_int
+from ..cache.cache import _env_int
 
 DEFAULT_KEEP_TURNS = 2
 DEFAULT_STUB_MIN_CHARS = 1500

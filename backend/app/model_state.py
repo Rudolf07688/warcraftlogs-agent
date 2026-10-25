@@ -1,7 +1,7 @@
 """Single accessor for the runtime model set (US4).
 
 At startup the lifespan probes candidate models and stores the validated set on
-``app.state`` (see main.py / wcl_agent.models). Every consumer — the models
+``app.state`` (see main.py / wcl_agent.llm.models). Every consumer — the models
 endpoint, the WebSocket, conversation creation, and raid investigation — reads it
 through here so there is one source of truth for "which models are selectable"
 and "what is the default". Before startup (or in tests without a lifespan) it

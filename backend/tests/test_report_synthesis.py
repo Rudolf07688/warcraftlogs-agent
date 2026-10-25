@@ -80,7 +80,7 @@ def test_generate_caps_output_tokens(monkeypatch):
             seen["config"] = config
             return type("R", (), {"text": "## Summary\n\nok"})()
 
-    monkeypatch.setattr("wcl_agent.vertex.genai_client", lambda: type("C", (), {"models": FakeModels()})())
+    monkeypatch.setattr("wcl_agent.llm.vertex.genai_client", lambda: type("C", (), {"models": FakeModels()})())
     assert rs._generate("m", "p") == "## Summary\n\nok"
     assert seen["config"].max_output_tokens == rs._MAX_OUTPUT_TOKENS
 

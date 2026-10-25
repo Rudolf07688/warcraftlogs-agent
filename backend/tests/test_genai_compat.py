@@ -7,7 +7,7 @@ import inspect
 from pydantic import BaseModel
 from pydantic_core import SchemaSerializer
 
-from wcl_agent.genai_compat import ensure_genai_serializers_built
+from wcl_agent.llm.genai_compat import ensure_genai_serializers_built
 
 
 def test_all_genai_serializers_are_built_after_shim():

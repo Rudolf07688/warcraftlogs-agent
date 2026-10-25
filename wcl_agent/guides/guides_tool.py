@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 from .guide_meta import get_brief
-from .provenance import Provenance, with_envelope
-from .roster import resolve_spec, roster_snapshot
+from ..tools.provenance import Provenance, with_envelope
+from ..game.roster import resolve_spec, roster_snapshot
 
 _LABEL = {"raid": "Raid", "mplus": "Mythic+"}
 

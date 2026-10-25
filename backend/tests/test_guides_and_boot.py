@@ -11,7 +11,7 @@ from sqlalchemy import inspect
 from backend.app import greeting as greeting_mod
 from backend.app.db import repository as repo
 from backend.app.services import guide
-from wcl_agent import models as models_mod
+from wcl_agent.llm import models as models_mod
 
 # --- PERF-015: model probes run concurrently and keep their order -----------------------
 

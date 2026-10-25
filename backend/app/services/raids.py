@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wcl_agent.report_tools import get_report_metadata
+from wcl_agent.tools.report_tools import get_report_metadata
 
 from ..db import repository as repo
 from ..db.models import TrackedRaid

@@ -16,14 +16,14 @@ import statistics
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from . import wcl_client
-from .cache import keys
-from .constants import METRICS
+from ..client import wcl_client
+from ..cache.cache import keys
+from ..game.constants import METRICS
 from .fight_time import PlayerResolutionError, fetch_dead_windows, resolve_player, windows_seconds
 from .provenance import Completeness, PercentileContext, Provenance, flatten_report_rankings, with_envelope
-from .queries import ENCOUNTER_RANKINGS
+from ..client.queries import ENCOUNTER_RANKINGS
 from .report_tools import _player_table, _report_field
-from .aio import gather_settled, unwrap
+from ..client.aio import gather_settled, unwrap
 
 BENCHMARK_METRICS = ("dps", "hps", "bossdps")
 MAX_SIZE = 5

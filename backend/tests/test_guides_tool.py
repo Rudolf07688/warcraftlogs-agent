@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from wcl_agent.guide_meta import BriefRecord, clear_brief_loader, set_brief_loader
-from wcl_agent.guides_tool import get_coaching_brief
+from wcl_agent.guides.guide_meta import BriefRecord, clear_brief_loader, set_brief_loader
+from wcl_agent.guides.guides_tool import get_coaching_brief
 
 
 @pytest.fixture

@@ -15,7 +15,7 @@ from backend.app.db import repository as repo
 from backend.app.db.models import RecentRaid, RecentRaidRefresh
 from backend.app.services import background
 from backend.app.services import recent_raids as svc
-from wcl_agent import wcl_client
+from wcl_agent.client import wcl_client
 
 RAID_ZONE, MPLUS_ZONE = 53, 99
 HOUR_MS = 3_600_000

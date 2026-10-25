@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from backend.app.db import repository as repo
 from backend.app.services.artifacts import capture_artifact_from_tool
-from wcl_agent.tools import create_chart
+from wcl_agent.tools.tools import create_chart
 
 
 # --- capture service ----------------------------------------------------------

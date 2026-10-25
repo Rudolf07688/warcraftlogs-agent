@@ -5,7 +5,7 @@ One :class:`AsyncWCLClient` per event loop (:func:`get_async_client`), so asynci
 and HTTP pools are never shared across loops. Every query goes through
 :meth:`AsyncWCLClient.query`, the single chokepoint for single-flight, timeouts, retries,
 API-cost logging and the lane limiter (contracts/wcl-async-client.md G1-G9). Result caching
-moved out in feature 014: callers use the typed key families in :mod:`wcl_agent.cache`.
+moved out in feature 014: callers use the typed key families in :mod:`wcl_agent.cache.cache`.
 
 Lanes (PERF-211): background work (guides, the patch lookup, recent raids) runs inside
 :func:`background_lane` and may hold at most ``WCL_BACKGROUND_CONCURRENCY`` of the
@@ -32,8 +32,8 @@ from typing import Any, Literal
 
 import httpx
 
-from .cache import CacheFamily, _env_int, aclose_redis, get_or_load, keys
-from .cache_models import OAuthToken
+from ..cache.cache import CacheFamily, _env_int, aclose_redis, get_or_load, keys
+from ..cache.cache_models import OAuthToken
 
 logger = logging.getLogger(__name__)
 

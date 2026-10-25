@@ -14,11 +14,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from . import wcl_client
-from .cache import CacheFamily, get_or_load, keys
-from .cache_models import GameClass, GameClasses, GameSpec
+from ..client import wcl_client
+from ..cache.cache import CacheFamily, get_or_load, keys
+from ..cache.cache_models import GameClass, GameClasses, GameSpec
 from .constants import _HEALER_SPECS, _TANK_SPECS, CLASS_SPECS
-from .queries import GAME_CLASSES
+from ..client.queries import GAME_CLASSES
 
 logger = logging.getLogger(__name__)
 

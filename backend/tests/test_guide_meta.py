@@ -9,14 +9,14 @@ from datetime import UTC, datetime
 import pytest
 
 from backend.tests.wcl_fakes import install
-from wcl_agent.guide_meta import (
+from wcl_agent.guides.guide_meta import (
     BriefRecord,
     GuideCooldown,
     clear_brief_loader,
     get_brief,
     set_brief_loader,
 )
-from wcl_agent.patch import (
+from wcl_agent.game.patch import (
     current_mplus_season,
     current_patch,
     current_patch_from_zones,

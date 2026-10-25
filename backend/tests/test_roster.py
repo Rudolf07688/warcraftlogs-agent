@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from backend.tests.wcl_fakes import install
-from wcl_agent import roster
-from wcl_agent.constants import normalize_class_name, role_for_spec
-from wcl_agent.tools import get_spec_options
+from wcl_agent.game import roster
+from wcl_agent.game.constants import normalize_class_name, role_for_spec
+from wcl_agent.tools.tools import get_spec_options
 
 
 def _payload(extra_dh: list[dict] | None = None, drop: str | None = None) -> dict:

@@ -88,12 +88,34 @@ wcl_agent/
   cli.py                   # env check -> menu -> asyncio chat REPL (the `wcl` entry point)
   menu.py                  # interactive zone/encounter/difficulty selection
   agent.py                 # root_agent: Gemini model + instruction + all 15 tools
-  wcl_client.py            # AsyncWCLClient (httpx, OAuth + GraphQL) per loop, lanes, acheck_rate_limit
-  aio.py                   # gather_settled / unwrap: async fan-out inside a tool
-  queries.py               # GraphQL strings for the menu + leaderboard
-  constants.py             # class/spec PascalCase filter map + METRICS + normalizer
-  tools.py                 # LEADERBOARD tools (rankings distribution / spec compare)
-  report_tools.py          # DEEP-DIVE tools (report tables/events/graph, characters, raw GraphQL)
+  client/                  # Warcraft Logs API access
+    wcl_client.py          # AsyncWCLClient (httpx, OAuth + GraphQL) per loop, lanes, acheck_rate_limit
+    aio.py                 # gather_settled / unwrap: async fan-out inside a tool
+    queries.py             # GraphQL strings for the menu + leaderboard
+  cache/                   # shared Redis WCL cache (feature 014)
+    cache.py               # get_or_load, key families, stats
+    cache_models.py        # Pydantic value models, one per family
+    normalize.py           # server_slug, FINAL_AFTER, is_finished
+  tools/                   # ADK function tools
+    tools.py               # LEADERBOARD tools (rankings distribution / spec compare)
+    report_tools.py        # DEEP-DIVE tools (report tables/events/graph, characters, raw GraphQL)
+    benchmark.py           # compare_player_to_cohort, report_link
+    cooldowns.py           # get_cooldown_usage
+    fight_time.py          # player resolution, dead windows, eligible time
+    provenance.py          # provenance + completeness envelope on tool results
+  guides/                  # coaching briefs (feature 015)
+    guide_meta.py          # injected brief loader (set_brief_loader / get_brief)
+    guides_tool.py         # get_coaching_brief
+  llm/                     # chat models
+    models.py              # startup model discovery + validation
+    model_retry.py         # rate-limit retry loop, RetryingGemini / RetryingClaude
+    vertex.py              # model location, client kwargs, Model Garden catalog
+    genai_compat.py        # force-build google-genai serializers
+    context_trim.py        # stub old tool results in the model context
+  game/                    # WoW reference data
+    constants.py           # class/spec PascalCase filter map + METRICS + normalizer
+    roster.py              # live class/spec roster from WCL game data
+    patch.py               # current patch, M+ season, guide freshness
 ```
 
 ### Control flow
@@ -249,11 +271,11 @@ uv run python -c "from wcl_agent.agent import root_agent; print(len(root_agent.t
 
 # WCL auth/GraphQL smoke (no LLM) — prints points budget
 uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
+from wcl_agent.client.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
 
 # menu discovery (no LLM)
 uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import get_async_client; from wcl_agent.queries import MENU_DISCOVERY; \
+from wcl_agent.client.wcl_client import get_async_client; from wcl_agent.client.queries import MENU_DISCOVERY; \
 q = lambda: get_async_client().query(MENU_DISCOVERY); \
 print([z['name'] for z in asyncio.run(q())['data']['worldData']['zones']])"
 ```
@@ -316,8 +338,8 @@ for future agents:
   Interrupted replies persist as `messages.status = "partial"`.
 - **Web grounding**: `build_agent` adds a `web_search` grounding sub-agent tool for
   Gemini models only; the runner emits a `grounding` frame.
-- **Model discovery**: `wcl_agent/models.py` lists the Vertex Model Garden catalog
-  (`wcl_agent/vertex.py`), probes the newest versions per class and keeps the newest
+- **Model discovery**: `wcl_agent/llm/models.py` lists the Vertex Model Garden catalog
+  (`wcl_agent/llm/vertex.py`), probes the newest versions per class and keeps the newest
   that answer (feature 016; `WCL_MODEL_DISCOVERY=static` probes `WCL_GEMINI_MODELS` /
   `WCL_ANTHROPIC_MODELS` instead). The result is cached 6 h (`model_catalog` family),
   lives on `app.state` and is read via `backend/app/model_state.py` (single source of
@@ -343,7 +365,7 @@ Implemented in `specs/005-guild-context-artifacts/`. Summary for future agents:
   prepends to the model input only (via the new `context_preamble` arg); the stored
   user message is unchanged. Empty profile → empty preamble → behavior unchanged.
 - **Interactive charts** (`artifacts` table): the agent calls the dependency-light
-  `create_chart` tool (`wcl_agent/tools.py`) which returns a validated `ChartSpec`.
+  `create_chart` tool (`wcl_agent/tools/tools.py`) which returns a validated `ChartSpec`.
   `ws._handle_tool_end` persists it, derives a Plotly figure
   (`services/charts.chart_spec_to_plotly`), and emits an `artifact` frame; the
   frontend renders it via a lazy-loaded `PlotlyArtifact`. The same spec renders to
@@ -435,7 +457,7 @@ empty metadata store + unset roles reproduce feature-006 behavior byte-for-byte.
   synthesis error/timeout/empty output → `500`, no partial file (the model emits its own
   "no substantive findings" doc for chit-chat).
 - **Role-aware profile (US4)**: nullable `user_characters.raid_role` override column
-  (migration `0006_raid_role`). `wcl_agent/constants.SPEC_ROLES` + `role_for_spec()` are the
+  (migration `0006_raid_role`). `wcl_agent/game/constants.SPEC_ROLES` + `role_for_spec()` are the
   spec→Tank/Healer/DPS SSOT; `effective_role = raid_role or role_for_spec(active_spec)` is a
   computed field on `CharacterOut`. New `PATCH /api/profile/friends/{id}` (`FriendPatchIn`)
   edits a friend's role in place; `PUT /self`/`POST /friends` accept `raid_role`.
@@ -541,7 +563,7 @@ Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future age
 - **Preamble**: it rides on `TurnStats.preamble` and `model_retry.inject_preamble` adds it to
   each `LlmRequest` (never stored in ADK history). The turn stats line logs
   `prompt_tokens` / `max_prompt_tokens` / `cached_tokens` / `trimmed`.
-- **Old tool results** (`wcl_agent/context_trim.py`): the before-model callback replaces
+- **Old tool results** (`wcl_agent/llm/context_trim.py`): the before-model callback replaces
   large results older than `WCL_CONTEXT_KEEP_TURNS` turns with deterministic `_elided` stubs
   in the request only (new Content/Part objects; ADK's request copy shares nested objects with
   stored events, so never mutate in place). The prompt tells the model to re-fetch elided data.
@@ -591,8 +613,8 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
 
 Implemented in `specs/014-redis-wcl-cache/` (design: `documentation/redis_cache_spec.md`).
 
-- **One way in**: `wcl_agent.cache.get_or_load(family, key, model, loader, ttl=, force_refresh=)`.
-  Values are Pydantic models from `wcl_agent/cache_models.py`; keys only from `cache.keys`
+- **One way in**: `wcl_agent.cache.cache.get_or_load(family, key, model, loader, ttl=, force_refresh=)`.
+  Values are Pydantic models from `wcl_agent/cache/cache_models.py`; keys only from `cache.keys`
   (never a user/tenant/conversation id — WCL data is public and shared by all tenants,
   superseding feature 006 FR-019). `loader()` returning `None` = "not found", cached 60 s.
 - **Families**: `char_id`, `char_overview`, `char_reports`, `report_summary`,
@@ -652,17 +674,17 @@ Implemented in `specs/015-grounded-class-guides/` (grounding plan:
   `render_brief_text` (the agent's text: `[O|B|G,H|M|L]` tags, `LOG:` checks, no braces,
   ≤ 6000 chars, never truncated), `render_guide_markdown` (one bullet per claim with a
   `<!-- cN -->` marker, stripped by the API).
-- **Agent side**: `wcl_agent.guide_meta` holds an injected loader (`set_brief_loader`,
+- **Agent side**: `wcl_agent.guides.guide_meta` holds an injected loader (`set_brief_loader`,
   `get_brief(class, spec, content_type, mark_used=)`); the backend registers
   `services.guide.load_brief_record` (published brief only, 60 s cache). The preamble
   (`services.guide.briefs_for_turn` + `profile_context.build_preamble`) classifies the turn
   (`services.content_type.classify_content_type`, unknown ⇒ Raid with a note) and inlines
   whole briefs within 12 000 chars, plus an index line per spec. Tools: `get_coaching_brief`
-  (`wcl_agent/guides_tool.py`) and `get_cooldown_usage(content_type=)` (content type from
+  (`wcl_agent/guides/guides_tool.py`) and `get_cooldown_usage(content_type=)` (content type from
   the fight's difficulty / report zone; reads the player's own Casts table). The instruction
   is an ADK `InstructionProvider` (`agent.build_instruction`) so `<CURRENT_TIME>` is live;
   `<COACHING_BRIEFS>` replaced `<GUIDES>`.
-- **Roster**: `wcl_agent/roster.py` (`load_roster` from `gameData.classes`, cached 24 h;
+- **Roster**: `wcl_agent/game/roster.py` (`load_roster` from `gameData.classes`, cached 24 h;
   `roster_snapshot()` for sync callers; `CLASS_SPECS` is the fallback and includes Devourer).
 - **Freshness**: `services.guide.maybe_scan_stale_guides()` (throttled 10 min; called by
   `GET /api/guides`, the preamble and startup) → `compute_stale_reason` → in-use guides
@@ -737,7 +759,7 @@ synthesis (feature 007), both endpoints, file names and fail-closed errors are a
   print "Chart unavailable"; the PDF render has a 90 s timeout (queue wait included), then
   `500`. Caption `source` links are only drawn for http(s) URLs. Bar hatches are line
   patterns only (dot hatches cost about 300 ms per chart in WeasyPrint).
-- **Links**: `wcl_agent.benchmark.report_link(code, fight_id=None)` is the one WCL report URL
+- **Links**: `wcl_agent.tools.benchmark.report_link(code, fight_id=None)` is the one WCL report URL
   builder, used for graph source links and the benchmark tool.
 - **Deps**: `weasyprint`, `markdown-it-py`, `mdit-py-plugins`, `nh3` (test: `pypdf`);
   `reportlab` and the unused `markdown` were removed. The Docker image adds Pango/HarfBuzz,

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from backend.app.db.models import Base
-from wcl_agent import cache as wcl_cache
+from wcl_agent.cache import cache as wcl_cache
 
 
 # --- Shared WCL cache (feature 014) -------------------------------------------
@@ -28,7 +28,7 @@ from wcl_agent import cache as wcl_cache
 
 
 def _reset_cache_state() -> None:
-    from wcl_agent import wcl_client
+    from wcl_agent.client import wcl_client
 
     wcl_cache._redis_clients.clear()
     wcl_cache._down_until.clear()

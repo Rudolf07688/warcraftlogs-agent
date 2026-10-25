@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
 
-from .cache import (
+from ..cache.cache import (
     CacheFamily,
     family_ttl,
     get_many_or_load,
@@ -34,7 +34,7 @@ from .cache import (
     try_claim_refresh,
     unfinished_ttl,
 )
-from .cache_models import (
+from ..cache.cache_models import (
     CharacterRankings,
     CharacterRef,
     FightSummary,
@@ -42,11 +42,11 @@ from .cache_models import (
     PlayerTable,
     ReportSummary,
 )
-from .constants import METRICS
-from .normalize import is_finished, server_slug
-from .queries import CHARACTER_REF, REPORT_SUMMARY, character_refs_query, report_summaries_query
+from ..game.constants import METRICS
+from ..cache.normalize import is_finished, server_slug
+from ..client.queries import CHARACTER_REF, REPORT_SUMMARY, character_refs_query, report_summaries_query
 from .provenance import Completeness, Provenance, flatten_report_rankings, with_envelope
-from . import wcl_client
+from ..client import wcl_client
 
 # --- Enum whitelists (inlined into queries after validation) ------------------
 # Match the live API enums (feature 009, research R5/R14): ``Resurrections`` is

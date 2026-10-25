@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 
 from backend.tests.wcl_fakes import install, rate_limit_payload
-from wcl_agent import benchmark
-from wcl_agent.benchmark import (
+from wcl_agent.tools import benchmark
+from wcl_agent.tools.benchmark import (
     CastsEntry,
     aggregate_measures,
     band_pages,

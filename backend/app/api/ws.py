@@ -13,9 +13,9 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from wcl_agent.cache import set_refresh_actor
+from wcl_agent.cache.cache import set_refresh_actor
 
-from wcl_agent.model_retry import ModelRateLimited
+from wcl_agent.llm.model_retry import ModelRateLimited
 
 from ..agent_runner import stream_response
 from ..auth.csrf import origin_matches

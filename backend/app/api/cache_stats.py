@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from wcl_agent.cache import read_stats
+from wcl_agent.cache.cache import read_stats
 
 from ..auth.dependencies import require_platform_admin
 from ..schemas import CacheStats

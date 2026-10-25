@@ -105,8 +105,8 @@ _GAME_CLASSES = "query EvalGameClasses { gameData { classes { name slug specs { 
 async def _roster() -> list[tuple[str, str]]:
     """Every live spec, straight from Warcraft Logs game data — deliberately not through the
     app's own roster code, so spec coverage is measured against an independent truth."""
-    from wcl_agent import wcl_client
-    from wcl_agent.wcl_client import background_lane
+    from wcl_agent.client import wcl_client
+    from wcl_agent.client.wcl_client import background_lane
 
     with background_lane():
         data = await wcl_client.get_async_client().query(_GAME_CLASSES)
@@ -122,8 +122,8 @@ async def _listed_specs() -> list[tuple[str, str]]:
 
 
 async def _live() -> tuple[str | None, str | None]:
-    from wcl_agent import patch
-    from wcl_agent.wcl_client import background_lane
+    from wcl_agent.game import patch
+    from wcl_agent.client.wcl_client import background_lane
 
     with background_lane():
         live_patch = await patch.current_patch()
@@ -320,7 +320,7 @@ def _write(report: dict[str, Any], baseline: bool) -> Path:
 async def datasheet(args: argparse.Namespace) -> int:
     from backend.app.services.guide_pipeline.briefing import build_briefing
     from backend.app.services.guide_pipeline.datasheet import build_data_sheet, format_data_sheet_table
-    from wcl_agent.roster import load_roster
+    from wcl_agent.game.roster import load_roster
 
     cls, _, spec = args.spec.partition("/")
     await load_roster()

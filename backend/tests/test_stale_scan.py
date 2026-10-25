@@ -10,7 +10,7 @@ from backend.app.db import repository as repo
 from backend.app.db import session as db_session
 from backend.app.services import guide
 from backend.app.services.guide_pipeline import briefing as briefing_mod
-from wcl_agent.cache_models import HotfixEntry, HotfixFeed
+from wcl_agent.cache.cache_models import HotfixEntry, HotfixFeed
 
 NOW = datetime.now(UTC)
 

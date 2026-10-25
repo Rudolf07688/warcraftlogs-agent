@@ -14,13 +14,13 @@ from typing import Any
 import pandas as pd
 from google.adk.tools import ToolContext
 
-from .constants import METRICS, normalize_class_name
-from .roster import roster_snapshot
+from ..game.constants import METRICS, normalize_class_name
+from ..game.roster import roster_snapshot
 from .provenance import Completeness, Provenance, with_envelope
-from .menu import load_world_zones
-from .queries import ENCOUNTER_RANKINGS
-from . import wcl_client
-from .aio import gather_settled, unwrap
+from ..menu import load_world_zones
+from ..client.queries import ENCOUNTER_RANKINGS
+from ..client import wcl_client
+from ..client.aio import gather_settled, unwrap
 
 MAX_PAGES = 10  # hard cap to protect the API points budget
 

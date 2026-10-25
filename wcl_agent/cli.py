@@ -83,7 +83,7 @@ async def _main() -> None:
         f"Chatting about {context['encounterName']} ({context['difficultyName']}). "
         "Ask e.g. 'How well are hunters performing?'. Type 'exit' to quit."
     )
-    from wcl_agent.wcl_client import aclose_clients
+    from wcl_agent.client.wcl_client import aclose_clients
 
     try:
         while True:

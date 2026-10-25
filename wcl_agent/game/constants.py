@@ -5,7 +5,7 @@ space-free identifiers (e.g. ``Hunter`` / ``BeastMastery``) rather than the
 localized display names.
 
 Feature 015: the live class/spec list comes from Warcraft Logs game data
-(``wcl_agent.roster``); ``CLASS_SPECS`` is its offline fallback, so keep it current.
+(``wcl_agent.game.roster``); ``CLASS_SPECS`` is its offline fallback, so keep it current.
 """
 
 # class filter value -> {display name, [spec filter values]}

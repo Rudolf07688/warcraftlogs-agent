@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from wcl_agent.patch import parse_patch
+from wcl_agent.game.patch import parse_patch
 
 try:
     from backend.app.services.guide_pipeline.research import environment_marker

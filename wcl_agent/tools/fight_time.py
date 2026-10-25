@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .report_tools import _report_field
-from .aio import gather_settled, unwrap
+from ..client.aio import gather_settled, unwrap
 
 Interval = tuple[float, float]
 

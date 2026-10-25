@@ -16,8 +16,8 @@ import httpx
 import pytest
 
 from backend.tests.wcl_fakes import mock_async_client
-from wcl_agent import wcl_client
-from wcl_agent.report_tools import get_report_events, get_report_table
+from wcl_agent.client import wcl_client
+from wcl_agent.tools.report_tools import get_report_events, get_report_table
 
 pytestmark = pytest.mark.perf
 

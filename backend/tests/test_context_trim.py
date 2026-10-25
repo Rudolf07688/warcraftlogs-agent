@@ -7,13 +7,13 @@ import copy
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-from wcl_agent.context_trim import (
+from wcl_agent.llm.context_trim import (
     ELIDED_NOTE,
     compact_tool_response,
     trim_old_tool_results,
     user_turn_indices,
 )
-from wcl_agent.model_retry import RetryPolicy, TurnStats, current_turn, make_before_model_callback
+from wcl_agent.llm.model_retry import RetryPolicy, TurnStats, current_turn, make_before_model_callback
 
 
 def _big_result(tag: str) -> dict:

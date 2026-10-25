@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from wcl_agent.constants import role_for_spec
+from wcl_agent.game.constants import role_for_spec
 
 # --- WebSocket: client -> server ---------------------------------------------
 

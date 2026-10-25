@@ -18,21 +18,21 @@ from typing import Any
 
 import httpx
 
-from wcl_agent import wcl_client
-from wcl_agent.aio import gather_settled
-from wcl_agent.benchmark import CastsEntry, median_range, source_casts
-from wcl_agent.cache import CacheFamily, get_or_load, keys
-from wcl_agent.cache_models import DataSheetCache, TalentNames
+from wcl_agent.client import wcl_client
+from wcl_agent.client.aio import gather_settled
+from wcl_agent.tools.benchmark import CastsEntry, median_range, source_casts
+from wcl_agent.cache.cache import CacheFamily, get_or_load, keys
+from wcl_agent.cache.cache_models import DataSheetCache, TalentNames
 from wcl_agent.menu import load_world_zones
-from wcl_agent.patch import (
+from wcl_agent.game.patch import (
     HEROIC_DIFFICULTY_ID,
     MYTHIC_PLUS_DIFFICULTY_ID,
     mplus_zone_from,
     raid_zone_from,
 )
-from wcl_agent.queries import SPEC_RANKINGS
-from wcl_agent.report_tools import _player_table, _report_field, load_report_summary
-from wcl_agent.wcl_client import background_lane
+from wcl_agent.client.queries import SPEC_RANKINGS
+from wcl_agent.tools.report_tools import _player_table, _report_field, load_report_summary
+from wcl_agent.client.wcl_client import background_lane
 
 from ...config import settings
 from .models import (
