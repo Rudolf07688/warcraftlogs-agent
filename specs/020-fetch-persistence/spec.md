@@ -12,6 +12,36 @@ Shortcut: sc-127 (2 points, Raw WCL fetch schema), sc-128 (2 points, Write-throu
 persistence of every WCL fetch). Epic 103 "Every fetch stored in the DB". Sprint plan
 section F3 / 020. Decision 6 (the table is global).
 
+## Clarifications
+
+### Session 2026-10-25
+
+Q1 and Q5 answered by the product owner (decisions.md entries 16 and 17), the rest by the
+scrum master. Spec signed off once these were encoded.
+
+- Q: Upsert policy: one row per query key, or append live data? → A: One row per query
+  key; every store replaces the payload and fetch time (FR-008). DB-first reads (sc-129)
+  can tell whether a row was final when fetched from the report's end time and
+  `fetched_at`.
+- Q: Which processes persist? → A: Only the backend app process. Everywhere else the
+  client's sink stays unset (no-op) (FR-010).
+- Q: Queue bound and overflow? → A: At most 500 queued responses and 64 MB of queued body
+  bytes (counted from the response bytes already in hand, never re-serialised on the
+  caller's path). When full, drop the new response, count it, and log one warning per
+  60 s with the count. Settings `WCL_FETCH_PERSIST_ENABLED` (true),
+  `WCL_FETCH_PERSIST_QUEUE_MAX` (500) and `WCL_FETCH_PERSIST_QUEUE_MB` (64), documented in
+  `.env.example` (FR-006, FR-012).
+- Q: Shutdown? → A: A 5 s drain before the WCL clients and the database engine close,
+  then cancel and log the dropped count. Tests cover both a timely drain and the timeout
+  (FR-011).
+- Q: Batched multi-report calls? → A: One row per network call; `report_code` is empty
+  when the call covers more than one report. Condition from the product owner: the
+  report codes must be queryable without parsing the GraphQL text, uniformly for every
+  call that names one or more reports (FR-015).
+- Condition from the product owner: acceptance needs a test showing that a full queue
+  drops without blocking the fetch, alongside the DB-down test (FR-006, SC-007).
+- The rateLimitData-only query is stored like any other fetch, with no special case.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The owner wants "every single fetch stored in the db", so that over time the app holds
@@ -115,8 +145,9 @@ store holds one row for it, with the latest fetch time.
   not opt in): fetching works exactly as today and nothing is persisted; no warning per
   fetch.
 - **Batched requests** (one call covering several characters or up to 10 reports): the
-  response is stored as one row; the report code column is set only when the request is
-  about exactly one report; all codes stay in the stored parameters.
+  response is stored as one row; the single report code is set only when the request is
+  about exactly one report; every code the request names is in the row's searchable
+  report-code list.
 - **Response with no report** (rankings, zones, the class roster, character lookups):
   stored with an empty report code.
 - **The budget field the client adds to every query** (points spent this hour) is not
@@ -151,9 +182,12 @@ store holds one row for it, with the latest fetch time.
   cancellation) MUST NOT be stored.
 - **FR-005**: Offering a response for persistence MUST NOT block, await or parse on the
   caller's path; it is a constant-time hand-off to a background writer.
-- **FR-006**: The background writer MUST be bounded in how many responses and how much
-  data it holds waiting. When full, new responses MUST be dropped from persistence (never
-  from the caller) and the drops logged at most once per interval with a count.
+- **FR-006**: The background writer MUST be bounded: at most 500 waiting responses and
+  64 MB of waiting response bytes by default (byte count taken from the response already
+  in hand). When either bound is reached, the new response MUST be dropped from
+  persistence (never from the caller, and without waiting), and the drops logged at most
+  once per 60 s with a count. A test MUST show a full queue dropping without blocking the
+  fetch.
 - **FR-007**: Any persistence error (database down, write rejected, bad data) MUST be
   logged and MUST NOT reach the caller, the agent or the user. One failed row MUST NOT
   stop the writer.
@@ -167,21 +201,30 @@ store holds one row for it, with the latest fetch time.
 - **FR-010**: Persistence MUST be active in the backend app process (started and stopped
   with the app). Processes without the app's lifecycle (the `wcl` CLI, eval scripts,
   tests that do not opt in) MUST keep working with persistence off.
-- **FR-011**: On app shutdown the writer MUST be given a bounded grace period to write
-  what is waiting; anything left is dropped and logged with a count. Shutdown MUST NOT
-  wait longer than that period.
-- **FR-012**: Persistence MUST be switchable off by configuration, and its queue bounds
-  configurable, with safe defaults.
+- **FR-011**: On app shutdown, new responses MUST stop being accepted and the writer MUST
+  get 5 s to write what is waiting, before the WCL clients and the database engine close;
+  anything left is dropped and logged with a count. Shutdown MUST NOT wait longer than
+  that period.
+- **FR-012**: Persistence MUST be switchable off (`WCL_FETCH_PERSIST_ENABLED`, default
+  on) and its bounds configurable (`WCL_FETCH_PERSIST_QUEUE_MAX`, default 500;
+  `WCL_FETCH_PERSIST_QUEUE_MB`, default 64), documented in `.env.example`.
 - **FR-013**: The `wcl_agent` package MUST keep running without the backend: it MUST NOT
   import backend or database code. The backend plugs the writer into the client.
 - **FR-014**: Nothing reads from the table in this feature.
+- **FR-015**: Every stored fetch MUST carry the list of report codes the query names
+  (empty when none), in a form the database can search and index directly, uniformly for
+  single-report and batched calls. The codes MUST come from the query itself (each
+  `report(code: …)` argument, as a variable or a literal), so agent-written queries are
+  covered too. The single `report_code` column is set only when that list has exactly one
+  code.
 
 ### Key Entities
 
 - **Raw fetch**: one Warcraft Logs GraphQL response the app received. Identified by its
   query key (the query text plus all parameters). Holds the operation name (for example
-  `ReportSummary`), the parameters as sent, the report code when the query is about one
-  report, when it was fetched, and the response body. Global: shared by every tenant,
+  `ReportSummary`), the parameters as sent, the list of report codes the query names,
+  the single report code when that list has exactly one, when it was fetched, and the
+  response body. Global: shared by every tenant,
   because Warcraft Logs data is public.
 
 ## Success Criteria *(mandatory)*
@@ -202,18 +245,20 @@ store holds one row for it, with the latest fetch time.
   period plus 1 second.
 - **SC-006**: The schema migration upgrades, downgrades and upgrades again cleanly on
   PostgreSQL.
+- **SC-007**: With the writer's queue full, a fetch still returns its result without
+  waiting, and the dropped response is counted and logged.
+- **SC-008**: Every stored fetch of a batched multi-report call can be found by any one
+  of its report codes with a single indexed lookup.
 
 ## Assumptions
 
 - The query key is the same identity the client already uses to join identical in-flight
   requests (query text plus sorted parameters, hashed), so "identical fetch" means the
   same thing everywhere.
-- The report code is taken from the request parameters (a single report-code parameter);
-  batched multi-report requests store no report code in that column.
 - One row per query key (latest response wins) is enough for this sprint: nothing reads
   the store yet, and DB-first reads (sc-129) can tell whether a stored report row was
   final when fetched from its fetch time and the report's end time. Keeping a history of
-  live data is out of scope.
+  live data is out of scope (product owner, Q1).
 - No retention or size limit on the table this sprint; the owner wants the data kept.
 - The writer runs inside the app's event loop as a background task; database work is
   asynchronous and large-body preparation runs in a worker thread, so neither touches the
