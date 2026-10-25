@@ -118,6 +118,18 @@ class SuggestionsFrame(BaseModel):
     suggestions: list[str] = Field(default_factory=list, max_length=3)
 
 
+class ConversationTitleFrame(BaseModel):
+    """A chat's generated title (feature 019 / sc-155, contracts/ws-conversation-title.md).
+
+    Sent at most once per chat, after its first reply's `done`, once the title is saved;
+    the client reloads its conversation list on it.
+    """
+
+    type: Literal["conversation_title"] = "conversation_title"
+    conversation_id: uuid.UUID
+    title: str
+
+
 class EncounterOut(BaseModel):
     """A distinct boss encounter from a report's fight list (US2 display + US4 picker)."""
 
@@ -169,6 +181,15 @@ class ConversationOut(BaseModel):
     model: str
     created_at: datetime
     updated_at: datetime
+    # Feature 019 / sc-165: when the chat was pinned; None = not pinned.
+    pinned_at: datetime | None = None
+
+
+class ConversationUpdate(BaseModel):
+    """PATCH /api/conversations/{id} body (feature 019): pin or unpin the chat."""
+
+    model_config = ConfigDict(extra="forbid")
+    pinned: bool = Field(strict=True)  # "yes"/1 are rejected, not coerced
 
 
 class ConversationDetail(ConversationOut):

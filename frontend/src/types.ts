@@ -46,6 +46,8 @@ export interface Conversation {
   model: string;
   created_at: string;
   updated_at: string;
+  // Feature 019: when the chat was pinned; null/absent = not pinned.
+  pinned_at: string | null;
 }
 
 export interface Message {

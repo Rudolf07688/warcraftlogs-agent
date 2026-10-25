@@ -281,6 +281,15 @@ class Conversation(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # feature 019 / sc-165: when the chat was pinned; NULL = not pinned. Orders the
+    # sidebar's Pinned group (newest first).
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # feature 019 / sc-155: "auto" (default name, eligible for one generated title),
+    # "explicit" (named at creation), "generated" (generation claimed) or "legacy"
+    # (predates the feature). See data-model.md for the state machine.
+    title_source: Mapped[str] = mapped_column(
+        String(10), default="auto", server_default="auto"
+    )
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LuPin } from "react-icons/lu";
 import { useNavigate } from "react-router-dom";
 import {
   deleteConversation,
@@ -10,6 +11,7 @@ import {
   getRaids,
   investigateRaid,
   listConversations,
+  updateConversation,
 } from "./api/restClient";
 import { ChatSocket, type Frame } from "./api/wsClient";
 import { useAuth } from "./auth/useAuth";
@@ -21,6 +23,7 @@ import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
 import { streamStore } from "./lib/streamStore";
 import { Button } from "./components/ui/button";
+import { Toggle } from "./components/ui/toggle";
 import { THINKING_DEFAULT, retryLabel, toolLabel } from "./toolLabels";
 import type {
   ChartArtifact,
@@ -172,6 +175,10 @@ export default function App() {
         case "token":
           streamRef.current += f.text;
           streamStore.set(streamRef.current);
+          break;
+        case "conversation_title":
+          // Feature 019: the title is already saved; reload the list so the sidebar shows it.
+          void refreshConversations();
           break;
         case "suggestions": {
           // US1: arrives just after `done` (PERF-005), so the composer is already free.
@@ -342,6 +349,24 @@ export default function App() {
     [newChat, refreshConversations],
   );
 
+  // Feature 019: pin/unpin from the sidebar or the header. The returned row replaces the
+  // list entry at once (SC-002); on failure the list is reloaded from the server.
+  const togglePin = useCallback(
+    async (id: string, pinned: boolean) => {
+      try {
+        const updated = await updateConversation(id, { pinned });
+        setConversations((cs) => cs.map((c) => (c.id === id ? { ...c, ...updated } : c)));
+      } catch {
+        await refreshConversations().catch(() => undefined);
+      }
+    },
+    [refreshConversations],
+  );
+  const activeConversation = useMemo(
+    () => conversations.find((c) => c.id === activeId) ?? null,
+    [conversations, activeId],
+  );
+
   const sendText = useCallback(
     (text: string, opts?: { conversationId?: string | null; model?: string }): boolean => {
       if (streamingRef.current) return false;
@@ -456,6 +481,7 @@ export default function App() {
         onSelect={selectConversation}
         onNew={newChat}
         onDelete={removeConversation}
+        onTogglePin={togglePin}
         onInvestigateRaid={handleInvestigateRaid}
         onOpenProfile={openProfile}
       />
@@ -476,6 +502,19 @@ export default function App() {
             disabled={streaming}
             degraded={modelsDegraded}
           />
+          {activeConversation && (
+            // FR-004a: keyboard reachable, named, and its pressed state is exposed.
+            <Toggle
+              variant="outline"
+              size="sm"
+              pressed={Boolean(activeConversation.pinned_at)}
+              onPressedChange={(next) => void togglePin(activeConversation.id, next)}
+              aria-label={activeConversation.pinned_at ? "Unpin chat" : "Pin chat"}
+              title={activeConversation.pinned_at ? "Unpin chat" : "Pin chat"}
+            >
+              <LuPin />
+            </Toggle>
+          )}
           {activeId && messages.length > 0 && (
             <Button
               variant="secondary"

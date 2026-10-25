@@ -41,7 +41,14 @@ from .models import (
 async def create_conversation(
     session: AsyncSession, model: str, title: str | None = None, *, tenant_id: uuid.UUID
 ) -> Conversation:
-    conv = Conversation(model=model, title=title or "New chat", tenant_id=tenant_id)
+    # Feature 019 / FR-018: a caller that names the chat (raid investigations, recent-raid
+    # kickoffs, POST with a title) marks it explicit at creation; it is never auto-renamed.
+    conv = Conversation(
+        model=model,
+        title=title or "New chat",
+        title_source="explicit" if title else "auto",
+        tenant_id=tenant_id,
+    )
     session.add(conv)
     await session.flush()  # populate id/timestamps
     return conv
@@ -89,6 +96,71 @@ async def delete_conversation(
         )
     )
     return result.rowcount > 0
+
+
+async def set_conversation_pinned(
+    session: AsyncSession, conv_id: uuid.UUID, pinned: bool, *, tenant_id: uuid.UUID
+) -> Conversation | None:
+    """Pin or unpin a conversation (feature 019 / sc-165); ``None`` when it isn't this
+    tenant's. A repeated pin keeps the original pin time, and ``updated_at`` is set to
+    itself so pinning never reorders the list by activity (FR-009)."""
+    pinned_at = (
+        func.coalesce(Conversation.pinned_at, datetime.now(timezone.utc)) if pinned else None
+    )
+    result = await session.execute(
+        update(Conversation)
+        .where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
+        .values(pinned_at=pinned_at, updated_at=Conversation.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        return None
+    row = await session.execute(
+        select(Conversation)
+        .where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
+        .execution_options(populate_existing=True)
+    )
+    return row.scalar_one()
+
+
+async def claim_title_generation(
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> bool:
+    """Claim the one generated title of a default-named chat (feature 019 / FR-016).
+
+    A single conditional UPDATE ``auto → generated``: exactly one caller ever gets True,
+    across tasks, processes and instances. Explicit, legacy and already-claimed chats
+    (and other tenants' ids) give False. ``updated_at`` is left alone.
+    """
+    result = await session.execute(
+        update(Conversation)
+        .where(
+            Conversation.id == conv_id,
+            Conversation.tenant_id == tenant_id,
+            Conversation.title_source == "auto",
+        )
+        .values(title_source="generated", updated_at=Conversation.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount == 1
+
+
+async def set_generated_title(
+    session: AsyncSession, conv_id: uuid.UUID, title: str, *, tenant_id: uuid.UUID
+) -> bool:
+    """Write a generated title, only on a chat whose generation was claimed (never over
+    an explicit or legacy name). False when the chat is gone or not this tenant's."""
+    result = await session.execute(
+        update(Conversation)
+        .where(
+            Conversation.id == conv_id,
+            Conversation.tenant_id == tenant_id,
+            Conversation.title_source == "generated",
+        )
+        .values(title=title, updated_at=Conversation.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount == 1
 
 
 async def _next_seq(session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID) -> int:
