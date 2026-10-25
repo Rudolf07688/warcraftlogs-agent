@@ -35,6 +35,17 @@
 - If current model returns 429 errors, switch to the second available model in class
   - If already switch, switch back to the first model
     - If it still gives 429s then report that to the user and ask to try again in a bit.
+- Worker server (BIG - must be specced accordingly and done properly)
+  - Have a separate container running for background tasks running independently
+  - These tasks can include:
+    - Building raid and dungeon guides continuously when new pieces of information are found
+      - Keep the update profile small so it doesn't rate limit models and take forever to run.
+    - Building up your profile bit by bit based off previous chat data ("offline" character profile, not user conversational memory)
+  - NATS message queue to handle tasks and failures
+    - (maybe deadletter, maybe retry queue?)
+    - NATS backend / task state captured with postgres for persistent data requirements (including stuff like audit trails)
+  
+
 
 **[ UI / Design ]**
 - Chat interface redesign
