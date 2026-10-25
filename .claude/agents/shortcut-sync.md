@@ -54,8 +54,9 @@ below, then return a short report.
    - Estimate it with 1, 2, 3 or 5. If it fits in one story of 5 points or less, create
      one story. If it's bigger, create an epic named after the bullet (description
      `Todo: "<full bullet text>"`) and split the work into stories of 1, 2, 3 or 5 points.
-   - If you find an existing story with an estimate outside 1/2/3/5, list it under "Needs a
-     decision" with a suggested value. Don't change it.
+   - If you find an existing story with no estimate, or one outside 1/2/3/5, set your own
+     1/2/3/5 estimate and report it under "Updated". Estimates are rough, so the owner
+     wants them set, not suggested (2026-10-20).
    - Create on Team 1 in **Backlog** (`workflow_state_id` Backlog). Use type `bug` for
      defects and QA findings, `chore` for spikes, docs and refactors, and `feature`
      otherwise. Then set the estimate and labels.
