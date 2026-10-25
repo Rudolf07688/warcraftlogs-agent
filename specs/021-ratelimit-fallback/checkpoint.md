@@ -31,3 +31,13 @@ Queued (after 022 merges, then rebase): backend/app/schemas.py, frontend/src/typ
 ## Implementation starts at
 
 tasks.md T001 → Phases 2–4 (T002–T016a). Phase 5 (T017–T025) waits for the queued files.
+
+## Progress (2026-10-25)
+
+- Done and committed: T001–T016a (e24c99f backend fallback + runner; 67af96e socket plumbing,
+  split message, SC-007 history test), T020/T022/T026 (39245f8 Frame type, fallbackLabel,
+  ai_guide line). Full suite: 1046 passed / 3 skipped / 1 deselected; frontend build green.
+- Remaining, waiting for 022 to merge (then rebase onto the sprint tip): T017 ModelFallbackFrame
+  in schemas.py, T018 forward it in ws.py (the `model_fallback` branch currently only sets
+  `switched`), T019 frame assertion in test_switched_turn_stores_the_reply_once, T021 types.ts,
+  T023 App.tsx, T024 MessageList.tsx note (shadcn search first), T025 build, T027–T029.
