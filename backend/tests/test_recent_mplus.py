@@ -26,18 +26,18 @@ from backend.tests.test_recent_raids import (  # noqa: F401 - fixtures are re-ex
     fake_wcl,
     report,
 )
-from wcl_agent.cache.cache_models import FightSummary, ReportSummary
+from wcl_agent.cache.cache_models import FightSummary, PlayerRef, ReportSummary
 from wcl_agent.client import wcl_client
 
 DUNGEON = "Tazavesh: Streets of Wonder"
 
 
 def key(fid: int, *, level: int = 12, bonus: int = 1, kill: bool | None = True,
-        start: int = 0, name: str = DUNGEON) -> dict[str, Any]:
+        start: int = 0, name: str = DUNGEON, players: list[int] | None = None) -> dict[str, Any]:
     return {
         "id": fid, "name": name, "encounterID": 0, "kill": kill, "difficulty": 10,
         "startTime": start, "keystoneLevel": level, "keystoneBonus": bonus,
-        "keystoneTime": 1_700_000,
+        "keystoneTime": 1_700_000, "friendlyPlayers": players or [],
     }
 
 
@@ -45,12 +45,14 @@ class MplusWCL(FakeWCL):
     """FakeWCL whose report summaries carry keystone fights per report code.
 
     ``fail_codes`` fails (or ``hang_codes`` stalls) any summary request for those codes;
-    ``summary_lanes`` records the WCL lane of every summary request.
+    ``summary_lanes`` records the WCL lane of every summary request; ``actors_by_code``
+    gives a report's player actors (id → name).
     """
 
     def __init__(self, reports_by_name, fights_by_code):
         super().__init__(reports_by_name)
         self.fights_by_code = fights_by_code
+        self.actors_by_code: dict[str, dict[int, str]] = {}
         self.fail_codes: dict[str, BaseException] = {}
         self.hang_codes: set[str] = set()
         self.summary_lanes: list[str] = []
@@ -69,7 +71,12 @@ class MplusWCL(FakeWCL):
             for i in range(len(variables)):
                 node = out["data"]["reportData"].get(f"r{i}")
                 if node is not None:
-                    node["fights"] = self.fights_by_code.get(variables[f"c{i}"], node["fights"])
+                    code = variables[f"c{i}"]
+                    node["fights"] = self.fights_by_code.get(code, node["fights"])
+                    actors = self.actors_by_code.get(code, {})
+                    node["masterData"] = {
+                        "actors": [{"id": a, "name": n, "subType": "Mage"} for a, n in actors.items()]
+                    }
         return out
 
 
@@ -94,14 +101,15 @@ def mplus_report(code: str, hours_ago: float) -> dict[str, Any]:
 # --- extraction (FR-013, FR-014) -------------------------------------------------------
 
 
-def summary(*fights: FightSummary) -> ReportSummary:
+def summary(*fights: FightSummary, players: dict[int, str] | None = None) -> ReportSummary:
     return ReportSummary(
-        code="R1", start_time_ms=1_000_000, end_time_ms=9_000_000, zone_name="Zone", fights=list(fights)
+        code="R1", start_time_ms=1_000_000, end_time_ms=9_000_000, zone_name="Zone",
+        players={i: PlayerRef(name=n) for i, n in (players or {}).items()}, fights=list(fights),
     )
 
 
 def test_extract_keeps_completed_keys_and_drops_abandoned():
-    cid = frozenset({uuid.uuid4()})
+    cid = {uuid.uuid4(): "Alpha"}
     runs = svc.extract_mplus_runs(
         summary(
             FightSummary(id=1, name="Dungeon A", kill=True, keystone_level=10, keystone_bonus=2, start_time_ms=0),
@@ -118,7 +126,30 @@ def test_extract_keeps_completed_keys_and_drops_abandoned():
         (5, "Zone", 9, True),  # missing fight name falls back to the zone
     ]
     assert runs[1].started_at == datetime.fromtimestamp(1_000.5, tz=timezone.utc)
-    assert runs[0].character_ids == cid
+    assert runs[0].character_ids == frozenset(cid)
+
+
+def test_each_run_names_only_the_own_characters_in_that_fight():
+    alpha, beta = uuid.uuid4(), uuid.uuid4()
+    own = {alpha: "Alpha", beta: "Beta"}
+    runs = svc.extract_mplus_runs(
+        summary(
+            FightSummary(id=1, name="A", kill=True, keystone_level=10, player_ids=[1, 3]),
+            FightSummary(id=2, name="B", kill=True, keystone_level=11, player_ids=[2, 3]),
+            FightSummary(id=3, name="C", kill=True, keystone_level=12, player_ids=[1, 2]),
+            FightSummary(id=4, name="D", kill=True, keystone_level=13, player_ids=[3]),  # no own
+            FightSummary(id=5, name="E", kill=True, keystone_level=14),  # no player list
+            players={1: "alpha", 2: "BETA", 3: "Stranger"},  # names match case-insensitively
+        ),
+        own,
+    )
+    assert [r.character_ids for r in runs] == [
+        frozenset({alpha}),
+        frozenset({beta}),
+        frozenset({alpha, beta}),
+        frozenset({alpha, beta}),  # nothing matched: the report's own characters
+        frozenset({alpha, beta}),
+    ]
 
 
 # --- the list: caps, order, no section (FR-002, FR-005) --------------------------------
@@ -172,6 +203,19 @@ async def test_a_run_shared_by_two_characters_is_listed_once(as_user, patched_db
     body = await refresh(as_user.client)
     [run] = body["mplus_runs"]
     assert sorted(c["name"] for c in run["characters"]) == ["Alpha", "Beta"]
+
+
+async def test_runs_in_one_report_name_only_their_own_characters(as_user, patched_db, mplus_wcl):
+    await add_own(patched_db, as_user.tenant_id, "Alpha", "Beta")
+    duo = mplus_report("DUO", 5)
+    mplus_wcl.reports_by_name = {"Alpha": [duo], "Beta": [duo]}
+    mplus_wcl.actors_by_code = {"DUO": {1: "Alpha", 2: "Beta", 3: "Stranger"}}
+    mplus_wcl.fights_by_code = {
+        "DUO": [key(1, level=8, players=[1, 3]), key(2, level=9, start=3_600_000, players=[1, 2])]
+    }
+    body = await refresh(as_user.client)
+    named = {r["key_level"]: sorted(c["name"] for c in r["characters"]) for r in body["mplus_runs"]}
+    assert named == {8: ["Alpha"], 9: ["Alpha", "Beta"]}
 
 
 async def test_a_removed_character_takes_its_runs_off_the_list(as_user, patched_db, mplus_wcl):

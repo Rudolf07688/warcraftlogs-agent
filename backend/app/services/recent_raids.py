@@ -19,7 +19,7 @@ import asyncio
 import hashlib
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
@@ -28,7 +28,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.cache.cache import CacheFamily, get_many_or_load, keys
-from wcl_agent.cache.cache_models import CharacterReports, RecentReport, ReportSummary
+from wcl_agent.cache.cache_models import CharacterReports, FightSummary, RecentReport, ReportSummary
 from wcl_agent.cache.normalize import FINAL_AFTER
 from wcl_agent.game.patch import raid_zone_ids
 from wcl_agent.client.queries import character_reports_query
@@ -145,12 +145,25 @@ def _details_from(summary: ReportSummary, raid_zones: set[int]) -> ReportDetails
     )
 
 
-def extract_mplus_runs(summary: ReportSummary, character_ids: frozenset[uuid.UUID]) -> list[MplusRun]:
-    """The completed keystone fights of a report (feature 022).
+def _fight_characters(
+    summary: ReportSummary, fight: FightSummary, own: Mapping[uuid.UUID, str]
+) -> frozenset[uuid.UUID]:
+    """The own characters among a fight's players, matched by name (actors carry no server).
 
-    Completed means a kill with a keystone level; an abandoned key is dropped. A key
-    finished over the timer (depleted) is kept and not timed: ``keystoneBonus`` counts the
-    upgrade chests, so 0 is depleted.
+    Falls back to all of the report's own characters when none match, so a run is never
+    left unnamed.
+    """
+    names = {summary.players[p].name.casefold() for p in fight.player_ids if p in summary.players}
+    present = frozenset(cid for cid, name in own.items() if name.casefold() in names)
+    return present or frozenset(own)
+
+
+def extract_mplus_runs(summary: ReportSummary, own: Mapping[uuid.UUID, str]) -> list[MplusRun]:
+    """The completed keystone fights of a report (feature 022), each naming its own characters.
+
+    ``own`` maps the report's own characters (id → name). Completed means a kill with a
+    keystone level; an abandoned key is dropped. A key finished over the timer (depleted)
+    is kept and not timed: ``keystoneBonus`` counts the upgrade chests, so 0 is depleted.
     """
     return [
         MplusRun(
@@ -160,7 +173,7 @@ def extract_mplus_runs(summary: ReportSummary, character_ids: frozenset[uuid.UUI
             key_level=f.keystone_level,
             started_at=_ms(summary.start_time_ms + (f.start_time_ms or 0)),
             timed=(f.keystone_bonus or 0) >= 1,
-            character_ids=character_ids,
+            character_ids=_fight_characters(summary, f, own),
         )
         for f in summary.fights
         if f.keystone_level and f.keystone_level > 0 and f.kill is True
@@ -227,7 +240,9 @@ async def _refresh(tenant_id: uuid.UUID, chars: Sequence[UserCharacter], deadlin
                     )
     try:
         async with asyncio.timeout_at(deadline):
-            await _refresh_mplus_runs(tenant_id, listed, need, raid_zones)
+            await _refresh_mplus_runs(
+                tenant_id, listed, need, raid_zones, {c.id: c.name for c in chars}
+            )
     except Exception as exc:  # noqa: BLE001 - a failed M+ step never fails the refresh
         error = _error_code(exc)
         if error == "unknown":
@@ -237,7 +252,11 @@ async def _refresh(tenant_id: uuid.UUID, chars: Sequence[UserCharacter], deadlin
 
 
 async def _refresh_mplus_runs(
-    tenant_id: uuid.UUID, listed: Sequence[ListedReport], need: set[str], raid_zones: set[int]
+    tenant_id: uuid.UUID,
+    listed: Sequence[ListedReport],
+    need: set[str],
+    raid_zones: set[int],
+    names: Mapping[uuid.UUID, str],
 ) -> None:
     """The M+ step (feature 022): keystone runs from the newest non-raid reports still open.
 
@@ -261,7 +280,9 @@ async def _refresh_mplus_runs(
                 await repo.upsert_mplus_runs(
                     session,
                     tenant_id=tenant_id,
-                    runs=extract_mplus_runs(summary, by_code[code].character_ids),
+                    runs=extract_mplus_runs(
+                        summary, {cid: names[cid] for cid in by_code[code].character_ids}
+                    ),
                 )
                 await repo.set_report_details(
                     session,
