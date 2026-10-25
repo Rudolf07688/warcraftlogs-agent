@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -26,6 +27,7 @@ from backend.tests.test_recent_raids import (  # noqa: F401 - fixtures are re-ex
     report,
 )
 from wcl_agent.cache.cache_models import FightSummary, ReportSummary
+from wcl_agent.client import wcl_client
 
 DUNGEON = "Tazavesh: Streets of Wonder"
 
@@ -40,13 +42,27 @@ def key(fid: int, *, level: int = 12, bonus: int = 1, kill: bool | None = True,
 
 
 class MplusWCL(FakeWCL):
-    """FakeWCL whose report summaries carry keystone fights per report code."""
+    """FakeWCL whose report summaries carry keystone fights per report code.
+
+    ``fail_codes`` fails (or ``hang_codes`` stalls) any summary request for those codes;
+    ``summary_lanes`` records the WCL lane of every summary request.
+    """
 
     def __init__(self, reports_by_name, fights_by_code):
         super().__init__(reports_by_name)
         self.fights_by_code = fights_by_code
+        self.fail_codes: dict[str, BaseException] = {}
+        self.hang_codes: set[str] = set()
+        self.summary_lanes: list[str] = []
 
     async def query(self, query, variables=None):
+        if "reportData" in query and "fights" in query:
+            codes = set((variables or {}).values())
+            self.summary_lanes.append(wcl_client._lane.get())
+            for code in codes & set(self.fail_codes):
+                raise self.fail_codes[code]
+            if codes & self.hang_codes:
+                await asyncio.Event().wait()
         out = await super().query(query, variables)
         if "reportData" in query and "fights" in query:
             variables = variables or {}
@@ -180,7 +196,9 @@ async def test_stored_runs_show_without_waiting_for_wcl(as_user, patched_db, mpl
     assert len(body["mplus_runs"]) == 1 and mplus_wcl.calls == []
 
 
-async def test_a_failing_refresh_keeps_stored_runs(as_user, patched_db, mplus_wcl):
+async def test_a_raidless_player_sees_stored_runs_while_refreshing_and_after_a_failure(
+    as_user, patched_db, mplus_wcl
+):
     from backend.tests.test_recent_raids import reopen_gate
 
     await add_own(patched_db, as_user.tenant_id, "Alpha")
@@ -189,8 +207,57 @@ async def test_a_failing_refresh_keeps_stored_runs(as_user, patched_db, mplus_wc
     await refresh(as_user.client)
     await reopen_gate(patched_db, as_user.tenant_id)
     mplus_wcl.fail = httpx.ConnectError("down")
+
+    running = (await as_user.client.get("/api/recent-raids")).json()  # starts a refresh
+    assert running["refresh"]["status"] == "running"
+    assert running["raids"] == [] and len(running["mplus_runs"]) == 1
+
+    await drain()
+    body = (await as_user.client.get("/api/recent-raids")).json()
+    assert body["refresh"]["status"] == "failed"
+    assert body["raids"] == [] and len(body["mplus_runs"]) == 1
+
+
+def rate_limited() -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://www.warcraftlogs.com/api/v2/client")
+    return httpx.HTTPStatusError("429", request=request, response=httpx.Response(429, request=request))
+
+
+async def test_an_mplus_step_failure_keeps_the_refresh_raids_and_runs(as_user, patched_db, mplus_wcl):
+    from backend.tests.test_recent_raids import reopen_gate
+
+    await add_own(patched_db, as_user.tenant_id, "Alpha")
+    mplus_wcl.reports_by_name = {"Alpha": [report("RAID1"), mplus_report("OLD", 30)]}
+    mplus_wcl.fights_by_code = {"OLD": [key(1, level=10)], "NEW": [key(1, level=15)]}
+    await refresh(as_user.client)
+    await reopen_gate(patched_db, as_user.tenant_id)
+
+    # The next refresh lists a new raid and a new M+ report; only the M+ summaries hit a 429.
+    mplus_wcl.reports_by_name["Alpha"] += [report("RAID2", ended_hours_ago=10), mplus_report("NEW", 5)]
+    mplus_wcl.fail_codes = {"NEW": rate_limited()}
     body = await refresh(as_user.client)
-    assert body["refresh"]["status"] == "failed" and len(body["mplus_runs"]) == 1
+    assert body["refresh"]["status"] == "succeeded" and body["refresh"]["last_error"] is None
+    assert [r["report_code"] for r in body["raids"]] == ["RAID2", "RAID1"]
+    assert [r["key_level"] for r in body["mplus_runs"]] == [10]
+    raid2 = next(r for r in body["raids"] if r["report_code"] == "RAID2")
+    assert raid2["bosses_pulled"] == 2  # the raid step's details were stored
+
+    # NEW was not marked final, so the next refresh examines it again.
+    await reopen_gate(patched_db, as_user.tenant_id)
+    mplus_wcl.fail_codes = {}
+    body = await refresh(as_user.client)
+    assert [r["key_level"] for r in body["mplus_runs"]] == [15, 10]
+    assert set(mplus_wcl.summary_lanes) == {"background"}
+
+
+async def test_an_mplus_step_timeout_does_not_fail_the_refresh(as_user, patched_db, mplus_wcl, monkeypatch):
+    await add_own(patched_db, as_user.tenant_id, "Alpha")
+    mplus_wcl.reports_by_name = {"Alpha": [report("RAID1"), mplus_report("SLOW", 5)]}
+    mplus_wcl.hang_codes = {"SLOW"}
+    monkeypatch.setattr(settings, "recent_raids_refresh_timeout_s", 0.5)
+    body = await refresh(as_user.client)
+    assert body["refresh"]["status"] == "succeeded"
+    assert [r["report_code"] for r in body["raids"]] == ["RAID1"] and body["mplus_runs"] == []
 
 
 async def test_a_finished_nonraid_report_is_not_examined_again(as_user, patched_db, mplus_wcl):

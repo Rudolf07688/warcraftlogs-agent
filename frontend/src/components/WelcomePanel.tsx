@@ -286,10 +286,19 @@ function WelcomePanelImpl({ onInvestigate, onInvestigateMplus, disabled }: Props
   const failed = refresh.status === "failed";
 
   if (raids.length === 0) {
-    if (running || refresh.status === "idle") return <SkeletonGrid />;
-    if (failed) {
-      return (
-        <section className="welcome-panel" aria-label="Your recent raids">
+    const waiting = running || refresh.status === "idle";
+    // Stored runs show whatever the raid state (FR-010); the skeleton is only for nothing.
+    if (waiting && mplusRuns.length === 0) return <SkeletonGrid />;
+    return (
+      <section className="welcome-panel" aria-label="Your recent raids">
+        {waiting ? (
+          <header className="welcome-panel-header">
+            <h2 className="welcome-panel-title">Your recent raids</h2>
+            <span className="welcome-panel-status">
+              <Spinner /> checking for new raids…
+            </span>
+          </header>
+        ) : failed ? (
           <Alert variant="destructive">
             <AlertTitle>Couldn't load your raids</AlertTitle>
             <AlertDescription>
@@ -299,19 +308,16 @@ function WelcomePanelImpl({ onInvestigate, onInvestigateMplus, disabled }: Props
               </Button>
             </AlertDescription>
           </Alert>
-        </section>
-      );
-    }
-    return (
-      <section className="welcome-panel" aria-label="Your recent raids">
-        <Empty className="welcome-empty">
-          <EmptyHeader>
-            <EmptyTitle>No recent raids found for your characters</EmptyTitle>
-            <EmptyDescription>
-              Raids appear here once they're logged publicly on Warcraft Logs.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        ) : (
+          <Empty className="welcome-empty">
+            <EmptyHeader>
+              <EmptyTitle>No recent raids found for your characters</EmptyTitle>
+              <EmptyDescription>
+                Raids appear here once they're logged publicly on Warcraft Logs.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
         <MplusSection runs={mplusRuns} disabled={disabled} onInvestigate={onInvestigateMplus} />
       </section>
     );
