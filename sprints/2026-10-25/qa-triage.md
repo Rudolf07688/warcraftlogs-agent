@@ -65,3 +65,28 @@ None. No duplicate QA tickets exist.
   same moment. Negligible at current scale.
 - Live-only unknowns: WCL `kill` semantics for depleted keys, the cost of the 4 fields,
   and the Gemini signature bypass. These are owner live-test items, not tickets.
+
+## Re-check after the fixes (2026-10-25)
+
+Reports: `qa-reports/2026-10-25-recheck/` (spec-conformance.md, bugs.md), at sprint head
+c06e514. Tests: 1064 passed / 3 skipped / 1 deselected; tsc clean.
+
+| Finding | Verdict |
+|---|---|
+| SPEC-001 / BUG-002 (FN-1) | Fixed. QA cancel/timeout script plus the new tests. |
+| SPEC-002 (FN-2) | Fixed |
+| BUG-001 (FN-3) | Fixed. QA re-ran it on Postgres 17 with a non-superuser owner, including a rollback on failure. |
+| SPEC-004, 005, 006, 007, 008, 009 (FN-4 / FN-1 tests) | Fixed |
+| SPEC-003 (FN-4) | Partially fixed: README lacks feature 020 (raw_fetches, the `WCL_FETCH_PERSIST_*` settings) |
+
+New findings from the fixes:
+- **Fix now, FN-5 (docs only):** SPEC-003 remainder; SPEC-R01 (ai_guide §18 must say that an
+  M+-only failure is logged and the refresh records `succeeded`, per decision 36, or a
+  future agent may "fix" it and bring back SPEC-001); SPEC-R02 (the 023 checkpoint should
+  attribute `106.25%` to 8a8ce50, not 0c62d18). Fix now because SPEC-R01 guards against a
+  regression and all three are one-line doc edits.
+- **Deferred, update:** BUG-R01, R02, R03 and the WelcomePanel test gap went to **sc-183** as
+  a dated breadcrumb, matched by meaning: welcome M+ edge cases. The missing Postgres test
+  for BUG-001's failure mode went to **sc-185** as a breadcrumb. No new tickets, no merges.
+- **Product ruling on BUG-R03:** the next due refresh retries an M+-only failure. That's
+  accepted for this sprint (it extends decision 36), and options are noted on sc-183.

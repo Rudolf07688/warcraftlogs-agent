@@ -281,3 +281,8 @@ Each entry gives the date, the question, the answer and the reason.
     set.
     The accepted behaviour change: an M+-only failure records `succeeded` and goes
     only to the server log. Owner live test: the raid-less view in a browser.
+37. **Q (QA re-check BUG-R03): after an M+-only failure the refresh reads `succeeded`, so
+    there's no user retry until the next due refresh (≥15 min). Is that acceptable?**
+    A: Yes, for this sprint. It's the consequence of decision 36, which is a better
+    trade-off than hiding stored runs. The options for a user-triggered M+ retry are
+    recorded on sc-183.
