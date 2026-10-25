@@ -64,20 +64,20 @@ symbol edit run GitNexus `impact` upstream; `detect_changes` before each commit.
 
 **Needs grants**: `backend/app/schemas.py`, `frontend/src/types.ts`, `frontend/src/App.tsx` (022), `frontend/src/components/MessageList.tsx` (product owner), `frontend/src/toolLabels.ts`.
 
-- [ ] T017 [US3] Append `ModelFallbackFrame(type="model_fallback", from_model: str, to_model: str)` in backend/app/schemas.py, next to `ModelRetryFrame`, per contracts/websocket-model-fallback.md
-- [ ] T018 [US3] Forward `kind == "model_fallback"` as `ModelFallbackFrame(**record)` in backend/app/api/ws.py
-- [ ] T019 [US3] Socket test in backend/tests/test_model_fallback_ws.py: tokens before and after a `model_fallback` record → frames `meta, token, model_fallback, token, done`, the frame equals the contract, and the stored agent message is the tokens joined exactly once
+- [X] T017 [US3] Append `ModelFallbackFrame(type="model_fallback", from_model: str, to_model: str)` in backend/app/schemas.py, next to `ModelRetryFrame`, per contracts/websocket-model-fallback.md
+- [X] T018 [US3] Forward `kind == "model_fallback"` as `ModelFallbackFrame(**record)` in backend/app/api/ws.py
+- [X] T019 [US3] Socket test in backend/tests/test_model_fallback_ws.py: tokens before and after a `model_fallback` record → frames `meta, token, model_fallback, token, done`, the frame equals the contract, and the stored agent message is the tokens joined exactly once
 - [X] T020 [P] [US3] Add `| { type: "model_fallback"; from_model: string; to_model: string }` to `Frame` in frontend/src/api/wsClient.ts
-- [ ] T021 [P] [US3] Add `fallback?: { from: string; to: string }` to `Message` in frontend/src/types.ts
+- [X] T021 [P] [US3] Add `fallback?: { from: string; to: string }` to `Message` in frontend/src/types.ts
 - [X] T022 [P] [US3] Add `fallbackLabel(from, to)` ("<from> is rate-limited — switching to <to>…") next to `retryLabel` in frontend/src/toolLabels.ts
-- [ ] T023 [US3] Handle the frame in frontend/src/App.tsx: a `pendingFallbackRef`; on `model_fallback`, set the status to `fallbackLabel` and remember it; on `done`, attach `fallback` to the new agent message; reset on `done` and `error`
-- [ ] T024 [US3] Search the shadcn registry through the MCP (badge / alert / item) for the note, decide, record the outcome in plan.md Constitution Check VII, then render "Answered by <to> (<from> was rate-limited)" under the agent reply when `m.fallback` is set in frontend/src/components/MessageList.tsx; run the MCP audit checklist if a registry item is added
-- [ ] T025 [US3] `npm run build` in frontend/ green
+- [X] T023 [US3] Handle the frame in frontend/src/App.tsx: a `pendingFallbackRef`; on `model_fallback`, set the status to `fallbackLabel` and remember it; on `done`, attach `fallback` to the new agent message; reset on `done` and `error`
+- [X] T024 [US3] Search the shadcn registry through the MCP (badge / alert / item) for the note, decide, record the outcome in plan.md Constitution Check VII, then render "Answered by <to> (<from> was rate-limited)" under the agent reply when `m.fallback` is set in frontend/src/components/MessageList.tsx; run the MCP audit checklist if a registry item is added
+- [X] T025 [US3] `npm run build` in frontend/ green
 
 ## Phase 6: Polish
 
 - [X] T026 [P] One line at the `model_retry.py` entry in documentation/ai_guide.md: "… + 429 fallback to the same-class sibling (feature 021)"
-- [ ] T027 Full suite green (`uv run --extra test pytest -q`); confirm `test_model_retry.py`, `test_runner_retry.py`, `test_ws_rate_limit.py`, `test_conversation_titles.py`, the greeting and the guide/guide_pipeline tests are unchanged (`git diff --stat cc3c783 -- backend/tests` lists only the new 021 test files) (SC-008)
+- [X] T027 Full suite green (`uv run --extra test pytest -q`); confirm `test_model_retry.py`, `test_runner_retry.py`, `test_ws_rate_limit.py`, `test_conversation_titles.py`, the greeting and the guide/guide_pipeline tests are unchanged (`git diff --stat cc3c783 -- backend/tests` lists only the new 021 test files) (SC-008)
 - [ ] T028 Re-index the worktree and run `detect-changes --scope all`; check that the changed files ⊆ the granted list; restore `CLAUDE.md` and `.specify/feature.json` before committing
 - [ ] T029 Mark tasks done, update checkpoint.md, and send the scrum master the hand-off (branch, base, commits, files, tests, risks, how to verify each AC per quickstart.md)
 

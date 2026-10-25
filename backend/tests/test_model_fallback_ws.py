@@ -106,7 +106,8 @@ async def test_switched_turn_stores_the_reply_once(as_user, patched_db, monkeypa
         sock, ChatTurn(model=A, content="q"), _identity(as_user), fallback_model=B
     )
     await task
-    assert sock.frames[-1]["type"] == "done"
+    assert [f["type"] for f in sock.frames] == ["meta", "token", "model_fallback", "token", "done"]
+    assert sock.frames[2] == SWITCH  # the contract shape
     conv_id = uuid.UUID(sock.frames[0]["conversation_id"])
     msgs = await _messages(patched_db, conv_id, as_user.tenant_id)
     assert [(m.role, m.content) for m in msgs] == [
@@ -126,6 +127,7 @@ async def test_sibling_busy_too_gets_the_both_models_message(as_user, patched_db
     await ws_mod._handle_turn(
         sock, ChatTurn(model=A, content="q"), _identity(as_user), fallback_model=B
     )
+    assert [f["type"] for f in sock.frames] == ["meta", "token", "model_fallback", "error"]
     err = sock.frames[-1]
     assert err == {"type": "error", "code": "rate_limited", "message": BOTH_BUSY}
     conv_id = uuid.UUID(sock.frames[0]["conversation_id"])

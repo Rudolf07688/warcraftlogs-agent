@@ -34,6 +34,7 @@ from ..schemas import (
     EncountersFrame,
     ErrorFrame,
     MetaFrame,
+    ModelFallbackFrame,
     ModelRetryFrame,
     RaidTrackedFrame,
     SuggestionsFrame,
@@ -295,7 +296,9 @@ async def _handle_turn(
                 # Feature 011 / FR-003: the model is rate-limited; show "retrying".
                 await _send(ws, ModelRetryFrame(**record))
             elif kind == "model_fallback":
+                # Feature 021: the turn moved to the same-class sibling; show which.
                 switched = True
+                await _send(ws, ModelFallbackFrame(**record))
     except WebSocketDisconnect:
         # Client vanished mid-reply: keep what we have, can't send anything.
         await _persist_partial(conv_id, tokens, identity)

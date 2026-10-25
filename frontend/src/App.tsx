@@ -25,7 +25,7 @@ import { Sidebar } from "./components/Sidebar";
 import { streamStore } from "./lib/streamStore";
 import { Button } from "./components/ui/button";
 import { Toggle } from "./components/ui/toggle";
-import { THINKING_DEFAULT, retryLabel, toolLabel } from "./toolLabels";
+import { THINKING_DEFAULT, fallbackLabel, retryLabel, toolLabel } from "./toolLabels";
 import type {
   ChartArtifact,
   Conversation,
@@ -67,6 +67,7 @@ export default function App() {
   // The served set and default, for restoring a conversation whose model was retired.
   const servedModelsRef = useRef<{ models: string[]; default: string }>({ models: [], default: "" });
   const groundedRef = useRef(false);
+  const fallbackRef = useRef<Message["fallback"]>(undefined); // set when the turn switched model
   const streamCardsRef = useRef<SpellCardState[]>([]);
   const pendingEncountersRef = useRef<Encounter[]>([]); // bosses surfaced this turn
   const pendingArtifactsRef = useRef<ChartArtifact[]>([]); // charts produced this turn
@@ -142,6 +143,12 @@ export default function App() {
           // tool_start/token replaces this status as usual.
           setStatus(retryLabel(f.attempt, f.max_attempts));
           break;
+        case "model_fallback":
+          // Feature 021: the turn continues on the same-class sibling; the answer is
+          // marked with the model that gave it on `done`.
+          fallbackRef.current = { from: f.from_model, to: f.to_model };
+          setStatus(fallbackLabel(f.from_model, f.to_model));
+          break;
         case "grounding":
           if (f.used) {
             groundedRef.current = true;
@@ -201,6 +208,7 @@ export default function App() {
         case "done": {
           const text = streamRef.current || "(no response)";
           const grounded = groundedRef.current;
+          const fallback = fallbackRef.current;
           const tools = streamCardsRef.current;
           const encounters = pendingEncountersRef.current;
           const artifacts = pendingArtifactsRef.current;
@@ -212,6 +220,7 @@ export default function App() {
               role: "agent",
               content: text,
               grounded,
+              fallback,
               tools,
               encounters,
               artifacts,
@@ -222,6 +231,7 @@ export default function App() {
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
+          fallbackRef.current = undefined;
           setCards([]);
           pendingEncountersRef.current = [];
           pendingArtifactsRef.current = [];
@@ -237,6 +247,7 @@ export default function App() {
           setStatus(THINKING_DEFAULT);
           streamRef.current = "";
           groundedRef.current = false;
+          fallbackRef.current = undefined;
           setCards([]);
           pendingEncountersRef.current = [];
           pendingArtifactsRef.current = [];
@@ -379,6 +390,7 @@ export default function App() {
       setMessages((m) => [...m, { role: "user", content: text }]);
       streamRef.current = "";
       groundedRef.current = false;
+      fallbackRef.current = undefined;
       setCards([]);
       pendingEncountersRef.current = [];
       pendingArtifactsRef.current = [];
