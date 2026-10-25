@@ -83,7 +83,7 @@ Before T009: move sc-165 to In Progress (Shortcut).
   - a missing CSRF header is refused (401/403);
   - a body without `pinned` or with extra keys is 422;
   - deleting a pinned conversation works.
-- [ ] T010a [P] [US2] Add explicit-at-creation tests (FR-018, one per naming caller) to `backend/tests/test_conversation_titles.py` (or to `test_conversation_pinning.py` if that file isn't granted in phase A). Each checks `title_source` in the DB:
+- [ ] T010a [P] [US2] Add explicit-at-creation tests (FR-018, one per naming caller) to `backend/tests/test_conversation_titles.py` (granted in phase A). Each checks `title_source` in the DB:
   - `POST /api/conversations` with a title gives `explicit`, and without a title gives `auto`;
   - `POST /api/raids/{code}/investigate` on a tracked raid gives `explicit`;
   - the same endpoint on a recent raid from the welcome page gives `explicit`;
@@ -105,7 +105,7 @@ Before T009: move sc-165 to In Progress (Shortcut).
 - [X] T017 [US2] In `frontend/src/App.tsx`:
   - add `togglePin(id, pinned)`, which calls `updateConversation`, replaces that conversation in `conversations` state, and calls `refreshConversations()` on error;
   - pass it to `<Sidebar onTogglePin>`;
-  - add a header `Toggle` (`LuPin`, `aria-label` and `title` "Pin chat" or "Unpin chat", `aria-pressed` via `pressed`, FR-004a) next to the PDF button, shown when the `activeId` conversation is in the list, with `pressed` derived from its `pinned_at`.
+  - add a header `Toggle` (`LuPin`, `aria-label` and `title` "Pin chat" or "Unpin chat", `aria-pressed` via `pressed`, FR-004a). The header toggle is always visible while a chat is open (never hover-hidden), so it is in the tab order next to the PDF button, shown when the `activeId` conversation is in the list, with `pressed` derived from its `pinned_at`.
 - [X] T018 [US2] Run `npm run build` in `frontend/`, then run the shadcn MCP audit checklist (`get_audit_checklist`) and fix what it flags
 - [X] T019 [US2] Commit the US2 slice after GitNexus `detect-changes --scope all` in the worktree, and check ownership
 
@@ -183,7 +183,7 @@ the phase 2 grant, and move sc-155 to In Progress.
 ## Phase 7: Polish & Cross-Cutting
 
 - [ ] T032 [P] Add one line each for the PATCH endpoint and the `conversation_title` frame to `documentation/ai_guide.md` (after 018 releases the file)
-- [ ] T033 Run quickstart manual checks 1–3 on a scrum-master-assigned port, and check 4 (Postgres migration up, down, up) if a local db is available; record the results in `checkpoint.md`
+- [ ] T033 Run quickstart manual checks 1–3 with the app on port 18019 (Redis on 16319 if needed), and check 4 (Postgres migration up, down, up) in a throwaway `docker run --rm -d` postgres:17 on port 15419 with dummy credentials (no compose, never the owner's `.env`); stop the containers afterwards and record the results in `checkpoint.md`
 - [ ] T034 Run final verification: re-index the worktree (`node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`), run `detect-changes --scope all` (not partial or truncated), check ownership with `git diff --name-only <base>...HEAD`, restore `CLAUDE.md` and `.specify/feature.json`, make the full suite and the build green, then hand off to the scrum master
 
 ---
