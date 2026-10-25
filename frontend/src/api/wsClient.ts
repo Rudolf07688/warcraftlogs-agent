@@ -25,6 +25,8 @@ export type Frame =
   // Feature 019: a chat got its generated title (after its first reply's `done`).
   | { type: "conversation_title"; conversation_id: string; title: string }
   | { type: "model_retry"; attempt: number; max_attempts: number; wait_s: number }
+  // Feature 021: the turn moved to the same-class sibling after a lasting rate limit.
+  | { type: "model_fallback"; from_model: string; to_model: string }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };
 
