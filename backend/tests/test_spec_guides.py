@@ -11,7 +11,7 @@ import asyncio
 
 from sqlalchemy.exc import IntegrityError
 
-from wcl_agent.constants import CLASS_SPECS
+from wcl_agent.game.constants import CLASS_SPECS
 
 from backend.app.db import repository as repo
 from backend.app.db import session as db_session
@@ -174,7 +174,7 @@ async def test_failed_generation_does_not_touch_provenance(session_factory, monk
 
 
 async def test_spec_options_include_devourer():
-    from wcl_agent.tools import get_spec_options
+    from wcl_agent.tools.tools import get_spec_options
 
     options = await get_spec_options("DemonHunter")
     assert options["specs"] == ["Havoc", "Vengeance", "Devourer"]

@@ -32,7 +32,7 @@ from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
-from wcl_agent.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
+from wcl_agent.llm.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
 
 from .config import settings
 from .scratch import TurnScratch
@@ -157,7 +157,7 @@ async def stream_response(
     """Run one turn and yield stream records (see ``_run_turn`` for the record shapes).
 
     Feature 011: the ADK iteration runs in a producer task that feeds an ``asyncio.Queue``;
-    this generator drains it. The model wrapper (``wcl_agent.model_retry``) pushes
+    this generator drains it. The model wrapper (``wcl_agent.llm.model_retry``) pushes
     ``{"type": "model_retry", ...}`` records into the same queue via the per-turn
     ``TurnStats`` installed in ``current_turn``, so a retry status reaches the client while
     the producer is asleep in a backoff. ``retry=False`` makes rate limits fail fast

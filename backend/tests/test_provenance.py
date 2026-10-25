@@ -11,8 +11,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend.tests.wcl_fakes import install
-from wcl_agent import report_tools, tools
-from wcl_agent.provenance import (
+from wcl_agent.tools import report_tools, tools
+from wcl_agent.tools.provenance import (
     Completeness,
     Provenance,
     flatten_report_rankings,
@@ -241,7 +241,7 @@ async def test_leaderboard_pages_after_the_first_are_fetched_together(monkeypatc
     import asyncio
 
     from backend.tests.wcl_fakes import install
-    from wcl_agent.tools import _fetch_rankings
+    from wcl_agent.tools.tools import _fetch_rankings
 
     inflight = peak = 0
 

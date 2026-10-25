@@ -91,7 +91,7 @@ def _generate(model: str, prompt: str) -> str:
     """Blocking one-shot genai call (run via ``to_thread``). Non-web-search."""
     from google.genai import types
 
-    from wcl_agent.vertex import genai_client
+    from wcl_agent.llm.vertex import genai_client
 
     client = genai_client()
     resp = client.models.generate_content(

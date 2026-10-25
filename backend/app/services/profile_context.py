@@ -26,9 +26,9 @@ so behavior is identical to having no profile at all (FR-006, FR-011, SC-003, SC
 
 from __future__ import annotations
 
-from wcl_agent.constants import role_for_spec
-from wcl_agent.guide_meta import BriefRecord
-from wcl_agent.roster import roster_snapshot
+from wcl_agent.game.constants import role_for_spec
+from wcl_agent.guides.guide_meta import BriefRecord
+from wcl_agent.game.roster import roster_snapshot
 
 from ..config import settings
 

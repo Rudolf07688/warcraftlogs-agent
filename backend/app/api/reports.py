@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wcl_agent.benchmark import report_link
+from wcl_agent.tools.benchmark import report_link
 
 from ..auth.dependencies import get_tenant_db, require_session
 from ..db import repository as repo

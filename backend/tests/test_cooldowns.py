@@ -8,8 +8,8 @@ import pytest
 
 from backend.tests.test_guide_meta import MENU_PAYLOAD
 from backend.tests.wcl_fakes import install
-from wcl_agent.cooldowns import get_cooldown_usage, match_uses, opportunities
-from wcl_agent.guide_meta import BriefRecord, GuideCooldown, clear_brief_loader, set_brief_loader
+from wcl_agent.tools.cooldowns import get_cooldown_usage, match_uses, opportunities
+from wcl_agent.guides.guide_meta import BriefRecord, GuideCooldown, clear_brief_loader, set_brief_loader
 
 # --- pure helpers -------------------------------------------------------------------
 

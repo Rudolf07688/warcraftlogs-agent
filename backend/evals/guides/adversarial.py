@@ -39,7 +39,7 @@ async def _old_similar_guide(case: AdversarialCase) -> tuple[bool, str]:
     """An older guide must be labelled possibly stale wherever the agent sees it."""
     from backend.app.services.guide_pipeline.models import CoachingBrief
     from backend.app.services.guide_pipeline.render import render_brief_text
-    from wcl_agent.patch import guide_freshness
+    from wcl_agent.game.patch import guide_freshness
 
     stored = case.inputs["stored_guide"]
     freshness = guide_freshness(stored["patch"], case.inputs["live_patch"])
@@ -105,7 +105,7 @@ async def _new_spec_thin_data(case: AdversarialCase) -> tuple[bool, str]:
 async def _raid_question_only_mplus_brief(case: AdversarialCase) -> tuple[bool, str]:
     """A raid question with only a Mythic+ brief stored gets no brief, not the M+ one."""
     from backend.app.services.content_type import classify_content_type
-    from wcl_agent import guide_meta
+    from wcl_agent.guides import guide_meta
 
     routed = classify_content_type(case.inputs["question"], None, "Mythic+ Season 2", [], [])
     content_type = "raid" if routed == "unknown" else routed

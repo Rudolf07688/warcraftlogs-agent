@@ -13,11 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from google.adk.sessions import DatabaseSessionService
 from sqlalchemy import text
 
-from wcl_agent.cache import CacheFamily, family_ttl, get_or_load, keys
-from wcl_agent.cache_models import ModelCatalog
-from wcl_agent.genai_compat import ensure_genai_serializers_built
-from wcl_agent.guide_meta import set_brief_loader
-from wcl_agent.models import (
+from wcl_agent.cache.cache import CacheFamily, family_ttl, get_or_load, keys
+from wcl_agent.cache.cache_models import ModelCatalog
+from wcl_agent.llm.genai_compat import ensure_genai_serializers_built
+from wcl_agent.guides.guide_meta import set_brief_loader
+from wcl_agent.llm.models import (
     choose_default,
     classes_signature,
     discover_models,
@@ -26,8 +26,8 @@ from wcl_agent.models import (
     log_class_results,
     missing_fixed_models,
 )
-from wcl_agent.vertex import model_location, project_id
-from wcl_agent.wcl_client import aclose_clients
+from wcl_agent.llm.vertex import model_location, project_id
+from wcl_agent.client.wcl_client import aclose_clients
 
 from .agent_runner import set_session_service
 from .api import (
@@ -212,7 +212,7 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
         # Feature 015 / US3: load the live class/spec roster from Warcraft Logs game data
         # (cached 24 h). Optional: without it the static fallback roster is used.
         async def _roster():
-            from wcl_agent.roster import load_roster
+            from wcl_agent.game.roster import load_roster
 
             return await load_roster()
 

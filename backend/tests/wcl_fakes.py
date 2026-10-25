@@ -20,7 +20,7 @@ from typing import Any
 
 import httpx
 
-from wcl_agent import wcl_client
+from wcl_agent.client import wcl_client
 
 Responder = Callable[[str, dict[str, Any]], dict[str, Any] | Awaitable[dict[str, Any]]]
 

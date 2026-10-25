@@ -52,7 +52,7 @@
 - **Findings**: only the parent `wcl_agent` logger is configured
   (`backend/app/main.py` sets INFO on `backend.app` and `wcl_agent`). No child logger is
   named in app code, `.env.example`, `docker-compose.yml`, Alembic config or the
-  Dockerfile. The six `caplog.at_level(logger="wcl_agent.<m>")` strings in tests are
+  Dockerfile. The five `caplog.at_level(logger="wcl_agent.<m>")` strings in tests are
   rewritten by R4. Accepted as no behaviour change (Q3).
 
 ## R6. Proof of no behaviour change

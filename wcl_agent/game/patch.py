@@ -15,7 +15,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from .menu import _default_partition, load_world_zones
+from ..menu import _default_partition, load_world_zones
 
 logger = logging.getLogger(__name__)
 

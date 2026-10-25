@@ -104,8 +104,8 @@ async def test_tenants_share_public_wcl_entries(as_user, monkeypatch, fake_redis
     """WCL data is public: two tenants asking about one report share one entry, and no
     shared ``wcl:`` key names either tenant or user."""
     from backend.tests.wcl_fakes import install
-    from wcl_agent import report_tools
-    from wcl_agent.cache import set_refresh_actor
+    from wcl_agent.tools import report_tools
+    from wcl_agent.cache.cache import set_refresh_actor
 
     report = {"title": "T", "startTime": 1, "endTime": 2, "zone": None, "guild": None,
               "masterData": {"actors": []}, "fights": []}

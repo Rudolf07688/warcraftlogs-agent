@@ -17,12 +17,12 @@ from html.parser import HTMLParser
 
 import httpx
 
-from wcl_agent.cache import CacheFamily, get_or_load, keys
-from wcl_agent.cache_models import HotfixEntry, HotfixFeed, LiveVersion
-from wcl_agent.constants import normalize_class_name, role_for_spec
-from wcl_agent.patch import current_mplus_season, current_patch, current_raid_tier
-from wcl_agent.roster import roster_snapshot
-from wcl_agent.wcl_client import background_lane
+from wcl_agent.cache.cache import CacheFamily, get_or_load, keys
+from wcl_agent.cache.cache_models import HotfixEntry, HotfixFeed, LiveVersion
+from wcl_agent.game.constants import normalize_class_name, role_for_spec
+from wcl_agent.game.patch import current_mplus_season, current_patch, current_raid_tier
+from wcl_agent.game.roster import roster_snapshot
+from wcl_agent.client.wcl_client import background_lane
 
 from ...config import settings
 from .models import ContentType, GenerationBriefing

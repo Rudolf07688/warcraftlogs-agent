@@ -161,7 +161,7 @@ def test_summarize_coaching():
 async def test_case_preamble_uses_only_the_matching_content_type(monkeypatch):
     from backend.tests.test_guide_meta import MENU_PAYLOAD
     from backend.tests.wcl_fakes import install
-    from wcl_agent.guide_meta import BriefRecord, clear_brief_loader, set_brief_loader
+    from wcl_agent.guides.guide_meta import BriefRecord, clear_brief_loader, set_brief_loader
 
     install(monkeypatch, lambda q, v: MENU_PAYLOAD)
 

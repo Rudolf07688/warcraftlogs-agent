@@ -15,7 +15,7 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-from . import wcl_client
+from ..client import wcl_client
 from .benchmark import _casts_table, reduce_casts_entry, source_casts
 from .fight_time import (
     PlayerResolutionError,
@@ -25,10 +25,10 @@ from .fight_time import (
     resolve_player,
     windows_seconds,
 )
-from .guide_meta import GuideCooldown, get_brief
-from .patch import MYTHIC_PLUS_DIFFICULTY_ID, is_mplus_zone_id
+from ..guides.guide_meta import GuideCooldown, get_brief
+from ..game.patch import MYTHIC_PLUS_DIFFICULTY_ID, is_mplus_zone_id
 from .provenance import Completeness, Provenance, with_envelope
-from .aio import gather_settled, unwrap
+from ..client.aio import gather_settled, unwrap
 
 EXCLUDED_WINDOWS_UNKNOWN = ["target immunity outside intermissions"]
 

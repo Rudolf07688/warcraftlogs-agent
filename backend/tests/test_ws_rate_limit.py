@@ -13,7 +13,7 @@ from backend.app.api import ws as ws_mod
 from backend.app.db import repository as repo
 from backend.app.schemas import ChatTurn
 from backend.app.tenancy.context import RequestIdentity
-from wcl_agent.model_retry import ModelRateLimited
+from wcl_agent.llm.model_retry import ModelRateLimited
 
 
 class _FakeSocket:

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app import agent_runner
-from wcl_agent.model_retry import ModelRateLimited, current_turn
+from wcl_agent.llm.model_retry import ModelRateLimited, current_turn
 
 
 def _text_event(text: str, *, partial: bool = False):

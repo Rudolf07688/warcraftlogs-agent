@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from wcl_agent.patch import parse_patch
+from wcl_agent.game.patch import parse_patch
 
 from ...config import settings
 from .authoring import known_evidence_ids

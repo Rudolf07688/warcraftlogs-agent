@@ -50,7 +50,7 @@ async def test_get_greeting_generates_and_caches(monkeypatch):
 
 # --- feature 011 / FR-012: the greeting never waits out a rate limit ----------------------
 
-from wcl_agent.model_retry import ModelRateLimited  # noqa: E402
+from wcl_agent.llm.model_retry import ModelRateLimited  # noqa: E402
 
 
 async def test_generate_greeting_disables_retry(monkeypatch):

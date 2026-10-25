@@ -1,6 +1,6 @@
 """Interactive terminal menu for choosing a raid encounter + difficulty.
 
-One :data:`~wcl_agent.queries.MENU_DISCOVERY` call fetches every zone with its
+One :data:`~wcl_agent.client.queries.MENU_DISCOVERY` call fetches every zone with its
 encounters, difficulties, and partitions; the user then drills down via numbered
 prompts. The returned context dict is stored in the ADK session state so the
 agent's tools know what to analyze.
@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .cache import CacheFamily, get_or_load, keys
-from .cache_models import WorldZones
-from .queries import MENU_DISCOVERY
-from . import wcl_client
+from .cache.cache import CacheFamily, get_or_load, keys
+from .cache.cache_models import WorldZones
+from .client.queries import MENU_DISCOVERY
+from .client import wcl_client
 
 
 async def load_world_zones() -> list[dict[str, Any]]:

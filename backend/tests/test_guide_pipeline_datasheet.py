@@ -11,7 +11,7 @@ from backend.app.services.guide_pipeline import datasheet
 from backend.app.services.guide_pipeline.models import GenerationBriefing
 from backend.tests.test_guide_meta import MENU_PAYLOAD
 from backend.tests.wcl_fakes import install
-from wcl_agent.benchmark import CastsEntry
+from wcl_agent.tools.benchmark import CastsEntry
 
 ZONES = MENU_PAYLOAD["data"]["worldData"]["zones"]
 RAID_ZONE = {**ZONES[2], "encounters": [{"id": 3470, "name": "Nek'zali"}, {"id": 3445, "name": "Sentinels"}]}

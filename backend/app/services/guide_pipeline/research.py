@@ -13,9 +13,9 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from wcl_agent.cache import CacheFamily, get_or_load, keys
-from wcl_agent.cache_models import ResearchCache
-from wcl_agent.patch import parse_patch
+from wcl_agent.cache.cache import CacheFamily, get_or_load, keys
+from wcl_agent.cache.cache_models import ResearchCache
+from wcl_agent.game.patch import parse_patch
 
 from ...config import settings
 from . import llm

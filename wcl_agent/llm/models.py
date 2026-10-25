@@ -34,7 +34,7 @@ from enum import StrEnum
 from typing import Any, Literal, TypeVar
 
 from . import vertex
-from .cache_models import ClassResult, ModelCatalog
+from ..cache.cache_models import ClassResult, ModelCatalog
 from .vertex import CatalogEntry, CatalogUnavailable
 
 T = TypeVar("T")

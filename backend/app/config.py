@@ -14,7 +14,7 @@ from typing import Literal
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from wcl_agent.models import ClassSetting, parse_class_settings
+from wcl_agent.llm.models import ClassSetting, parse_class_settings
 
 # Populate os.environ from a local .env so ADK / wcl_client (which use os.getenv)
 # work in local dev. Harmless in containers/Cloud Run where env is already set.
@@ -76,7 +76,7 @@ class Settings(BaseSettings):
         """Migration-owner URL (falls back to the runtime URL in simple dev setups)."""
         return self.database_owner_url or self.database_url
 
-    # Warcraft Logs (also consumed by wcl_agent.wcl_client via os.getenv)
+    # Warcraft Logs (also consumed by wcl_agent.client.wcl_client via os.getenv)
     wcl_client_id: str = ""
     wcl_client_secret: str = ""
 
@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     # Feature 016: `catalog` builds the dropdown from Vertex's Model Garden catalog (the
     # newest working versions per class, `name:count` in serving order); `static` probes
     # only the lists above, which are also the fallback when the catalog can't be listed.
-    # Where models run is WCL_MODEL_LOCATION (read by wcl_agent.vertex, default global).
+    # Where models run is WCL_MODEL_LOCATION (read by wcl_agent.llm.vertex, default global).
     wcl_model_discovery: str = "catalog"
     wcl_gemini_classes: str = "pro:2,flash:2,flash-lite:2"
     wcl_anthropic_classes: str = "haiku:1,sonnet:1,opus:1"
@@ -136,14 +136,14 @@ class Settings(BaseSettings):
     # count or the total wait budget per model request is spent; other errors fail fast.
     # The round cap is the number of lookup rounds a turn may use before the agent is
     # told to wrap up with the evidence it has. Runners are cached per model, so a change
-    # needs a backend restart. See wcl_agent/model_retry.py.
+    # needs a backend restart. See wcl_agent/llm/model_retry.py.
     wcl_model_retry_attempts: int = 5
     wcl_model_retry_initial_s: float = 2.0
     wcl_model_retry_max_s: float = 30.0
     wcl_model_retry_budget_s: float = 90.0
     wcl_turn_round_cap: int = 6
 
-    # feature 014: shared Redis cache for WCL data (also read by wcl_agent.cache via
+    # feature 014: shared Redis cache for WCL data (also read by wcl_agent.cache.cache via
     # os.getenv; documented here). No REDIS_URL, or WCL_CACHE_ENABLED=false, means no
     # cache: every lookup goes straight to WCL. TTLs are per key family, in seconds; the
     # OAuth token always follows its own expiry. See contracts/config-and-compose.md.
@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     wcl_neg_cache_ttl: int = 60  # "character not found" marker
     wcl_metrics_retention_days: int = 35
 
-    # feature 013: WCL lanes and timeouts (also read by wcl_agent.wcl_client via os.getenv).
+    # feature 013: WCL lanes and timeouts (also read by wcl_agent.client.wcl_client via os.getenv).
     # Background work (guides, patch lookup, recent raids) holds at most this many of the
     # WCL_MAX_CONCURRENCY slots; one query (slot wait + request) is bounded by the timeout.
     wcl_background_concurrency: int = 2

@@ -163,7 +163,7 @@ the code works without them.
   `wcl_agent` (`backend/app/main.py` sets INFO on `backend.app` and `wcl_agent`); no
   child logger is named in app code, `.env.example`, `docker-compose.yml`, Alembic
   config or the Dockerfile; no `python -m wcl_agent.<m>` invocation exists; the only
-  child logger names are six `caplog.at_level(logger=...)` strings in tests. So no
+  child logger names are five `caplog.at_level(logger=...)` strings in tests. So no
   level changes for any logger after the move.
 - **FR-005**: There MUST be no behaviour change: the full backend suite gives the same
   pass/fail/skip/deselect counts as the baseline (926 / 0 / 3 / 1).
