@@ -287,3 +287,4 @@ Each entry gives the date, the question, the answer and the reason.
     trade-off than hiding stored runs. The options for a user-triggered M+ retry are
     recorded on sc-183.
 38. **Q: Does the QA re-check gate need FN-5?** A: No, by the owner's ruling ("don't be perfectionistic"). The gate is FN-1 to FN-4 fixed plus green tests and build: PASS. The FN-5 doc edits went to qa-deferred sc-193.
+39. **Correction to 38:** FN-5 was in the end done directly by the scrum master in 9636d39, as a final touch with no gate (team-lead instruction). sc-193 is covered by that commit and moved to Under Review in iteration 161.

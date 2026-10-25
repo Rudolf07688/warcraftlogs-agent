@@ -96,3 +96,5 @@ New findings from the fixes:
 (1064/3/1) and the build are green at c58b281. FN-5 is cancelled and became qa-deferred
 **sc-193** (1 pt, Lowest). New since the first sweep: one ticket (sc-193) and two
 breadcrumbs (sc-183, sc-185).
+
+**Update:** FN-5 was done in 9636d39 (scrum master, no gate). sc-193 is covered by that commit and is now Under Review. Final head: 0711283.
