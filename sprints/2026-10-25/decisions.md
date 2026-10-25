@@ -123,3 +123,45 @@ Each entry gives the date, the question, the answer and the reason.
     private `suggestions._get_client` / `_SUGGEST_MODEL`. A public accessor would be
     cleaner. Live tests for the owner: the pin UI in a browser, and a real generated
     title (needs model credentials).
+
+## 2026-10-25: Feature 022 (welcome M+ runs) clarify answers
+
+19. **Q1: What counts as one M+ run?** A: One keystone fight (report code + fight id),
+    not one report. Runs are de-duplicated across the user's own characters, and each
+    entry names the character(s) in it.
+    Why: one report often holds several keys, so "6 runs" should mean 6 keys.
+20. **Q2: Which runs are listed, and what counts as "timed"?** A: Only finished keys
+    (keystoneLevel > 0, with a result) are listed. "Timed" means keystoneBonus ≥ 1.
+    Depleted but finished runs are listed as not timed. Abandoned or incomplete runs
+    are not listed.
+    Why: abandoned keys are noise on a welcome page, and there's little to review in
+    them.
+21. **Q3: What does clicking a run do?** A: Open a new chat with a separate
+    server-owned M+ kickoff prompt, built the same way as `kickoff_prompt_for` (report
+    code, fight, dungeon, key level). The chat gets the explicit title
+    "M+ <dungeon> +<level>", which marks it as explicit (019).
+    Content: a bounded review, mirroring the raid kickoff's feature 011 scope rule,
+    covering:
+    - the result against the timer (timed, depleted, by how much)
+    - per pull or boss segment, the single biggest time loss
+    - deaths (who, to what, and whether avoidable)
+    - interrupt/kick coverage
+    - one headline improvement for the user's character
+    Stay at the run and segment level; go into cast-level detail only where a segment
+    clearly warrants it.
+
+## 2026-10-25: Feature 020 acceptance
+
+22. **Q: Accept 020 (sc-127, sc-128)?** A: ACCEPT.
+    Checked myself: pytest gives 1008 passed / 3 skipped / 1 deselected, and the 0013
+    migration sits on 0012. I read the client sink, the writer and the upsert. The sink
+    is offered only after the success and error checks, and it's O(1) with a no-op when
+    unset. The queue is bounded by items and bytes, dropping the newest. Writes time
+    out and errors are logged. The upsert keeps the newer fetched_at, and the payload
+    is decoded in the database.
+    Design change approved: the report codes live in their own `report_codes` JSONB
+    column with a GIN index, not inside params. This meets the condition of entry 17
+    better, because params stays exactly the variables sent and can be replayed.
+    Notes for the QA sweep, non-blocking: `raw_fetches.py` imports the private
+    `repository._insert`. A report_code literal over 32 characters fails only that
+    row's write (logged).
