@@ -612,7 +612,11 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
   with a result). Caps: `RECENT_RAIDS_SHOWN=6`, `RECENT_MPLUS_SHOWN=6`.
   `POST /api/recent-raids/mplus/{report_code}/{fight_id}/investigate` starts the chat. The
   summary cache key is `wcl:v1:report:{code}:summary:keystone` (the suffix, not a `v2`,
-  retired summaries cached before the keystone fields).
+  retired summaries cached before the keystone fields). Only the raid step can fail a
+  refresh: an M+-only failure (a WCL error or timeout in the M+ step) is logged and the
+  refresh still records `succeeded`, so stored raids and runs stay visible (decisions 36
+  and 37). This is intentional; don't surface it as a refresh failure without a separate
+  retry path.
 - **UI**: `WelcomePanel.tsx` renders in a new chat under Barnaby's greeting, through
   `MessageList`'s `footer` slot. It polls every 3 s while a refresh runs (paused when the
   tab is hidden, gives up after 3 minutes).

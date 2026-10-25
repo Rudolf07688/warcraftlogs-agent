@@ -310,6 +310,10 @@ tracked raid in the sidebar.
   moves to a *Pinned* group on top.
 - **Generated titles** (feature 019): after the first completed exchange a chat that still
   has its default name gets a short generated title; chats named earlier keep their names.
+- **Raw fetch store** (feature 020): every successful Warcraft Logs response is stored in the
+  global `raw_fetches` table by a bounded background writer, so a fetch never waits on it.
+  Settings: `WCL_FETCH_PERSIST_ENABLED` (default on), `WCL_FETCH_PERSIST_QUEUE_MAX` (500
+  responses) and `WCL_FETCH_PERSIST_QUEUE_MB` (64 MB). Nothing reads the table yet.
 - The refresh claim is a database row, so only one instance refreshes a workspace at a
   time, and a refresh that never finishes is reclaimed after 5 minutes. **Retry** appears
   when a refresh fails.

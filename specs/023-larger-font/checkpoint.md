@@ -1,6 +1,7 @@
 # Checkpoint: 023 larger font
 
-Commits: 9e30fe8 (36 font-size px to rem, exact), 0c62d18 (html root 106.25%).
+Commits: 9e30fe8 (36 font-size px to rem, exact), 0c62d18 (html root 17px), 8a8ce50 (root
+changed to 106.25%, which is 17px at the default and keeps the user's font-size preference).
 Sidebar.tsx:154 now uses `text-[0.6875rem]` (8cd7d2f); nothing open.
 
 ## AC 2 layout check (throwaway Postgres/Redis/uvicorn/vite stack, logged in, seeded fixtures, headless Chrome via CDP)
