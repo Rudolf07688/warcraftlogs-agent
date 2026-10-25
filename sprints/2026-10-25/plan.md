@@ -1,7 +1,8 @@
 # Sprint 2026-10-25 plan
 
 Product owner: `product-owner`. Sprint branch: `sprint-2026-10-25` (base `4923785`).
-Point target 21 (19–23). **Planned: 22 points** in 5 features, plus 1 stretch point.
+Point target 21 (19–23). **Planned: 22 points** in 5 features, plus 1 stretch point. The stretch point (sc-152)
+was pulled in on 2026-10-25, which makes the sprint 23 points.
 
 > Revision 2 (2026-10-25): the owner's new QA rule (QA tickets get the `qa-deferred`
 > label and rank below all non-QA work) took sc-156/157/158/159 out of the sprint. Their

@@ -204,3 +204,13 @@ Each entry gives the date, the question, the answer and the reason.
     Follow-up idea for later, not filed now: expose keystone level/bonus/time in
     `get_report_fights`, so an M+ review can quote the timer without an extra fetch. It
     fits sc-163 (playbooks).
+
+## 2026-10-25: Stretch pull-in
+
+29. **Q: Track B is idle after 022. Do we pull in the stretch sc-152 (larger default
+    font, 1 pt)?** A: Yes. It moves to Shortlist with iteration 161, Priority Highest.
+    The sprint becomes 23 points, still inside the 19–23 range.
+    Why: it's isolated CSS with no overlap with 021. Acceptance: the base size goes up
+    one step; no horizontal overflow or clipped text at 1280px and 390px in the sidebar,
+    composer, welcome panel (raid and M+ cards) and chat messages; the frontend build
+    is green.
