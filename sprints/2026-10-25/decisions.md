@@ -260,3 +260,13 @@ Each entry gives the date, the question, the answer and the reason.
     tool calls (the thought-signature bypass is unverified), and the notice is
     live-only by design. Claude signatures aren't handled, which is moot while no
     Claude class has a sibling.
+
+## 2026-10-25: QA fix acceptance
+
+35. **Q: Accept fix 025 (FN-3 BUG-001, FN-4 docs)?** A: ACCEPT at 21c928d.
+    The 0012 fix wraps the Postgres backfill in NO FORCE … FORCE, inside Alembic's one
+    transaction (env.py `begin_transaction`). It was verified on Postgres 17 with a
+    NOSUPERUSER NOBYPASSRLS owner: the old code left the rows at `auto`, the fixed code
+    sets them to `legacy` with FORCE restored, and an injected failure rolls everything
+    back. The migration tests pass 3/3. The docs cover SPEC-003, 004, 005, 007 and 009.
+    SPEC-008 and the 022 checkpoint wording belong to 024.
