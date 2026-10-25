@@ -9,7 +9,7 @@
 | Base ref | `sprint-2026-10-25` tip (see `git -C /home/rudolf/dev/wcl-worktrees/sprint rev-parse sprint-2026-10-25`; the worktree is detached there) |
 | Model / effort | opus / high |
 | Shortcut stories | sc-150 (5) |
-| Peer developer | `dev-b-019` (track B, security hardening; no shared files) |
+| Peer developer | `dev-b-019-v2` (track B, sidebar & conversations, feature 019; replaces the withdrawn security brief) |
 | Scrum master | `scrum-master` (your only channel upward) |
 | Plan | `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-25/plan.md` (section F1) |
 | Ownership ledger | `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-25/ownership.md` |
@@ -73,11 +73,13 @@ story, so speed matters, but not at the cost of AC 4 (identical test counts).
 - **Not yours:** `CLAUDE.md`, `AGENTS.md` and `todo.md` belong to the scrum master. If
   they need path updates (`todo.md` mentions `wcl_agent`), send me the exact lines and I
   will make the change. `specs/0xx` historical files are left alone (AC 7).
-- **Off limits (track B, feature 019):** `frontend/**`, `backend/app/api/auth.py`,
-  `backend/app/services/auth_service.py`, `backend/app/auth/rate_limit.py`,
-  `backend/Dockerfile`, `docker-compose.yml`, `.env.example`, and the auth and
-  rate-limit tests. None of them import `wcl_agent` at base. If one must change for
-  your feature, ask me first.
+- **Off limits (track B, feature 019 sidebar, revised plan):** `frontend/**`,
+  `backend/app/api/conversations.py`, `backend/app/db/models.py`,
+  `backend/app/db/repository.py`, migration `0012_*`, and the new conversation test
+  files. None of them reference `wcl_agent` at base. You keep `backend/app/schemas.py`,
+  `backend/app/api/ws.py` and `backend/app/agent_runner.py` (import lines only). 019
+  gets them after you merge, so keep your edits there to import lines.
+- **No security work this sprint.** The plan was revised: sc-157 and sc-158 are out.
 
 ## Notes from the scrum master
 
