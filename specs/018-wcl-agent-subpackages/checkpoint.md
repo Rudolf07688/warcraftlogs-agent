@@ -17,3 +17,17 @@
 - Before each commit: `git checkout -- CLAUDE.md .specify/feature.json` (scrum master's
   files; `.specify/feature.json` is modified locally to point at this spec dir).
 - Implementation starts at T001 in `tasks.md`.
+
+## Status 2026-10-25 (implementation done)
+
+- T001–T023 done; T024 = hand-off message to the scrum master.
+- Commits on the branch: f176dc2, 7563479, 4393362, da37290 (spec/plan/tasks),
+  cb9367a (moves + imports), bc112ef (docs), plus this checkpoint/tasks commit.
+- Results: suite 926 passed / 3 skipped / 1 deselected (= baseline); `import_smoke.py`
+  33 modules, 0 failed; `ast_refs.py` 213 files, 229 imports, 10 strings, 0 findings;
+  old-path grep 0 hits; 22/22 moved files keep history (`--follow` = base + 1);
+  `wcl` / `python main.py` output and exit code 1 identical to base; image builds and all
+  33 modules import inside it; boot on 18018 reached `ready` (roster fallback 40 specs,
+  models degraded: 2 static fallback models, no Vertex creds).
+- Slice 1 was not committed on its own (the backend was broken in between), so the code
+  lands as one commit, cb9367a.
