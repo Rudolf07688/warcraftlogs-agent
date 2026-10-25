@@ -75,7 +75,7 @@ body.resizing {
 
 .sidebar-empty {
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 8px;
 }
 
@@ -103,13 +103,13 @@ body.resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 /* Sidebar sections (Raids + Conversations) */
 .sidebar-section-label {
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.06em;
   color: var(--text-dim);
   padding: 4px 8px 0;
@@ -146,7 +146,7 @@ body.resizing {
 }
 
 .raid-label {
-  font-size: 14px;
+  font-size: 0.875rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -154,19 +154,19 @@ body.resizing {
 }
 
 .raid-when {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-dim);
 }
 
 .partial-note {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: #d98a00;
 }
 
 .grounding-note {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-dim);
 }
 
@@ -180,7 +180,7 @@ body.resizing {
 
 .followup-chip {
   max-width: 100%;
-  font-size: 13px;
+  font-size: 0.8125rem;
   text-align: left;
   background: var(--bg-elev-2);
   color: var(--text);
@@ -228,7 +228,7 @@ body.resizing {
 }
 
 .conn {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .conn.online {
@@ -289,7 +289,7 @@ body.resizing {
 }
 
 .message-role {
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-dim);
@@ -304,7 +304,7 @@ body.resizing {
 }
 
 .tool-chip {
-  font-size: 12px;
+  font-size: 0.75rem;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -376,7 +376,7 @@ body.resizing {
 
 /* --- Markdown rendering (agent messages) --- */
 .markdown {
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   line-height: 1.6;
 }
 
@@ -630,7 +630,7 @@ body::after {
 }
 .chart-loading {
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 20px;
   text-align: center;
 }
@@ -643,7 +643,7 @@ body::after {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
 }
 .message-report-btn:hover {
@@ -669,7 +669,7 @@ body::after {
 }
 .profile-page-title {
   margin: 0;
-  font-size: 30px;
+  font-size: 1.875rem;
   letter-spacing: 0.04em;
   color: var(--wow-gold-bright);
   text-shadow: 0 0 18px rgba(200, 170, 110, 0.25), 0 1px 0 rgba(0, 0, 0, 0.6);
@@ -715,7 +715,7 @@ body::after {
 .boot-glyph {
   position: relative;
   z-index: 1;
-  font-size: 26px;
+  font-size: 1.625rem;
   color: var(--wow-gold-bright);
   animation: boot-pulse 1.8s ease-in-out infinite;
 }
@@ -736,14 +736,14 @@ body::after {
 }
 .boot-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
 .boot-sub {
   margin: 0;
   color: var(--text-dim);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.45;
   max-width: 44ch;
 }
@@ -760,7 +760,7 @@ body::after {
   flex-direction: column;
   gap: 6px;
   text-align: left;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .boot-step {
   display: grid;
@@ -794,10 +794,10 @@ body::after {
 }
 .boot-step-glyph {
   text-align: center;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .boot-step-detail {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-dim);
   max-width: 22ch;
   overflow: hidden;
@@ -812,7 +812,7 @@ body::after {
 .boot-elapsed,
 .boot-hint {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-dim);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -840,7 +840,7 @@ body::after {
 .welcome-panel-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 1.0625rem;
   letter-spacing: 0.03em;
   color: var(--primary);
 }
@@ -848,7 +848,7 @@ body::after {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 .raid-grid {

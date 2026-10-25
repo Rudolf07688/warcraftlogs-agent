@@ -151,7 +151,7 @@ function SidebarImpl({
           )}
           {pinned.length > 0 && (
             <div role="group" aria-label="Pinned chats" className="flex flex-col gap-1">
-              <div className="px-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+              <div className="px-2 text-[0.6875rem] uppercase tracking-wider text-muted-foreground">
                 Pinned
               </div>
               {pinned.map(renderConversation)}
