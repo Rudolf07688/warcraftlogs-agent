@@ -80,7 +80,8 @@ c06e514. Tests: 1064 passed / 3 skipped / 1 deselected; tsc clean.
 | SPEC-003 (FN-4) | Partially fixed: README lacks feature 020 (raw_fetches, the `WCL_FETCH_PERSIST_*` settings) |
 
 New findings from the fixes:
-- **Fix now, FN-5 (docs only):** SPEC-003 remainder; SPEC-R01 (ai_guide §18 must say that an
+- **FN-5 (docs only), first marked fix now, then deferred by the owner's ruling (no new fix
+  round unless critical): created qa-deferred sc-193.** Original note: SPEC-003 remainder; SPEC-R01 (ai_guide §18 must say that an
   M+-only failure is logged and the refresh records `succeeded`, per decision 36, or a
   future agent may "fix" it and bring back SPEC-001); SPEC-R02 (the 023 checkpoint should
   attribute `106.25%` to 8a8ce50, not 0c62d18). Fix now because SPEC-R01 guards against a
@@ -90,3 +91,8 @@ New findings from the fixes:
   for BUG-001's failure mode went to **sc-185** as a breadcrumb. No new tickets, no merges.
 - **Product ruling on BUG-R03:** the next due refresh retries an M+-only failure. That's
   accepted for this sprint (it extends decision 36), and options are noted on sc-183.
+
+**Final gate (owner ruling, 2026-10-25):** PASS. FN-1 to FN-4 are verified fixed, and tests
+(1064/3/1) and the build are green at c58b281. FN-5 is cancelled and became qa-deferred
+**sc-193** (1 pt, Lowest). New since the first sweep: one ticket (sc-193) and two
+breadcrumbs (sc-183, sc-185).

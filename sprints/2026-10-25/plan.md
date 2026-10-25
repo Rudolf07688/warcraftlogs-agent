@@ -307,3 +307,4 @@ work.
 | 57 | sc-184 QA web search after fallback (`qa-deferred`) | 2 | Lowest | QA tier; needs a live check first. |
 | 58 | sc-182 QA M+ refresh efficiency (`qa-deferred`) | 2 | Lowest | QA tier. |
 | 59 | sc-181 QA sidebar activity order (`qa-deferred`) | 1 | Lowest | QA tier; predates the sprint. |
+| 60 | sc-193 QA sprint doc follow-ups (`qa-deferred`) | 1 | Lowest | QA tier; three doc lines, including the SPEC-R01 regression guard in ai_guide. |
