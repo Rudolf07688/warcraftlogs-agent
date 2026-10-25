@@ -10,6 +10,7 @@ import {
   getModels,
   getRaids,
   investigateRaid,
+  investigateMplusRun,
   listConversations,
   updateConversation,
 } from "./api/restClient";
@@ -458,15 +459,41 @@ export default function App() {
     }
   }, [sendText, refreshRaids]);
 
+  const handleInvestigateMplus = useCallback(
+    async (reportCode: string, fightId: number) => {
+      if (streamingRef.current) return;
+      setError(null);
+      try {
+        const resp = await investigateMplusRun(reportCode, fightId, modelRef.current || undefined);
+        activeIdRef.current = resp.conversation_id;
+        setActiveId(resp.conversation_id);
+        setMessages([]);
+        setModel(resp.model);
+        modelRef.current = resp.model;
+        sendText(resp.kickoff_prompt, {
+          conversationId: resp.conversation_id,
+          model: resp.model,
+        });
+      } catch {
+        setError("Could not start the investigation. Is the backend up?");
+      }
+    },
+    [sendText],
+  );
+
   // Feature 013: a fresh chat (no question asked yet) shows the user's recent raids under
   // Barnaby's greeting. Memoized so MessageList's memo holds across App re-renders.
   const showWelcome = activeId === null && !streaming && !messages.some((m) => m.role === "user");
   const welcome = useMemo(
     () =>
       showWelcome ? (
-        <WelcomePanel onInvestigate={handleInvestigateRaid} disabled={streaming} />
+        <WelcomePanel
+          onInvestigate={handleInvestigateRaid}
+          onInvestigateMplus={handleInvestigateMplus}
+          disabled={streaming}
+        />
       ) : undefined,
-    [showWelcome, handleInvestigateRaid, streaming],
+    [showWelcome, handleInvestigateRaid, handleInvestigateMplus, streaming],
   );
 
   const openProfile = useCallback(() => navigate("/profile"), [navigate]);

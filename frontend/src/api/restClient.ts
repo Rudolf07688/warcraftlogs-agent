@@ -188,6 +188,19 @@ export async function investigateRaid(
   );
 }
 
+export async function investigateMplusRun(
+  reportCode: string,
+  fightId: number,
+  model?: string,
+): Promise<InvestigateResponse> {
+  return send(
+    "POST",
+    `/api/recent-raids/mplus/${encodeURIComponent(reportCode)}/${fightId}/investigate`,
+    { model: model ?? null },
+    { csrf: true },
+  );
+}
+
 // Feature 013: the welcome page's recent raids. The GET never waits for Warcraft Logs; it
 // may start a background refresh, reported in `refresh.status`.
 export async function getRecentRaids(): Promise<RecentRaidsResponse> {
