@@ -283,6 +283,10 @@ work.
 | 39 | sc-124 Log upload endpoint and storage | 2 | Low | After the spike. |
 | 40 | sc-125 Log upload UI with progress | 2 | Low | After sc-124. |
 | 41 | sc-126 Ingest uploaded logs for the agent | 5 | Low | Ingests into the stored-fetch shape (127/130), so after them. |
+| 41a | sc-171 wcl_agent follow-ups: de-stutter module names, move load_world_zones | 2 | Low | Raised during 018. Cheap while the new layout is fresh, but no feature waits on it. |
+| 41b | sc-173 Add ruff with isort rules | 2 | Low | Raised during 018. Mechanical lint guard; 28 existing findings. |
+| 41c | sc-172 ai_guide.md stale facts | 1 | Low | Raised during 018. Docs only. |
+| 41d | sc-174 Perf test test_wcl_loop_lag fails under -m perf | 1 | Low | Raised during 018. Fails at base too; the perf suite is opt-in. |
 | 42 | sc-119 (Long term) Sandboxed execution service | 5 | Lowest | Long term; only needed for the REPL. |
 | 43 | sc-120 (Long term) REPL tool for sub-agents | 5 | Lowest | Needs sc-116 and sc-119. |
 | 44 | sc-121 (Long term) Load log data into the REPL | 2 | Lowest | Needs sc-120 and the stored data. |

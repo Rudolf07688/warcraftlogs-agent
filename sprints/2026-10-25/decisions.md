@@ -80,3 +80,16 @@ Each entry gives the date, the question, the answer and the reason.
 13. **Q5: Are chats that predate this feature renamed?** A: No. Generation fires only
     on a chat's first complete reply, so old chats keep their names.
     Why: no heuristic, so there's no risk of renaming an old raid investigation.
+
+## 2026-10-25: Feature 018 acceptance
+
+14. **Q: F1 AC 6 asks for `wcl --help` and `python main.py --help`, but neither has a
+    --help flag at base. Is that a failure?**
+    A: No. The AC's intent is that the entry points still work. The output is
+    byte-identical to base (it reports the missing env vars and exits 1), and the image
+    builds and boots to ready. AC 6 is met.
+15. **Q: Are the restructure follow-ups the developer noted filed?**
+    A: Yes, as Backlog stories at Low priority: sc-171 (de-stutter `cache/cache.py` and
+    `tools/tools.py`, move `load_world_zones`), sc-172 (stale facts in ai_guide), sc-173
+    (ruff and isort), sc-174 (the perf test that fails at base). They aren't QA
+    findings, so they don't get the qa-deferred label.
