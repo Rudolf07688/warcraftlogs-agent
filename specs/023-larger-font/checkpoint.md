@@ -1,7 +1,7 @@
 # Checkpoint: 023 larger font
 
-Commits: 9e30fe8 (36 font-size px to rem, exact), 0c62d18 (html root 17px).
-Open: Sidebar.tsx:154 `text-[11px]` awaits a grant.
+Commits: 9e30fe8 (36 font-size px to rem, exact), 0c62d18 (html root 106.25%).
+Sidebar.tsx:154 now uses `text-[0.6875rem]` (8cd7d2f); nothing open.
 
 ## AC 2 layout check (throwaway Postgres/Redis/uvicorn/vite stack, logged in, seeded fixtures, headless Chrome via CDP)
 

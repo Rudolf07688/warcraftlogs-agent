@@ -23,7 +23,7 @@ Only these 6 key families are in scope. Adding a seventh needs a measured reason
 | `char_id` | `wcl:v1:char_id:{region}:{realm}:{name_lc}` | `{id, name, realm, region, class}` | 24h | Name-to-ID lookup is needed by nearly every question. |
 | `char_overview` | `wcl:v1:char:{id}:overview` | Normalized gear, progress and parse summary | 10m | Most common question, moderately volatile. |
 | `char_reports` | `wcl:v1:char:{id}:reports:{limit}` | List of `{code, title, startTime, zone}` | 5m | Changes when new logs are uploaded. |
-| `report_summary` | `wcl:v1:report:{code}:summary` | Fights, bosses, kills and wipes, roster | 24h | Finished reports are effectively immutable. |
+| `report_summary` | `wcl:v1:report:{code}:summary:keystone` | Fights, bosses, kills and wipes, roster | 24h | Finished reports are effectively immutable. |
 | `report_player` | `wcl:v1:report:{code}:player:{id}` | Per-player damage, healing, deaths and top abilities | 24h | Answers most "how did I do" follow-ups. |
 | `oauth_token` | `wcl:v1:oauth:token` | Access token | `expires_in - 60s` | Avoids a token request on every call. |
 

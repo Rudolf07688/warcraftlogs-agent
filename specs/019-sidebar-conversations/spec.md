@@ -192,8 +192,9 @@ investigation: its raid name stays.
 
 - **FR-012**: After the first complete reply in a chat whose name is still a default
   (the first-message excerpt the app sets today, or "New chat"), the system MUST
-  generate a short title from the first user message and that reply, and rename the
-  chat to it.
+  generate a short title from the user message and reply of the first completed
+  exchange, and rename the chat to it. (Amended 2026-10-25: if the first turn fails, the
+  title comes from the next completed exchange.)
 - **FR-013**: A generated title MUST be plain text, at most 60 characters, with no
   surrounding quotes, no markdown, and no line breaks. An empty result after cleaning
   MUST leave the current name unchanged.

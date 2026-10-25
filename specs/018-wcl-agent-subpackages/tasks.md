@@ -56,7 +56,7 @@ proof is the baseline count match plus the two one-off checks in `checks/`.
 - [X] T021 Boot to ready: throwaway `docker run --rm -d` Postgres on 15418 and Redis on 16318, `uv run uvicorn backend.app.main:app --port 18018` with dummy WCL values and no Vertex credentials; `/api/health` ready; record the model source; stop the containers
 - [X] T022 Confirm `git diff --name-only <base>...HEAD` lists only granted files and `uv.lock` / `pyproject.toml` are untouched; restore `.specify/feature.json` and `CLAUDE.md` before each commit
 - [X] T023 Re-index the worktree with GitNexus and run `detect-changes --scope all`; run the full suite, `import_smoke.py` and `ast_refs.py` one last time
-- [ ] T024 Write the backlog list (renames `cache/cache.py`, `tools/tools.py`; anything else spotted) and send the hand-off to the scrum master
+- [X] T024 Write the backlog list (renames `cache/cache.py`, `tools/tools.py`; anything else spotted) and send the hand-off to the scrum master
 
 ## Dependencies
 
