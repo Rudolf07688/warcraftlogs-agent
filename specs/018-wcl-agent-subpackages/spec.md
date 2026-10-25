@@ -10,6 +10,29 @@
 
 Shortcut: sc-150 (5 points). Sprint plan section F1. Decisions 1 and 2 (no shims).
 
+## Clarifications
+
+### Session 2026-10-25
+
+Answered by the scrum master (technical questions; spec signed off on condition of
+changes 1–4, which are applied below).
+
+- Q: Package layout? → A: `client/`, `cache/`, `tools/`, `guides/`, `llm/`, `game/`;
+  `agent.py`, `cli.py`, `menu.py`, `__init__.py` stay at the top level.
+- Q: Keep module basenames (`wcl_agent.cache.cache`, `wcl_agent.tools.tools`) or rename? →
+  A: Keep basenames; renames go on the backlog list.
+- Q: Logger names that follow `__name__` change; is that a behaviour change? → A: No,
+  accepted. Every logger-name string anywhere is updated (FR-004).
+- Q: Frontend comment naming `wcl_agent/constants.py`? → A: Granted to this feature:
+  `frontend/src/lib/classColors.ts`, the line-2 comment only.
+- Q: Which docs are living? → A: `README.md`, `documentation/ai_guide.md`,
+  `documentation/live_model_probe.md`. Everything else listed is historical. The scrum
+  master strikes `todo.md` line 31 when sc-150 is done.
+- Change 1: `wcl_agent.cache` and `wcl_agent.tools` become packages, so a stale import of
+  those two names still succeeds; an AST check guards it (FR-012, SC-006).
+- Change 2–4: FR-004 covers every logger-name string, `backend/evals/**`, non-Python
+  references, and the `classColors.ts` comment.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The "users" of this feature are the developers (human and agent) who change the agent code,
@@ -36,8 +59,14 @@ commits.
    the mapping table, each with an `__init__.py`.
 2. **Given** any moved module, **When** `git log --follow` runs on its new path, **Then**
    the commits from before the move are listed.
-3. **Given** the old flat paths (e.g. `wcl_agent/wcl_client.py`), **When** anything tries
-   to import them, **Then** the import fails: no module or re-export is left at an old path.
+3. **Given** the old flat paths, **When** anything tries to import one of the 20 moved
+   modules whose name is not reused (e.g. `wcl_agent.wcl_client`), **Then** the import
+   fails: no module or re-export is left at an old path.
+4. **Given** `wcl_agent.cache` and `wcl_agent.tools`, which now name packages, **When**
+   code uses an old attribute path such as `wcl_agent.cache.get_or_load` or
+   `wcl_agent.tools.find_encounter`, **Then** it fails (the packages export
+   nothing), and the AST check of FR-012 reports zero imports that bind either package as
+   a module object.
 
 ---
 
@@ -122,10 +151,20 @@ the code works without them.
   and new sub-package `__init__.py` files MUST NOT re-export anything (a one-line package
   docstring is allowed).
 - **FR-004**: Every reference to a moved module MUST be updated: absolute and relative
-  imports in `wcl_agent/**`, imports in `backend/**` (app, tests, evals) and `main.py`,
-  lazy imports inside functions, dotted strings passed to `monkeypatch.setattr` /
-  `mock.patch`, `caplog` logger names, file-path checks in tests, and comments/docstrings
-  that name an old module path (`wcl_agent.x` or `wcl_agent/x.py`).
+  imports in `wcl_agent/**`, imports in `backend/**` (app, tests, `backend/evals/**`) and
+  `main.py`, lazy imports inside functions, dotted strings passed to
+  `monkeypatch.setattr` / `mock.patch`, every logger-name string (`caplog` logger names,
+  `getLogger("wcl_agent.<m>")`, `setLevel` targets, logging config, `.env.example`,
+  `docker-compose.yml`, docs), file-path checks in tests, non-Python references
+  (`python -m wcl_agent.<m>` in docs or scripts, Alembic and ADK config), and
+  comments/docstrings that name an old module path (`wcl_agent.x` or `wcl_agent/x.py`),
+  including the line-2 comment of `frontend/src/lib/classColors.ts`.
+  Findings at base (2026-10-25): the only logger configured in code is the parent
+  `wcl_agent` (`backend/app/main.py` sets INFO on `backend.app` and `wcl_agent`); no
+  child logger is named in app code, `.env.example`, `docker-compose.yml`, Alembic
+  config or the Dockerfile; no `python -m wcl_agent.<m>` invocation exists; the only
+  child logger names are six `caplog.at_level(logger=...)` strings in tests. So no
+  level changes for any logger after the move.
 - **FR-005**: There MUST be no behaviour change: the full backend suite gives the same
   pass/fail/skip/deselect counts as the baseline (926 / 0 / 3 / 1).
 - **FR-006**: Every `wcl_agent` module and `backend.app.main` MUST import without error;
@@ -135,13 +174,20 @@ the code works without them.
 - **FR-008**: The backend container image MUST build (the Dockerfile copies `wcl_agent/`
   as a directory and needs no change), and the app MUST boot to ready on `/api/health`.
 - **FR-009**: `README.md`, `documentation/ai_guide.md` (including the §4 file map) and
-  `documentation/live_model_probe.md` MUST name the new paths. Historical files
+  `documentation/live_model_probe.md` MUST name the new paths, as must the line-2
+  comment of `frontend/src/lib/classColors.ts`. Historical files
   (`specs/0xx`, `documentation/designs/*`, `documentation/delivery/*`,
   `documentation/wow_guide_grounding_plan_v2.md`) are left alone.
 - **FR-010**: The diff MUST contain only moves, import/reference edits, the new empty
   `__init__.py` files and doc path edits. Improvements spotted on the way go to the
   backlog list in the hand-off, not into the diff.
 - **FR-011**: No dependency changes: `uv.lock` MUST be unchanged.
+- **FR-012**: A one-off AST check MUST walk `wcl_agent/**`, `backend/**` and `main.py`,
+  resolve every `from wcl_agent... import name` / `import wcl_agent...` against the new
+  tree (the name must be a module or an attribute that exists), resolve every dotted
+  `wcl_agent.x.y` string literal the same way, and report zero imports that bind the
+  `wcl_agent.cache` or `wcl_agent.tools` package as a module object. Its output goes in
+  the hand-off notes. This guard is what makes keeping those two names safe.
 
 ### Module mapping (old → new)
 
@@ -196,11 +242,14 @@ WoW reference data, which fits none of the story's five areas.
 - **SC-001**: The backend suite reports 926 passed, 3 skipped, 1 deselected, 0 failed,
   identical to the baseline.
 - **SC-002**: 0 references to an old flat module path remain in `wcl_agent/**`,
-  `backend/**`, `main.py`, `pyproject.toml` and the living docs (text search).
+  `backend/**`, `main.py`, `pyproject.toml`, the living docs and the `classColors.ts`
+  comment (text search).
 - **SC-003**: 100% of `wcl_agent` modules plus `backend.app.main` import without error.
 - **SC-004**: All 22 moved files show their pre-move history under `git log --follow`.
 - **SC-005**: `wcl --help`, `python main.py --help`, the image build and the boot to
   ready all succeed (or, where the host can't run one, the hand-off says so explicitly).
+- **SC-006**: The FR-012 AST check reports 0 unresolved imports, 0 unresolved dotted
+  strings and 0 module-object imports of `wcl_agent.cache` / `wcl_agent.tools`.
 
 ## Assumptions
 
@@ -214,8 +263,8 @@ WoW reference data, which fits none of the story's five areas.
   handlers apply as before. Only the logger name printed in each line differs.
 - Frontend comments that name `wcl_agent/constants.py` and `wcl_agent/agent.py`
   (`frontend/src/lib/classColors.ts`, `frontend/src/lib/spells.ts`) sit in track B's
-  area. `agent.py` does not move; the `constants.py` comment needs one path edit, done
-  only with a grant (see open question).
+  area. `agent.py` does not move, so `spells.ts` needs nothing; the `classColors.ts`
+  line-2 comment is granted to this feature (comment only).
 - `todo.md` line "Unstructured directory `./wcl_agent/*.py`" is this story's source
   bullet; it is the scrum master's to strike after Done, not a path to rewrite.
 - The Dockerfile `COPY wcl_agent ./wcl_agent` and `pyproject.toml`
