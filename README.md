@@ -239,6 +239,10 @@ allowance. The app now:
   retries are disabled so waits never nest. While waiting, the chat status reads
   *"Model busy — retrying (n of N)…"*. When the budget is spent the turn ends with a
   plain-language `rate_limited` error and no partial reply is saved; just resend.
+- **Falls back to the sibling model on a lasting 429** (feature 021): when a class has two
+  models, the turn switches once to the other one and the chat shows a switch notice. If
+  there is no sibling the message above is shown; if the sibling is busy too it reads
+  *"Both <class> models are rate-limited right now. Please try again in about a minute."*
 - **Needs fewer requests** for broad questions: the agent instruction's `<EVIDENCE_PLAN>`
   asks for staged, batched lookups, the raid kickoff asks for a bounded per-boss
   overview, and a per-turn **round cap** tells the model to wrap up with what it has.
@@ -256,7 +260,7 @@ Tuning (env / `.env`; runners are cached per model, so restart the backend after
 | `WCL_TURN_ROUND_CAP` | `6` | lookup rounds before the wrap-up instruction |
 
 Every turn logs one line you can grep to verify the effect, e.g.
-`turn stats model=gemini-3.6-flash requests=4 rounds=3 retries=1 waited_s=4.3 outcome=answered prompt_tokens=18234 max_prompt_tokens=18234 cached_tokens=8120 trimmed=3`.
+`turn stats model=gemini-3.6-flash requests=4 rounds=3 retries=1 waited_s=4.3 outcome=answered prompt_tokens=18234 max_prompt_tokens=18234 cached_tokens=8120 trimmed=3 fallback=-`; `fallback=` is the sibling model the turn switched to, or `-`.
 
 ### Performance (QA sweep, 2026-10-14)
 
@@ -289,8 +293,8 @@ The fixes for `qa-reports/2026-10-14/performance.md` change a few behaviours wor
 
 ### Welcome page and async Warcraft Logs (feature 013)
 
-A new chat opens on **your recent raids**: up to 20 raids your own characters were logged
-in, newest first, with zone, date, difficulty, which of your characters took part and boss
+A new chat opens on **your recent raids**: up to 6 raids your own characters were logged
+in (plus up to 6 Mythic+ runs, below), newest first, with zone, date, difficulty, which of your characters took part and boss
 kills. Click one to start the bounded raid overview in a new chat; it also becomes a
 tracked raid in the sidebar.
 
@@ -299,6 +303,13 @@ tracked raid in the sidebar.
   character's recent reports are listed (from the shared cache when fresh, feature 014),
   then details are fetched only for new or still-live raids. A raid whose log ended over 2 h ago is final and never
   fetched again.
+- **Mythic+ runs** (feature 022): the same refresh also examines the newest non-raid
+  reports and lists up to 6 finished keys (dungeon, key level, result, your characters);
+  click one to start a Mythic+ investigation chat. A failed M+ step never hides stored raids.
+- **Pinned chats** (feature 019): pin a chat from the sidebar or the chat header and it
+  moves to a *Pinned* group on top.
+- **Generated titles** (feature 019): after the first completed exchange a chat that still
+  has its default name gets a short generated title; chats named earlier keep their names.
 - The refresh claim is a database row, so only one instance refreshes a workspace at a
   time, and a refresh that never finishes is reclaimed after 5 minutes. **Retry** appears
   when a refresh fails.

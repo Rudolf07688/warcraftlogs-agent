@@ -597,7 +597,7 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
   never finished / > 15 min ago / own-character set changed / forced after a failure),
   commits, then `background.spawn`s `run_recent_raid_refresh`. That run: each own
   character's `recentReports` (feature 014: `char_id` + `char_reports` families, run
-  concurrently), upsert, then details for new or non-final raids only, from the shared
+  concurrently), upsert, then details for new or non-final raids (and, for the M+ step, the newest 10 non-raid reports), from the shared
   `report_summary` entry, 10 at a time. Final = log ended > 2 h before the fetch. Errors become short codes
   (`wcl_unavailable`, `rate_limited`, `timeout`, `unknown`). All WCL calls are in
   `background_lane()`; no DB session is held across a WCL await.
@@ -605,6 +605,14 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
   (CSRF) is Retry: 202 when it started a run, 200 with the current state otherwise, 409
   `no_characters`. `POST /api/raids/{code}/investigate` also accepts a code that is only a
   recent raid of this tenant, and turns it into a tracked raid first.
+- **Feature 022 (Mythic+ on the welcome page)**: migration `0014_recent_mplus_runs` adds
+  `recent_mplus_runs` and `recent_mplus_run_characters` (RLS). `_refresh_mplus_runs`
+  (`services/recent_raids.py`) examines the newest 10 non-raid reports (`MPLUS_REPORT_BATCH`)
+  with the same shared summaries as raids and keeps finished keys only (`keystoneLevel > 0`
+  with a result). Caps: `RECENT_RAIDS_SHOWN=6`, `RECENT_MPLUS_SHOWN=6`.
+  `POST /api/recent-raids/mplus/{report_code}/{fight_id}/investigate` starts the chat. The
+  summary cache key is `wcl:v1:report:{code}:summary:keystone` (the suffix, not a `v2`,
+  retired summaries cached before the keystone fields).
 - **UI**: `WelcomePanel.tsx` renders in a new chat under Barnaby's greeting, through
   `MessageList`'s `footer` slot. It polls every 3 s while a refresh runs (paused when the
   tab is hidden, gives up after 3 minutes).
@@ -619,8 +627,8 @@ Implemented in `specs/014-redis-wcl-cache/` (design: `documentation/redis_cache_
   Values are Pydantic models from `wcl_agent/cache/cache_models.py`; keys only from `cache.keys`
   (never a user/tenant/conversation id — WCL data is public and shared by all tenants,
   superseding feature 006 FR-019). `loader()` returning `None` = "not found", cached 60 s.
-- **Families**: `char_id`, `char_overview`, `char_reports`, `report_summary`,
-  `report_player`, `oauth_token`, `world_zones` (README table). Call sites:
+- **Families**: `char_id`, `char_overview`, `char_reports`, `report_summary`
+  (key `…:summary:keystone`), `report_player`, `oauth_token`, `world_zones` (README table). Call sites:
   `report_tools.resolve_character` / the two character-ranking tools /
   `load_report_summary` (also behind `get_report_metadata` and recent-raid details) /
   per-player `get_report_table`; `menu.load_world_zones` (patch, `find_encounter`, menu);
