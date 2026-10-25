@@ -41,13 +41,16 @@ Sprint branch: `sprint-2026-10-25` (base `4923785`). Worktrees: track A
 | `backend/app/services/conversation_titles.py` (new) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
 | `specs/019-sidebar-conversations/**` | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
 | `backend/app/schemas.py`, `backend/app/api/ws.py` (sc-155 hook), `backend/tests/conftest.py`, `documentation/ai_guide.md` (2 lines) | dev-b-019-v2 | 019 | released (merged 8fa7506) | 2026-10-25 |
-| `backend/app/agent_runner.py`, `backend/app/api/ws.py`, `wcl_agent/llm/model_retry.py`, `wcl_agent/llm/models.py`, `backend/app/model_state.py`, `frontend/src/components/StatusAlert.tsx`, `frontend/src/api/wsClient.ts` | dev-a-021 | 021 | tentative; `schemas.py`/`App.tsx`/`types.ts` only after 022 releases them | 2026-10-25 |
+| `wcl_agent/llm/models.py`, `wcl_agent/llm/model_retry.py`, `backend/app/model_state.py`, `backend/app/agent_runner.py`, `backend/app/api/ws.py` | dev-a-021 | 021 | granted | 2026-10-25 |
+| `frontend/src/api/wsClient.ts`, `frontend/src/components/MessageList.tsx` (PO exception, decision 27), `frontend/src/toolLabels.ts`, `documentation/ai_guide.md` (1 line) | dev-a-021 | 021 | granted | 2026-10-25 |
+| `backend/tests/test_model_fallback.py`, `test_model_fallback_ws.py`, `test_model_fallback_history.py` (new), `specs/021-ratelimit-fallback/**` | dev-a-021 | 021 | granted | 2026-10-25 |
+| `backend/app/schemas.py`, `frontend/src/types.ts`, `frontend/src/App.tsx` | dev-a-021 | 021 | granted (transferred at 022 merge) | 2026-10-25 |
 | `wcl_agent/client/wcl_client.py`, `backend/app/config.py` (3 settings), `backend/app/main.py` (lifespan), `.env.example` | dev-a-020 | 020 | released (merged 3be583d) | 2026-10-25 |
 | `backend/app/db/models.py` (append `RawFetch` at end only) | dev-a-020 | 020 | released (merged 3be583d) | 2026-10-25 |
 | `documentation/ai_guide.md` (1–3 lines) | dev-a-020 | 020 | released (merged 3be583d) | 2026-10-25 |
 | `backend/migrations/versions/0013_raw_fetches.py` (down_revision `0012_conversation_pin_title`), `backend/app/repositories/raw_fetches.py`, `backend/app/services/fetch_persistence.py`, `backend/tests/test_raw_fetch_{client,store,writer}.py`, `specs/020-fetch-persistence/**` | dev-a-020 | 020 | released (merged 3be583d) | 2026-10-25 |
 | `wcl_agent/cache/**`, other `wcl_agent/client/**` | — | — | free (F5/022 needs wcl_client.py after 020 merges) | 2026-10-25 |
-| migration slots | 0012 → 019 (merged), 0013 → 020 (merged), 0014 → 022 (only if needed, down_revision 0013_raw_fetches) | — | assigned | 2026-10-25 |
+| migration slots | 0012 → 019 (merged), 0013 → 020 (merged), 0014 → 022 (merged) | — | assigned | 2026-10-25 |
 
 ## Withdrawn
 
@@ -57,8 +60,8 @@ Sprint branch: `sprint-2026-10-25` (base `4923785`). Worktrees: track A
 
 Note: plan revision 2 (decision 8) took sc-157 and sc-158 out of the sprint. The
 security brief moved to `briefs/withdrawn/`.
-| `backend/app/services/recent_raids.py`, `backend/app/services/recent_raid_types.py`, `backend/app/api/recent_raids.py`, `backend/app/schemas.py`, `backend/app/db/repository.py` | dev-b-022 | 022 | granted | 2026-10-25 |
-| `wcl_agent/client/queries.py`, `wcl_agent/cache/cache_models.py`, `wcl_agent/cache/cache.py` (report_summary key bump), `wcl_agent/tools/report_tools.py` (`_summary_from`) | dev-b-022 | 022 | granted | 2026-10-25 |
-| `frontend/src/components/WelcomePanel.tsx`, `frontend/src/types.ts`, `frontend/src/api/restClient.ts`, `frontend/src/App.tsx` | dev-b-022/sub-1 (sonnet/medium; T017, T020; after T014/T015) | 022 | granted | 2026-10-25 |
-| `backend/migrations/versions/0014_recent_mplus_runs.py` (down_revision `0013_raw_fetches`), `backend/tests/test_recent_mplus.py` (new), `backend/tests/test_recent_raids.py`, `backend/tests/test_wcl_cache.py` + `test_cache_families.py` (only if pinning v1 key), `specs/022-welcome-mplus/**` | dev-b-022 | 022 | granted | 2026-10-25 |
-| `backend/app/db/models.py` (append only), `backend/app/config.py` (2 settings) | dev-b-022 | 022 | granted (transferred at 020 merge) | 2026-10-25 |
+| `backend/app/services/recent_raids.py`, `backend/app/services/recent_raid_types.py`, `backend/app/api/recent_raids.py`, `backend/app/schemas.py`, `backend/app/db/repository.py` | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |
+| `wcl_agent/client/queries.py`, `wcl_agent/cache/cache_models.py`, `wcl_agent/cache/cache.py` (report_summary key bump), `wcl_agent/tools/report_tools.py` (`_summary_from`) | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |
+| `frontend/src/components/WelcomePanel.tsx`, `frontend/src/types.ts`, `frontend/src/api/restClient.ts`, `frontend/src/App.tsx` | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |
+| `backend/migrations/versions/0014_recent_mplus_runs.py` (down_revision `0013_raw_fetches`), `backend/tests/test_recent_mplus.py` (new), `backend/tests/test_recent_raids.py`, `backend/tests/test_wcl_cache.py` + `test_cache_families.py` (only if pinning v1 key), `specs/022-welcome-mplus/**` | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |
+| `backend/app/db/models.py` (append only), `backend/app/config.py` (2 settings) | dev-b-022 | 022 | released (merged 18a4656) | 2026-10-25 |

@@ -165,3 +165,42 @@ Each entry gives the date, the question, the answer and the reason.
     Notes for the QA sweep, non-blocking: `raw_fetches.py` imports the private
     `repository._insert`. A report_code literal over 32 characters fails only that
     row's write (logged).
+
+## 2026-10-25: Feature 021 (429 sibling fallback) clarify answers
+
+23. **Q1: Where does the "switched model" notice live?** A: A notice line under the
+    reply that answered ("Answered by <model>; <model> was rate limited"), plus a status
+    line while switching. Live session only: not stored, so no DB change.
+    Why: it meets AC 3 within 3 points. Keeping it across reloads isn't worth a
+    migration.
+24. **Q2: Which model does the next turn start on after a switch?** A: The user's
+    chosen model again. The selector never changes by itself, and each turn gets its
+    own single switch.
+    Why: the user's choice is authoritative, and quotas recover quickly.
+25. **Q3: What does the user see when no fallback works?** A: Split by case.
+    - No sibling (Claude today): feature 011's message, unchanged.
+    - Both siblings rate limited after a switch was tried: a distinct message, "Both
+      <class> models are rate-limited right now. Please try again in about a minute."
+    Why: when a fallback was attempted, saying so tells the user that switching models
+    by hand won't help either. It's one extra string, a negligible cost.
+26. **Q4: May 021 touch `MessageList.tsx` for the notice line?** A: Yes.
+    Why: the plan's "no feature touches it" described the planned footprint and was
+    never a prohibition. No other feature holds the file this sprint.
+27. **Noted (scrum master's technical call, accepted):** a 429 that arrives mid-stream
+    after text has started doesn't switch models (it would duplicate text). The
+    behaviour stays as today and is out of scope for sc-164.
+
+## 2026-10-25: Feature 022 acceptance
+
+28. **Q: Accept 022 (sc-153)?** A: ACCEPT. The merge condition is met: the 0014
+    Postgres up/down/up and RLS isolation check passed (6649abb).
+    Checked myself: pytest gives 1022 passed / 3 skipped / 1 deselected. I read the
+    refresh step, `extract_mplus_runs` (kill and level > 0, timed = bonus ≥ 1), the
+    tenant-scoped investigate endpoint with its explicit title, the kickoff phrases,
+    and the migration RLS that mirrors 0010. The agent's `get_report_fights` output is
+    unchanged (an explicit dict), so raid tool calls carry no extra tokens.
+    Live risk for the owner: if WCL reports a depleted key as `kill=false`, depleted
+    runs would be missing, not shown as "Depleted". Check this on a known depleted key.
+    Follow-up idea for later, not filed now: expose keystone level/bonus/time in
+    `get_report_fights`, so an M+ review can quote the timer without an extra fetch. It
+    fits sc-163 (playbooks).
