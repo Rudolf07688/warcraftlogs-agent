@@ -17,13 +17,6 @@ from backend.app.db import repository as repo
 _MODEL = "gemini-3.6-flash"
 _OLD = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
-# The PATCH body and ``ConversationOut.pinned_at`` live in schemas.py, which is granted to
-# this feature only after feature 018 merges (phase B, tasks T012/T013). Strict: the marker
-# must come off once the route lands.
-_needs_schema = pytest.mark.xfail(
-    strict=True, reason="PATCH needs ConversationUpdate in schemas.py (phase B)"
-)
-
 
 async def _conversation(session, tenant_id, *, title=None):
     conv = await repo.create_conversation(session, model=_MODEL, title=title, tenant_id=tenant_id)
@@ -106,7 +99,6 @@ async def _seed(session_factory, tid, title="Pinned raid"):
         return conv.id
 
 
-@_needs_schema
 async def test_patch_pins_and_unpins(as_user, session_factory):
     conv_id = await _seed(session_factory, as_user.tenant_id)
 
@@ -121,7 +113,6 @@ async def test_patch_pins_and_unpins(as_user, session_factory):
     assert resp.json()["pinned_at"] is None
 
 
-@_needs_schema
 async def test_patch_foreign_conversation_is_404(as_user, tenant_b, session_factory):
     b_conv = await _seed(session_factory, tenant_b.tenant_id)
     resp = await as_user.client.patch(f"/api/conversations/{b_conv}", json={"pinned": True})
@@ -130,7 +121,6 @@ async def test_patch_foreign_conversation_is_404(as_user, tenant_b, session_fact
     assert b_view["pinned_at"] is None
 
 
-@_needs_schema
 async def test_patch_unknown_conversation_is_404(as_user):
     resp = await as_user.client.patch(f"/api/conversations/{uuid.uuid4()}", json={"pinned": True})
     assert resp.status_code == 404
@@ -141,11 +131,12 @@ async def test_patch_without_csrf_is_refused(as_user, session_factory):
     resp = await as_user.client.patch(
         f"/api/conversations/{conv_id}", json={"pinned": True}, headers={"x-csrf-token": ""}
     )
-    # 403 once the route exists; 405 today (no PATCH route yet). Never a success.
-    assert resp.status_code in (401, 403, 405)
+    assert resp.status_code in (401, 403)
+    async with session_factory() as s:
+        row = await repo.get_conversation_row(s, conv_id, tenant_id=as_user.tenant_id)
+        assert row.pinned_at is None
 
 
-@_needs_schema
 @pytest.mark.parametrize("body", [{}, {"pinned": "yes"}, {"pinned": True, "title": "x"}])
 async def test_patch_rejects_bad_bodies(as_user, session_factory, body):
     conv_id = await _seed(session_factory, as_user.tenant_id)

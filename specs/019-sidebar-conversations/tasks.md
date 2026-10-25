@@ -92,8 +92,8 @@ Before T009: move sc-165 to In Progress (Shortcut).
 ### Implementation for User Story 2
 
 - [X] T011 [US2] Add `set_conversation_pinned(session, conv_id, pinned, *, tenant_id) -> Conversation | None` to `backend/app/db/repository.py`. It is one UPDATE scoped by id and tenant, with `pinned_at = coalesce(pinned_at, now_utc)` or `None` and `updated_at = Conversation.updated_at`. On 0 rows it returns `None`; otherwise it returns the row via a `populate_existing` select (data-model.md)
-- [ ] T012 [US2] ⧗schemas (phase B, first): add `pinned_at: datetime | None = None` to `ConversationOut`, and a new `ConversationUpdate(pinned: bool)` with `extra="forbid"`, in `backend/app/schemas.py` (run `impact` on `ConversationOut` first: HIGH, additive; coordinate the hunk with dev-a-018)
-- [ ] T013 [US2] ⧗schemas (phase B, first): add `PATCH /api/conversations/{conv_id}` (`require_csrf`, `get_tenant_db`, 404 `not_found` on `None`, returns `ConversationOut`) to `backend/app/api/conversations.py`, and update the module docstring's verb list
+- [X] T012 [US2] ⧗schemas (phase B, first): add `pinned_at: datetime | None = None` to `ConversationOut`, and a new `ConversationUpdate(pinned: bool)` with `extra="forbid"`, in `backend/app/schemas.py` (run `impact` on `ConversationOut` first: HIGH, additive; coordinate the hunk with dev-a-018)
+- [X] T013 [US2] ⧗schemas (phase B, first): add `PATCH /api/conversations/{conv_id}` (`require_csrf`, `get_tenant_db`, 404 `not_found` on `None`, returns `ConversationOut`) to `backend/app/api/conversations.py`, and update the module docstring's verb list
 - [X] T014 [US2] Run `uv run --extra test pytest -q` until T009, T010a and the whole suite are green, with T010 xfailing strictly (in phase B, after T012/T013: T010 passing with the marker removed)
 - [X] T015 [P] [US2] Add `pinned_at?: string | null` (optional until the phase B schema returns it) to `Conversation` in `frontend/src/types.ts`, and `updateConversation(id, body: { pinned: boolean }): Promise<Conversation>` (PATCH, `csrf: true`) to `frontend/src/api/restClient.ts`
 - [X] T016 [US2] In `frontend/src/components/Sidebar.tsx`:
