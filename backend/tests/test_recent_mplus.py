@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -25,35 +26,57 @@ from backend.tests.test_recent_raids import (  # noqa: F401 - fixtures are re-ex
     fake_wcl,
     report,
 )
-from wcl_agent.cache.cache_models import FightSummary, ReportSummary
+from wcl_agent.cache.cache_models import FightSummary, PlayerRef, ReportSummary
+from wcl_agent.client import wcl_client
 
 DUNGEON = "Tazavesh: Streets of Wonder"
 
 
 def key(fid: int, *, level: int = 12, bonus: int = 1, kill: bool | None = True,
-        start: int = 0, name: str = DUNGEON) -> dict[str, Any]:
+        start: int = 0, name: str = DUNGEON, players: list[int] | None = None) -> dict[str, Any]:
     return {
         "id": fid, "name": name, "encounterID": 0, "kill": kill, "difficulty": 10,
         "startTime": start, "keystoneLevel": level, "keystoneBonus": bonus,
-        "keystoneTime": 1_700_000,
+        "keystoneTime": 1_700_000, "friendlyPlayers": players or [],
     }
 
 
 class MplusWCL(FakeWCL):
-    """FakeWCL whose report summaries carry keystone fights per report code."""
+    """FakeWCL whose report summaries carry keystone fights per report code.
+
+    ``fail_codes`` fails (or ``hang_codes`` stalls) any summary request for those codes;
+    ``summary_lanes`` records the WCL lane of every summary request; ``actors_by_code``
+    gives a report's player actors (id → name).
+    """
 
     def __init__(self, reports_by_name, fights_by_code):
         super().__init__(reports_by_name)
         self.fights_by_code = fights_by_code
+        self.actors_by_code: dict[str, dict[int, str]] = {}
+        self.fail_codes: dict[str, BaseException] = {}
+        self.hang_codes: set[str] = set()
+        self.summary_lanes: list[str] = []
 
     async def query(self, query, variables=None):
+        if "reportData" in query and "fights" in query:
+            codes = set((variables or {}).values())
+            self.summary_lanes.append(wcl_client._lane.get())
+            for code in codes & set(self.fail_codes):
+                raise self.fail_codes[code]
+            if codes & self.hang_codes:
+                await asyncio.Event().wait()
         out = await super().query(query, variables)
         if "reportData" in query and "fights" in query:
             variables = variables or {}
             for i in range(len(variables)):
                 node = out["data"]["reportData"].get(f"r{i}")
                 if node is not None:
-                    node["fights"] = self.fights_by_code.get(variables[f"c{i}"], node["fights"])
+                    code = variables[f"c{i}"]
+                    node["fights"] = self.fights_by_code.get(code, node["fights"])
+                    actors = self.actors_by_code.get(code, {})
+                    node["masterData"] = {
+                        "actors": [{"id": a, "name": n, "subType": "Mage"} for a, n in actors.items()]
+                    }
         return out
 
 
@@ -78,14 +101,15 @@ def mplus_report(code: str, hours_ago: float) -> dict[str, Any]:
 # --- extraction (FR-013, FR-014) -------------------------------------------------------
 
 
-def summary(*fights: FightSummary) -> ReportSummary:
+def summary(*fights: FightSummary, players: dict[int, str] | None = None) -> ReportSummary:
     return ReportSummary(
-        code="R1", start_time_ms=1_000_000, end_time_ms=9_000_000, zone_name="Zone", fights=list(fights)
+        code="R1", start_time_ms=1_000_000, end_time_ms=9_000_000, zone_name="Zone",
+        players={i: PlayerRef(name=n) for i, n in (players or {}).items()}, fights=list(fights),
     )
 
 
 def test_extract_keeps_completed_keys_and_drops_abandoned():
-    cid = frozenset({uuid.uuid4()})
+    cid = {uuid.uuid4(): "Alpha"}
     runs = svc.extract_mplus_runs(
         summary(
             FightSummary(id=1, name="Dungeon A", kill=True, keystone_level=10, keystone_bonus=2, start_time_ms=0),
@@ -102,7 +126,30 @@ def test_extract_keeps_completed_keys_and_drops_abandoned():
         (5, "Zone", 9, True),  # missing fight name falls back to the zone
     ]
     assert runs[1].started_at == datetime.fromtimestamp(1_000.5, tz=timezone.utc)
-    assert runs[0].character_ids == cid
+    assert runs[0].character_ids == frozenset(cid)
+
+
+def test_each_run_names_only_the_own_characters_in_that_fight():
+    alpha, beta = uuid.uuid4(), uuid.uuid4()
+    own = {alpha: "Alpha", beta: "Beta"}
+    runs = svc.extract_mplus_runs(
+        summary(
+            FightSummary(id=1, name="A", kill=True, keystone_level=10, player_ids=[1, 3]),
+            FightSummary(id=2, name="B", kill=True, keystone_level=11, player_ids=[2, 3]),
+            FightSummary(id=3, name="C", kill=True, keystone_level=12, player_ids=[1, 2]),
+            FightSummary(id=4, name="D", kill=True, keystone_level=13, player_ids=[3]),  # no own
+            FightSummary(id=5, name="E", kill=True, keystone_level=14),  # no player list
+            players={1: "alpha", 2: "BETA", 3: "Stranger"},  # names match case-insensitively
+        ),
+        own,
+    )
+    assert [r.character_ids for r in runs] == [
+        frozenset({alpha}),
+        frozenset({beta}),
+        frozenset({alpha, beta}),
+        frozenset({alpha, beta}),  # nothing matched: the report's own characters
+        frozenset({alpha, beta}),
+    ]
 
 
 # --- the list: caps, order, no section (FR-002, FR-005) --------------------------------
@@ -158,6 +205,19 @@ async def test_a_run_shared_by_two_characters_is_listed_once(as_user, patched_db
     assert sorted(c["name"] for c in run["characters"]) == ["Alpha", "Beta"]
 
 
+async def test_runs_in_one_report_name_only_their_own_characters(as_user, patched_db, mplus_wcl):
+    await add_own(patched_db, as_user.tenant_id, "Alpha", "Beta")
+    duo = mplus_report("DUO", 5)
+    mplus_wcl.reports_by_name = {"Alpha": [duo], "Beta": [duo]}
+    mplus_wcl.actors_by_code = {"DUO": {1: "Alpha", 2: "Beta", 3: "Stranger"}}
+    mplus_wcl.fights_by_code = {
+        "DUO": [key(1, level=8, players=[1, 3]), key(2, level=9, start=3_600_000, players=[1, 2])]
+    }
+    body = await refresh(as_user.client)
+    named = {r["key_level"]: sorted(c["name"] for c in r["characters"]) for r in body["mplus_runs"]}
+    assert named == {8: ["Alpha"], 9: ["Alpha", "Beta"]}
+
+
 async def test_a_removed_character_takes_its_runs_off_the_list(as_user, patched_db, mplus_wcl):
     [alpha] = await add_own(patched_db, as_user.tenant_id, "Alpha")
     mplus_wcl.reports_by_name = {"Alpha": [mplus_report("MINE", 5)]}
@@ -180,7 +240,9 @@ async def test_stored_runs_show_without_waiting_for_wcl(as_user, patched_db, mpl
     assert len(body["mplus_runs"]) == 1 and mplus_wcl.calls == []
 
 
-async def test_a_failing_refresh_keeps_stored_runs(as_user, patched_db, mplus_wcl):
+async def test_a_raidless_player_sees_stored_runs_while_refreshing_and_after_a_failure(
+    as_user, patched_db, mplus_wcl
+):
     from backend.tests.test_recent_raids import reopen_gate
 
     await add_own(patched_db, as_user.tenant_id, "Alpha")
@@ -189,8 +251,57 @@ async def test_a_failing_refresh_keeps_stored_runs(as_user, patched_db, mplus_wc
     await refresh(as_user.client)
     await reopen_gate(patched_db, as_user.tenant_id)
     mplus_wcl.fail = httpx.ConnectError("down")
+
+    running = (await as_user.client.get("/api/recent-raids")).json()  # starts a refresh
+    assert running["refresh"]["status"] == "running"
+    assert running["raids"] == [] and len(running["mplus_runs"]) == 1
+
+    await drain()
+    body = (await as_user.client.get("/api/recent-raids")).json()
+    assert body["refresh"]["status"] == "failed"
+    assert body["raids"] == [] and len(body["mplus_runs"]) == 1
+
+
+def rate_limited() -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://www.warcraftlogs.com/api/v2/client")
+    return httpx.HTTPStatusError("429", request=request, response=httpx.Response(429, request=request))
+
+
+async def test_an_mplus_step_failure_keeps_the_refresh_raids_and_runs(as_user, patched_db, mplus_wcl):
+    from backend.tests.test_recent_raids import reopen_gate
+
+    await add_own(patched_db, as_user.tenant_id, "Alpha")
+    mplus_wcl.reports_by_name = {"Alpha": [report("RAID1"), mplus_report("OLD", 30)]}
+    mplus_wcl.fights_by_code = {"OLD": [key(1, level=10)], "NEW": [key(1, level=15)]}
+    await refresh(as_user.client)
+    await reopen_gate(patched_db, as_user.tenant_id)
+
+    # The next refresh lists a new raid and a new M+ report; only the M+ summaries hit a 429.
+    mplus_wcl.reports_by_name["Alpha"] += [report("RAID2", ended_hours_ago=10), mplus_report("NEW", 5)]
+    mplus_wcl.fail_codes = {"NEW": rate_limited()}
     body = await refresh(as_user.client)
-    assert body["refresh"]["status"] == "failed" and len(body["mplus_runs"]) == 1
+    assert body["refresh"]["status"] == "succeeded" and body["refresh"]["last_error"] is None
+    assert [r["report_code"] for r in body["raids"]] == ["RAID2", "RAID1"]
+    assert [r["key_level"] for r in body["mplus_runs"]] == [10]
+    raid2 = next(r for r in body["raids"] if r["report_code"] == "RAID2")
+    assert raid2["bosses_pulled"] == 2  # the raid step's details were stored
+
+    # NEW was not marked final, so the next refresh examines it again.
+    await reopen_gate(patched_db, as_user.tenant_id)
+    mplus_wcl.fail_codes = {}
+    body = await refresh(as_user.client)
+    assert [r["key_level"] for r in body["mplus_runs"]] == [15, 10]
+    assert set(mplus_wcl.summary_lanes) == {"background"}
+
+
+async def test_an_mplus_step_timeout_does_not_fail_the_refresh(as_user, patched_db, mplus_wcl, monkeypatch):
+    await add_own(patched_db, as_user.tenant_id, "Alpha")
+    mplus_wcl.reports_by_name = {"Alpha": [report("RAID1"), mplus_report("SLOW", 5)]}
+    mplus_wcl.hang_codes = {"SLOW"}
+    monkeypatch.setattr(settings, "recent_raids_refresh_timeout_s", 0.5)
+    body = await refresh(as_user.client)
+    assert body["refresh"]["status"] == "succeeded"
+    assert [r["report_code"] for r in body["raids"]] == ["RAID1"] and body["mplus_runs"] == []
 
 
 async def test_a_finished_nonraid_report_is_not_examined_again(as_user, patched_db, mplus_wcl):

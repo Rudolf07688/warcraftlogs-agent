@@ -90,7 +90,7 @@ Mythic+ runs are fetched and kept up to date in the background, like raids. Runs
 - The same run appears under several of the user's characters: it is listed once.
 - The user removes an own character: runs that only that character took part in are no longer shown.
 - Warcraft Logs is unreachable on a first visit: raids and runs show the existing could-not-load state, and the user can still start an ordinary chat.
-- A dungeon or key level is missing from the data: the entry still lists with what is known, and no entry is dropped for that reason.
+- A dungeon name is missing from the data: the entry still lists, named after the report's zone (or "Mythic+"). A missing key level means the run isn't finished, so it isn't listed (decision 20).
 
 ## Requirements *(mandatory)*
 
