@@ -297,3 +297,13 @@ work.
 | 47 | sc-157 QA SEC-003 block remote images (`qa-deferred`) | 2 | Lowest | QA tier. Security, small and isolated in the frontend. |
 | 48 | sc-156 QA PERF-001 don't block on discovery (`qa-deferred`) | 2 | Lowest | QA tier. Do it with sc-159, which touches the same files (`_load_models`, readiness gate). |
 | 49 | sc-159 QA SPEC-002/004 log line + empty catalog (`qa-deferred`) | 1 | Lowest | QA tier. Pair with sc-156. |
+| 50 | sc-176 QA PERF-001: switch to the sibling model sooner on 429s (`qa-deferred`) | 2 | Lowest | QA tier, top: it makes the 021 fallback actually save time. |
+| 51 | sc-178 QA SEC-001: raw_fetches cross-tenant guard (`qa-deferred`) | 2 | Lowest | QA tier: must be settled before sc-129 (design gate comment on sc-129). |
+| 52 | sc-177 QA raw_fetches write amplification and growth (`qa-deferred`) | 3 | Lowest | QA tier: storage cost; do it with sc-178. |
+| 53 | sc-185 QA Postgres tenant-isolation tests in CI (`qa-deferred`) | 3 | Lowest | QA tier: would have caught BUG-001. |
+| 54 | sc-179 QA generated-title cleaning (`qa-deferred`) | 2 | Lowest | QA tier. |
+| 55 | sc-180 QA conversation-list state (`qa-deferred`) | 2 | Lowest | QA tier. |
+| 56 | sc-183 QA welcome M+ edge cases (`qa-deferred`) | 2 | Lowest | QA tier; confirm the duplicate-key case with live data first. |
+| 57 | sc-184 QA web search after fallback (`qa-deferred`) | 2 | Lowest | QA tier; needs a live check first. |
+| 58 | sc-182 QA M+ refresh efficiency (`qa-deferred`) | 2 | Lowest | QA tier. |
+| 59 | sc-181 QA sidebar activity order (`qa-deferred`) | 1 | Lowest | QA tier; predates the sprint. |
