@@ -26,10 +26,10 @@ try:
 except Exception as exc:  # noqa: BLE001
     logger.warning("Anthropic (Claude) model class not registered: %s", exc)
 
-from .benchmark import compare_player_to_cohort
-from .cooldowns import get_cooldown_usage
-from .guides_tool import get_coaching_brief
-from .report_tools import (
+from .tools.benchmark import compare_player_to_cohort
+from .tools.cooldowns import get_cooldown_usage
+from .guides.guides_tool import get_coaching_brief
+from .tools.report_tools import (
     get_character_encounter_rankings,
     get_character_zone_rankings,
     get_report_events,
@@ -41,15 +41,15 @@ from .report_tools import (
     get_report_table,
     run_wcl_graphql,
 )
-from .genai_compat import ensure_genai_serializers_built
-from .model_retry import (
+from .llm.genai_compat import ensure_genai_serializers_built
+from .llm.model_retry import (
     RetryingClaude,
     RetryingGemini,
     RetryPolicy,
     is_anthropic_model,
     make_before_model_callback,
 )
-from .tools import (
+from .tools.tools import (
     check_rate_limit,
     compare_specs,
     create_chart,
@@ -58,7 +58,7 @@ from .tools import (
     get_selected_encounter,
     get_spec_options,
 )
-from .vertex import adk_client_kwargs
+from .llm.vertex import adk_client_kwargs
 
 # Tag-delimited sections per specs/009-grounded-coaching-prompt/contracts/prompt.md.
 # backend/tests/test_prompt_contract.py asserts the sections and key clauses; wording

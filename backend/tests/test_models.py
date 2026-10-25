@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.model_state import get_model_state, is_valid_model
-from wcl_agent import models as models_mod
+from wcl_agent.llm import models as models_mod
 
 
 def test_discover_keeps_responsive_and_excludes_bogus(monkeypatch):

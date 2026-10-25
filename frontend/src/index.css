@@ -88,6 +88,11 @@
   --danger: oklch(0.64 0.2 25);
 }
 
+/* 17px at the 16px browser default; keeps the user's font-size preference */
+html {
+  font-size: 106.25%;
+}
+
 body {
   font-family: var(--font-body);
   color: var(--foreground);
@@ -234,7 +239,7 @@ h3,
   border-radius: 14px;
   background: oklch(0.21 0.03 55 / 0.5);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease;
 }
@@ -288,7 +293,7 @@ h3,
 .spell-glyph {
   position: relative;
   z-index: 1;
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 .spell-body {
@@ -300,12 +305,12 @@ h3,
 }
 .spell-verb {
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 0.8125rem;
   letter-spacing: 0.03em;
   color: var(--foreground);
 }
 .spell-flavor {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -318,7 +323,7 @@ h3,
   border: 1px solid var(--border-token);
   border-radius: 20px;
   background: oklch(0.21 0.03 55 / 0.6);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   max-width: 100%;
 }
@@ -408,7 +413,7 @@ h3,
 }
 .encounter-picker-label {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 0.75rem;
   letter-spacing: 0.04em;
   color: var(--muted);
 }
@@ -426,7 +431,7 @@ h3,
   border-radius: 18px;
   background: oklch(0.24 0.03 58 / 0.7);
   color: var(--foreground);
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -442,7 +447,7 @@ h3,
   accent-color: var(--primary);
 }
 .encounter-kill {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--glow);
 }
 
@@ -461,7 +466,7 @@ h3,
   color: var(--foreground);
 }
 .section-chevron {
-  font-size: 9px;
+  font-size: 0.5625rem;
   opacity: 0.7;
   width: 10px;
 }
@@ -473,7 +478,7 @@ h3,
 
 /* Raid sidebar: date/time + boss summary (US2). */
 .raid-bosses {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -535,7 +540,7 @@ h3,
 /* Game-icons.net CC BY 3.0 attribution line (FR-035). */
 .attribution {
   padding: 6px 16px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   opacity: 0.7;
   text-align: right;
@@ -576,7 +581,7 @@ h3,
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   color: var(--foreground);
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
   box-shadow: 0 2px 12px oklch(0 0 0 / 0.4);
   z-index: 5;

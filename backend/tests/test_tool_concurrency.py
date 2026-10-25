@@ -12,14 +12,14 @@ from google.adk.tools.function_tool import FunctionTool
 
 from backend.tests.test_benchmark import FIGHT, PLAYER_CODE, make_responder
 from backend.tests.wcl_fakes import gql_response, install, mock_async_client
-from wcl_agent import wcl_client
+from wcl_agent.client import wcl_client
 from wcl_agent.agent import TOOLS, build_agent
-from wcl_agent.aio import gather_settled, unwrap
-from wcl_agent.benchmark import compare_player_to_cohort
-from wcl_agent.cache import get_refresh_actor, set_refresh_actor
-from wcl_agent.report_tools import get_report_table
-from wcl_agent.tools import compare_specs
-from wcl_agent.wcl_client import _limiter
+from wcl_agent.client.aio import gather_settled, unwrap
+from wcl_agent.tools.benchmark import compare_player_to_cohort
+from wcl_agent.cache.cache import get_refresh_actor, set_refresh_actor
+from wcl_agent.tools.report_tools import get_report_table
+from wcl_agent.tools.tools import compare_specs
+from wcl_agent.client.wcl_client import _limiter
 
 # --- Tools are coroutines, registered unwrapped -----------------------------------
 

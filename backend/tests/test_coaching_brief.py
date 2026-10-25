@@ -189,7 +189,7 @@ def test_freshness_rules():
 
 async def test_turn_briefs_survive_a_wcl_outage(monkeypatch):
     # QA BUG-001: no zone list ⇒ classify from the message, never fail the chat turn.
-    from wcl_agent.guide_meta import BriefRecord, clear_brief_loader, set_brief_loader
+    from wcl_agent.guides.guide_meta import BriefRecord, clear_brief_loader, set_brief_loader
 
     def boom(q, v):
         raise RuntimeError("WCL down")

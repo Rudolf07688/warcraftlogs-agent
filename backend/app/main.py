@@ -13,11 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from google.adk.sessions import DatabaseSessionService
 from sqlalchemy import text
 
-from wcl_agent.cache import CacheFamily, family_ttl, get_or_load, keys
-from wcl_agent.cache_models import ModelCatalog
-from wcl_agent.genai_compat import ensure_genai_serializers_built
-from wcl_agent.guide_meta import set_brief_loader
-from wcl_agent.models import (
+from wcl_agent.cache.cache import CacheFamily, family_ttl, get_or_load, keys
+from wcl_agent.cache.cache_models import ModelCatalog
+from wcl_agent.llm.genai_compat import ensure_genai_serializers_built
+from wcl_agent.guides.guide_meta import set_brief_loader
+from wcl_agent.llm.models import (
     choose_default,
     classes_signature,
     discover_models,
@@ -26,8 +26,8 @@ from wcl_agent.models import (
     log_class_results,
     missing_fixed_models,
 )
-from wcl_agent.vertex import model_location, project_id
-from wcl_agent.wcl_client import aclose_clients
+from wcl_agent.llm.vertex import model_location, project_id
+from wcl_agent.client.wcl_client import aclose_clients
 
 from .agent_runner import set_session_service
 from .api import (
@@ -88,6 +88,7 @@ _install_app_logging()
 _install_log_redaction()  # after: the redaction filter attaches to the handler above too
 from .db.session import engine
 from .greeting import GREETING_MODEL, get_greeting
+from .services.fetch_persistence import FetchWriter
 from .services.guide import load_brief_record, maybe_scan_stale_guides, touch_guide_wanted
 from .startup import ReadinessGate, StartupTracker
 
@@ -212,7 +213,7 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
         # Feature 015 / US3: load the live class/spec roster from Warcraft Logs game data
         # (cached 24 h). Optional: without it the static fallback roster is used.
         async def _roster():
-            from wcl_agent.roster import load_roster
+            from wcl_agent.game.roster import load_roster
 
             return await load_roster()
 
@@ -274,6 +275,16 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
 async def lifespan(app: FastAPI):
     tracker = StartupTracker()
     app.state.startup = tracker
+    # Feature 020: store every WCL response. Started before the boot, whose roster step
+    # already fetches from Warcraft Logs.
+    fetch_writer = None
+    if settings.wcl_fetch_persist_enabled:
+        fetch_writer = FetchWriter(
+            max_items=settings.wcl_fetch_persist_queue_max,
+            max_bytes=settings.wcl_fetch_persist_queue_mb * 1024 * 1024,
+        )
+        fetch_writer.start()
+    app.state.fetch_writer = fetch_writer
     boot_task = asyncio.create_task(_boot(app, tracker))
     app.state.boot_task = boot_task
 
@@ -283,6 +294,8 @@ async def lifespan(app: FastAPI):
         boot_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await boot_task
+    if fetch_writer is not None:
+        await fetch_writer.stop()  # bounded drain while the DB engine is still open (FR-011)
     with contextlib.suppress(Exception):
         await aclose_clients()  # WCL HTTP pools (feature 013)
     await engine.dispose()

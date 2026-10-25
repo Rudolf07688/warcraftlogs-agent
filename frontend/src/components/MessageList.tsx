@@ -143,6 +143,15 @@ function MessageListImpl({
                       🌐 Used web search
                     </div>
                   )}
+                  {/* Feature 021: the turn moved to the same-class sibling model. */}
+                  {m.role === "agent" && m.fallback && (
+                    <div
+                      className="grounding-note"
+                      title="The chosen model was rate-limited, so its sibling answered."
+                    >
+                      ⇄ Answered by {m.fallback.to} ({m.fallback.from} was rate-limited)
+                    </div>
+                  )}
                   {m.status === "partial" && (
                     <div
                       className="partial-note"

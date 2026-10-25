@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from wcl_agent import cache
-from wcl_agent.cache import CacheFamily, keys, summarize
+from wcl_agent.cache import cache
+from wcl_agent.cache.cache import CacheFamily, keys, summarize
 
 URL = "/api/admin/cache-stats"
 

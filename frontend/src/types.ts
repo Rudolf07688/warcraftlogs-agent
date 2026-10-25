@@ -46,6 +46,8 @@ export interface Conversation {
   model: string;
   created_at: string;
   updated_at: string;
+  // Feature 019: when the chat was pinned; null/absent = not pinned.
+  pinned_at: string | null;
 }
 
 export interface Message {
@@ -62,6 +64,8 @@ export interface Message {
   encounters?: Encounter[];
   // US2: interactive charts the agent produced during this turn.
   artifacts?: ChartArtifact[];
+  // Feature 021: the turn moved to the same-class sibling model (live session only).
+  fallback?: { from: string; to: string };
 }
 
 // US2: an agent-declared chart, rendered inline as an interactive Plotly figure.
@@ -145,9 +149,20 @@ export interface RecentRaidsRefresh {
   last_error: string | null;
 }
 
+export interface RecentMplusRun {
+  report_code: string;
+  fight_id: number;
+  dungeon: string;
+  key_level: number;
+  started_at: string;
+  timed: boolean;
+  characters: RecentRaidCharacter[];
+}
+
 export interface RecentRaidsResponse {
   has_characters: boolean;
   raids: RecentRaid[];
+  mplus_runs: RecentMplusRun[];
   refresh: RecentRaidsRefresh;
 }
 

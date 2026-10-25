@@ -13,8 +13,9 @@ from typing import Any
 import pytest
 
 from backend.tests.wcl_fakes import install
-from wcl_agent import patch, report_tools
-from wcl_agent.cache import keys, set_refresh_actor
+from wcl_agent.game import patch
+from wcl_agent.tools import report_tools
+from wcl_agent.cache.cache import keys, set_refresh_actor
 
 HOUR_MS = 3_600_000
 NOW_MS = int(time.time() * 1000)
@@ -145,7 +146,8 @@ async def test_redis_down_costs_at_most_one_token_request(monkeypatch):
     import httpx
 
     from backend.tests.test_wcl_cache import DeadRedis
-    from wcl_agent import cache, wcl_client
+    from wcl_agent.cache import cache
+    from wcl_agent.client import wcl_client
 
     monkeypatch.setenv("REDIS_URL", "redis://nowhere:6379/0")
     monkeypatch.setattr(cache, "_make_redis", lambda url: DeadRedis())
@@ -179,7 +181,7 @@ async def test_wcl_down_returns_the_tool_error_and_caches_nothing(monkeypatch, f
 
 @pytest.fixture
 def actor():
-    from wcl_agent.cache import set_refresh_actor
+    from wcl_agent.cache.cache import set_refresh_actor
 
     def use(user_id):
         set_refresh_actor(user_id)
@@ -213,7 +215,7 @@ async def test_plain_calls_carry_no_refresh_field(wcl):
 
 async def test_refresh_is_allowed_when_redis_is_down(monkeypatch):
     from backend.tests.test_wcl_cache import DeadRedis
-    from wcl_agent import cache
+    from wcl_agent.cache import cache
 
     monkeypatch.setenv("REDIS_URL", "redis://nowhere:6379/0")
     monkeypatch.setattr(cache, "_make_redis", lambda url: DeadRedis())

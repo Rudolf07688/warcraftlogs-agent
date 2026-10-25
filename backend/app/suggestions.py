@@ -33,7 +33,7 @@ _client = None  # one google-genai client per process (PERF-005), created on fir
 def _get_client():
     global _client
     if _client is None:
-        from wcl_agent.vertex import genai_client
+        from wcl_agent.llm.vertex import genai_client
 
         _client = genai_client()
     return _client

@@ -7,7 +7,7 @@ import httpx2
 import pytest
 from google.genai import errors as genai_errors
 
-from wcl_agent.model_retry import (
+from wcl_agent.llm.model_retry import (
     ModelRateLimited,
     RetryPolicy,
     TurnStats,
@@ -87,7 +87,7 @@ def test_retry_after_hint_ignores_http_date_and_missing():
 
 
 def test_delay_grows_exponentially_and_caps(monkeypatch):
-    monkeypatch.setattr("wcl_agent.model_retry.random.uniform", lambda a, b: 0.0)
+    monkeypatch.setattr("wcl_agent.llm.model_retry.random.uniform", lambda a, b: 0.0)
     p = RetryPolicy(initial_s=2.0, max_s=30.0, exp_base=2.0, jitter_s=1.0)
     assert [p.delay_for(n) for n in (1, 2, 3, 4, 5)] == [2.0, 4.0, 8.0, 16.0, 30.0]
 
@@ -139,7 +139,7 @@ def test_model_rate_limited_message():
 
 # --- the retry loop (US1) ----------------------------------------------------------------
 
-from wcl_agent.model_retry import current_turn, generate_with_retry  # noqa: E402
+from wcl_agent.llm.model_retry import current_turn, generate_with_retry  # noqa: E402
 
 
 def _script(failures: list[BaseException], chunks: tuple[str, ...] = ("a", "b")):
@@ -168,8 +168,8 @@ def no_sleep(monkeypatch):
     async def fake_sleep(d):
         slept.append(d)
 
-    monkeypatch.setattr("wcl_agent.model_retry.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("wcl_agent.model_retry.random.uniform", lambda a, b: 0.0)
+    monkeypatch.setattr("wcl_agent.llm.model_retry.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("wcl_agent.llm.model_retry.random.uniform", lambda a, b: 0.0)
     return slept
 
 
@@ -255,7 +255,7 @@ async def test_without_a_turn_retries_silently(no_sleep):
 
 
 async def test_retry_wrappers_expose_policy_and_disable_sdk_retries():
-    from wcl_agent.model_retry import RetryingClaude, RetryingGemini
+    from wcl_agent.llm.model_retry import RetryingClaude, RetryingGemini
 
     g = RetryingGemini(model="gemini-3.6-flash", policy=RetryPolicy(attempts=2))
     assert g.policy.attempts == 2 and g.retry_options.attempts == 1
@@ -267,7 +267,7 @@ async def test_retry_wrappers_expose_policy_and_disable_sdk_retries():
 
 from google.adk.models.llm_request import LlmRequest  # noqa: E402
 
-from wcl_agent.model_retry import WRAP_UP_INSTRUCTION, make_before_model_callback  # noqa: E402
+from wcl_agent.llm.model_retry import WRAP_UP_INSTRUCTION, make_before_model_callback  # noqa: E402
 
 
 def _request(model: str) -> LlmRequest:

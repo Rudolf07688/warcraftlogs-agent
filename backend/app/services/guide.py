@@ -25,9 +25,9 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
-from wcl_agent.guide_meta import BriefRecord, GuideCooldown, get_brief
+from wcl_agent.guides.guide_meta import BriefRecord, GuideCooldown, get_brief
 from wcl_agent.menu import load_world_zones
-from wcl_agent.patch import (
+from wcl_agent.game.patch import (
     MYTHIC_PLUS_DIFFICULTY_ID,
     current_mplus_season,
     current_patch,
@@ -36,8 +36,8 @@ from wcl_agent.patch import (
     mplus_zone_from,
     raid_zone_from,
 )
-from wcl_agent.roster import resolve_spec, roster_snapshot
-from wcl_agent.wcl_client import background_lane
+from wcl_agent.game.roster import resolve_spec, roster_snapshot
+from wcl_agent.client.wcl_client import background_lane
 
 from ..config import settings
 from ..db import repository as repo
@@ -70,7 +70,7 @@ async def _resolve_active_spec(
     Returns ``None`` when the character can't be resolved or has no ranked specs,
     which the caller treats as a ``failed`` guide (entry still saved).
     """
-    from wcl_agent.report_tools import get_character_zone_rankings
+    from wcl_agent.tools.report_tools import get_character_zone_rankings
 
     res = await get_character_zone_rankings(name, server, region)
     if res.get("status") != "success":
@@ -91,7 +91,7 @@ async def _resolve_active_spec(
 async def _plays_mythic_plus(name: str, server: str, region: str) -> bool:
     """Whether the character has a ranked Mythic+ run this season (FR-030). Best-effort,
     background lane; any failure counts as "no"."""
-    from wcl_agent.report_tools import get_character_zone_rankings
+    from wcl_agent.tools.report_tools import get_character_zone_rankings
 
     try:
         with background_lane():
@@ -237,7 +237,7 @@ async def _live_context(content_type: str) -> tuple[str | None, str | None]:
 
 
 async def load_brief_record(class_name: str, spec: str, content_type: str) -> BriefRecord | None:
-    """The brief loader registered with ``wcl_agent.guide_meta`` (published briefs only)."""
+    """The brief loader registered with ``wcl_agent.guides.guide_meta`` (published briefs only)."""
     entry = resolve_spec(class_name, spec)
     if entry is None or content_type not in ("raid", "mplus"):
         return None
@@ -410,7 +410,7 @@ def summarize_guide(
 def build_guide_roster(
     guides: list, live_patch: str | None = None, live_season: str | None = None
 ) -> list[dict]:
-    """Merge the full live roster (``wcl_agent.roster``) with ``spec_guides`` rows (FR-008).
+    """Merge the full live roster (``wcl_agent.game.roster``) with ``spec_guides`` rows (FR-008).
 
     Every class+spec appears exactly once (100% coverage, SC-002; FR-028) with a summary
     for each content type; a missing row reports ``status="none"``. Ordered by class

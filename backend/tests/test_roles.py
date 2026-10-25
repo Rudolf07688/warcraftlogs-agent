@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from backend.app.db import repository as repo
-from wcl_agent.constants import role_for_spec
+from wcl_agent.game.constants import role_for_spec
 
 # --- role_for_spec mapping ----------------------------------------------------
 

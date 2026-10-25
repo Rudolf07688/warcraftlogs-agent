@@ -24,11 +24,12 @@ from backend.app import main
 from backend.app.config import Settings
 from backend.app.greeting import GREETING_MODEL
 from backend.tests.test_wcl_cache import DeadRedis
-from wcl_agent import cache, vertex
-from wcl_agent import models as models_mod
-from wcl_agent.cache import CacheFamily, FamilyConfig, family_ttl, keys
-from wcl_agent.cache_models import ClassResult, ModelCatalog
-from wcl_agent.models import (
+from wcl_agent.cache import cache
+from wcl_agent.llm import vertex
+from wcl_agent.llm import models as models_mod
+from wcl_agent.cache.cache import CacheFamily, FamilyConfig, family_ttl, keys
+from wcl_agent.cache.cache_models import ClassResult, ModelCatalog
+from wcl_agent.llm.models import (
     Candidate,
     ClassSetting,
     ProbeOutcome,
@@ -40,7 +41,7 @@ from wcl_agent.models import (
     missing_fixed_models,
     pick_per_class,
 )
-from wcl_agent.vertex import CatalogEntry, CatalogUnavailable
+from wcl_agent.llm.vertex import CatalogEntry, CatalogUnavailable
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GEMINI = [ClassSetting("google", "pro", 2), ClassSetting("google", "flash", 2),
@@ -227,7 +228,7 @@ def test_choose_default():
 
 def test_catalog_path_serves_the_newest_per_class_in_class_order(catalog, caplog):
     probes = catalog()
-    with caplog.at_level(logging.INFO, logger="wcl_agent.models"):
+    with caplog.at_level(logging.INFO, logger="wcl_agent.llm.models"):
         result = discover()
     assert result.models == SERVED
     assert result.source == "catalog" and result.degraded is False
@@ -370,7 +371,7 @@ def test_walk_skips_not_enabled_and_stops_at_no_quota():
 
 def test_haiku_falls_back_and_sonnet_has_no_quota(catalog, caplog):
     catalog({"claude-haiku-5-5": [404], **{m: [429] for m in EXPECTED_CANDIDATES[("anthropic", "sonnet")]}})
-    with caplog.at_level(logging.INFO, logger="wcl_agent.models"):
+    with caplog.at_level(logging.INFO, logger="wcl_agent.llm.models"):
         result = discover()
     assert "claude-haiku-4-5@20251001" in result.models
     assert not any("sonnet" in m for m in result.models)
@@ -392,7 +393,7 @@ def test_listing_failure_probes_the_static_lists(monkeypatch, caplog, failing):
     monkeypatch.setattr(vertex, "list_publisher_models", list_models)
     monkeypatch.setattr(models_mod, "_make_gemini_client", lambda: object())
     monkeypatch.setattr(models_mod, "_probe_gemini", lambda client, mid: True)
-    with caplog.at_level(logging.WARNING, logger="wcl_agent.models"):
+    with caplog.at_level(logging.WARNING, logger="wcl_agent.llm.models"):
         result = discover(gemini_ids=["gemini-a", "gemini-b"], configured_default="gemini-b")
     assert result.source == "fallback" and result.degraded is False
     assert result.models == ["gemini-a", "gemini-b"] and result.default == "gemini-b"

@@ -32,3 +32,9 @@ export function toolLabel(name: string): string {
 export function retryLabel(attempt: number, max: number): string {
   return `Model busy — retrying (${attempt} of ${max})…`;
 }
+
+// Feature 021: shown in the thinking indicator when the turn moves to the same-class
+// sibling model because its own model stays rate limited (the `model_fallback` frame).
+export function fallbackLabel(from: string, to: string): string {
+  return `${from} is rate-limited — switching to ${to}…`;
+}

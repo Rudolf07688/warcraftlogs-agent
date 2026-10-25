@@ -12,7 +12,7 @@ from backend.app.db.models import (
 )
 from backend.app.config import settings
 from backend.app.services.profile_context import build_preamble
-from wcl_agent.guide_meta import BriefRecord
+from wcl_agent.guides.guide_meta import BriefRecord
 
 
 def _brief(cls: str, spec: str, text: str, content_type: str = "raid") -> BriefRecord:

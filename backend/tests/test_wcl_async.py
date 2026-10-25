@@ -9,8 +9,8 @@ import httpx
 import pytest
 
 from backend.tests.wcl_fakes import gql_response, mock_async_client
-from wcl_agent import wcl_client
-from wcl_agent.wcl_client import LaneLimiter, _limiter, background_lane
+from wcl_agent.client import wcl_client
+from wcl_agent.client.wcl_client import LaneLimiter, _limiter, background_lane
 
 REPORT_Q = "query($code: String) { reportData { report(code: $code) { title } } }"
 RATE_Q = "{ rateLimitData { limitPerHour } }"
@@ -414,7 +414,7 @@ async def test_cost_field_is_injected_logged_and_stripped(query, caplog):
         return gql_response({"data": {"_cost": cost, "real": 1}})
 
     wcl_client._last_points = 10.0
-    with caplog.at_level("INFO", logger="wcl_agent.wcl_client"):
+    with caplog.at_level("INFO", logger="wcl_agent.client.wcl_client"):
         result = await mock_async_client(handler).query(query)
     assert "_cost: rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn }" in sent[0]
     assert result == {"data": {"real": 1}}  # never visible to callers

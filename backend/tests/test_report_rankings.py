@@ -6,7 +6,7 @@ import pytest
 
 from backend.tests.test_provenance import REPORT_RANKINGS_FIXTURE
 from backend.tests.wcl_fakes import install
-from wcl_agent.report_tools import get_report_rankings
+from wcl_agent.tools.report_tools import get_report_rankings
 
 
 def _responder(query, variables):

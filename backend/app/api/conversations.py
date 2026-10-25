@@ -1,4 +1,4 @@
-"""REST: conversation lifecycle (list / create / get / delete) — tenant-scoped (US3)."""
+"""REST: conversation lifecycle (list / create / get / pin / delete) — tenant-scoped (US3)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from ..schemas import (
     ConversationDetail,
     ConversationListResponse,
     ConversationOut,
+    ConversationUpdate,
 )
 from ..services.charts import chart_spec_to_plotly
 from ..tenancy.context import RequestIdentity
@@ -73,6 +74,22 @@ async def get_conversation(
         for a in artifacts
     ]
     return detail
+
+
+@router.patch("/{conv_id}", response_model=ConversationOut)
+async def update_conversation(
+    conv_id: uuid.UUID,
+    body: ConversationUpdate,
+    identity: RequestIdentity = Depends(require_csrf),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> ConversationOut:
+    """Pin or unpin a chat (feature 019); a foreign or unknown id is 404 (FR-008)."""
+    conv = await repo.set_conversation_pinned(
+        db, conv_id, body.pinned, tenant_id=identity.tenant_id
+    )
+    if conv is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return ConversationOut.model_validate(conv)
 
 
 @router.delete("/{conv_id}", status_code=204)

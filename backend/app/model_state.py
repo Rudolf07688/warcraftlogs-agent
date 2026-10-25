@@ -1,7 +1,7 @@
 """Single accessor for the runtime model set (US4).
 
 At startup the lifespan probes candidate models and stores the validated set on
-``app.state`` (see main.py / wcl_agent.models). Every consumer — the models
+``app.state`` (see main.py / wcl_agent.llm.models). Every consumer — the models
 endpoint, the WebSocket, conversation creation, and raid investigation — reads it
 through here so there is one source of truth for "which models are selectable"
 and "what is the default". Before startup (or in tests without a lifespan) it
@@ -9,6 +9,8 @@ falls back to the configured allow-list so the app still functions.
 """
 
 from __future__ import annotations
+
+from wcl_agent.llm.models import sibling_model
 
 from .config import settings
 
@@ -32,3 +34,9 @@ def get_model_state(app) -> tuple[list[str], str, bool]:
 def is_valid_model(app, model: str) -> bool:
     models, _, _ = get_model_state(app)
     return model in models
+
+
+def fallback_model_for(app, model: str) -> str | None:
+    """The served sibling a rate-limited chat turn on ``model`` may switch to (feature 021)."""
+    models, _, _ = get_model_state(app)
+    return sibling_model(model, models)

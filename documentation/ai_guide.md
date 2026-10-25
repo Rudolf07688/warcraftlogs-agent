@@ -88,12 +88,34 @@ wcl_agent/
   cli.py                   # env check -> menu -> asyncio chat REPL (the `wcl` entry point)
   menu.py                  # interactive zone/encounter/difficulty selection
   agent.py                 # root_agent: Gemini model + instruction + all 15 tools
-  wcl_client.py            # AsyncWCLClient (httpx, OAuth + GraphQL) per loop, lanes, acheck_rate_limit
-  aio.py                   # gather_settled / unwrap: async fan-out inside a tool
-  queries.py               # GraphQL strings for the menu + leaderboard
-  constants.py             # class/spec PascalCase filter map + METRICS + normalizer
-  tools.py                 # LEADERBOARD tools (rankings distribution / spec compare)
-  report_tools.py          # DEEP-DIVE tools (report tables/events/graph, characters, raw GraphQL)
+  client/                  # Warcraft Logs API access
+    wcl_client.py          # AsyncWCLClient (httpx, OAuth + GraphQL) per loop, lanes, acheck_rate_limit
+    aio.py                 # gather_settled / unwrap: async fan-out inside a tool
+    queries.py             # GraphQL strings for the menu + leaderboard
+  cache/                   # shared Redis WCL cache (feature 014)
+    cache.py               # get_or_load, key families, stats
+    cache_models.py        # Pydantic value models, one per family
+    normalize.py           # server_slug, FINAL_AFTER, is_finished
+  tools/                   # ADK function tools
+    tools.py               # LEADERBOARD tools (rankings distribution / spec compare)
+    report_tools.py        # DEEP-DIVE tools (report tables/events/graph, characters, raw GraphQL)
+    benchmark.py           # compare_player_to_cohort, report_link
+    cooldowns.py           # get_cooldown_usage
+    fight_time.py          # player resolution, dead windows, eligible time
+    provenance.py          # provenance + completeness envelope on tool results
+  guides/                  # coaching briefs (feature 015)
+    guide_meta.py          # injected brief loader (set_brief_loader / get_brief)
+    guides_tool.py         # get_coaching_brief
+  llm/                     # chat models
+    models.py              # startup model discovery + validation
+    model_retry.py         # rate-limit retry loop, RetryingGemini / RetryingClaude, 429 fallback to the same-class sibling (021)
+    vertex.py              # model location, client kwargs, Model Garden catalog
+    genai_compat.py        # force-build google-genai serializers
+    context_trim.py        # stub old tool results in the model context
+  game/                    # WoW reference data
+    constants.py           # class/spec PascalCase filter map + METRICS + normalizer
+    roster.py              # live class/spec roster from WCL game data
+    patch.py               # current patch, M+ season, guide freshness
 ```
 
 ### Control flow
@@ -249,11 +271,11 @@ uv run python -c "from wcl_agent.agent import root_agent; print(len(root_agent.t
 
 # WCL auth/GraphQL smoke (no LLM) — prints points budget
 uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
+from wcl_agent.client.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
 
 # menu discovery (no LLM)
 uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import get_async_client; from wcl_agent.queries import MENU_DISCOVERY; \
+from wcl_agent.client.wcl_client import get_async_client; from wcl_agent.client.queries import MENU_DISCOVERY; \
 q = lambda: get_async_client().query(MENU_DISCOVERY); \
 print([z['name'] for z in asyncio.run(q())['data']['worldData']['zones']])"
 ```
@@ -316,8 +338,8 @@ for future agents:
   Interrupted replies persist as `messages.status = "partial"`.
 - **Web grounding**: `build_agent` adds a `web_search` grounding sub-agent tool for
   Gemini models only; the runner emits a `grounding` frame.
-- **Model discovery**: `wcl_agent/models.py` lists the Vertex Model Garden catalog
-  (`wcl_agent/vertex.py`), probes the newest versions per class and keeps the newest
+- **Model discovery**: `wcl_agent/llm/models.py` lists the Vertex Model Garden catalog
+  (`wcl_agent/llm/vertex.py`), probes the newest versions per class and keeps the newest
   that answer (feature 016; `WCL_MODEL_DISCOVERY=static` probes `WCL_GEMINI_MODELS` /
   `WCL_ANTHROPIC_MODELS` instead). The result is cached 6 h (`model_catalog` family),
   lives on `app.state` and is read via `backend/app/model_state.py` (single source of
@@ -343,7 +365,7 @@ Implemented in `specs/005-guild-context-artifacts/`. Summary for future agents:
   prepends to the model input only (via the new `context_preamble` arg); the stored
   user message is unchanged. Empty profile → empty preamble → behavior unchanged.
 - **Interactive charts** (`artifacts` table): the agent calls the dependency-light
-  `create_chart` tool (`wcl_agent/tools.py`) which returns a validated `ChartSpec`.
+  `create_chart` tool (`wcl_agent/tools/tools.py`) which returns a validated `ChartSpec`.
   `ws._handle_tool_end` persists it, derives a Plotly figure
   (`services/charts.chart_spec_to_plotly`), and emits an `artifact` frame; the
   frontend renders it via a lazy-loaded `PlotlyArtifact`. The same spec renders to
@@ -435,7 +457,7 @@ empty metadata store + unset roles reproduce feature-006 behavior byte-for-byte.
   synthesis error/timeout/empty output → `500`, no partial file (the model emits its own
   "no substantive findings" doc for chit-chat).
 - **Role-aware profile (US4)**: nullable `user_characters.raid_role` override column
-  (migration `0006_raid_role`). `wcl_agent/constants.SPEC_ROLES` + `role_for_spec()` are the
+  (migration `0006_raid_role`). `wcl_agent/game/constants.SPEC_ROLES` + `role_for_spec()` are the
   spec→Tank/Healer/DPS SSOT; `effective_role = raid_role or role_for_spec(active_spec)` is a
   computed field on `CharacterOut`. New `PATCH /api/profile/friends/{id}` (`FriendPatchIn`)
   edits a friend's role in place; `PUT /self`/`POST /friends` accept `raid_role`.
@@ -541,12 +563,14 @@ Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future age
 - **Preamble**: it rides on `TurnStats.preamble` and `model_retry.inject_preamble` adds it to
   each `LlmRequest` (never stored in ADK history). The turn stats line logs
   `prompt_tokens` / `max_prompt_tokens` / `cached_tokens` / `trimmed`.
-- **Old tool results** (`wcl_agent/context_trim.py`): the before-model callback replaces
+- **Old tool results** (`wcl_agent/llm/context_trim.py`): the before-model callback replaces
   large results older than `WCL_CONTEXT_KEEP_TURNS` turns with deterministic `_elided` stubs
   in the request only (new Content/Part objects; ADK's request copy shares nested objects with
   stored events, so never mutate in place). The prompt tells the model to re-fetch elided data.
 - **Suggestions** (`api/ws.py`): `_handle_turn` returns the suggestions task; `_TurnSocket`
   serializes sends and the next turn cancels it.
+- **Generated titles** (feature 019): after `done`, a chat with `title_source == "auto"` gets `services/conversation_titles.schedule_title` (claim `auto→generated` in the DB, cheap model, 15 s cap, then a `ConversationTitleFrame`); explicit/legacy names are never touched, and tests stub it in conftest.
+- **Pinning** (feature 019): `PATCH /api/conversations/{id}` `{pinned: bool}` sets `conversations.pinned_at` (tenant-scoped, 404 for foreign ids, `updated_at` untouched); the sidebar groups pinned chats on top.
 - **Guides/boot**: `_generate_text` is capped by `WCL_GUIDE_MAX_CONCURRENCY`; roster and
   profile reads use `with_text=False`; model probes run concurrently with a 10 s timeout;
   the greeting session id is per process.
@@ -573,7 +597,7 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
   never finished / > 15 min ago / own-character set changed / forced after a failure),
   commits, then `background.spawn`s `run_recent_raid_refresh`. That run: each own
   character's `recentReports` (feature 014: `char_id` + `char_reports` families, run
-  concurrently), upsert, then details for new or non-final raids only, from the shared
+  concurrently), upsert, then details for new or non-final raids (and, for the M+ step, the newest 10 non-raid reports), from the shared
   `report_summary` entry, 10 at a time. Final = log ended > 2 h before the fetch. Errors become short codes
   (`wcl_unavailable`, `rate_limited`, `timeout`, `unknown`). All WCL calls are in
   `background_lane()`; no DB session is held across a WCL await.
@@ -581,6 +605,18 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
   (CSRF) is Retry: 202 when it started a run, 200 with the current state otherwise, 409
   `no_characters`. `POST /api/raids/{code}/investigate` also accepts a code that is only a
   recent raid of this tenant, and turns it into a tracked raid first.
+- **Feature 022 (Mythic+ on the welcome page)**: migration `0014_recent_mplus_runs` adds
+  `recent_mplus_runs` and `recent_mplus_run_characters` (RLS). `_refresh_mplus_runs`
+  (`services/recent_raids.py`) examines the newest 10 non-raid reports (`MPLUS_REPORT_BATCH`)
+  with the same shared summaries as raids and keeps finished keys only (`keystoneLevel > 0`
+  with a result). Caps: `RECENT_RAIDS_SHOWN=6`, `RECENT_MPLUS_SHOWN=6`.
+  `POST /api/recent-raids/mplus/{report_code}/{fight_id}/investigate` starts the chat. The
+  summary cache key is `wcl:v1:report:{code}:summary:keystone` (the suffix, not a `v2`,
+  retired summaries cached before the keystone fields). Only the raid step can fail a
+  refresh: an M+-only failure (a WCL error or timeout in the M+ step) is logged and the
+  refresh still records `succeeded`, so stored raids and runs stay visible (decisions 36
+  and 37). This is intentional; don't surface it as a refresh failure without a separate
+  retry path.
 - **UI**: `WelcomePanel.tsx` renders in a new chat under Barnaby's greeting, through
   `MessageList`'s `footer` slot. It polls every 3 s while a refresh runs (paused when the
   tab is hidden, gives up after 3 minutes).
@@ -591,12 +627,12 @@ Spec: `specs/013-welcome-recent-raids/`. What future agents must know:
 
 Implemented in `specs/014-redis-wcl-cache/` (design: `documentation/redis_cache_spec.md`).
 
-- **One way in**: `wcl_agent.cache.get_or_load(family, key, model, loader, ttl=, force_refresh=)`.
-  Values are Pydantic models from `wcl_agent/cache_models.py`; keys only from `cache.keys`
+- **One way in**: `wcl_agent.cache.cache.get_or_load(family, key, model, loader, ttl=, force_refresh=)`.
+  Values are Pydantic models from `wcl_agent/cache/cache_models.py`; keys only from `cache.keys`
   (never a user/tenant/conversation id — WCL data is public and shared by all tenants,
   superseding feature 006 FR-019). `loader()` returning `None` = "not found", cached 60 s.
-- **Families**: `char_id`, `char_overview`, `char_reports`, `report_summary`,
-  `report_player`, `oauth_token`, `world_zones` (README table). Call sites:
+- **Families**: `char_id`, `char_overview`, `char_reports`, `report_summary`
+  (key `…:summary:keystone`), `report_player`, `oauth_token`, `world_zones` (README table). Call sites:
   `report_tools.resolve_character` / the two character-ranking tools /
   `load_report_summary` (also behind `get_report_metadata` and recent-raid details) /
   per-player `get_report_table`; `menu.load_world_zones` (patch, `find_encounter`, menu);
@@ -625,6 +661,7 @@ Implemented in `specs/014-redis-wcl-cache/` (design: `documentation/redis_cache_
   `chat:refresh:{user}:{char}` (60 s). `ws.py` sets the turn's user with `set_refresh_actor`.
 - **Tests**: Redis is off unless a test takes the `fake_redis` fixture (conftest); use
   `DeadRedis` (test_wcl_cache.py) for outage paths.
+- **Raw fetch store** (feature 020): every successful WCL network call (cache misses only) is offered by `AsyncWCLClient._fetch` to the process-wide sink `wcl_client.set_fetch_sink`; in the app it is `services/fetch_persistence.FetchWriter` (started/stopped in `lifespan`, 5 s drain), which upserts one row per query key into the global `raw_fetches` table (`report_codes` JSONB + GIN; the DB strips `data._cost`). Bounded by `WCL_FETCH_PERSIST_QUEUE_MAX`/`_QUEUE_MB` (drops are logged, never raised); `WCL_FETCH_PERSIST_ENABLED=false` turns it off. CLI, evals and tests leave the sink unset. Nothing reads the table yet (sc-129).
 
 ## 20. Feature 015 — grounded, patch-aware Raid and Mythic+ guides
 
@@ -652,17 +689,17 @@ Implemented in `specs/015-grounded-class-guides/` (grounding plan:
   `render_brief_text` (the agent's text: `[O|B|G,H|M|L]` tags, `LOG:` checks, no braces,
   ≤ 6000 chars, never truncated), `render_guide_markdown` (one bullet per claim with a
   `<!-- cN -->` marker, stripped by the API).
-- **Agent side**: `wcl_agent.guide_meta` holds an injected loader (`set_brief_loader`,
+- **Agent side**: `wcl_agent.guides.guide_meta` holds an injected loader (`set_brief_loader`,
   `get_brief(class, spec, content_type, mark_used=)`); the backend registers
   `services.guide.load_brief_record` (published brief only, 60 s cache). The preamble
   (`services.guide.briefs_for_turn` + `profile_context.build_preamble`) classifies the turn
   (`services.content_type.classify_content_type`, unknown ⇒ Raid with a note) and inlines
   whole briefs within 12 000 chars, plus an index line per spec. Tools: `get_coaching_brief`
-  (`wcl_agent/guides_tool.py`) and `get_cooldown_usage(content_type=)` (content type from
+  (`wcl_agent/guides/guides_tool.py`) and `get_cooldown_usage(content_type=)` (content type from
   the fight's difficulty / report zone; reads the player's own Casts table). The instruction
   is an ADK `InstructionProvider` (`agent.build_instruction`) so `<CURRENT_TIME>` is live;
   `<COACHING_BRIEFS>` replaced `<GUIDES>`.
-- **Roster**: `wcl_agent/roster.py` (`load_roster` from `gameData.classes`, cached 24 h;
+- **Roster**: `wcl_agent/game/roster.py` (`load_roster` from `gameData.classes`, cached 24 h;
   `roster_snapshot()` for sync callers; `CLASS_SPECS` is the fallback and includes Devourer).
 - **Freshness**: `services.guide.maybe_scan_stale_guides()` (throttled 10 min; called by
   `GET /api/guides`, the preamble and startup) → `compute_stale_reason` → in-use guides
@@ -737,7 +774,7 @@ synthesis (feature 007), both endpoints, file names and fail-closed errors are a
   print "Chart unavailable"; the PDF render has a 90 s timeout (queue wait included), then
   `500`. Caption `source` links are only drawn for http(s) URLs. Bar hatches are line
   patterns only (dot hatches cost about 300 ms per chart in WeasyPrint).
-- **Links**: `wcl_agent.benchmark.report_link(code, fight_id=None)` is the one WCL report URL
+- **Links**: `wcl_agent.tools.benchmark.report_link(code, fight_id=None)` is the one WCL report URL
   builder, used for graph source links and the benchmark tool.
 - **Deps**: `weasyprint`, `markdown-it-py`, `mdit-py-plugins`, `nh3` (test: `pypdf`);
   `reportlab` and the unused `markdown` were removed. The Docker image adds Pango/HarfBuzz,

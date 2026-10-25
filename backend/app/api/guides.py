@@ -15,9 +15,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wcl_agent.roster import roster_snapshot
-from wcl_agent.patch import current_mplus_season, current_patch
-from wcl_agent.wcl_client import background_lane
+from wcl_agent.game.roster import roster_snapshot
+from wcl_agent.game.patch import current_mplus_season, current_patch
+from wcl_agent.client.wcl_client import background_lane
 
 from ..auth.dependencies import require_csrf, require_session
 from ..auth.rate_limit import guide_limiter, guide_report_limiter

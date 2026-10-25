@@ -35,7 +35,7 @@ def install_brief_loader() -> None:
     """Register the backend's brief loader, as startup does (no-op before feature 015)."""
     try:
         from backend.app.services.guide import load_brief_record
-        from wcl_agent.guide_meta import set_brief_loader
+        from wcl_agent.guides.guide_meta import set_brief_loader
     except ImportError:
         return
     set_brief_loader(load_brief_record)

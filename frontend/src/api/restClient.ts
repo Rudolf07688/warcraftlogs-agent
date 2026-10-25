@@ -188,6 +188,19 @@ export async function investigateRaid(
   );
 }
 
+export async function investigateMplusRun(
+  reportCode: string,
+  fightId: number,
+  model?: string,
+): Promise<InvestigateResponse> {
+  return send(
+    "POST",
+    `/api/recent-raids/mplus/${encodeURIComponent(reportCode)}/${fightId}/investigate`,
+    { model: model ?? null },
+    { csrf: true },
+  );
+}
+
 // Feature 013: the welcome page's recent raids. The GET never waits for Warcraft Logs; it
 // may start a background refresh, reported in `refresh.status`.
 export async function getRecentRaids(): Promise<RecentRaidsResponse> {
@@ -226,6 +239,14 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     m.seq != null && bySeq.has(m.seq) ? { ...m, artifacts: bySeq.get(m.seq) } : m,
   );
   return { ...raw, messages };
+}
+
+// Feature 019: pin or unpin a chat (tenant-scoped; returns the updated row).
+export async function updateConversation(
+  id: string,
+  body: { pinned: boolean },
+): Promise<Conversation> {
+  return send("PATCH", `/api/conversations/${id}`, body, { csrf: true });
 }
 
 export async function deleteConversation(id: string): Promise<void> {

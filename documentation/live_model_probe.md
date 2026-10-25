@@ -4,7 +4,7 @@
 
 **Today.** The chat model dropdown comes from a fixed list in `.env`:
 - `WCL_GEMINI_MODELS` and `WCL_ANTHROPIC_MODELS`.
-- At startup, `wcl_agent/models.py::discover_models` sends each id a one-token "hello" and keeps the ones that answer.
+- At startup, `wcl_agent/llm/models.py::discover_models` sends each id a one-token "hello" and keeps the ones that answer.
 - It stores the result on `app.state`, read through `backend/app/model_state.py::get_model_state`.
 - `GET /api/models` serves it, and `frontend/src/App.tsx` renders it.
 
@@ -37,10 +37,10 @@
 - **`global`:** serves all of them.
 - **Regional catalogs differ too:** `europe-west1` lists 11 Google models and only `claude-3-opus`.
 
-**How:** add one helper, `wcl_agent/vertex.py::model_location()`. Every client that calls a model uses it instead of reading `GOOGLE_CLOUD_LOCATION`:
-- `genai.Client(vertexai=True, location=...)` in `guide_pipeline/llm.py`, `report_synthesis.py`, `suggestions.py` and `wcl_agent/models.py`;
-- `AnthropicVertex(region=...)` in `wcl_agent/models.py`;
-- the ADK model subclasses `RetryingGemini` / `RetryingClaude` in `wcl_agent/model_retry.py`, which override their client construction.
+**How:** add one helper, `wcl_agent/llm/vertex.py::model_location()`. Every client that calls a model uses it instead of reading `GOOGLE_CLOUD_LOCATION`:
+- `genai.Client(vertexai=True, location=...)` in `guide_pipeline/llm.py`, `report_synthesis.py`, `suggestions.py` and `wcl_agent/llm/models.py`;
+- `AnthropicVertex(region=...)` in `wcl_agent/llm/models.py`;
+- the ADK model subclasses `RetryingGemini` / `RetryingClaude` in `wcl_agent/llm/model_retry.py`, which override their client construction.
 
 The `us-east5` fallback in `_make_anthropic_client` goes away.
 
@@ -83,7 +83,7 @@ The `us-east5` fallback in `_make_anthropic_client` goes away.
 - **Nothing passes:** today's degraded path, which serves `WCL_MODELS` with the "degraded" notice.
 
 ### Caching
-- A new Redis family `MODEL_CATALOG` (`wcl_agent/cache.py` and `cache_models.py`) holds the final result, loaded through the existing `get_or_load`.
+- A new Redis family `MODEL_CATALOG` (`wcl_agent/cache/cache.py` and `cache_models.py`) holds the final result, loaded through the existing `get_or_load`.
 - The key covers the class settings, location and project, so a config change misses it.
 - Every restart and every worker reuses it for 6 h instead of re-probing.
 - If Redis is down, `get_or_load` already computes the result without it.
@@ -105,11 +105,11 @@ For example:
 
 | File | Change |
 |---|---|
-| `wcl_agent/vertex.py` (new) | `model_location()`, `project_id()`, and `list_publisher_models(publisher)` (REST, paginated). |
-| `wcl_agent/models.py` | Add `classify(entry)`, `candidates_by_class(entries, classes)` and `pick_per_class(candidates, probe, keep)`. These are pure, apart from the injected probe. Add the tool-declaring probes, 404/429 classification, `discover_models(mode=...)` and the catalog path. The static path is unchanged. |
-| `wcl_agent/model_retry.py` | `RetryingGemini` / `RetryingClaude` build their clients with `model_location()`. |
+| `wcl_agent/llm/vertex.py` (new) | `model_location()`, `project_id()`, and `list_publisher_models(publisher)` (REST, paginated). |
+| `wcl_agent/llm/models.py` | Add `classify(entry)`, `candidates_by_class(entries, classes)` and `pick_per_class(candidates, probe, keep)`. These are pure, apart from the injected probe. Add the tool-declaring probes, 404/429 classification, `discover_models(mode=...)` and the catalog path. The static path is unchanged. |
+| `wcl_agent/llm/model_retry.py` | `RetryingGemini` / `RetryingClaude` build their clients with `model_location()`. |
 | `backend/app/services/guide_pipeline/llm.py`, `services/report_synthesis.py`, `suggestions.py` | `genai.Client(vertexai=True, location=model_location())`. |
-| `wcl_agent/cache.py`, `wcl_agent/cache_models.py` | Add the `MODEL_CATALOG` family and the `ModelCatalog` model (`models`, `default`, `degraded`, `source`, `classes`, `fetched_at`). |
+| `wcl_agent/cache/cache.py`, `wcl_agent/cache/cache_models.py` | Add the `MODEL_CATALOG` family and the `ModelCatalog` model (`models`, `default`, `degraded`, `source`, `classes`, `fetched_at`). |
 | `backend/app/config.py`, `backend/app/main.py` (`_models` step) | Settings; call `discover_models` in catalog mode through the cache; the warning for fixed-purpose models. |
 | `.env.example`, `README.md` | New settings; the region note; the Claude quota note. |
 

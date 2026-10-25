@@ -281,6 +281,15 @@ class Conversation(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # feature 019 / sc-165: when the chat was pinned; NULL = not pinned. Orders the
+    # sidebar's Pinned group (newest first).
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # feature 019 / sc-155: "auto" (default name, eligible for one generated title),
+    # "explicit" (named at creation), "generated" (generation claimed) or "legacy"
+    # (predates the feature). See data-model.md for the state machine.
+    title_source: Mapped[str] = mapped_column(
+        String(10), default="auto", server_default="auto"
+    )
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",
@@ -710,3 +719,75 @@ class RecentRaidRefresh(Base):
     )
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     character_set: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class RawFetch(Base):
+    """One Warcraft Logs GraphQL response, kept for DB-first reads (feature 020).
+
+    GLOBAL, no RLS: Warcraft Logs data is public, like the shared Redis cache. One row per
+    ``query_key`` (the client's single-flight key: query text plus sorted variables); a
+    newer fetch replaces the row. ``report_codes`` lists every report the query names
+    (batches too); ``report_code`` is set only when there is exactly one.
+    """
+
+    __tablename__ = "raw_fetches"
+    __table_args__ = (
+        Index("ix_raw_fetches_report_codes", "report_codes", postgresql_using="gin"),
+    )
+
+    query_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    operation_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    params: Mapped[dict] = mapped_column(_JSON, nullable=False)
+    report_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    report_codes: Mapped[list] = mapped_column(_JSON, nullable=False, server_default=text("'[]'"))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict] = mapped_column(_JSON, nullable=False)
+
+
+class RecentMplusRun(Base):
+    """A completed Mythic+ keystone fight found in a report an own character was logged in
+    (feature 022). One row per (report, fight): a report can hold several keys. Stored for
+    good, a finished run never changes."""
+
+    __tablename__ = "recent_mplus_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "report_code", "fight_id", name="uq_recent_mplus_run_tenant_fight"
+        ),
+        Index("ix_recent_mplus_runs_tenant_started", "tenant_id", "started_at"),
+        CheckConstraint("key_level > 0", name="ck_recent_mplus_run_level"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    report_code: Mapped[str] = mapped_column(String(32))
+    fight_id: Mapped[int] = mapped_column(Integer)
+    dungeon: Mapped[str] = mapped_column(String(120))
+    key_level: Mapped[int] = mapped_column(SmallInteger)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    timed: Mapped[bool] = mapped_column(Boolean)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class RecentMplusRunCharacter(Base):
+    """Links a recent M+ run to an own character that took part (feature 022). Deleting the
+    character cascades the link away, so the run stops showing."""
+
+    __tablename__ = "recent_mplus_run_characters"
+    __table_args__ = (
+        Index("ix_recent_mplus_run_characters_tenant_char", "tenant_id", "character_id"),
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("recent_mplus_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_characters.id", ondelete="CASCADE"), primary_key=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )

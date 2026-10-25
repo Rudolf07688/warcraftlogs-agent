@@ -1,4 +1,4 @@
-"""Feature 016: the catalog listing and the one model location (wcl_agent.vertex)."""
+"""Feature 016: the catalog listing and the one model location (wcl_agent.llm.vertex)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import requests
 
-from wcl_agent import vertex
-from wcl_agent.vertex import CatalogEntry, CatalogUnavailable
+from wcl_agent.llm import vertex
+from wcl_agent.llm.vertex import CatalogEntry, CatalogUnavailable
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -154,7 +154,7 @@ def test_client_factories_use_the_model_location(regional, monkeypatch):
 
 def test_adk_models_use_the_model_location(regional):
     from wcl_agent.agent import _build_web_search_tool
-    from wcl_agent.model_retry import RetryingClaude, RetryingGemini
+    from wcl_agent.llm.model_retry import RetryingClaude, RetryingGemini
 
     expected = {"vertexai": True, "location": "global"}
     gemini = RetryingGemini(model="gemini-3.8-flash")
@@ -173,7 +173,7 @@ def test_api_key_setup_gets_plain_clients(monkeypatch):
     """QA BUG-001: GOOGLE_GENAI_USE_VERTEXAI=FALSE + GOOGLE_API_KEY still works."""
     from google import genai
 
-    from wcl_agent.model_retry import RetryingGemini
+    from wcl_agent.llm.model_retry import RetryingGemini
 
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "FALSE")
     g = _capture(monkeypatch, genai, "Client")
@@ -189,7 +189,7 @@ def test_no_model_client_is_built_outside_vertex():
         f"{path.relative_to(ROOT)}:{n}"
         for base in ("wcl_agent", "backend/app")
         for path in (ROOT / base).rglob("*.py")
-        if path != ROOT / "wcl_agent" / "vertex.py"
+        if path != ROOT / "wcl_agent" / "llm" / "vertex.py"
         for n, line in enumerate(path.read_text().splitlines(), 1)
         if pattern.search(line)
     ]

@@ -10,7 +10,7 @@ from pypdf import PdfReader
 from backend.app.api import reports as reports_module
 from backend.app.db import repository as repo
 from backend.app.services.artifacts import capture_artifact_from_tool
-from wcl_agent.tools import create_chart
+from wcl_agent.tools.tools import create_chart
 
 
 def _mock_synthesis(monkeypatch, capture=None):

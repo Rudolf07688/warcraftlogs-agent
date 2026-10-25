@@ -1,11 +1,11 @@
-"""Shared fight-time helpers (feature 009, US2/US4 — wcl_agent/fight_time.py)."""
+"""Shared fight-time helpers (feature 009, US2/US4 — wcl_agent/tools/fight_time.py)."""
 
 from __future__ import annotations
 
 import pytest
 
 from backend.tests.wcl_fakes import install
-from wcl_agent.fight_time import (
+from wcl_agent.tools.fight_time import (
     PlayerResolutionError,
     dead_windows,
     eligible_seconds,

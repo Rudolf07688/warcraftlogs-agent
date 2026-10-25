@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from wcl_agent.constants import role_for_spec
+from wcl_agent.game.constants import role_for_spec
 
 # --- WebSocket: client -> server ---------------------------------------------
 
@@ -85,6 +85,17 @@ class ModelRetryFrame(BaseModel):
     wait_s: float
 
 
+class ModelFallbackFrame(BaseModel):
+    """Feature 021: the turn's model stayed rate-limited, so the turn continues on its
+    same-class sibling. Sent at most once per turn (see contracts/websocket-model-fallback.md).
+    Additive — clients that do not know the type ignore it.
+    """
+
+    type: Literal["model_fallback"] = "model_fallback"
+    from_model: str
+    to_model: str
+
+
 class RaidTrackedFrame(BaseModel):
     """Emitted after a raid is upserted so the UI can refresh its Raids list."""
 
@@ -116,6 +127,18 @@ class SuggestionsFrame(BaseModel):
     type: Literal["suggestions"] = "suggestions"
     message_id: uuid.UUID | None = None
     suggestions: list[str] = Field(default_factory=list, max_length=3)
+
+
+class ConversationTitleFrame(BaseModel):
+    """A chat's generated title (feature 019 / sc-155, contracts/ws-conversation-title.md).
+
+    Sent at most once per chat, after its first reply's `done`, once the title is saved;
+    the client reloads its conversation list on it.
+    """
+
+    type: Literal["conversation_title"] = "conversation_title"
+    conversation_id: uuid.UUID
+    title: str
 
 
 class EncounterOut(BaseModel):
@@ -169,6 +192,15 @@ class ConversationOut(BaseModel):
     model: str
     created_at: datetime
     updated_at: datetime
+    # Feature 019 / sc-165: when the chat was pinned; None = not pinned.
+    pinned_at: datetime | None = None
+
+
+class ConversationUpdate(BaseModel):
+    """PATCH /api/conversations/{id} body (feature 019): pin or unpin the chat."""
+
+    model_config = ConfigDict(extra="forbid")
+    pinned: bool = Field(strict=True)  # "yes"/1 are rejected, not coerced
 
 
 class ConversationDetail(ConversationOut):
@@ -239,6 +271,18 @@ class RecentRaidOut(BaseModel):
     characters: list[RecentRaidCharacterOut]
 
 
+class RecentMplusRunOut(BaseModel):
+    """A completed Mythic+ keystone run (feature 022, contracts/rest-recent-mplus.md)."""
+
+    report_code: str
+    fight_id: int
+    dungeon: str
+    key_level: int
+    started_at: datetime
+    timed: bool
+    characters: list[RecentRaidCharacterOut]
+
+
 class RecentRaidsRefreshOut(BaseModel):
     status: Literal["idle", "running", "succeeded", "failed"]
     last_success_at: datetime | None
@@ -249,6 +293,7 @@ class RecentRaidsRefreshOut(BaseModel):
 class RecentRaidsResponse(BaseModel):
     has_characters: bool
     raids: list[RecentRaidOut]  # newest first, raids only
+    mplus_runs: list[RecentMplusRunOut] = []  # newest first; empty means no section
     refresh: RecentRaidsRefreshOut
 
 

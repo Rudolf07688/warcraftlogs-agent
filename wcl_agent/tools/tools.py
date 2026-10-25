@@ -1,0 +1,601 @@
+"""ADK function-tools the agent calls to fetch and analyze WCL rankings.
+
+Each tool returns a plain ``dict`` with a ``"status"`` key (``"success"`` or
+``"error"``) so the model can react to failures and retry. The currently
+selected encounter is read from the ADK session state via ``ToolContext`` — it
+was placed there from the startup menu (see ``main.py``).
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import pandas as pd
+from google.adk.tools import ToolContext
+
+from ..game.constants import METRICS, normalize_class_name
+from ..game.roster import roster_snapshot
+from .provenance import Completeness, Provenance, with_envelope
+from ..menu import load_world_zones
+from ..client.queries import ENCOUNTER_RANKINGS
+from ..client import wcl_client
+from ..client.aio import gather_settled, unwrap
+
+MAX_PAGES = 10  # hard cap to protect the API points budget
+
+_DIFFICULTY_NAMES = {5: "Mythic", 4: "Heroic", 3: "Normal", 1: "LFR"}
+
+
+def _selection(tool_context: ToolContext) -> dict[str, Any]:
+    """Pull the encounter selection out of session state."""
+    state = tool_context.state
+    return {
+        "encounterID": state.get("encounterID"),
+        "encounterName": state.get("encounterName"),
+        "difficultyID": state.get("difficultyID"),
+        "difficultyName": state.get("difficultyName"),
+        "partition": state.get("partition"),
+    }
+
+
+async def _fetch_rankings(
+    sel: dict[str, Any],
+    metric: str,
+    class_name: str | None,
+    spec_name: str | None,
+    num_pages: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Page ``characterRankings``; return (entries, more_pages_available).
+
+    The leaderboard is sorted by score descending, so the fetched entries are
+    the top ``num_pages * 100`` parses. ``more_pages_available`` is True when
+    lower-ranked parses remain beyond what was fetched.
+    """
+    client = wcl_client.get_async_client()
+
+    async def fetch(page: int) -> dict[str, Any]:
+        variables = {
+            "encounterID": sel["encounterID"],
+            "difficulty": sel["difficultyID"],
+            "metric": metric,
+            "className": class_name,
+            "specName": spec_name,
+            "page": page,
+            "partition": sel["partition"],
+        }
+        data = await client.query(ENCOUNTER_RANKINGS, variables)
+        return data["data"]["worldData"]["encounter"]["characterRankings"] or {}
+
+    # Page 1 says whether more exist; pages 2..N are then fetched together rather than one
+    # after another (PERF-005, 2026-10-18). Pages past the board's end are dropped.
+    first = await fetch(1)
+    entries: list[dict[str, Any]] = list(first.get("rankings", []))
+    has_more = bool(first.get("hasMorePages"))
+    if has_more and num_pages > 1:
+        rest = await gather_settled(*(fetch(p) for p in range(2, num_pages + 1)))
+        for result in rest:
+            blob = unwrap(result)
+            entries.extend(blob.get("rankings", []))
+            has_more = bool(blob.get("hasMorePages"))
+            if not has_more:
+                break
+    return entries, has_more
+
+
+def _summarize(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute percentile stats + spec breakdown for a list of ranking entries."""
+    df = pd.DataFrame(entries)
+    if df.empty or "amount" not in df.columns:
+        return {"sample_size": 0}
+
+    amounts = pd.to_numeric(df["amount"], errors="coerce").dropna()
+    qs = amounts.quantile([0.0, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1.0])
+    percentiles = {
+        "min": round(float(qs[0.0]), 1),
+        "p25": round(float(qs[0.25]), 1),
+        "median": round(float(qs[0.5]), 1),
+        "p75": round(float(qs[0.75]), 1),
+        "p90": round(float(qs[0.9]), 1),
+        "p95": round(float(qs[0.95]), 1),
+        "p99": round(float(qs[0.99]), 1),
+        "max": round(float(qs[1.0]), 1),
+    }
+
+    spec_breakdown: list[dict[str, Any]] = []
+    if "spec" in df.columns:
+        grouped = df.groupby("spec")["amount"].agg(["count", "median", "max"])
+        grouped = grouped.sort_values("median", ascending=False)
+        for spec, row in grouped.iterrows():
+            spec_breakdown.append(
+                {
+                    "spec": spec,
+                    "count": int(row["count"]),
+                    "median_amount": round(float(row["median"]), 1),
+                    "max_amount": round(float(row["max"]), 1),
+                }
+            )
+
+    top_parses = []
+    for entry in sorted(entries, key=lambda e: e.get("amount", 0), reverse=True)[:5]:
+        server = entry.get("server") or {}
+        report = entry.get("report") or {}
+        top_parses.append(
+            {
+                "name": entry.get("name"),
+                "spec": entry.get("spec"),
+                "server": server.get("name"),
+                "region": server.get("region"),
+                "amount": round(float(entry.get("amount", 0)), 1),
+                "item_level": entry.get("bracketData"),
+                "report_code": report.get("code"),
+                "fight_id": report.get("fightID"),
+            }
+        )
+
+    return {
+        "sample_size": int(len(df)),
+        "amount_percentiles": percentiles,
+        "spec_breakdown": spec_breakdown,
+        "top_parses": top_parses,
+    }
+
+
+async def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
+    """Return the encounter, difficulty, and season the user chose at startup.
+
+    Call this first to confirm what you are analyzing before fetching rankings.
+
+    Returns:
+        dict: {"status": "success", "selection": {...}} with the encounter name,
+            difficulty name, and partition (season) id.
+    """
+    sel = _selection(tool_context)
+    if not sel.get("encounterID"):
+        return {
+            "status": "error",
+            "error_message": (
+                "No encounter is selected in this session. Use find_encounter to "
+                "resolve the boss/difficulty the user asked about, then pass its "
+                "encounter_id and difficulty_id to the ranking tools."
+            ),
+        }
+    return with_envelope(
+        {"status": "success", "selection": sel},
+        Provenance(
+            encounter_id=sel.get("encounterID"),
+            difficulty=sel.get("difficultyID"),
+            partition=sel.get("partition"),
+        ),
+    )
+
+
+async def find_encounter(query: str) -> dict[str, Any]:
+    """Resolve a raid boss/encounter by name to its id, zone, and difficulties.
+
+    Use this when no encounter is pre-selected (e.g. the web app) to turn a name
+    like "Ula'tek" or "heroic ulatek" into the encounter_id and difficulty_id that
+    get_rankings_distribution / compare_specs need.
+
+    Args:
+        query (str): A boss/encounter name (partial, any casing), e.g. 'ulatek'.
+
+    Returns:
+        dict: {"status": "success", "matches": [ {encounter_id, encounter, zone,
+            zone_id, difficulties:[{id,name}], default_partition} ]} or an error.
+    """
+    try:
+        zones = await load_world_zones()
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
+
+    q = query.strip().lower().replace("'", "")
+    for word in ("mythic", "heroic", "normal", "lfr"):
+        q = q.replace(word, "")
+    q = q.strip()
+
+    matches: list[dict[str, Any]] = []
+    for zone in zones:
+        for enc in zone.get("encounters") or []:
+            name = enc["name"].lower().replace("'", "")
+            if q and q in name:
+                matches.append(
+                    {
+                        "encounter_id": enc["id"],
+                        "encounter": enc["name"],
+                        "zone": zone["name"],
+                        "zone_id": zone["id"],
+                        "difficulties": [
+                            {"id": d["id"], "name": d["name"]}
+                            for d in (zone.get("difficulties") or [])
+                        ],
+                        "default_partition": next(
+                            (p["id"] for p in (zone.get("partitions") or []) if p.get("default")),
+                            None,
+                        ),
+                    }
+                )
+    if not matches:
+        return {"status": "error", "error_message": f"No encounter matching '{query}'."}
+    return with_envelope({"status": "success", "matches": matches[:8]}, Provenance())
+
+
+async def get_spec_options(class_name: str) -> dict[str, Any]:
+    """List the valid API spec-filter values for a WoW class.
+
+    Warcraft Logs expects PascalCase, space-free class/spec names (e.g.
+    'Hunter' with specs 'BeastMastery', 'Marksmanship', 'Survival'). Use this to
+    get the exact strings to pass to get_rankings_distribution / compare_specs.
+
+    Args:
+        class_name (str): A class name in any casing/spacing (e.g. 'hunter',
+            'Death Knight').
+
+    Returns:
+        dict: {"status": "success", "class_name": <filter value>,
+               "specs": [...]} or an error with the list of valid classes.
+    """
+    roster = roster_snapshot()
+    normalized = normalize_class_name(class_name)
+    if not normalized:
+        return {
+            "status": "error",
+            "error_message": f"Unknown class '{class_name}'.",
+            "valid_classes": roster.classes(),
+        }
+    return with_envelope(
+        {
+            "status": "success",
+            "class_name": normalized,
+            "display": roster.class_display(normalized),
+            "specs": roster.specs_for(normalized),
+        },
+        Provenance(),
+    )
+
+
+async def get_rankings_distribution(
+    class_name: str,
+    spec_name: str,
+    metric: str,
+    num_pages: int,
+    tool_context: ToolContext,
+    encounter_id: int = 0,
+    difficulty_id: int = 0,
+) -> dict[str, Any]:
+    """Fetch current-season ranking scores for a class/spec and summarize them.
+
+    Pulls the leaderboard for the given (or session-selected) encounter+difficulty
+    and computes the score (amount) percentile distribution, a per-spec breakdown,
+    and the top parses. Scores are sorted highest-first, so a bounded page pull
+    characterizes the top of the current-season distribution.
+
+    Args:
+        class_name (str): API class filter, e.g. 'Hunter'. Pass '' for all classes.
+        spec_name (str): API spec filter, e.g. 'Marksmanship'. Pass '' for all
+            specs of the class (or all specs if class is also '').
+        metric (str): Ranking metric: 'dps', 'hps', 'wdps', or 'default'.
+        num_pages (int): How many 100-entry pages to pull (1-10). More pages =
+            deeper distribution but higher API cost. Use 3-5 for a good overview.
+        encounter_id (int): Encounter to analyze. 0 = use the session's selected
+            encounter. When nothing is pre-selected (web app), resolve it first with
+            find_encounter and pass the id here.
+        difficulty_id (int): 5=Mythic, 4=Heroic, 3=Normal, 1=LFR. 0 = use the
+            session's difficulty (defaults to Heroic if none).
+
+    Returns:
+        dict: {"status": "success", ...summary...} including sample_size,
+            amount_percentiles, spec_breakdown, top_parses, and a
+            ``completeness`` block whose ``sample_scope`` is
+            "top_of_leaderboard" when lower-ranked parses were not fetched
+            (so the percentiles describe the top of the leaderboard, not the
+            whole population); or an error.
+    """
+    sel = _selection(tool_context)
+    if encounter_id:
+        diff = difficulty_id or sel.get("difficultyID") or 4
+        sel = {
+            "encounterID": encounter_id,
+            "encounterName": sel.get("encounterName") or f"encounter {encounter_id}",
+            "difficultyID": diff,
+            "difficultyName": _DIFFICULTY_NAMES.get(diff, str(diff)),
+            "partition": sel.get("partition"),
+        }
+    elif difficulty_id and sel.get("encounterID"):
+        sel = {
+            **sel,
+            "difficultyID": difficulty_id,
+            "difficultyName": _DIFFICULTY_NAMES.get(difficulty_id, sel.get("difficultyName")),
+        }
+    if not sel.get("encounterID"):
+        return {
+            "status": "error",
+            "error_message": (
+                "No encounter selected. Call find_encounter to resolve the boss and "
+                "difficulty, then pass encounter_id (and difficulty_id)."
+            ),
+        }
+    if metric not in METRICS:
+        return {
+            "status": "error",
+            "error_message": f"Unsupported metric '{metric}'.",
+            "valid_metrics": METRICS,
+        }
+
+    pages = max(1, min(int(num_pages or 1), MAX_PAGES))
+    try:
+        entries, has_more = await _fetch_rankings(
+            sel,
+            metric=metric,
+            class_name=class_name or None,
+            spec_name=spec_name or None,
+            num_pages=pages,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface any API failure to the model
+        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
+
+    summary = _summarize(entries)
+    provenance = Provenance(
+        encounter_id=sel["encounterID"],
+        difficulty=sel["difficultyID"],
+        partition=sel.get("partition"),
+        metric=metric,
+    )
+    sample_size = int(summary.get("sample_size", 0))
+    completeness = Completeness(
+        has_more=has_more,
+        sample_size=sample_size,
+        sample_scope="top_of_leaderboard" if has_more else "full",
+    )
+    if sample_size == 0:
+        return with_envelope(
+            {
+                "status": "success",
+                "note": "No ranking entries found for these filters.",
+                "encounter": sel["encounterName"],
+                "difficulty": sel["difficultyName"],
+                "filters": {"class": class_name, "spec": spec_name, "metric": metric},
+                **summary,
+            },
+            provenance,
+            completeness,
+        )
+
+    return with_envelope(
+        {
+            "status": "success",
+            "encounter": sel["encounterName"],
+            "difficulty": sel["difficultyName"],
+            "season_partition": sel["partition"],
+            "filters": {"class": class_name, "spec": spec_name, "metric": metric},
+            "pages_fetched": pages,
+            "more_pages_available": has_more,
+            "sample_note": (
+                "Percentiles are computed over the fetched sample of {n} parses, "
+                "which are the TOP scorers (leaderboard sorted by score descending)."
+                + (" More lower-ranked parses exist; fetch more pages to reach "
+                   "lower percentiles." if has_more else "")
+            ).format(n=sample_size),
+            **summary,
+        },
+        provenance,
+        completeness,
+    )
+
+
+async def compare_specs(
+    class_name: str,
+    metric: str,
+    num_pages: int,
+    tool_context: ToolContext,
+    encounter_id: int = 0,
+    difficulty_id: int = 0,
+) -> dict[str, Any]:
+    """Compare every spec of a class on the given encounter side-by-side.
+
+    Runs get_rankings_distribution for each spec of the class and returns their
+    median/max/p95 scores together, ranked by median.
+
+    Args:
+        class_name (str): Class name in any casing (e.g. 'hunter').
+        metric (str): Ranking metric: 'dps', 'hps', 'wdps', or 'default'.
+        num_pages (int): Pages per spec (1-10). Keep small (1-3) since this makes
+            one request set per spec.
+        encounter_id (int): Encounter to analyze. 0 = session's selected encounter
+            (resolve with find_encounter first in the web app).
+        difficulty_id (int): 5=Mythic, 4=Heroic, 3=Normal, 1=LFR. 0 = session default.
+
+    Returns:
+        dict: {"status": "success", "comparison": [ {spec, sample_size,
+            median, p95, max}, ... ]} ranked by median score, or an error.
+    """
+    roster = roster_snapshot()
+    normalized = normalize_class_name(class_name)
+    if not normalized:
+        return {
+            "status": "error",
+            "error_message": f"Unknown class '{class_name}'.",
+            "valid_classes": roster.classes(),
+        }
+
+    comparison = []
+    any_more = False
+    total_sample = 0
+    provenance: dict[str, Any] = {}
+    specs = roster.specs_for(normalized)
+    # Specs are independent: fetch them concurrently, then read results in spec order
+    # (PERF-002). Pages within one spec stay sequential (they stop at hasMorePages).
+    results = await gather_settled(
+        *(
+            get_rankings_distribution(
+                class_name=normalized,
+                spec_name=spec,
+                metric=metric,
+                num_pages=num_pages,
+                tool_context=tool_context,
+                encounter_id=encounter_id,
+                difficulty_id=difficulty_id,
+            )
+            for spec in specs
+        )
+    )
+    for spec, raw in zip(specs, results):
+        result = unwrap(raw)
+        if result.get("status") != "success" or result.get("sample_size", 0) == 0:
+            comparison.append({"spec": spec, "sample_size": 0})
+            continue
+        provenance = provenance or (result.get("provenance") or {})
+        any_more = any_more or bool(result.get("more_pages_available"))
+        total_sample += int(result.get("sample_size") or 0)
+        pcts = result.get("amount_percentiles", {})
+        comparison.append(
+            {
+                "spec": spec,
+                "sample_size": result.get("sample_size"),
+                "median": pcts.get("median"),
+                "p95": pcts.get("p95"),
+                "max": pcts.get("max"),
+            }
+        )
+
+    comparison.sort(key=lambda c: (c.get("median") or 0), reverse=True)
+    return with_envelope(
+        {
+            "status": "success",
+            "class_name": normalized,
+            "metric": metric,
+            "comparison": comparison,
+        },
+        Provenance(
+            encounter_id=provenance.get("encounter_id") or (encounter_id or None),
+            difficulty=provenance.get("difficulty") or (difficulty_id or None),
+            partition=provenance.get("partition"),
+            metric=metric,
+        ),
+        Completeness(
+            has_more=any_more,
+            sample_size=total_sample,
+            sample_scope="top_of_leaderboard" if any_more else "full",
+        ),
+    )
+
+
+async def check_rate_limit() -> dict[str, Any]:
+    """Report the remaining Warcraft Logs API points for this hour.
+
+    Returns:
+        dict: {"status": "success", "limitPerHour": ..., "pointsSpentThisHour":
+            ..., "pointsRemaining": ..., "pointsResetIn": ...} or an error.
+    """
+    try:
+        rl = await wcl_client.acheck_rate_limit()
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
+    remaining = rl["limitPerHour"] - rl["pointsSpentThisHour"]
+    return {
+        "status": "success",
+        "limitPerHour": rl["limitPerHour"],
+        "pointsSpentThisHour": rl["pointsSpentThisHour"],
+        "pointsRemaining": round(remaining, 1),
+        "pointsResetIn": rl["pointsResetIn"],
+    }
+
+
+# --- Chart declaration (feature 005 / US2) ------------------------------------
+
+_CHART_KINDS = {"line", "bar", "scatter", "area"}
+_MAX_SERIES = 12
+_MAX_POINTS = 500
+
+
+async def create_chart(
+    kind: str,
+    title: str,
+    series_json: str,
+    x_label: str = "",
+    y_label: str = "",
+    source_url: str = "",
+) -> dict[str, Any]:
+    """Render an interactive chart in the chat from data you have already gathered.
+
+    Use this when a visualization aids the answer (DPS/HPS over time, spec comparison
+    bars, ability breakdowns). Build ``series_json`` from numbers the WCL tools
+    returned — never invent data. The chart appears inline in your reply; still
+    explain it in text.
+
+    Args:
+        kind (str): One of "line", "bar", "scatter", "area".
+        title (str): Chart title.
+        series_json (str): JSON array of series: [{"name": str, "y": [num,...],
+            "x": [..]?}, ...]. ``x`` is optional (defaults to the point index) but
+            when present must match the length of ``y``.
+        x_label (str): Optional x-axis label.
+        y_label (str): Optional y-axis label.
+        source_url (str): Optional Warcraft Logs link the data was sourced from.
+
+    Returns:
+        dict: {"status": "success", "chart": <ChartSpec>} or
+            {"status": "error", "error_message": ...}.
+    """
+    if kind not in _CHART_KINDS:
+        return {
+            "status": "error",
+            "error_message": f"Unknown kind '{kind}'.",
+            "valid": sorted(_CHART_KINDS),
+        }
+    try:
+        series = json.loads(series_json) if series_json.strip() else None
+    except json.JSONDecodeError as exc:
+        return {"status": "error", "error_message": f"series_json is not valid JSON: {exc}"}
+    if not isinstance(series, list) or not series:
+        return {
+            "status": "error",
+            "error_message": "series_json must be a non-empty JSON array of {name, y, x?}.",
+        }
+    if len(series) > _MAX_SERIES:
+        return {
+            "status": "error",
+            "error_message": f"Too many series ({len(series)} > {_MAX_SERIES}); reduce them.",
+        }
+
+    normalized: list[dict[str, Any]] = []
+    for i, s in enumerate(series):
+        if not isinstance(s, dict):
+            return {"status": "error", "error_message": f"Series {i} must be an object."}
+        y = s.get("y")
+        if not isinstance(y, list) or not y:
+            return {
+                "status": "error",
+                "error_message": f"Series {i} needs a non-empty numeric 'y' list.",
+            }
+        if len(y) > _MAX_POINTS:
+            return {
+                "status": "error",
+                "error_message": (
+                    f"Series {i} has too many points ({len(y)} > {_MAX_POINTS}); "
+                    "aggregate or sample before charting."
+                ),
+            }
+        try:
+            y_vals = [float(v) for v in y]
+        except (TypeError, ValueError):
+            return {"status": "error", "error_message": f"Series {i} 'y' must be all numeric."}
+        entry: dict[str, Any] = {"name": str(s.get("name") or f"series {i + 1}"), "y": y_vals}
+        x = s.get("x")
+        if x is not None:
+            if not isinstance(x, list) or len(x) != len(y_vals):
+                return {
+                    "status": "error",
+                    "error_message": f"Series {i} 'x' must be a list the same length as 'y'.",
+                }
+            entry["x"] = list(x)
+        normalized.append(entry)
+
+    chart: dict[str, Any] = {"kind": kind, "title": str(title), "series": normalized}
+    if x_label:
+        chart["x_label"] = str(x_label)
+    if y_label:
+        chart["y_label"] = str(y_label)
+    if source_url:
+        chart["source_url"] = str(source_url)
+    return {"status": "success", "chart": chart}

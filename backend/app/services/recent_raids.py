@@ -19,7 +19,7 @@ import asyncio
 import hashlib
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
@@ -27,25 +27,27 @@ from typing import Any
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from wcl_agent.cache import CacheFamily, get_many_or_load, keys
-from wcl_agent.cache_models import CharacterReports, RecentReport, ReportSummary
-from wcl_agent.normalize import FINAL_AFTER
-from wcl_agent.patch import raid_zone_ids
-from wcl_agent.queries import character_reports_query
-from wcl_agent.report_tools import load_report_summaries, resolve_characters
-from wcl_agent.wcl_client import background_lane, get_async_client
+from wcl_agent.cache.cache import CacheFamily, get_many_or_load, keys
+from wcl_agent.cache.cache_models import CharacterReports, FightSummary, RecentReport, ReportSummary
+from wcl_agent.cache.normalize import FINAL_AFTER
+from wcl_agent.game.patch import raid_zone_ids
+from wcl_agent.client.queries import character_reports_query
+from wcl_agent.tools.report_tools import load_report_summaries, resolve_characters
+from wcl_agent.client.wcl_client import background_lane, get_async_client
 
 from ..config import settings
 from ..db import repository as repo
 from ..db.models import UserCharacter
 from ..tenancy.context import RequestIdentity, commit_and_rescope, set_scope, tenant_scope
 from . import background
-from .recent_raid_types import ListedReport, ReportDetails
+from .recent_raid_types import ListedReport, MplusRun, ReportDetails
 
 logger = logging.getLogger(__name__)
 
 RAID_DIFFICULTIES = frozenset({1, 3, 4, 5})  # LFR, Normal, Heroic, Mythic
 DETAIL_BATCH = 10
+# Non-raid reports examined for keystone runs per refresh (newest first).
+MPLUS_REPORT_BATCH = 10
 
 
 def character_set_hash(chars: Sequence[UserCharacter]) -> str:
@@ -143,10 +145,43 @@ def _details_from(summary: ReportSummary, raid_zones: set[int]) -> ReportDetails
     )
 
 
-async def fetch_report_details(
-    codes: Sequence[str], raid_zones: set[int]
-) -> dict[str, ReportDetails]:
-    """The detail step for up to ``DETAIL_BATCH`` codes: uncached ones in one request.
+def _fight_characters(
+    summary: ReportSummary, fight: FightSummary, own: Mapping[uuid.UUID, str]
+) -> frozenset[uuid.UUID]:
+    """The own characters among a fight's players, matched by name (actors carry no server).
+
+    Falls back to all of the report's own characters when none match, so a run is never
+    left unnamed.
+    """
+    names = {summary.players[p].name.casefold() for p in fight.player_ids if p in summary.players}
+    present = frozenset(cid for cid, name in own.items() if name.casefold() in names)
+    return present or frozenset(own)
+
+
+def extract_mplus_runs(summary: ReportSummary, own: Mapping[uuid.UUID, str]) -> list[MplusRun]:
+    """The completed keystone fights of a report (feature 022), each naming its own characters.
+
+    ``own`` maps the report's own characters (id → name). Completed means a kill with a
+    keystone level; an abandoned key is dropped. A key finished over the timer (depleted)
+    is kept and not timed: ``keystoneBonus`` counts the upgrade chests, so 0 is depleted.
+    """
+    return [
+        MplusRun(
+            report_code=summary.code,
+            fight_id=f.id,
+            dungeon=f.name or summary.zone_name or "Mythic+",
+            key_level=f.keystone_level,
+            started_at=_ms(summary.start_time_ms + (f.start_time_ms or 0)),
+            timed=(f.keystone_bonus or 0) >= 1,
+            character_ids=_fight_characters(summary, f, own),
+        )
+        for f in summary.fights
+        if f.keystone_level and f.keystone_level > 0 and f.kill is True
+    ]
+
+
+async def fetch_report_summaries(codes: Sequence[str]) -> dict[str, ReportSummary]:
+    """Summaries for up to ``DETAIL_BATCH`` codes: uncached ones in one request.
 
     A report WCL can't return (deleted, made private) is skipped and stays non-final; it
     fails the batched GraphQL request, so the batch then falls back to one request each.
@@ -160,36 +195,101 @@ async def fetch_report_details(
         if len(codes) == 1:
             logger.info("recent raids: report %s unavailable, skipped", codes[0])
             return {}
-        out: dict[str, ReportDetails] = {}
+        out: dict[str, ReportSummary] = {}
         for code in codes:
-            out.update(await fetch_report_details([code], raid_zones))
+            out.update(await fetch_report_summaries([code]))
         return out
-    return {
-        code: _details_from(summary, raid_zones)
-        for code, summary in zip(codes, summaries)
-        if summary is not None
-    }
+    return {code: summary for code, summary in zip(codes, summaries) if summary is not None}
 
 
-async def _refresh(tenant_id: uuid.UUID, chars: Sequence[UserCharacter]) -> None:
-    raid_zones = await raid_zone_ids()
-    listed = await fetch_listed_reports(chars, raid_zones)
-    async with tenant_scope(tenant_id) as session:
-        need = set(await repo.upsert_listed_reports(session, tenant_id=tenant_id, reports=listed))
-    # Details only matter for raids the welcome list can show: the newest ones.
+async def fetch_report_details(
+    codes: Sequence[str], raid_zones: set[int]
+) -> dict[str, ReportDetails]:
+    """The detail step for up to ``DETAIL_BATCH`` codes (see ``fetch_report_summaries``)."""
+    summaries = await fetch_report_summaries(codes)
+    return {code: _details_from(summary, raid_zones) for code, summary in summaries.items()}
+
+
+async def _refresh(tenant_id: uuid.UUID, chars: Sequence[UserCharacter], deadline: float) -> None:
+    """Both steps share the ``deadline`` (loop time); only the raid step can fail the run.
+
+    The M+ step has its own timeout scope so a WCL error or timeout there is logged and
+    leaves the raids, the stored runs and the refresh outcome alone (FR-010).
+    """
+    async with asyncio.timeout_at(deadline):
+        raid_zones = await raid_zone_ids()
+        listed = await fetch_listed_reports(chars, raid_zones)
+        async with tenant_scope(tenant_id) as session:
+            need = set(
+                await repo.upsert_listed_reports(session, tenant_id=tenant_id, reports=listed)
+            )
+        # Details only matter for raids the welcome list can show: the newest ones.
+        wanted = sorted(
+            (r for r in listed if r.code in need and r.is_raid),
+            key=lambda r: r.started_at,
+            reverse=True,
+        )[: settings.recent_raids_limit]
+        codes = [r.code for r in wanted]
+        for start in range(0, len(codes), DETAIL_BATCH):
+            details = await fetch_report_details(codes[start : start + DETAIL_BATCH], raid_zones)
+            final_before = datetime.now(timezone.utc) - FINAL_AFTER
+            async with tenant_scope(tenant_id) as session:
+                for code, d in details.items():
+                    await repo.set_report_details(
+                        session, tenant_id=tenant_id, code=code, details=d, final_before=final_before
+                    )
+    try:
+        async with asyncio.timeout_at(deadline):
+            await _refresh_mplus_runs(
+                tenant_id, listed, need, raid_zones, {c.id: c.name for c in chars}
+            )
+    except Exception as exc:  # noqa: BLE001 - a failed M+ step never fails the refresh
+        error = _error_code(exc)
+        if error == "unknown":
+            logger.exception("recent raids: M+ step failed (tenant %s)", tenant_id)
+        else:
+            logger.warning("recent raids: M+ step failed (tenant %s): %s", tenant_id, error)
+
+
+async def _refresh_mplus_runs(
+    tenant_id: uuid.UUID,
+    listed: Sequence[ListedReport],
+    need: set[str],
+    raid_zones: set[int],
+    names: Mapping[uuid.UUID, str],
+) -> None:
+    """The M+ step (feature 022): keystone runs from the newest non-raid reports still open.
+
+    Same summaries the raid details use, so the shared cache and the raw-fetch write-through
+    apply. A non-raid report is marked final like a raid once it ended long ago, so it is not
+    examined again; that happens in the transaction that stores its runs, so a report whose
+    fetch failed stays open and is examined on the next refresh.
+    """
+    by_code = {r.code: r for r in listed}
     wanted = sorted(
-        (r for r in listed if r.code in need and r.is_raid),
+        (r for r in listed if r.code in need and not r.is_raid),
         key=lambda r: r.started_at,
         reverse=True,
-    )[: settings.recent_raids_limit]
+    )[:MPLUS_REPORT_BATCH]
     codes = [r.code for r in wanted]
     for start in range(0, len(codes), DETAIL_BATCH):
-        details = await fetch_report_details(codes[start : start + DETAIL_BATCH], raid_zones)
+        summaries = await fetch_report_summaries(codes[start : start + DETAIL_BATCH])
         final_before = datetime.now(timezone.utc) - FINAL_AFTER
         async with tenant_scope(tenant_id) as session:
-            for code, d in details.items():
+            for code, summary in summaries.items():
+                await repo.upsert_mplus_runs(
+                    session,
+                    tenant_id=tenant_id,
+                    runs=extract_mplus_runs(
+                        summary, {cid: names[cid] for cid in by_code[code].character_ids}
+                    ),
+                )
                 await repo.set_report_details(
-                    session, tenant_id=tenant_id, code=code, details=d, final_before=final_before
+                    session,
+                    tenant_id=tenant_id,
+                    code=code,
+                    details=_details_from(summary, raid_zones),
+                    final_before=final_before,
                 )
 
 
@@ -209,9 +309,9 @@ async def run_recent_raid_refresh(tenant_id: uuid.UUID, run_id: uuid.UUID) -> No
     try:
         async with tenant_scope(tenant_id) as session:
             chars = await repo.list_own_characters(session, tenant_id=tenant_id)
+        deadline = asyncio.get_running_loop().time() + settings.recent_raids_refresh_timeout_s
         with background_lane():
-            async with asyncio.timeout(settings.recent_raids_refresh_timeout_s):
-                await _refresh(tenant_id, chars)
+            await _refresh(tenant_id, chars, deadline)
         ok, error = True, None
     except Exception as exc:  # noqa: BLE001 - mapped to a short user-safe code
         error = _error_code(exc)

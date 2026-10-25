@@ -32,7 +32,7 @@ from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
-from wcl_agent.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
+from wcl_agent.llm.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
 
 from .config import settings
 from .scratch import TurnScratch
@@ -153,16 +153,21 @@ async def stream_response(
     *,
     user_id: str = USER_ID,
     retry: bool = True,
+    fallback_model: str | None = None,
 ) -> AsyncIterator[dict]:
     """Run one turn and yield stream records (see ``_run_turn`` for the record shapes).
 
     Feature 011: the ADK iteration runs in a producer task that feeds an ``asyncio.Queue``;
-    this generator drains it. The model wrapper (``wcl_agent.model_retry``) pushes
+    this generator drains it. The model wrapper (``wcl_agent.llm.model_retry``) pushes
     ``{"type": "model_retry", ...}`` records into the same queue via the per-turn
     ``TurnStats`` installed in ``current_turn``, so a retry status reaches the client while
     the producer is asleep in a backoff. ``retry=False`` makes rate limits fail fast
     (helper calls such as the greeting, FR-012). One ``turn stats`` INFO line is logged
     when the turn ends, whatever the outcome (FR-013).
+
+    Feature 021: ``fallback_model`` is the same-class sibling the turn may switch to once
+    when its model stays rate limited (only the chat socket passes one). The switch is
+    announced as ``{"type": "model_fallback", "from_model", "to_model"}``.
     """
     queue: asyncio.Queue[Any] = asyncio.Queue()
     # PERF-004: the preamble rides on the turn and is injected per model request by the
@@ -172,6 +177,7 @@ async def stream_response(
         retry_enabled=retry,
         notify=queue.put_nowait,
         preamble=context_preamble or None,
+        fallback_model=fallback_model,
     )
     token = current_turn.set(stats)
 
@@ -221,7 +227,7 @@ async def stream_response(
             current_turn.set(None)
         logger.info(
             "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
-            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d",
+            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d fallback=%s",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
@@ -232,6 +238,7 @@ async def stream_response(
             stats.max_prompt_tokens,
             stats.last_cached_tokens,
             stats.trimmed_results,
+            stats.switched_to or "-",
         )
 
 

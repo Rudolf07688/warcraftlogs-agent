@@ -239,7 +239,7 @@ async def test_plays_mythic_plus_reads_ranked_runs(monkeypatch):
         runs = 3 if name == "Keys" else 0
         return {"status": "success", "zoneRankings": {"rankings": [{"spec": "Holy", "totalKills": runs}]}}
 
-    monkeypatch.setattr("wcl_agent.report_tools.get_character_zone_rankings", rankings)
+    monkeypatch.setattr("wcl_agent.tools.report_tools.get_character_zone_rankings", rankings)
     assert await guide._plays_mythic_plus("Keys", "Argent Dawn", "EU") is True
     assert seen["args"] == (60, 10)  # the current Mythic+ zone, Mythic+ difficulty
     assert await guide._plays_mythic_plus("NoKeys", "Argent Dawn", "EU") is False

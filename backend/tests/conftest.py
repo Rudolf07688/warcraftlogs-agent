@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from backend.app.db.models import Base
-from wcl_agent import cache as wcl_cache
+from wcl_agent.cache import cache as wcl_cache
 
 
 # --- Shared WCL cache (feature 014) -------------------------------------------
@@ -28,7 +28,7 @@ from wcl_agent import cache as wcl_cache
 
 
 def _reset_cache_state() -> None:
-    from wcl_agent import wcl_client
+    from wcl_agent.client import wcl_client
 
     wcl_cache._redis_clients.clear()
     wcl_cache._down_until.clear()
@@ -60,6 +60,17 @@ def _no_guide_background_scans(monkeypatch):
 
     monkeypatch.setattr(guide, "_last_scan", time.monotonic())  # throttled: no scan starts
     monkeypatch.setattr(guide, "_last_stamp", {})
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_title_generation(monkeypatch):
+    """Feature 019: a chat turn schedules a background title job after ``done``; no test
+    starts one (no model call, no extra frame, no task outliving the test) unless it
+    re-patches ``schedule_title`` itself (test_conversation_titles)."""
+    from backend.app.services import conversation_titles
+
+    monkeypatch.setattr(conversation_titles, "schedule_title", lambda *args, **kwargs: None)
     yield
 
 
