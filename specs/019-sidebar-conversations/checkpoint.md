@@ -2,58 +2,44 @@
 
 Resume from here after a context reset.
 
-## Where things stand (2026-10-25)
+## Where things stand (2026-10-25, end of phase A)
 
 - Worktree `/home/rudolf/dev/wcl-worktrees/dev-b`, branch `019-sidebar-conversations`,
   base `4227a86` (the sprint-2026-10-25 tip). Never push.
-- Done: spec (`e28e571`), plan and artifacts (`8f5d143`), tasks.md.
 - Gates:
-  - Spec sign-off: the scrum master approved the spec and the technical design. The
-    product owner's answers to Q1–Q5 are pending; I recommended all A's and the plan is
-    drafted on them.
-  - Phase 1 file grant: requested, **waiting**. Also asked: whether `schemas.py` hunks may
-    go in phase 1.
-- Shortcut: sc-154 is In Progress. sc-165 and sc-155 are in Shortlist on iteration 161.
-  Move sc-165 at T009 and sc-155 at phase B start.
-- Baseline (T002): backend `926 passed, 3 skipped, 1 deselected`; frontend build green.
+  - Spec signed off: the product owner chose A on Q1–Q5, plus FR-004a (a11y) and FR-018 (explicit at creation).
+  - Plan and tasks approved.
+- Phase A is **done** (commits `dad5f8c`, `39be321`, `739caa8`, `01a62d5`):
+  - migration 0012, the model columns, and `create_conversation` setting `title_source`;
+  - sc-154 (sidebar order);
+  - sc-165 repository and UI (Pinned group, accessible `Toggle`s);
+  - the sc-155 repository claim and write, `clean_title`, the explicit-caller tests, and the client `conversation_title` handling.
+- Tests: 959 passed, 3 skipped, 1 deselected, **6 xfailed** (the PATCH route tests, strict). Baseline: 926 passed. The frontend build is green.
+- Postgres check (T033 part 4) is done: a throwaway `postgres:17` on 127.0.0.1:15419 with dummy credentials, founder seeded by SQL, upgraded to 0011, 2 conversations seeded.
+  - 0012 up: the existing rows are `legacy` with `pinned_at` NULL; the column default is `'auto'`; a new raw insert gets `auto`.
+  - The runtime role (RLS) updates only with `app.tenant_id` set and sees 0 rows without it.
+  - Down: both columns are dropped and all 3 rows are kept.
+  - Up again: version `0012_conversation_pin_title`.
+  - The container is stopped.
+- Shortcut: sc-154 and sc-165 are In Progress. sc-155 is in Shortlist until phase B starts.
+- GitNexus: an incremental `analyze --index-only` produced a corrupt index once (null-byte ids). Always use `--force` before `detect-changes`.
 
-## Decisions (see research.md R1–R10)
+## Phase B (after the scrum master says 018 has merged)
 
-- `pinned_at timestamptz NULL`. PATCH `/api/conversations/{id}` with `{pinned: bool}`,
-  using require_csrf and get_tenant_db; 404 for a foreign or missing id; `updated_at`
-  untouched.
-- `title_source` takes the values auto, explicit, generated, legacy. Existing rows are
-  backfilled to legacy (server default 'legacy' on add, then 'auto').
-  `create_conversation` sets explicit iff a title is given.
-- Once-only means a conditional UPDATE claim auto→generated before the model call; a
-  failed attempt is never retried.
-- Title job: `background.spawn` (key `("conversation-title", conv_id)`). It catches and
-  logs everything itself, runs `asyncio.timeout(15)` around `generate_with_retry` with
-  `RetryPolicy(2, 2, 5, 8)`, uses the suggestions model and client via
-  `from .. import suggestions`, and resets `current_turn` to None.
-- Client update: a `conversation_title` WS frame sent via `_send` on the `_TurnSocket`
-  (best effort); the client then calls `refreshConversations()`.
-- UI: the existing shadcn `Toggle` with `LuPin`. The Pinned group label is hand-built (the
-  `@shadcn/sidebar` system would be a rewrite). No new deps, no CSS file changes.
-
-## Files (phase A: tentative grant; phase B: after 018 merges)
-
-- Phase A:
-  - `backend/migrations/versions/0012_conversation_pin_title.py`
-  - `backend/app/db/models.py`, `backend/app/db/repository.py`, `backend/app/api/conversations.py`
-  - `backend/tests/test_conversation_pinning.py`, `test_conversation_migration.py`, `test_conversation_titles.py` (T020 part)
-  - `frontend/src/components/Sidebar.tsx`, `App.tsx`, `types.ts`, `api/restClient.ts`
-  - `backend/app/schemas.py` (requested)
-- Phase B:
-  - `backend/app/services/conversation_titles.py`, `backend/app/api/ws.py`, `backend/app/schemas.py`
-  - `backend/tests/conftest.py`, `frontend/src/api/wsClient.ts`, `App.tsx`
-  - `documentation/ai_guide.md`
+1. Rebase onto the sprint tip (or reset and cherry-pick). Re-run `analyze --index-only --force` in the worktree. Move sc-155 to In Progress.
+2. T012/T013 (first):
+   - `ConversationOut.pinned_at` and `ConversationUpdate` in `schemas.py`;
+   - the PATCH route in `conversations.py`;
+   - remove the `_needs_schema` xfail marker in `test_conversation_pinning.py`, and tighten `test_patch_without_csrf_is_refused` to `(401, 403)`.
+   - **No xfail may remain at hand-off.**
+3. T022–T028:
+   - `generate_title`, `retitle_conversation` and `schedule_title` in `services/conversation_titles.py`, importing `generate_with_retry`/`RetryPolicy`/`current_turn` from 018's new `model_retry` path;
+   - `ConversationTitleFrame` in `schemas.py`;
+   - the ws hook;
+   - the conftest autouse stub (it must not change any existing test's count or behaviour; say so at hand-off);
+   - the tests.
+4. T032 (ai_guide lines), T033 manual UI checks 1–3 on port 18019, T034 final verification and hand-off.
 
 ## Open questions
 
-- The product owner's answers to Q1–Q5 (if any differ from A, revise spec, plan and tasks).
-- The `schemas.py` phase-1 grant.
-
-## Where implementation starts
-
-T003 (migration) → T004 → T005/T006, then T007 (US1). See tasks.md.
+None.
