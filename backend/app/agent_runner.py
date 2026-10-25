@@ -153,6 +153,7 @@ async def stream_response(
     *,
     user_id: str = USER_ID,
     retry: bool = True,
+    fallback_model: str | None = None,
 ) -> AsyncIterator[dict]:
     """Run one turn and yield stream records (see ``_run_turn`` for the record shapes).
 
@@ -163,6 +164,10 @@ async def stream_response(
     the producer is asleep in a backoff. ``retry=False`` makes rate limits fail fast
     (helper calls such as the greeting, FR-012). One ``turn stats`` INFO line is logged
     when the turn ends, whatever the outcome (FR-013).
+
+    Feature 021: ``fallback_model`` is the same-class sibling the turn may switch to once
+    when its model stays rate limited (only the chat socket passes one). The switch is
+    announced as ``{"type": "model_fallback", "from_model", "to_model"}``.
     """
     queue: asyncio.Queue[Any] = asyncio.Queue()
     # PERF-004: the preamble rides on the turn and is injected per model request by the
@@ -172,6 +177,7 @@ async def stream_response(
         retry_enabled=retry,
         notify=queue.put_nowait,
         preamble=context_preamble or None,
+        fallback_model=fallback_model,
     )
     token = current_turn.set(stats)
 
@@ -221,7 +227,7 @@ async def stream_response(
             current_turn.set(None)
         logger.info(
             "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
-            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d",
+            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d fallback=%s",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
@@ -232,6 +238,7 @@ async def stream_response(
             stats.max_prompt_tokens,
             stats.last_cached_tokens,
             stats.trimmed_results,
+            stats.switched_to or "-",
         )
 
 
