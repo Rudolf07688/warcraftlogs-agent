@@ -83,7 +83,7 @@ Before T009: move sc-165 to In Progress (Shortcut).
   - a missing CSRF header is refused (401/403);
   - a body without `pinned` or with extra keys is 422;
   - deleting a pinned conversation works.
-- [ ] T010a [P] [US2] Add explicit-at-creation tests (FR-018, one per naming caller) to `backend/tests/test_conversation_titles.py` (granted in phase A). Each checks `title_source` in the DB:
+- [X] T010a [P] [US2] Add explicit-at-creation tests (FR-018, one per naming caller) to `backend/tests/test_conversation_titles.py` (granted in phase A). Each checks `title_source` in the DB:
   - `POST /api/conversations` with a title gives `explicit`, and without a title gives `auto`;
   - `POST /api/raids/{code}/investigate` on a tracked raid gives `explicit`;
   - the same endpoint on a recent raid from the welcome page gives `explicit`;
@@ -115,7 +115,7 @@ Before T009: move sc-165 to In Progress (Shortcut).
 
 ## Phase 5: User Story 3 groundwork (phase A, no `wcl_agent` import)
 
-- [ ] T020 [US3] Add `claim_title_generation(session, conv_id, *, tenant_id) -> bool` (UPDATE `auto→generated`, `updated_at` unchanged) and `set_generated_title(session, conv_id, title, *, tenant_id) -> bool` (UPDATE title WHERE `title_source='generated'`, `updated_at` unchanged) to `backend/app/db/repository.py`, with tests in `backend/tests/test_conversation_titles.py`:
+- [X] T020 [US3] Add `claim_title_generation(session, conv_id, *, tenant_id) -> bool` (UPDATE `auto→generated`, `updated_at` unchanged) and `set_generated_title(session, conv_id, title, *, tenant_id) -> bool` (UPDATE title WHERE `title_source='generated'`, `updated_at` unchanged) to `backend/app/db/repository.py`, with tests in `backend/tests/test_conversation_titles.py`:
   - a claim succeeds once, and a second claim is False;
   - `explicit` and `legacy` conversations are never claimed;
   - another tenant's id gives False;
@@ -139,7 +139,7 @@ the phase 2 grant, and move sc-155 to In Progress.
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Add `clean_title` unit tests to `backend/tests/test_conversation_titles.py`:
+- [X] T021 [P] [US3] Add `clean_title` unit tests to `backend/tests/test_conversation_titles.py`:
   - quotes, curly quotes and backticks are stripped;
   - `**bold**` and `# heading` markers are removed;
   - a `Title:` prefix is removed;
@@ -174,9 +174,9 @@ the phase 2 grant, and move sc-155 to In Progress.
 - [ ] T026 [US3] Add `ConversationTitleFrame(type: Literal["conversation_title"], conversation_id: uuid.UUID, title: str)` with a docstring to `backend/app/schemas.py`
 - [ ] T027 [US3] In `backend/app/api/ws.py` `_handle_turn` (run `impact` first: LOW): keep `title_eligible = conv.title_source == "auto"` from the setup transaction; after `DoneFrame`, when eligible, call `conversation_titles.schedule_title(conv_id, identity, turn.content, final_text, notify)`, where `notify` sends `ConversationTitleFrame` via `_send(ws, …)`
 - [ ] T028 [US3] Run `uv run --extra test pytest -q` until it is green (all of T020–T023, plus `test_turn_path.py` and `test_ws_rate_limit.py` unchanged)
-- [ ] T029 [P] [US3] Add `| { type: "conversation_title"; conversation_id: string; title: string }` to the frame union in `frontend/src/api/wsClient.ts`
-- [ ] T030 [US3] Handle `case "conversation_title":` in `handleFrame` in `frontend/src/App.tsx` with `void refreshConversations()`
-- [ ] T031 [US3] Run `npm run build` in `frontend/`
+- [X] T029 [P] [US3] Add `| { type: "conversation_title"; conversation_id: string; title: string }` to the frame union in `frontend/src/api/wsClient.ts`
+- [X] T030 [US3] Handle `case "conversation_title":` in `handleFrame` in `frontend/src/App.tsx` with `void refreshConversations()`
+- [X] T031 [US3] Run `npm run build` in `frontend/`
 
 ---
 

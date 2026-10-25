@@ -22,6 +22,8 @@ export type Frame =
     }
   // US1: sent just after `done` (PERF-005), keyed by the finished agent message.
   | { type: "suggestions"; message_id?: string; suggestions: string[] }
+  // Feature 019: a chat got its generated title (after its first reply's `done`).
+  | { type: "conversation_title"; conversation_id: string; title: string }
   | { type: "model_retry"; attempt: number; max_attempts: number; wait_s: number }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };

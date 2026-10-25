@@ -176,6 +176,10 @@ export default function App() {
           streamRef.current += f.text;
           streamStore.set(streamRef.current);
           break;
+        case "conversation_title":
+          // Feature 019: the title is already saved; reload the list so the sidebar shows it.
+          void refreshConversations();
+          break;
         case "suggestions": {
           // US1: arrives just after `done` (PERF-005), so the composer is already free.
           // Attach the follow-ups to the message they belong to. If that message isn't in

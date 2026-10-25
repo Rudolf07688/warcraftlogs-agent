@@ -123,6 +123,46 @@ async def set_conversation_pinned(
     return row.scalar_one()
 
 
+async def claim_title_generation(
+    session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> bool:
+    """Claim the one generated title of a default-named chat (feature 019 / FR-016).
+
+    A single conditional UPDATE ``auto → generated``: exactly one caller ever gets True,
+    across tasks, processes and instances. Explicit, legacy and already-claimed chats
+    (and other tenants' ids) give False. ``updated_at`` is left alone.
+    """
+    result = await session.execute(
+        update(Conversation)
+        .where(
+            Conversation.id == conv_id,
+            Conversation.tenant_id == tenant_id,
+            Conversation.title_source == "auto",
+        )
+        .values(title_source="generated", updated_at=Conversation.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount == 1
+
+
+async def set_generated_title(
+    session: AsyncSession, conv_id: uuid.UUID, title: str, *, tenant_id: uuid.UUID
+) -> bool:
+    """Write a generated title, only on a chat whose generation was claimed (never over
+    an explicit or legacy name). False when the chat is gone or not this tenant's."""
+    result = await session.execute(
+        update(Conversation)
+        .where(
+            Conversation.id == conv_id,
+            Conversation.tenant_id == tenant_id,
+            Conversation.title_source == "generated",
+        )
+        .values(title=title, updated_at=Conversation.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount == 1
+
+
 async def _next_seq(session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID) -> int:
     result = await session.execute(
         select(func.coalesce(func.max(Message.seq), -1)).where(
