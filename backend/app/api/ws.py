@@ -28,6 +28,7 @@ from ..tenancy.context import RequestIdentity, apply_tenant_scope, tenant_scope
 from ..schemas import (
     ArtifactFrame,
     ChatTurn,
+    ConversationTitleFrame,
     DoneFrame,
     EncountersFrame,
     ErrorFrame,
@@ -37,6 +38,7 @@ from ..schemas import (
     SuggestionsFrame,
 )
 from ..suggestions import generate_followups
+from ..services import conversation_titles
 from ..services import graphs as graphs_service
 from ..services import known_entities
 from ..services import raids as raids_service
@@ -232,6 +234,8 @@ async def _handle_turn(
         else:
             conv = await repo.create_conversation(session, model=turn.model, tenant_id=tenant_id)
         conv_id = conv.id
+        # Feature 019 / sc-155: only a default-named chat gets a generated title.
+        title_eligible = conv.title_source == "auto"
 
         # Persist the user message, then announce the turn.
         user_msg = await repo.add_message(
@@ -312,6 +316,17 @@ async def _handle_turn(
 
     # PERF-005: the turn is done as soon as the answer is saved; the composer unlocks now.
     await _send(ws, DoneFrame(message_id=agent_msg_id))
+
+    # Feature 019 / sc-155: name the chat from this first complete exchange, in the
+    # background; the next turn doesn't cancel it, and the frame shares the socket lock.
+    if title_eligible:
+
+        async def notify_title(title: str) -> None:
+            await _send(ws, ConversationTitleFrame(conversation_id=conv_id, title=title))
+
+        conversation_titles.schedule_title(
+            conv_id, identity, turn.content, final_text, notify_title
+        )
 
     # US1: predict up to 3 follow-up questions in the background (PERF-102), so the socket
     # can read the player's next message straight away; that next turn cancels this task.

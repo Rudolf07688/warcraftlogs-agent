@@ -147,7 +147,7 @@ the phase 2 grant, and move sc-155 to In Progress.
   - whitespace is collapsed;
   - a cut at 60 falls on a word boundary, and a hard cut is used when there is no space;
   - empty or punctuation-only input gives "".
-- [ ] T022 [P] [US3] Add `retitle_conversation` tests to `backend/tests/test_conversation_titles.py`, with the model faked by monkeypatching `suggestions._get_client` (or `conversation_titles.generate_title`):
+- [X] T022 [P] [US3] Add `retitle_conversation` tests to `backend/tests/test_conversation_titles.py`, with the model faked by monkeypatching `suggestions._get_client` (or `conversation_titles.generate_title`):
   - success: the title is saved and `notify` is called once with it;
   - once-only: a second call makes no model call;
   - explicit: a conversation created via `POST /api/raids/{code}/investigate` is never claimed or renamed;
@@ -156,7 +156,7 @@ the phase 2 grant, and move sc-155 to In Progress.
   - a conversation deleted after the claim gives no error and no notify;
   - a `notify` that raises (closed socket) is swallowed;
   - `generate_with_retry` receives the small `RetryPolicy`.
-- [ ] T023 [P] [US3] Add a turn-path test to `backend/tests/test_conversation_titles.py` (`_FakeSocket` style from `test_turn_path.py`):
+- [X] T023 [P] [US3] Add a turn-path test to `backend/tests/test_conversation_titles.py` (`_FakeSocket` style from `test_turn_path.py`):
   - `_handle_turn` on a new conversation sends `done` before any `conversation_title`;
   - the title job runs after `done` and sends `{"type":"conversation_title", "conversation_id", "title"}`;
   - a second turn on the same conversation schedules nothing;
@@ -164,16 +164,16 @@ the phase 2 grant, and move sc-155 to In Progress.
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] Add an autouse fixture to `backend/tests/conftest.py` that monkeypatches `conversation_titles.generate_title` to return `""`, so no test makes a real title call or gets an extra frame; the US3 tests override it
-- [ ] T025 [US3] Create `backend/app/services/conversation_titles.py`:
+- [X] T024 [US3] Add an autouse fixture to `backend/tests/conftest.py` that monkeypatches `conversation_titles.schedule_title` to a no-op, so no other test starts a title job (no model call, no extra frame, no task outliving the test); the US3 hook tests restore the real function
+- [X] T025 [US3] Create `backend/app/services/conversation_titles.py`:
   - constants `TITLE_MAX_LEN=60`, `TITLE_TIMEOUT_S=15.0` and `_POLICY=RetryPolicy(attempts=2, initial_s=2.0, max_s=5.0, budget_s=8.0)`, plus `_PROMPT`;
   - `clean_title(raw) -> str`;
   - `async generate_title(question, answer) -> str`: suggestions model and client via `from .. import suggestions`, `generate_with_retry`, thinking off, `max_output_tokens=32`;
   - `async retitle_conversation(conv_id, identity, question, answer, notify)`: claim in its own `tenant_scope`, reset `current_turn` to None, `asyncio.timeout`, `set_generated_title`, best-effort `notify`; everything is caught and logged;
   - `schedule_title(...)`: calls `background.spawn` with key `("conversation-title", conv_id)`.
-- [ ] T026 [US3] Add `ConversationTitleFrame(type: Literal["conversation_title"], conversation_id: uuid.UUID, title: str)` with a docstring to `backend/app/schemas.py`
-- [ ] T027 [US3] In `backend/app/api/ws.py` `_handle_turn` (run `impact` first: LOW): keep `title_eligible = conv.title_source == "auto"` from the setup transaction; after `DoneFrame`, when eligible, call `conversation_titles.schedule_title(conv_id, identity, turn.content, final_text, notify)`, where `notify` sends `ConversationTitleFrame` via `_send(ws, …)`
-- [ ] T028 [US3] Run `uv run --extra test pytest -q` until it is green (all of T020–T023, plus `test_turn_path.py` and `test_ws_rate_limit.py` unchanged)
+- [X] T026 [US3] Add `ConversationTitleFrame(type: Literal["conversation_title"], conversation_id: uuid.UUID, title: str)` with a docstring to `backend/app/schemas.py`
+- [X] T027 [US3] In `backend/app/api/ws.py` `_handle_turn` (run `impact` first: LOW): keep `title_eligible = conv.title_source == "auto"` from the setup transaction; after `DoneFrame`, when eligible, call `conversation_titles.schedule_title(conv_id, identity, turn.content, final_text, notify)`, where `notify` sends `ConversationTitleFrame` via `_send(ws, …)`
+- [X] T028 [US3] Run `uv run --extra test pytest -q` until it is green (all of T020–T023, plus `test_turn_path.py` and `test_ws_rate_limit.py` unchanged)
 - [X] T029 [P] [US3] Add `| { type: "conversation_title"; conversation_id: string; title: string }` to the frame union in `frontend/src/api/wsClient.ts`
 - [X] T030 [US3] Handle `case "conversation_title":` in `handleFrame` in `frontend/src/App.tsx` with `void refreshConversations()`
 - [X] T031 [US3] Run `npm run build` in `frontend/`
@@ -182,7 +182,7 @@ the phase 2 grant, and move sc-155 to In Progress.
 
 ## Phase 7: Polish & Cross-Cutting
 
-- [ ] T032 [P] Add one line each for the PATCH endpoint and the `conversation_title` frame to `documentation/ai_guide.md` (after 018 releases the file)
+- [X] T032 [P] Add one line each for the PATCH endpoint and the `conversation_title` frame to `documentation/ai_guide.md` (after 018 releases the file)
 - [ ] T033 Run quickstart manual checks 1–3 with the app on port 18019 (Redis on 16319 if needed), and check 4 (Postgres migration up, down, up) in a throwaway `docker run --rm -d` postgres:17 on port 15419 with dummy credentials (no compose, never the owner's `.env`); stop the containers afterwards and record the results in `checkpoint.md`
 - [ ] T034 Run final verification: re-index the worktree (`node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`), run `detect-changes --scope all` (not partial or truncated), check ownership with `git diff --name-only <base>...HEAD`, restore `CLAUDE.md` and `.specify/feature.json`, make the full suite and the build green, then hand off to the scrum master
 

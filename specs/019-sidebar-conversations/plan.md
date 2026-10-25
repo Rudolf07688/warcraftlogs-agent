@@ -120,7 +120,7 @@ backend/
 │   ├── services/conversation_titles.py   # new: clean_title, generate_title, retitle, schedule (phase 2)
 │   └── api/ws.py                 # schedule the title job after `done` (phase 2)
 └── tests/
-    ├── conftest.py               # autouse: title model stubbed, never a real call (phase 2)
+    ├── conftest.py               # autouse: schedule_title no-op, no title job in other tests (phase 2)
     ├── test_conversation_pinning.py      # new (phase 1)
     ├── test_conversation_migration.py    # new (phase 1)
     └── test_conversation_titles.py       # new (phase 2)

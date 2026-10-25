@@ -63,6 +63,17 @@ def _no_guide_background_scans(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_title_generation(monkeypatch):
+    """Feature 019: a chat turn schedules a background title job after ``done``; no test
+    starts one (no model call, no extra frame, no task outliving the test) unless it
+    re-patches ``schedule_title`` itself (test_conversation_titles)."""
+    from backend.app.services import conversation_titles
+
+    monkeypatch.setattr(conversation_titles, "schedule_title", lambda *args, **kwargs: None)
+    yield
+
+
 @pytest_asyncio.fixture
 async def fake_redis(monkeypatch):
     """Enable the cache over an in-memory fakeredis server; returns a client for assertions."""

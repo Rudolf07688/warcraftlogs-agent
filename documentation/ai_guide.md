@@ -569,6 +569,8 @@ Source: `qa-reports/2026-10-14/performance.md` (PERF-001…016). What future age
   stored events, so never mutate in place). The prompt tells the model to re-fetch elided data.
 - **Suggestions** (`api/ws.py`): `_handle_turn` returns the suggestions task; `_TurnSocket`
   serializes sends and the next turn cancels it.
+- **Generated titles** (feature 019): after `done`, a chat with `title_source == "auto"` gets `services/conversation_titles.schedule_title` (claim `auto→generated` in the DB, cheap model, 15 s cap, then a `ConversationTitleFrame`); explicit/legacy names are never touched, and tests stub it in conftest.
+- **Pinning** (feature 019): `PATCH /api/conversations/{id}` `{pinned: bool}` sets `conversations.pinned_at` (tenant-scoped, 404 for foreign ids, `updated_at` untouched); the sidebar groups pinned chats on top.
 - **Guides/boot**: `_generate_text` is capped by `WCL_GUIDE_MAX_CONCURRENCY`; roster and
   profile reads use `with_text=False`; model probes run concurrently with a 10 s timeout;
   the greeting session id is per process.

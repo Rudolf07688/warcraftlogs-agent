@@ -21,7 +21,7 @@ cd frontend && npm run build                                   # tsc + vite
 | AC5: off the chat path, at most once, failure or 429 keeps the excerpt | `test_conversation_titles.py` (once-only, rate-limited, timeout, `done` sent before the job runs) |
 | AC6: an explicit title is kept | `test_conversation_titles.py::test_explicit_title_never_claimed` (raid investigation path) |
 | AC7: the sidebar updates without a reload | `test_conversation_titles.py` (frame sent after save); manual check 3 |
-| AC8: backend tests with the model faked | all of the above; `conftest.py` stubs the title model for every other test |
+| AC8: backend tests with the model faked | all of the above; `conftest.py` makes `schedule_title` a no-op for every other test |
 
 ## Manual (needs the app running; ask the scrum master for a port)
 
