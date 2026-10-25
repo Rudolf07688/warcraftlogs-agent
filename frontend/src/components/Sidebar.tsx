@@ -78,33 +78,6 @@ function SidebarImpl({
 
       <button
         className="sidebar-section-label"
-        onClick={() => setRaidsOpen((o) => !o)}
-        aria-expanded={raidsOpen}
-      >
-        <span className="section-chevron">{raidsOpen ? "▾" : "▸"}</span>
-        Raids
-        <span className="section-count">{raids.length}</span>
-      </button>
-      {raidsOpen && (
-        <div className="raid-list">
-          {raids.length === 0 && <div className="sidebar-empty">No raids tracked yet</div>}
-          {raids.map((r) => (
-            <button
-              key={r.report_code}
-              className="raid-item"
-              title={`Investigate ${r.label}`}
-              onClick={() => onInvestigateRaid(r.report_code)}
-            >
-              <span className="raid-label">{r.label}</span>
-              <span className="raid-when">{raidWhen(r)}</span>
-              {bossSummary(r) && <span className="raid-bosses">{bossSummary(r)}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <button
-        className="sidebar-section-label"
         onClick={() => setConvsOpen((o) => !o)}
         aria-expanded={convsOpen}
       >
@@ -138,6 +111,33 @@ function SidebarImpl({
                 ✕
               </Button>
             </div>
+          ))}
+        </div>
+      )}
+
+      <button
+        className="sidebar-section-label"
+        onClick={() => setRaidsOpen((o) => !o)}
+        aria-expanded={raidsOpen}
+      >
+        <span className="section-chevron">{raidsOpen ? "▾" : "▸"}</span>
+        Raids
+        <span className="section-count">{raids.length}</span>
+      </button>
+      {raidsOpen && (
+        <div className="raid-list">
+          {raids.length === 0 && <div className="sidebar-empty">No raids tracked yet</div>}
+          {raids.map((r) => (
+            <button
+              key={r.report_code}
+              className="raid-item"
+              title={`Investigate ${r.label}`}
+              onClick={() => onInvestigateRaid(r.report_code)}
+            >
+              <span className="raid-label">{r.label}</span>
+              <span className="raid-when">{raidWhen(r)}</span>
+              {bossSummary(r) && <span className="raid-bosses">{bossSummary(r)}</span>}
+            </button>
           ))}
         </div>
       )}
