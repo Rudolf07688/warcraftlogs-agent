@@ -36,3 +36,16 @@ class ReportDetails:
     bosses_pulled: int
     bosses_killed: int
     is_raid: bool
+
+
+@dataclass(frozen=True)
+class MplusRun:
+    """One completed Mythic+ keystone fight inside a report (feature 022)."""
+
+    report_code: str
+    fight_id: int
+    dungeon: str
+    key_level: int
+    started_at: datetime
+    timed: bool
+    character_ids: frozenset[uuid.UUID]

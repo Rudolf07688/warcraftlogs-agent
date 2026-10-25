@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
 from ..services.encounters import merge_encounters
-from ..services.recent_raid_types import ListedReport, ReportDetails
+from ..services.recent_raid_types import ListedReport, MplusRun, ReportDetails
 from .models import (
     Artifact,
     CapturedGraph,
@@ -29,6 +29,8 @@ from .models import (
     KnownEncounter,
     KnownPlayer,
     Message,
+    RecentMplusRun,
+    RecentMplusRunCharacter,
     RecentRaid,
     RecentRaidCharacter,
     RecentRaidRefresh,
@@ -532,6 +534,132 @@ async def set_report_details(
         )
         .execution_options(synchronize_session=False)
     )
+
+
+async def upsert_mplus_runs(
+    session: AsyncSession, *, tenant_id: uuid.UUID, runs: list[MplusRun]
+) -> None:
+    """Store completed Mythic+ runs and link their characters (feature 022).
+
+    A finished run never changes, so a stored run is left alone; links are added for the
+    characters that still exist. Race-safe: inserts use ``ON CONFLICT DO NOTHING``.
+    """
+    if not runs:
+        return
+    await session.execute(
+        _insert(session, RecentMplusRun)
+        .values(
+            [
+                {
+                    "id": uuid.uuid4(),
+                    "tenant_id": tenant_id,
+                    "report_code": r.report_code,
+                    "fight_id": r.fight_id,
+                    "dungeon": r.dungeon[:120],
+                    "key_level": r.key_level,
+                    "started_at": r.started_at,
+                    "timed": r.timed,
+                }
+                for r in runs
+            ]
+        )
+        .on_conflict_do_nothing(index_elements=["tenant_id", "report_code", "fight_id"])
+    )
+    ids = {
+        (code, fight): run_id
+        for code, fight, run_id in (
+            await session.execute(
+                select(
+                    RecentMplusRun.report_code, RecentMplusRun.fight_id, RecentMplusRun.id
+                ).where(
+                    RecentMplusRun.tenant_id == tenant_id,
+                    RecentMplusRun.report_code.in_({r.report_code for r in runs}),
+                )
+            )
+        ).all()
+    }
+    wanted = {c for r in runs for c in r.character_ids}
+    live = set(
+        (
+            await session.execute(
+                select(UserCharacter.id).where(
+                    UserCharacter.tenant_id == tenant_id,
+                    UserCharacter.role == "self",
+                    UserCharacter.id.in_(wanted),
+                )
+            )
+        ).scalars()
+    )
+    links = [
+        {"run_id": ids[(r.report_code, r.fight_id)], "character_id": c, "tenant_id": tenant_id}
+        for r in runs
+        if (r.report_code, r.fight_id) in ids
+        for c in r.character_ids
+        if c in live
+    ]
+    if links:
+        await session.execute(
+            _insert(session, RecentMplusRunCharacter)
+            .values(links)
+            .on_conflict_do_nothing(index_elements=["run_id", "character_id"])
+        )
+
+
+async def list_recent_mplus_runs(
+    session: AsyncSession, *, tenant_id: uuid.UUID, limit: int
+) -> list[tuple[RecentMplusRun, list[UserCharacter]]]:
+    """Newest runs first, each with the own characters that took part (two queries).
+
+    Only runs with at least one link to an existing own character are listed (FR-011).
+    """
+    linked = (
+        select(RecentMplusRunCharacter.run_id)
+        .join(
+            UserCharacter,
+            (UserCharacter.id == RecentMplusRunCharacter.character_id)
+            & (UserCharacter.role == "self"),
+        )
+        .where(RecentMplusRunCharacter.tenant_id == tenant_id)
+    )
+    runs = list(
+        (
+            await session.execute(
+                select(RecentMplusRun)
+                .where(RecentMplusRun.tenant_id == tenant_id, RecentMplusRun.id.in_(linked))
+                .order_by(RecentMplusRun.started_at.desc())
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    if not runs:
+        return []
+    rows = await session.execute(
+        select(RecentMplusRunCharacter.run_id, UserCharacter)
+        .join(UserCharacter, UserCharacter.id == RecentMplusRunCharacter.character_id)
+        .where(
+            RecentMplusRunCharacter.tenant_id == tenant_id,
+            RecentMplusRunCharacter.run_id.in_([r.id for r in runs]),
+            UserCharacter.role == "self",
+        )
+        .order_by(UserCharacter.created_at, UserCharacter.name)
+    )
+    chars: dict[uuid.UUID, list[UserCharacter]] = {}
+    for run_id, char in rows:
+        chars.setdefault(run_id, []).append(char)
+    return [(r, chars.get(r.id, [])) for r in runs]
+
+
+async def get_recent_mplus_run(
+    session: AsyncSession, report_code: str, fight_id: int, *, tenant_id: uuid.UUID
+) -> RecentMplusRun | None:
+    result = await session.execute(
+        select(RecentMplusRun).where(
+            RecentMplusRun.tenant_id == tenant_id,
+            RecentMplusRun.report_code == report_code,
+            RecentMplusRun.fight_id == fight_id,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def get_recent_raid(

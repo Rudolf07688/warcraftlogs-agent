@@ -228,6 +228,7 @@ async def test_no_characters_means_no_wcl_call(as_user, fake_wcl):
     assert body == {
         "has_characters": False,
         "raids": [],
+        "mplus_runs": [],
         "refresh": {"status": "idle", "last_success_at": None, "last_error": None},
     }
     assert fake_wcl.calls == []
