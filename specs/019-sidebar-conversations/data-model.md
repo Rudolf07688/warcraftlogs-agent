@@ -5,7 +5,7 @@
 | Column | Type | Null | Default | Notes |
 |---|---|---|---|---|
 | `pinned_at` | `timestamptz` | yes | `NULL` | `NULL` means not pinned. Set to the pin time on pin and kept on a repeated pin; cleared on unpin. It orders the Pinned group, newest first. |
-| `title_source` | `varchar(10)` | no | `'auto'` (server and ORM) | One of `auto`, `explicit`, `generated`, `legacy`. Existing rows are backfilled to `legacy` by migration 0012. |
+| `title_source` | `varchar(10)` | no | `'auto'` (server and ORM) | One of `auto`, `explicit`, `generated`, `legacy`. Existing rows are backfilled to `legacy` by migration 0012 (an UPDATE right after the column is added with default `auto`). |
 
 The existing columns are unchanged: `id`, `tenant_id`, `title` (`varchar(200)`, default
 "New chat"), `model`, `created_at` and `updated_at` (`onupdate=now()`). Neither pin

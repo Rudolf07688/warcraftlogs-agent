@@ -27,7 +27,7 @@ file). They are the **first** tasks of phase B. Until then, the PATCH route test
 
 ## Phase 1: Setup
 
-- [ ] T001 Move sc-154 to In Progress (done at kickoff) and confirm sc-165 and sc-155 are in Shortlist on iteration 161 (Shortcut)
+- [X] T001 Move sc-154 to In Progress (done at kickoff) and confirm sc-165 and sc-155 are in Shortlist on iteration 161 (Shortcut)
 - [X] T002 Record the baseline: run `uv run --extra test pytest -q` and `npm run build` in `frontend/` at the branch base, and note the pass/fail/skip counts in `specs/019-sidebar-conversations/checkpoint.md`
 
 ---
@@ -36,10 +36,10 @@ file). They are the **first** tasks of phase B. Until then, the PATCH route test
 
 **Purpose**: the schema change both later stories rely on (`pinned_at`, `title_source`).
 
-- [ ] T003 Write migration `backend/migrations/versions/0012_conversation_pin_title.py`. It sets revision `0012_conversation_pin_title` and down_revision `0011_guide_content_types`. `upgrade()` adds `pinned_at` (timestamptz, nullable) and `title_source` (`String(10)`, not null, server_default `'legacy'`), then alters the `title_source` server_default to `'auto'`. `downgrade()` drops both columns. The docstring follows the 0011 style (research R4)
-- [ ] T004 Add `pinned_at: Mapped[datetime | None]` (`DateTime(timezone=True)`, nullable) and `title_source: Mapped[str]` (`String(10)`, `default="auto"`, `server_default="auto"`) to `Conversation` in `backend/app/db/models.py`, each with a one-line comment citing feature 019 (run GitNexus `impact` on `Conversation` first: HIGH, additive)
-- [ ] T005 [P] Write `backend/tests/test_conversation_migration.py`. It builds a pre-0012 `conversations` table in SQLite with 2 existing rows, loads the 0012 module via importlib, runs `upgrade()` under `alembic.operations.Operations` with a `MigrationContext`, and asserts that existing rows are `legacy` with a NULL `pinned_at` and that a new insert defaults to `auto`. It then runs `downgrade()` and asserts both columns are gone and the 2 rows are intact (research R10)
-- [ ] T006 Change `create_conversation` in `backend/app/db/repository.py` to set `title_source="explicit"` when `title` is truthy, else `"auto"`, keeping the signature (run `impact` first: HIGH, 3 callers, additive)
+- [X] T003 Write migration `backend/migrations/versions/0012_conversation_pin_title.py`. It sets revision `0012_conversation_pin_title` and down_revision `0011_guide_content_types`. `upgrade()` adds `pinned_at` (timestamptz, nullable) and `title_source` (`String(10)`, not null, server_default `'auto'`), then runs `UPDATE conversations SET title_source='legacy'` for the existing rows (portable, no ALTER COLUMN). `downgrade()` drops both columns. The docstring follows the 0011 style (research R4)
+- [X] T004 Add `pinned_at: Mapped[datetime | None]` (`DateTime(timezone=True)`, nullable) and `title_source: Mapped[str]` (`String(10)`, `default="auto"`, `server_default="auto"`) to `Conversation` in `backend/app/db/models.py`, each with a one-line comment citing feature 019 (run GitNexus `impact` on `Conversation` first: HIGH, additive)
+- [X] T005 [P] Write `backend/tests/test_conversation_migration.py`. It builds a pre-0012 `conversations` table in SQLite with 2 existing rows, loads the 0012 module via importlib, runs `upgrade()` under `alembic.operations.Operations` with a `MigrationContext`, and asserts that existing rows are `legacy` with a NULL `pinned_at` and that a new insert defaults to `auto`. It then runs `downgrade()` and asserts both columns are gone and the 2 rows are intact (research R10)
+- [X] T006 Change `create_conversation` in `backend/app/db/repository.py` to set `title_source="explicit"` when `title` is truthy, else `"auto"`, keeping the signature (run `impact` first: HIGH, 3 callers, additive)
 
 **Checkpoint**: `pytest -q` is green, and the migration test passes.
 
@@ -51,8 +51,8 @@ file). They are the **first** tasks of phase B. Until then, the PATCH route test
 
 **Independent Test**: quickstart manual check 1, and `npm run build` is green.
 
-- [ ] T007 [US1] Move the Conversations section label and list block above the Raids section label and list in `frontend/src/components/Sidebar.tsx`, keeping `convsOpen` and `raidsOpen`, the counts and the empty texts unchanged (`impact` on `SidebarImpl` is UNKNOWN; the only consumer is `App.tsx:452`, confirmed by text search)
-- [ ] T008 [US1] Run `npm run build` in `frontend/` and commit the US1 slice
+- [X] T007 [US1] Move the Conversations section label and list block above the Raids section label and list in `frontend/src/components/Sidebar.tsx`, keeping `convsOpen` and `raidsOpen`, the counts and the empty texts unchanged (`impact` on `SidebarImpl` is UNKNOWN; the only consumer is `App.tsx:452`, confirmed by text search)
+- [X] T008 [US1] Run `npm run build` in `frontend/` and commit the US1 slice
 
 **Checkpoint**: US1 is shippable on its own.
 

@@ -59,9 +59,12 @@ choice, the reason, and the alternatives.
 
 ## R4: Existing rows (FR-020)
 
-- **Decision**: the migration adds the column with server default `'legacy'`, which fills
-  every existing row. It then sets the server default to `'auto'`. The ORM default is
-  `'auto'` as well.
+- **Decision**: the migration adds the column with server default `'auto'`, then runs
+  `UPDATE conversations SET title_source = 'legacy'` in the same transaction, which
+  covers every row that existed before it. The ORM default is `'auto'` as well. This is
+  equivalent to the "default 'legacy', then switch to 'auto'" form the scrum master
+  approved, but it needs no `ALTER COLUMN … SET DEFAULT`, so the same migration also runs
+  in the SQLite migration test.
 - **Rationale**: old chats, including old raid investigations whose explicit title had no
   marker, are never renamed. No per-turn "is this the first reply?" query is needed:
   a new chat reaches the hook in `auto` only until its first complete reply claims it.

@@ -41,7 +41,14 @@ from .models import (
 async def create_conversation(
     session: AsyncSession, model: str, title: str | None = None, *, tenant_id: uuid.UUID
 ) -> Conversation:
-    conv = Conversation(model=model, title=title or "New chat", tenant_id=tenant_id)
+    # Feature 019 / FR-018: a caller that names the chat (raid investigations, recent-raid
+    # kickoffs, POST with a title) marks it explicit at creation; it is never auto-renamed.
+    conv = Conversation(
+        model=model,
+        title=title or "New chat",
+        title_source="explicit" if title else "auto",
+        tenant_id=tenant_id,
+    )
     session.add(conv)
     await session.flush()  # populate id/timestamps
     return conv
