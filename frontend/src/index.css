@@ -88,8 +88,9 @@
   --danger: oklch(0.64 0.2 25);
 }
 
+/* 17px at the 16px browser default; keeps the user's font-size preference */
 html {
-  font-size: 17px;
+  font-size: 106.25%;
 }
 
 body {
