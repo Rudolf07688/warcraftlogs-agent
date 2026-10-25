@@ -235,7 +235,7 @@ lookup rounds, each another model request, which can exhaust the provider's per-
 allowance. The app now:
 
 - **Retries rate-limited model calls** (HTTP 429 / 503 / 529, `RESOURCE_EXHAUSTED`) with
-  exponential backoff inside one shared loop (`wcl_agent/model_retry.py`); the SDKs' own
+  exponential backoff inside one shared loop (`wcl_agent/llm/model_retry.py`); the SDKs' own
   retries are disabled so waits never nest. While waiting, the chat status reads
   *"Model busy — retrying (n of N)…"*. When the budget is spent the turn ends with a
   plain-language `rate_limited` error and no partial reply is saved; just resend.
@@ -336,7 +336,7 @@ Or set `target: prod` and `ports: ["8080:80"]` on the `frontend` service in
 
 Warcraft Logs data is public, so it is cached **once for everyone** in Redis instead of per
 process (this replaces the old in-process cache and its per-tenant scoping). Seven key
-families, each with its own freshness, reached only through `wcl_agent.cache.get_or_load`:
+families, each with its own freshness, reached only through `wcl_agent.cache.cache.get_or_load`:
 
 | Family | What | Fresh for |
 |---|---|---|
@@ -437,7 +437,7 @@ uv run python -c "import google.adk, httpx, pandas"
 
 # Smoke-test the WCL API (no LLM) — prints your hourly points budget
 uv run python -c "import asyncio; from dotenv import load_dotenv; load_dotenv(); \
-from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
+from wcl_agent.client.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rate_limit()))"
 ```
 
 ## Notes
@@ -446,7 +446,7 @@ from wcl_agent.wcl_client import acheck_rate_limit; print(asyncio.run(acheck_rat
   (`https://www.warcraftlogs.com/api/v2/client`). Requests cost "points"; the
   agent can call a `check_rate_limit` tool to see the remaining budget.
 - Class/spec filters use PascalCase, space-free names (e.g. `Hunter` /
-  `Marksmanship`) — handled for you in `wcl_agent/constants.py`.
+  `Marksmanship`) — handled for you in `wcl_agent/game/constants.py`.
 - The agent uses `gemini-3.6-flash` by default; change it with `WCL_DEFAULT_MODEL`
   (shared by the backend config and the `wcl_agent` CLI, so they can't drift). The
   web app's selectable list is discovered at startup (see
@@ -495,7 +495,7 @@ catalog (those are never changed automatically).
   uses the static lists.
 - **Where models run**: every model call (chat, web search, guides, reports, greeting,
   suggestions, probes) uses `WCL_MODEL_LOCATION` (default `global`); clients are built
-  only in `wcl_agent/vertex.py`. `europe-west1` serves only Gemini 2.5 and no Claude,
+  only in `wcl_agent/llm/vertex.py`. `europe-west1` serves only Gemini 2.5 and no Claude,
   and the `eu` multi-region lacks the Pro preview, so `GOOGLE_CLOUD_LOCATION` (default
   `europe-west1`) is left to everything else. `WCL_ANTHROPIC_REGION` is gone.
 

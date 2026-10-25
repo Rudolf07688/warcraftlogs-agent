@@ -1,5 +1,5 @@
 // Profile revamp: official WoW class colours, used as an accent for class cards and
-// character avatars. Keys are the CLASS_SPECS filter values (wcl_agent/constants.py),
+// character avatars. Keys are the CLASS_SPECS filter values (wcl_agent/game/constants.py),
 // normalised so "DeathKnight", "Death Knight" and "deathknight" all resolve.
 
 const CLASS_COLORS: Record<string, string> = {
