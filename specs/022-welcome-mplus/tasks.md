@@ -46,7 +46,7 @@ Tests are requested (spec SC-007). WCL responses are faked; no live calls. Tasks
 
 ## Phase 6: User Story 4 - never wait on Warcraft Logs (P2)
 
-- [X] T021 [US4] Test in `backend/tests/test_recent_mplus.py`: GET returns stored runs without any WCL call, a failing M+ detail fetch keeps stored raids and runs and records the failed outcome, and the M+ fetch runs inside the background lane
+- [X] T021 [US4] Test in `backend/tests/test_recent_mplus.py`: GET returns stored runs without any WCL call, a failing refresh keeps stored runs, a failing M+ detail fetch alone keeps stored raids and runs and records success (fix 024: FR-010), and the M+ fetch runs inside the background lane. Fix 024 (SPEC-006) added the M+-only failure, timeout and lane assertions
 - [X] T022 [US4] Verify `_refresh` ordering keeps the raid path unchanged when the M+ step raises (no partial raid loss); adjust `backend/app/services/recent_raids.py` if the test shows otherwise
 
 ## Phase 7: Polish
@@ -54,6 +54,14 @@ Tests are requested (spec SC-007). WCL responses are faked; no live calls. Tasks
 - [X] T023 Run `uv run --extra test pytest -q` and `npm run build` in `frontend/`; fix regressions
 - [X] T024 Index the worktree and run `detect-changes --scope all`; check `git diff --name-only 6aa641d...HEAD` lists only owned files; restore `.specify/feature.json` and `CLAUDE.md`
 - [ ] T025 Live check on app 18019 / Postgres 15419 / Redis 16319 if M+ test data is available; otherwise record it as an open hand-off item in `specs/022-welcome-mplus/quickstart.md`
+
+## Fix 024: QA fix-now (2026-10-25, dev-a-024)
+
+- [X] T026 Isolate the M+ step in `_refresh` (shared deadline, own timeout scope, logged failure; the refresh still records success) in `backend/app/services/recent_raids.py` (FN-1a: SPEC-001, BUG-002)
+- [X] T027 `WelcomePanel` shows stored runs with no raids while running/idle (status line, no skeleton) and on failure (alert + runs) in `frontend/src/components/WelcomePanel.tsx` (FN-1b: SPEC-001)
+- [X] T028 Tests in `backend/tests/test_recent_mplus.py`: raid-less stored runs during a running and after a failed refresh; an M+-only 429 keeps status, raids and runs and leaves the report open; an M+ timeout keeps status; background lane (SPEC-006)
+- [X] T029 Per-fight character links in `extract_mplus_runs` (friendlyPlayers by name, case-insensitive, fallback to the report's own characters) plus unit and end-to-end tests (FN-2: SPEC-002)
+- [X] T030 Spec edge case per decision 20 (SPEC-008); plan Design 3 and 6 updated
 
 ## Dependencies and order
 
