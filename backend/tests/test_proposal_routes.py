@@ -204,8 +204,34 @@ def test_follow_up_reports_a_failed_item():
 
 def test_follow_up_when_nothing_applied_and_own_characters():
     assert routes.follow_up_text(_applied(_item(0, "Ziri", status="skipped", code="invalid_realm"))) == (
-        "Nothing was applied. Skipped 1: Ziri (realm unknown, add by hand)."
+        "Nothing was applied. Skipped 1: 1 entry (realm unknown, add by hand)."
     )
     assert routes.follow_up_text(_applied(_item(0, "Ziri", target="own"), _item(1, "Ora", target="own"), _item(2, "Pell", target="own"))) == (
         "Done. Added 3 own characters: Ziri, Ora and Pell."
     )
+
+
+HOSTILE = ["![x](https://evil.example/t)", "[sign in](https://phish.example)"]
+
+
+async def test_hostile_names_never_reach_the_saved_line(as_user, patched_db, conv, proposal):
+    hostile = await proposals.create_proposal(
+        _identity(as_user), conv, [_add("Kazrok"), _add("Nightpaw"), *(_add(name) for name in HOSTILE)]
+    )
+    assert [i.validation.code for i in hostile.items][2:] == ["invalid_name", "invalid_name"]
+    r = await as_user.client.post(f"/api/profile/proposals/{hostile.id}/approve")
+    line = r.json()["follow_up"]["content"]
+    assert "](" not in line and "example" not in line and "!" not in line
+    assert line == (
+        "Done. Added 1 friend: Kazrok. "
+        "Skipped 3: Nightpaw (already a friend), 2 entries (name not valid)."
+    )
+    assert await _agent_lines(patched_db, conv, as_user.tenant_id) == [line]
+
+
+def test_follow_up_escapes_markdown_in_names():
+    text = routes.follow_up_text(_applied(_item(0, "*Ka_zrok*"), _item(1, "Vel[y]ra", status="failed", code="duplicate_friend")))
+    assert text == (
+        "Added 1 friend: \\*Ka\\_zrok\\*. Couldn't add Vel\\[y\\]ra (already a friend). Nothing else changed."
+    )
+

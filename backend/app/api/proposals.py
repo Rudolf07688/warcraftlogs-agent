@@ -10,6 +10,7 @@ to the agent's session (D10).
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -41,6 +42,12 @@ _LABELS = {
     "no_change": "already set",
 }
 _VERB = {"add": "add", "remove": "remove", "update": "set the role of"}
+# Items refused for their identity: their name may be hostile text from a log (029 C14), so the
+# saved line never repeats it, only the reason.
+_INVALID = frozenset({"invalid_name", "invalid_realm", "invalid_region", "invalid_item"})
+# The line is rendered as Markdown, so names are escaped (defence in depth: valid names are
+# letters only).
+_MARKDOWN = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~])")
 
 CANCELLED_TEXT = "Cancelled. Your profile is unchanged."
 
@@ -49,8 +56,16 @@ def _label(code: str | None) -> str:
     return _LABELS.get(code or "", "not applied")
 
 
+def _name(item: ProposalItemOut) -> str:
+    return _MARKDOWN.sub(r"\\\1", item.name)
+
+
+def _entries(n: int) -> str:
+    return f"{n} {'entry' if n == 1 else 'entries'}"
+
+
 def _names(items: list[ProposalItemOut]) -> str:
-    names = [it.name for it in items]
+    names = [_name(it) for it in items]
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
@@ -75,15 +90,19 @@ def follow_up_text(proposal: ProfileProposalOut) -> str:
                 parts.append(f"{verb} {_count(len(group), target)}: {_names(group)}.")
     for it in applied:
         if it.action == "update":
-            role = f"Set {it.name}'s role to {it.raid_role}." if it.raid_role else f"Cleared {it.name}'s role."
+            role = f"Set {_name(it)}'s role to {it.raid_role}." if it.raid_role else f"Cleared {_name(it)}'s role."
             parts.append(role)
     if not applied:
         parts.append("Nothing was applied.")
     if skipped:
-        listed = ", ".join(f"{it.name} ({_label(it.result.code)})" for it in skipped)
-        parts.append(f"Skipped {len(skipped)}: {listed}.")
+        listed = [f"{_name(it)} ({_label(it.result.code)})" for it in skipped if it.result.code not in _INVALID]
+        for code in sorted({it.result.code for it in skipped} & _INVALID):
+            n = sum(it.result.code == code for it in skipped)
+            listed.append(f"{_entries(n)} ({_label(code)})")
+        parts.append(f"Skipped {len(skipped)}: {', '.join(listed)}.")
     for it in failed:
-        parts.append(f"Couldn't {_VERB[it.action]} {it.name} ({_label(it.result.code)}).")
+        who = "1 entry" if it.result.code in _INVALID else _name(it)
+        parts.append(f"Couldn't {_VERB[it.action]} {who} ({_label(it.result.code)}).")
     if failed:
         parts.append("Nothing else changed.")
     elif applied:
