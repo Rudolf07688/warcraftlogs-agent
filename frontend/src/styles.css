@@ -248,8 +248,12 @@ body.resizing {
   gap: 14px;
 }
 
+/* sc-208: bubbles take a share of the chat column, capped for very wide screens; long
+   tokens wrap, and wide tables and code scroll inside the bubble (.markdown pre/table). */
 .message {
-  max-width: min(820px, 100%);
+  max-width: min(90%, 1200px);
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 12px 15px;
   border-radius: 12px;
   line-height: 1.6;
@@ -270,6 +274,7 @@ body.resizing {
 .message.user {
   align-self: flex-end;
   background: var(--user);
+  max-width: min(75%, 900px);
 }
 
 .message.user .message-content {
@@ -280,7 +285,6 @@ body.resizing {
   align-self: flex-start;
   background: var(--agent);
   border: 1px solid var(--border);
-  max-width: min(860px, 100%);
 }
 
 .message.error {
@@ -825,7 +829,7 @@ body::after {
 /* --- Welcome panel: my recent raids (feature 013) ------------------------------- */
 .welcome-panel {
   width: 100%;
-  max-width: min(820px, 100%);
+  max-width: min(90%, 1200px);
   display: flex;
   flex-direction: column;
   gap: 12px;
