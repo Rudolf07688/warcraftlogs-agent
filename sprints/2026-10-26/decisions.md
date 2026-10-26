@@ -118,3 +118,33 @@
      is required.
 - **Follow-ups filed (Backlog):** sc-213 (bug, 2) charts not restored when a chat is
   reopened; sc-214 (feature, 2, epic 203) per-item selection on the card (OQ-1 / D4).
+
+## D12 — 2026-10-26: Owner thumbs up; D7 gate cleared
+- **Answer (owner, via team-lead, after the ~18:50 pause/resume):** the owner is "more than happy
+  with the plan". 029–031 may implement. No owner gates remain this sprint; the PO decides
+  everything and escalates only genuinely irreversible actions.
+- **WCL participant data:** no live recording of `playerDetails`. 030 builds on the
+  inferred fixtures from the 028 design (field names as documented there) and keeps the
+  parser tolerant of missing keys (missing realm → `realm: null`, as designed). The owner
+  verifies against a real report at Under Review. This replaces the design's "record one real
+  response first" step.
+
+## D13 — 2026-10-26: App features in the capability summary (029 / sc-204)
+- **Question:** Should the generated summary also carry a fixed line naming the app's user-facing
+  features (profile page, Raids page, class guides, PDF export, chat filters), or only the tool
+  lines and the can/cannot lines?
+- **Answer:** (B) Add one fixed line of app facts, with no tool names, inside the 4,000-character
+  budget. It lists **only features that exist on the base**. There's no per-chat *character*
+  filter yet (epic 107 / sc-144 isn't built), so the line names the boss/encounter
+  checkboxes (EncounterPicker) instead, and doesn't mention a character filter.
+- **Why:** sc-204's story text lists these features, so it's in scope. A line that names an
+  unbuilt feature would make Barnaby promise something the app can't do.
+
+## D14 — 2026-10-26: 030 (sc-206) accepted
+- **Answer:** ACCEPT at deecaab. The PO re-ran the backend suite in dev-b (1083 passed, 3 skipped,
+  1 deselected) and read `wcl_agent/tools/participants.py` and the shared-file diffs (ws.py: 2 reads
+  + 2 kwargs; agent.py: import, TOOLS entry, one tool-list line, `<RUN_RESOLUTION>`). AC 1–5 met.
+  The hand-written tool-list line is temporary: 029's generated summary replaces it, and 029's
+  rebase must carry `get_report_participants` into `TOOL_GROUPS` (checked at 029 acceptance).
+- **Owner live check (Under Review):** "who was in <report>" against a real report (the fixtures
+  are Inferred, D12), and the full example request once 029 and 031 are in.
