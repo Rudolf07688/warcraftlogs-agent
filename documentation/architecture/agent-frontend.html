@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent and Frontend</title>
+<meta name="description" content="Architecture of the WCL Agent app's agent runtime (Barnaby), models, agent-to-app boundary, stream protocol and React frontend, with the recorded reason for each choice.">
+<style>
+/* Theme tokens: copied verbatim from sprints/2026-10-25/sprint-report.html (fonts fall back to system fonts; nothing is fetched). */
+:root{
+  --bg:#f5f6f9; --surface:#ffffff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+
+/* Page */
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+h1,h2,h3{font-family:var(--f-display);font-stretch:85%;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,5vw,42px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:24px;font-weight:700}
+h3{font-size:18px;font-weight:700;margin-top:6px}
+p{margin:0;max-width:72ch}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--sunk);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.muted{color:var(--muted)}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+
+/* Top nav (identical on all three pages) */
+.topnav{display:flex;flex-wrap:wrap;gap:4px;padding-block:10px;border-bottom:1px solid var(--line)}
+.topnav a{color:var(--muted);text-decoration:none;font-weight:600;padding:7px 12px;border-radius:8px}
+.topnav a:hover{color:var(--fg);background:var(--sunk)}
+.topnav a[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
+
+header.top{padding-block:32px 8px;display:grid;gap:12px}
+.lede{font-size:18px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.pausebtn{appearance:none;font:600 14px var(--f-body);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+.pausebtn:hover{background:var(--sunk)}
+.pausebtn[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+
+/* Layer sections */
+.layer{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;margin-top:24px;display:grid;gap:12px;min-width:0}
+.layer>*{min-width:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chips .eyebrow{margin-right:4px}
+.chip{font:600 12.5px var(--f-mono);background:var(--sunk);border:1px solid var(--line);border-radius:99px;padding:2px 9px;overflow-wrap:anywhere}
+p.why{border-left:3px solid var(--ok);padding:4px 0 4px 12px}
+p.why cite{display:block;font:normal 12.5px var(--f-mono);color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+p.why.inferred{border-left-color:var(--warn)}
+.badge{display:inline-block;font:700 11px var(--f-body);letter-spacing:.06em;text-transform:uppercase;border-radius:6px;padding:1px 7px;margin-right:6px;vertical-align:1px;border:1.5px solid currentColor}
+.badge.inf{color:var(--warn);background:var(--warn-soft)}
+.badge.cited{color:var(--ok);background:var(--ok-soft)}
+.badge.planned{color:var(--q3);background:transparent}
+.layer.planned{border-style:dashed;border-color:var(--q3)}
+ul,ol{margin:0;padding-left:22px}
+li{margin-block:3px}
+.note{background:var(--sunk);border-radius:8px;padding:10px 14px}
+
+/* Tables */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--line)}
+th{background:var(--sunk);font-weight:700}
+tr:last-child td{border-bottom:0}
+.tablewrap code{overflow-wrap:break-word}
+@media (max-width:600px){.layer{padding:14px}}
+
+/* Diagrams (inline SVG) */
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;margin:0}
+.diagram svg{width:100%;height:auto;display:block}
+.diagram figcaption{font-size:14px;color:var(--muted);margin-top:8px}
+.dg text{fill:var(--fg);font-family:var(--f-body);font-size:17px}
+.dg .t{font-weight:700}
+.dg .sub{fill:var(--muted);font-size:14px}
+.dg .lbl{fill:var(--muted);font-size:14px;paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
+.dg .node{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+.dg .node.ext{fill:var(--sunk)}
+.dg .node.store{fill:var(--accent-soft);stroke:var(--accent)}
+.dg .node.core{stroke:var(--accent);stroke-width:2}
+.dg .zone{fill:none;stroke:var(--muted);stroke-width:1.2;stroke-dasharray:6 5}
+.dg .zlbl{fill:var(--muted);font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.dg .life{stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5}
+.dg .ah{fill:var(--accent)}
+.dg .ah2{fill:var(--muted)}
+.flow{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-dasharray:9 6;animation:flow 1.1s linear infinite}
+.flow.ret{stroke:var(--muted)}
+@keyframes flow{to{stroke-dashoffset:-15}}
+html.paused .flow{animation-play-state:paused}
+@media (prefers-reduced-motion: reduce){.flow{animation:none;stroke-dasharray:none}}
+
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:14px;color:var(--muted);display:grid;gap:8px}
+footer ul{columns:2 260px}
+footer code{font-size:12.5px}
+
+/* Page furniture shared by the detail pages */
+.toc{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:15px;padding-top:4px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px;color:var(--muted)}
+.steps{font-size:15px;color:var(--fg)}
+.steps li::marker{color:var(--muted);font-family:var(--f-mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="topnav"><a href="index.html">Overview</a><a href="backend-data-infra.html">Backend, data &amp; infra</a><a href="agent-frontend.html" aria-current="page">Agent &amp; frontend</a></nav>
+
+<header class="top">
+  <span class="eyebrow">Architecture · detail page</span>
+  <h1>Agent &amp; frontend</h1>
+  <p class="lede">How Barnaby, the coaching agent, runs; which models it talks to and how it survives rate limits; what app data it can see and change; how a reply streams to the browser; and how the React frontend is built. Every "why" cites the repo document that records the decision. Where nothing is recorded, the reason is marked <span class="badge inf">Inferred</span>. Deployment, auth, data, cache and the WCL client are on <a href="backend-data-infra.html">Backend, data &amp; infra</a>.</p>
+  <p class="muted">Story sc-210 · source material for sc-204 (epic-203 "Self-aware agent")</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="legend"><span><span class="badge cited">Cited</span>reason recorded in the repo</span><span><span class="badge inf">Inferred</span>no recorded reason</span><span><span class="badge planned">Planned, not built</span></span></span>
+  </div>
+  <nav class="toc" aria-label="On this page">
+    <a href="#runtime">Agent runtime</a><a href="#guides">Class guides</a><a href="#models">Models &amp; rate limits</a><a href="#boundary">Agent ↔ app boundary</a><a href="#streaming">Stream protocol</a><a href="#frontend">Frontend</a>
+  </nav>
+</header>
+
+<!-- ============================================================ 1. RUNTIME -->
+<section class="layer" id="runtime">
+  <h2>1. Agent runtime</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">google-adk&gt;=2.0.0</span>
+    <span class="chip muted">uv.lock: 2.10.0</span>
+    <span class="chip">requires-python &gt;=3.14</span>
+    <span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span>
+    <span class="chip">asyncpg&gt;=0.29.0</span>
+    <span class="chip">httpx&gt;=0.27.0</span>
+  </div>
+
+  <h3>What it does and where it lives</h3>
+  <ul>
+    <li><b>Agent factory.</b> <code>wcl_agent/agent.py</code> → <code>build_agent(model, retry)</code> returns one Google ADK <code>Agent(name="wcl_agent")</code> with:
+      <code>instruction=build_instruction</code> (an ADK instruction provider), <code>tools=TOOLS</code> (+ <code>web_search</code> on Gemini), <code>before_model_callback=make_before_model_callback(policy)</code> and <code>planner=BuiltInPlanner(ThinkingConfig(include_thoughts=True))</code>. The model is wrapped in <code>RetryingGemini</code> or <code>RetryingClaude</code> (see <a href="#models">Models</a>).</li>
+    <li><b>Runner.</b> <code>backend/app/agent_runner.py</code> caches one ADK <code>Runner</code> per model id, all over one shared session service. The lifespan in <code>backend/app/main.py</code> installs ADK's <code>DatabaseSessionService(db_engine=engine)</code>: it reuses the app's own async SQLAlchemy engine and connection pool on the same Postgres database, so a conversation's model context survives restarts; the CLI and tests fall back to <code>InMemorySessionService</code>. The ADK session id is the conversation UUID; the ADK user id is the tenant id.</li>
+    <li><b>Turn loop.</b> <code>stream_response()</code> runs <code>_run_turn()</code> as a producer task feeding an <code>asyncio.Queue</code>, so rate-limit status records (pushed by the model wrapper through the <code>current_turn</code> ContextVar) reach the client while the producer sleeps in a backoff. <code>_run_turn()</code> iterates <code>runner.run_async(..., RunConfig(streaming_mode=StreamingMode.SSE))</code> and maps ADK events to records: <code>function_call</code> → <code>tool_start</code>, <code>function_response</code> → <code>tool_end</code> (with the call's args, result and elapsed ms), partial text → <code>token</code>. Parts marked <code>thought</code> are dropped, so reasoning never reaches the user. (<code>StreamingMode.SSE</code> is ADK's internal model-streaming mode; the browser transport is a WebSocket.)</li>
+    <li><b>System prompt (Barnaby).</b> <code>_INSTRUCTION_BODY</code> in <code>wcl_agent/agent.py</code>. Tag-delimited sections, in order: <code>EVIDENCE_CONTRACT</code>, <code>SOURCE_AUTHORITY</code>, <code>TOOLS</code>, <code>EVIDENCE_PLAN</code>, <code>CONTEXT_RESOLUTION</code>, <code>VALIDATION_BEFORE_ANALYSIS</code>, <code>ANALYSIS_ROUTING</code>, <code>BENCHMARK_POLICY</code>, <code>COACHING_POLICY</code>, <code>PERCENTILE_POLICY</code>, <code>COACHING_BRIEFS</code>, <code>TOOL_FAILURES</code>, <code>CITATIONS</code>, <code>CHARTS</code>, <code>OUTPUT</code>, <code>PERSONALITY</code>, <code>CURRENT_TIME</code>. <code>build_instruction()</code> fills the UTC time on every model request; the time block is last so everything before it is a stable, cacheable prefix. The contract is <code>specs/009-grounded-coaching-prompt/contracts/prompt.md</code>, enforced by <code>backend/tests/test_prompt_contract.py</code>.</li>
+    <li><b>Per-request context.</b> The before-model callback (<code>wcl_agent/llm/model_retry.py</code>) does three things on every model request: (1) <code>context_trim.trim_old_tool_results()</code> (<code>wcl_agent/llm/context_trim.py</code>) replaces large tool results older than <code>WCL_CONTEXT_KEEP_TURNS</code> (default 2) with <code>_elided</code> stubs, in the request only; (2) <code>inject_preamble()</code> prepends the turn's KNOWN PLAYER CONTEXT to the latest user message, never storing it in ADK history; (3) counts model requests and, once the turn has used <code>WCL_TURN_ROUND_CAP</code> lookup rounds (default 6), appends <code>WRAP_UP_INSTRUCTION</code> and, for Gemini only, sets function calling to <code>NONE</code>.</li>
+    <li><b>Tool registry and parallel calls.</b> <code>TOOLS</code> in <code>wcl_agent/agent.py</code> lists 20 function tools (full list in <a href="#boundary">§4</a>). Every tool is an <code>async def</code> over the native async WCL client (<code>wcl_agent/client/wcl_client.py</code>), so when the model emits several <code>function_call</code> parts in one response, ADK awaits them concurrently on the event loop. The prompt's <code>TOOLS</code> and <code>EVIDENCE_PLAN</code> sections tell the model to batch independent lookups into one parallel round. Each full result is also written to a per-turn scratch file (<code>backend/app/scratch.py</code>).</li>
+    <li><b>Background lane.</b> All WCL requests share one <code>LaneLimiter</code> in <code>wcl_agent/client/wcl_client.py</code>: <code>WCL_MAX_CONCURRENCY</code> slots (6), of which background work (guide resolution, patch lookups, the recent-raid refresh, wrapped in <code>background_lane()</code>) may hold at most <code>WCL_BACKGROUND_CONCURRENCY</code> (2), and only while no chat lookup is waiting. Chat tools run in the default interactive lane, so a player's turn is never queued behind background refreshes.</li>
+    <li><b>Web-search sub-agent.</b> <code>_build_web_search_tool()</code> wraps a grounding-only ADK <code>Agent(name="web_search", tools=[google_search])</code>, on the same Gemini model id, in an <code>AgentTool(propagate_grounding_metadata=True)</code>. It is only added for Gemini models; Claude runs with the WCL tools only. The runner emits one <code>grounding</code> record per turn with the source titles and links.</li>
+    <li><b>Other model calls that are not the chat agent:</b> the new-chat greeting (<code>backend/app/greeting.py</code>, runs the same agent with <code>retry=False</code>), follow-up suggestions (<code>backend/app/suggestions.py</code>, direct google-genai call on <code>WCL_SUGGEST_MODEL</code>, default <code>gemini-3.6-flash</code>, 4 s cap), generated chat titles (<code>backend/app/services/conversation_titles.py</code>, same cheap model), and the guide pipeline (<a href="#guides">§2</a>).</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 400" role="img" aria-labelledby="d1t">
+      <title id="d1t">Agent loop: a user turn becomes a model request; function calls run as parallel tools; their results feed the next request; text parts stream to the browser.</title>
+      <defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+      <rect class="node" x="20" y="40" width="170" height="70" rx="10"/>
+      <text x="105" y="68" text-anchor="middle" class="t" style="font-size:13px">1. User turn</text>
+      <text x="105" y="88" text-anchor="middle" class="sub" style="font-size:11.5px">ChatTurn on /ws/chat</text>
+
+      <rect class="node" x="240" y="16" width="250" height="118" rx="10"/>
+      <text x="365" y="40" text-anchor="middle" class="t" style="font-size:13px">2. Model request</text>
+      <text x="252" y="62" class="sub" style="font-size:11.5px">build_instruction(): Barnaby + UTC time</text>
+      <text x="252" y="80" class="sub" style="font-size:11.5px">inject_preamble(): player context</text>
+      <text x="252" y="98" class="sub" style="font-size:11.5px">context_trim: stub old tool results</text>
+      <text x="252" y="116" class="sub" style="font-size:11.5px">round cap: wrap up after 6 rounds</text>
+
+      <rect class="node core" style="fill:var(--accent-soft)" x="540" y="40" width="200" height="70" rx="10"/>
+      <text x="640" y="68" text-anchor="middle" class="t" style="font-size:13px">3. Model</text>
+      <text x="640" y="88" text-anchor="middle" class="sub" style="font-size:11.5px">RetryingGemini / RetryingClaude</text>
+      <text x="650" y="130" class="sub" style="font-size:11.5px">thought parts dropped</text>
+
+      <rect class="node" x="790" y="40" width="190" height="70" rx="10"/>
+      <text x="885" y="68" text-anchor="middle" class="t" style="font-size:13px">6. Stream records</text>
+      <text x="885" y="88" text-anchor="middle" class="sub" style="font-size:11.5px">token · tool_start · tool_end</text>
+
+      <rect class="node" x="540" y="250" width="200" height="96" rx="10"/>
+      <text x="640" y="276" text-anchor="middle" class="t" style="font-size:13px">4. Tool calls, in parallel</text>
+      <text x="640" y="298" text-anchor="middle" class="sub" style="font-size:11.5px">20 async function tools</text>
+      <text x="640" y="316" text-anchor="middle" class="sub" style="font-size:11.5px">+ web_search AgentTool (Gemini)</text>
+      <text x="640" y="334" text-anchor="middle" class="sub" style="font-size:11.5px">WCL GraphQL via httpx</text>
+
+      <rect class="node" x="240" y="250" width="250" height="96" rx="10"/>
+      <text x="365" y="276" text-anchor="middle" class="t" style="font-size:13px">5. function_response</text>
+      <text x="365" y="298" text-anchor="middle" class="sub" style="font-size:11.5px">{status, …, provenance, completeness}</text>
+      <text x="365" y="316" text-anchor="middle" class="sub" style="font-size:11.5px">stored in the ADK session</text>
+      <text x="365" y="334" text-anchor="middle" class="sub" style="font-size:11.5px">full copy to TurnScratch</text>
+
+      <rect class="node" x="790" y="250" width="190" height="96" rx="10"/>
+      <text x="885" y="276" text-anchor="middle" class="t" style="font-size:13px">7. ws.py → browser</text>
+      <text x="885" y="298" text-anchor="middle" class="sub" style="font-size:11.5px">typed WebSocket frames</text>
+      <text x="885" y="316" text-anchor="middle" class="sub" style="font-size:11.5px">captures → Postgres</text>
+
+      <path class="flow" d="M190,75 H236" marker-end="url(#ah1)"/>
+      <path class="flow" d="M490,75 H536" marker-end="url(#ah1)"/>
+      <path class="flow" d="M740,75 H786" marker-end="url(#ah1)"/>
+      <text x="763" y="30" text-anchor="middle" class="sub" style="font-size:11.5px">text</text>
+      <path class="flow" d="M640,110 V246" marker-end="url(#ah1)"/>
+      <text x="650" y="190" class="sub" style="font-size:11.5px">function_call × N</text>
+      <path class="flow" d="M540,298 H494" marker-end="url(#ah1)"/>
+      <text x="515" y="288" text-anchor="middle" class="sub" style="font-size:11.5px">results</text>
+      <path class="flow" d="M365,250 V138" marker-end="url(#ah1)"/>
+      <text x="375" y="198" class="sub" style="font-size:11.5px">next round (until text only)</text>
+      <path class="flow" d="M885,110 V246" marker-end="url(#ah1)"/>
+      <text x="895" y="190" class="sub" style="font-size:11.5px">per record</text>
+      <text x="20" y="384" class="sub" style="font-size:11.5px">Loop ends when the model answers with text and no function calls, or the round cap forces a text answer.</text>
+    </svg>
+    <figcaption>Agent loop. Steps 2 to 5 repeat once per lookup round; tools inside one round run concurrently.</figcaption>
+  </figure>
+
+  <h3>Why it was built this way</h3>
+  <p class="why inferred"><span class="badge inf">Inferred</span><b>Google ADK as the agent framework.</b> Reason not recorded: ADK predates the specs (<code>specs/001-streaming-chat-frontend/plan.md</code> calls it "existing agent", <code>documentation/ai_guide.md</code> §2 just lists it). Plausible trade-off: ADK is Google's own framework, so Gemini on Vertex, Google Search grounding, session services and turning plain Python functions into tools come built in. It also has an LLM registry that runs Claude on Vertex. The cost is coupling to ADK internals, which the retry wrapper and the context trimming already depend on.</p>
+  <p class="why">Driving ADK's <code>Runner.run_async</code> with streaming and mapping <code>function_call</code> / <code>function_response</code> / partial text to frames reuses the event loop already proven in <code>wcl_agent/cli.py</code>, just redirected from <code>print()</code> to WebSocket frames.<cite>specs/001-streaming-chat-frontend/research.md §2</cite></p>
+  <p class="why">One <code>Runner</code> per model id: ADK accepts a model id string, so adding a model is configuration only, and caching runners avoids rebuilding the agent each turn. <b>Alternatives:</b> one hard-coded agent (no model switching); LiteLLM multi-provider (deferred).<cite>specs/001-streaming-chat-frontend/research.md §3</cite></p>
+  <p class="why">ADK's <code>DatabaseSessionService</code> restores real model context (tool history and turns), not just the transcript, after a restart, using ADK's built-in persistence instead of bespoke replay logic. <b>Alternatives:</b> in-memory sessions re-seeded from <code>messages</code> (loses tool and grounding context); ADK <code>VertexAiSessionService</code> (ties sessions to a managed Vertex Agent Engine resource).<cite>specs/002-agent-enhancements/research.md §3</cite></p>
+  <p class="why">One prompt, one persona: the single <code>PERSONALITY</code> block in <code>wcl_agent/agent.py</code> drives every model variant (DRY). <b>Alternatives:</b> per-model persona overrides (needless divergence).<cite>specs/003-chat-followups-ux/research.md R4</cite></p>
+  <p class="why">Tag-delimited sections work for both Gemini and Claude; the <code>OUTPUT</code> structure applies only to analytical questions because the same agent also writes greetings, guide documents and summaries. Persona last: decide facts, confidence and fixes first, then voice them.<cite>specs/009-grounded-coaching-prompt/research.md R13</cite></p>
+  <p class="why">Instruction provider for the live time: ADK calls the provider on every request and skips <code>{state}</code> substitution, so the time is correct however long the process runs (the old f-string was evaluated once at import). <b>Alternatives:</b> time in the preamble (empty for users without a profile); <code>static_instruction</code> + dynamic <code>instruction</code> (changes prompt caching for no gain).<cite>specs/015-grounded-class-guides/research.md R4</cite></p>
+  <p class="why">Async tools over one <code>httpx</code> client replace <code>requests</code> plus worker threads: real cancellation, no GIL contention, parallel tool calls overlap their I/O on the loop. <b>Alternatives:</b> the original design ran sync tools via <code>asyncio.to_thread</code> and relied on Gemini parallel function calling (<code>specs/001-streaming-chat-frontend/research.md</code> §4), recorded as "improve later".<cite>specs/013-welcome-recent-raids/research.md R7</cite></p>
+  <p class="why">One lane limiter on a single <code>asyncio.Condition</code> (about 40 lines, no dependency) lets background work give way to queued chat work, and every rule is directly testable. <b>Alternatives:</b> two separate semaphores (background could still take interactive slots while chat waits); <code>asyncio.PriorityQueue</code> dispatch (needs a dispatcher task).<cite>specs/013-welcome-recent-raids/research.md R8</cite></p>
+  <p class="why">Web search as a sub-agent tool: some Gemini generations reject the built-in <code>google_search</code> tool combined with many function tools in one request; the sub-agent keeps every WCL tool intact and matches the owner's "web-search subagent as a tool" wording. Native grounding was the clarified choice. <b>Alternatives:</b> a dedicated external search API such as Tavily or Bing (rejected in clarification; adds a credential).<cite>specs/002-agent-enhancements/research.md §4</cite></p>
+  <p class="why">Preamble per request, not in history; old tool results stubbed in the request only: keeps the prompt from growing with every turn while the stored history keeps full results. The turn stats log line records prompt and cached tokens to measure it.<cite>documentation/ai_guide.md §17 (Performance fixes, QA sweep 2026-10-14)</cite></p>
+  <p class="why">Round cap and "wrap up" instruction: a <code>before_model_callback</code> fires exactly once per model request, so it is the natural counter; prompt steering plus a cap is the smallest change that cuts model requests without removing capability.<cite>specs/011-agent-rate-limit-relief/research.md R5, R7</cite></p>
+  <p class="why">Native thinking planner (<code>BuiltInPlanner</code>): it fits Gemini 3.x thinking models, unlike ADK's ReAct text planner, which fights them; thoughts come back as separate parts the backend filters out. Recorded only as a code comment, not in a spec.<cite>wcl_agent/agent.py (comment on build_agent's planner argument)</cite></p>
+</section>
+
+<!-- ============================================================ 2. GUIDES -->
+<section class="layer" id="guides">
+  <h2>2. Grounded class guides and the review step</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip muted">google-genai (not declared; comes with google-adk, uv.lock 2.25.0)</span>
+    <span class="chip">pydantic-settings&gt;=2.4.0</span>
+    <span class="chip">httpx&gt;=0.27.0</span>
+  </div>
+  <h3>What it does and where it lives</h3>
+  <p>Coaching briefs are the verified, patch-specific guidance per <code>(class, spec, content_type)</code>, with content type Raid or Mythic+. They are produced outside the chat agent by a plain async pipeline in <code>backend/app/services/guide_pipeline/</code> (contract <code>specs/015-grounded-class-guides/contracts/guide-pipeline.md</code>):</p>
+  <ol>
+    <li><b>briefing</b> (<code>briefing.py</code>): live date; the exact live build from Blizzard's launcher version endpoint (<code>WOW_VERSION_URL</code>, product <code>wow</code> only); the latest hotfix from the "Hotfixes:" articles on the WoW news page (<code>WOW_NEWS_URL</code>); raid tier / Mythic+ season; roster;</li>
+    <li><b>data sheet</b> (<code>datasheet.py</code>): measured WCL evidence from top rankings;</li>
+    <li><b>research</b> (<code>research.py</code>): a version-filtered fact sheet from grounded search (<code>google_search</code> + <code>url_context</code>). <code>SOURCE_TIERS</code> ranks domains: Blizzard official (tier 1, fetchable), Warcraft Logs (tier 2), guide sites (tier 3; only Icy Veins, Archon and Murlok may be fetched), forums, Reddit and video (tier 4, never citable). Third-party pages are fetched only when <code>WCL_GUIDE_RESEARCH_FETCH_ENABLED</code> is on (default off, pending a terms review); otherwise research uses search-grounded snippets only;</li>
+    <li><b>author</b> (<code>authoring.py</code>): tool-less structured claims citing evidence ids, on <code>WCL_GUIDE_MODEL</code> (default <code>gemini-3.7-flash</code>);</li>
+    <li><b>checks</b> (<code>checks.py</code>): deterministic consistency checks;</li>
+    <li><b>review</b> (<code>review.py</code>): a different, stronger model, <code>WCL_GUIDE_REVIEW_MODEL</code> (default <code>gemini-3.1-pro-preview</code>), marks each claim confirmed / contradicted / unconfirmed against the cited evidence only;</li>
+    <li><b>revise</b>: fix or drop failed claims; steps 5 to 7 repeat up to <code>WCL_GUIDE_MAX_REVIEW_ROUNDS</code> (default 3);</li>
+    <li><b>render</b> (<code>render.py</code>) and <b>persist</b>: publish, hold for review, or fail.</li>
+  </ol>
+  <p>The agent only ever sees <b>published</b> briefs. At startup <code>backend/app/main.py</code> registers a loader with <code>wcl_agent/guides/guide_meta.py</code> (<code>set_brief_loader</code>). <code>get_coaching_brief</code> and <code>get_cooldown_usage</code> read through it, and <code>briefs_for_turn()</code> in <code>backend/app/services/guide.py</code> inlines whole briefs of the turn's content type into the preamble (≤ 6000 chars each, ≤ 12000 per turn, never truncated). The backend warns at boot if the reviewer and author models are the same. A maintainer accuracy check lives in <code>backend/evals/guides</code>.</p>
+  <p class="why">Plain async functions on google-genai, not ADK agents: the old path ran guides through the full analyst agent (Barnaby's prompt, ~20 WCL tools, a web-search sub-agent that summarises results second-hand), which FR-004 forbids. Structured output makes claims checkable (Constitution IV); plain functions are the simplest loop (III); ADK 2.10 deprecates <code>LoopAgent</code>/<code>SequentialAgent</code>; a second ADK agent would need its own runner and session plumbing. <b>Alternatives:</b> a second ADK <code>Agent</code> with <code>output_schema</code>; ADK <code>url_context</code> tool; <code>load_web_page</code> (needs bs4/lxml); ADK <code>Workflow</code> graph runtime (too much machinery for a 3-round loop).<cite>specs/015-grounded-class-guides/research.md R3</cite></p>
+  <p class="why">The reviewer must be a different and stronger model than the author, get the same briefing and evidence sheets, and judge each claim against that evidence, not its own memory.<cite>specs/015-grounded-class-guides/spec.md FR-045, FR-046</cite></p>
+  <p class="why">Brief delivery by an injected loader keeps the dependency direction backend → <code>wcl_agent</code>, and replaces a boot-time registry that went stale across instances. <b>Alternatives:</b> a warm registry with periodic reload; importing backend DB code into <code>wcl_agent</code> (forbidden direction).<cite>specs/015-grounded-class-guides/research.md R7</cite></p>
+  <p class="why">The launcher version endpoint is the only source of the exact build, and reading only product <code>wow</code> keeps PTR builds out; it never blocks generation, because the WCL patch (major.minor) remains the floor. <b>Alternatives:</b> WCL partitions only (not precise enough); scraping patch notes (fragile, slower).<cite>specs/015-grounded-class-guides/research.md R1</cite></p>
+  <p class="why">The allowlist honours the clarified decision (fetch to extract facts, paraphrase, credit) while respecting each site's published crawling rules: Wowhead's robots.txt disallows AI crawlers, so it is never fetched and appears only as a search-surfaced link. WCL and Blizzard stay the substance; publishers add interpretation.<cite>specs/015-grounded-class-guides/research.md R14</cite></p>
+  <p class="why">Which brief goes into a turn is chosen by a deterministic keyword/zone classifier before the model runs (testable, free); <code>get_coaching_brief</code> covers anything it misses. <b>Alternatives:</b> always inject both briefs (double tokens, invites cross-use); tool-only (an extra round every coaching turn); an LLM classifier (cost and latency on every turn).<cite>specs/015-grounded-class-guides/research.md R8</cite></p>
+</section>
+
+<!-- ============================================================ 3. MODELS -->
+<section class="layer" id="models">
+  <h2>3. Models and rate limits</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">google-adk&gt;=2.0.0</span>
+    <span class="chip">anthropic[vertex]&gt;=1.11.0</span>
+    <span class="chip muted">uv.lock: anthropic 1.11.0</span>
+    <span class="chip muted">google-genai (via google-adk, uv.lock 2.25.0)</span>
+    <span class="chip">redis&gt;=6</span>
+  </div>
+
+  <h3>Providers and where they run</h3>
+  <ul>
+    <li><b>Gemini on Vertex AI</b> through ADK's <code>Gemini</code> model class (google-genai under the hood), with gcloud ADC credentials; <code>GOOGLE_GENAI_USE_VERTEXAI=FALSE</code> plus an API key is the AI Studio fallback.</li>
+    <li><b>Claude on Vertex</b> (Anthropic in Model Garden) through ADK's <code>google.adk.models.anthropic_llm.Claude</code>, registered with ADK's <code>LLMRegistry</code> at import of <code>wcl_agent/agent.py</code>, using the <code>anthropic[vertex]</code> SDK. Any id containing <code>claude</code> is routed there (<code>is_anthropic_model</code>).</li>
+    <li><b>One location for every model call.</b> <code>wcl_agent/llm/vertex.py</code> → <code>model_location()</code> reads <code>WCL_MODEL_LOCATION</code> (default <code>global</code>). Chat, web search, guides, reports, greeting, suggestions and discovery probes all use it, so <code>GOOGLE_CLOUD_LOCATION</code> can stay regional for everything else.</li>
+  </ul>
+
+  <h3>Live Model Garden discovery</h3>
+  <p><code>wcl_agent/llm/models.py</code> → <code>discover_models()</code> runs once at backend startup, off the event loop. In <code>catalog</code> mode (<code>WCL_MODEL_DISCOVERY</code>, the default) it lists the REST <code>v1beta1/publishers/{google|anthropic}/models</code> catalog, keeps GA and public-preview entries, sorts them into classes with anchored regexes (Gemini <code>pro</code> / <code>flash</code> / <code>flash-lite</code>, Claude <code>haiku</code> / <code>sonnet</code> / <code>opus</code>), probes the newest <code>keep + 2</code> per class in one concurrent wave with a one-token call that carries a dummy function declaration, and keeps the newest <code>keep</code> that answer (defaults <code>WCL_GEMINI_CLASSES=pro:2,flash:2,flash-lite:2</code>, <code>WCL_ANTHROPIC_CLASSES=haiku:1,sonnet:1,opus:1</code>). The result is cached 6 h in the <code>model_catalog</code> cache family. If nothing passes, a documented fallback set is served with <code>degraded=true</code>. <code>static</code> mode probes only <code>WCL_GEMINI_MODELS</code> / <code>WCL_ANTHROPIC_MODELS</code>. The set lives on <code>app.state</code> and is read only through <code>backend/app/model_state.py</code>; <code>GET /api/models</code> (<code>backend/app/api/models.py</code>) returns <code>{models, default, degraded}</code>. The default is <code>WCL_DEFAULT_MODEL</code> if served, else the newest flash. The full plan and live findings are in <code>documentation/live_model_probe.md</code>.</p>
+  <p class="why">Claude alongside Gemini: the owner asked for it. "The available models must be dynamically fetched from the available gemini and anthropic models on vertex."<cite>specs/002-agent-enhancements/spec.md (Input, item 4)</cite></p>
+  <p class="why">Vertex with ADC: no API key in the repo, and the same ADC code path works locally and on Cloud Run with an attached service account (no key files).<cite>documentation/ai_guide.md §2–§3; specs/001-streaming-chat-frontend/research.md §9</cite></p>
+  <p class="why">Live catalog instead of a fixed <code>.env</code> list: every model release needed an <code>.env</code> edit and a restart before players could pick it. Only the REST listing returns <code>launchStage</code>; the probe carries a function declaration because the chat agent always sends tools, so a tool-incapable model would otherwise fail on the first turn. <b>Alternatives:</b> genai <code>models.list</code> (no stage, Google only); httpx with a hand-refreshed token; regional catalogs (they differ); a plain "hello" probe (misses tool-incapable models); reusing the 90 s chat retry loop for probes (too slow for boot).<cite>documentation/live_model_probe.md (Context); specs/016-live-model-discovery/research.md R1, R3</cite></p>
+  <p class="why">Model calls at <code>global</code>: tested live on 2026-10-18, <code>europe-west1</code> serves only Gemini 2.5 and no current Claude; <code>global</code> serves all of them.<cite>documentation/live_model_probe.md (Regions); wcl_agent/llm/vertex.py docstring</cite></p>
+
+  <h3>429 handling (feature 011)</h3>
+  <p><code>wcl_agent/llm/model_retry.py</code>. <code>RetryingGemini</code> and <code>RetryingClaude</code> override ADK's <code>generate_content_async</code> and run one shared retry loop, <code>generate_with_retry()</code>; the SDKs' own retries are off (Gemini <code>HttpRetryOptions(attempts=1)</code>, Anthropic <code>max_retries=0</code>). <code>is_rate_limited()</code> treats genai <code>APIError</code> 429/503 or status <code>RESOURCE_EXHAUSTED</code>/<code>UNAVAILABLE</code>, and Anthropic <code>RateLimitError</code>, <code>OverloadedError</code> or any status 429/503/529 as "wait and retry". <code>RetryPolicy</code> defaults: 5 attempts, 2 s initial, ×2, ≤ 30 s per wait, 1 s jitter, 90 s total budget per request; a numeric <code>Retry-After</code> wins. Each wait sends a <code>model_retry</code> frame first. Nothing is retried once text has streamed. Helper calls (greeting) pass <code>retry=False</code> and fail fast. Settings: <code>WCL_MODEL_RETRY_ATTEMPTS</code>, <code>_INITIAL_S</code>, <code>_MAX_S</code>, <code>_BUDGET_S</code>, <code>WCL_TURN_ROUND_CAP</code> in <code>backend/app/config.py</code>.</p>
+
+  <h3>Fallback to a second model of the same class (feature 021)</h3>
+  <p>When a chat request still fails after the retries (<code>ModelRateLimited</code>) and nothing was streamed, <code>generate_with_fallback()</code> switches the turn once to its sibling: <code>sibling_model()</code> in <code>wcl_agent/llm/models.py</code> picks the served models with the same publisher and class, newest first; the newest falls back to the second, any other to the newest. <code>backend/app/model_state.py</code> → <code>fallback_model_for()</code> applies it, and only the chat socket passes it, so the web-search sub-agent and helper calls are untouched. The switch sends one <code>model_fallback</code> frame; this request and every later request of the turn go to the sibling. For Gemini, earlier parts of the turn get Google's documented "skip thought signature" value so the sibling accepts them. With the default classes, Gemini has a sibling in every class; Claude classes serve one model each, so a Claude turn ends with the plain rate-limit message.</p>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 620" role="img" aria-labelledby="d3t">
+      <title id="d3t">429 decision flow: retry with backoff while attempts and budget remain, then switch once to the same-class sibling, else send a rate_limited error.</title>
+      <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+      <rect class="node core" style="fill:var(--accent-soft)" x="360" y="16" width="280" height="50" rx="10"/>
+      <text x="500" y="37" text-anchor="middle" class="t" style="font-size:13px">Model request (one per round)</text>
+      <text x="500" y="55" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">generate_with_fallback()</text>
+
+      <rect class="node" style="fill:var(--warn-soft);stroke:var(--warn)" x="360" y="104" width="280" height="50" rx="10"/>
+      <text x="500" y="125" text-anchor="middle" class="t" style="font-size:13px">Rate limited?</text>
+      <text x="500" y="143" text-anchor="middle" class="sub" style="font-size:11.5px">429 · 503 · 529 · RESOURCE_EXHAUSTED</text>
+      <rect class="node" style="fill:var(--bad-soft);stroke:var(--bad)" x="700" y="104" width="280" height="50" rx="10"/>
+      <text x="840" y="125" text-anchor="middle" class="t" style="font-size:13px">Other error: raise</text>
+      <text x="840" y="143" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">error {code: agent_error}</text>
+
+      <rect class="node" style="fill:var(--warn-soft);stroke:var(--warn)" x="360" y="192" width="280" height="50" rx="10"/>
+      <text x="500" y="213" text-anchor="middle" class="t" style="font-size:13px">Nothing streamed yet?</text>
+      <text x="500" y="231" text-anchor="middle" class="sub" style="font-size:11.5px">a mid-stream retry would duplicate text</text>
+      <rect class="node" style="fill:var(--bad-soft);stroke:var(--bad)" x="700" y="192" width="280" height="50" rx="10"/>
+      <text x="840" y="213" text-anchor="middle" class="t" style="font-size:13px">Re-raise the raw error</text>
+      <text x="840" y="231" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">error {code: agent_error}</text>
+
+      <rect class="node" style="fill:var(--warn-soft);stroke:var(--warn)" x="360" y="280" width="280" height="50" rx="10"/>
+      <text x="500" y="301" text-anchor="middle" class="t" style="font-size:13px">Attempts left (5)?</text>
+      <text x="500" y="319" text-anchor="middle" class="sub" style="font-size:11.5px">and next wait fits the 90 s budget</text>
+      <rect class="node" style="fill:var(--ok-soft);stroke:var(--ok)" x="20" y="276" width="290" height="62" rx="10"/>
+      <text x="165" y="298" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">send model_retry frame</text>
+      <text x="165" y="318" text-anchor="middle" class="sub" style="font-size:11.5px">sleep Retry-After, or 2 s × 2ⁿ⁻¹ (≤ 30 s) + jitter</text>
+
+      <rect class="node" style="fill:var(--warn-soft);stroke:var(--warn)" x="340" y="374" width="320" height="60" rx="10"/>
+      <text x="500" y="396" text-anchor="middle" class="t" style="font-size:13px">ModelRateLimited. Chat turn's own model,</text>
+      <text x="500" y="416" text-anchor="middle" class="t" style="font-size:13px">sibling served, not switched yet?</text>
+      <rect class="node" style="fill:var(--bad-soft);stroke:var(--bad)" x="700" y="374" width="280" height="60" rx="10"/>
+      <text x="840" y="396" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">error {code: rate_limited}</text>
+      <text x="840" y="416" text-anchor="middle" class="sub" style="font-size:11.5px">"The model is rate-limited right now…"</text>
+
+      <rect class="node core" style="fill:var(--accent-soft)" x="340" y="466" width="320" height="60" rx="10"/>
+      <text x="500" y="489" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">model_fallback {from_model, to_model}</text>
+      <text x="500" y="509" text-anchor="middle" class="sub" style="font-size:11.5px">this and later requests of the turn → sibling</text>
+
+      <rect class="node" x="360" y="556" width="280" height="50" rx="10"/>
+      <text x="500" y="577" text-anchor="middle" class="t" style="font-size:13px">Retry loop again on the sibling</text>
+      <text x="500" y="595" text-anchor="middle" class="sub" style="font-size:11.5px">same policy, model_retry frames again</text>
+      <rect class="node" style="fill:var(--ok-soft);stroke:var(--ok)" x="20" y="556" width="290" height="50" rx="10"/>
+      <text x="165" y="586" text-anchor="middle" class="t" style="font-size:13px">Answer continues on the sibling</text>
+      <rect class="node" style="fill:var(--bad-soft);stroke:var(--bad)" x="700" y="556" width="280" height="50" rx="10"/>
+      <text x="840" y="577" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">error {code: rate_limited}</text>
+      <text x="840" y="595" text-anchor="middle" class="sub" style="font-size:11.5px">"Both Gemini flash models are rate-limited…"</text>
+
+      <path class="flow" d="M500,66 V100" marker-end="url(#ah3)"/>
+      <path class="flow" d="M640,129 H696" marker-end="url(#ah3)"/><text x="668" y="121" text-anchor="middle" class="sub" style="font-size:11.5px">no</text>
+      <path class="flow" d="M500,154 V188" marker-end="url(#ah3)"/><text x="510" y="176" class="sub" style="font-size:11.5px">yes</text>
+      <path class="flow" d="M640,217 H696" marker-end="url(#ah3)"/><text x="668" y="209" text-anchor="middle" class="sub" style="font-size:11.5px">no</text>
+      <path class="flow" d="M500,242 V276" marker-end="url(#ah3)"/><text x="510" y="264" class="sub" style="font-size:11.5px">yes</text>
+      <path class="flow" d="M360,305 H314" marker-end="url(#ah3)"/><text x="337" y="297" text-anchor="middle" class="sub" style="font-size:11.5px">yes</text>
+      <path class="flow" d="M165,276 V41 H356" marker-end="url(#ah3)"/><text x="175" y="160" class="sub" style="font-size:11.5px">retry</text>
+      <path class="flow" d="M500,330 V370" marker-end="url(#ah3)"/><text x="510" y="355" class="sub" style="font-size:11.5px">no</text>
+      <path class="flow" d="M660,404 H696" marker-end="url(#ah3)"/><text x="678" y="396" text-anchor="middle" class="sub" style="font-size:11.5px">no</text>
+      <path class="flow" d="M500,434 V462" marker-end="url(#ah3)"/><text x="510" y="452" class="sub" style="font-size:11.5px">yes</text>
+      <path class="flow" d="M500,526 V552" marker-end="url(#ah3)"/>
+      <path class="flow" d="M360,581 H314" marker-end="url(#ah3)"/><text x="337" y="573" text-anchor="middle" class="sub" style="font-size:11.5px">ok</text>
+      <path class="flow" d="M640,581 H696" marker-end="url(#ah3)"/><text x="668" y="573" text-anchor="middle" class="sub" style="font-size:11.5px">429</text>
+    </svg>
+    <figcaption>429 decision flow per model request (<code>wcl_agent/llm/model_retry.py</code>); the user-facing messages are in <code>backend/app/api/ws.py</code>. "Gemini flash" stands for the class label from <code>class_label()</code>.</figcaption>
+  </figure>
+
+  <p class="why">Own retry loop instead of SDK retries: a native retry is invisible to the app, so nothing could show "busy, retrying" or count retries, and the two SDKs back off on different schedules with no shared budget. Overriding ADK's single model-call seam gives one loop for both providers. <b>Alternatives:</b> native SDK retries only (kept as the fallback if the wrapper breaks across ADK upgrades); ADK <code>on_model_error_callback</code> (cannot re-issue a request); re-running <code>runner.run_async</code> (duplicates the user message in the session).<cite>specs/011-agent-rate-limit-relief/research.md R1</cite></p>
+  <p class="why">Fallback per model request, inside the wrapper: the ADK session already holds the turn's user message, tool calls and streamed text, so switching one request re-runs nothing and never duplicates text; it reuses the retry loop and its status frames on the sibling. <b>Alternatives:</b> a turn-level re-run in <code>stream_response</code> (duplicates the user message, needs session surgery, repeats tool calls).<cite>specs/021-ratelimit-fallback/research.md R1</cite></p>
+  <p class="why">Sibling by naming rules over the served set: discovery already serves each class newest first and <code>app.state.models</code> is the single source of truth; no new state, works in static mode too. <b>Alternatives:</b> storing <code>catalog.classes</code> on <code>app.state</code>; a configured sibling map.<cite>specs/021-ratelimit-fallback/research.md R3</cite></p>
+  <p class="why">A separate typed <code>model_fallback</code> frame instead of reusing <code>model_retry</code>, whose attempt counters mean something else; Constitution IV asks for typed frames.<cite>specs/021-ratelimit-fallback/research.md R6</cite></p>
+</section>
+
+<!-- ============================================================ 4. BOUNDARY -->
+<section class="layer" id="boundary">
+  <h2>4. Agent ↔ app boundary</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">google-adk&gt;=2.0.0</span>
+    <span class="chip">fastapi&gt;=0.115.0</span>
+    <span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span>
+  </div>
+  <p>This section is source material for sc-204 (a generated self-description in the agent's context). It states what the agent reads and changes <b>today</b>, checked against the code on this branch, and what epic-203 plans to add.</p>
+
+  <h3>What the agent can read today</h3>
+  <ol>
+    <li><b>System instruction</b>: <code>build_instruction()</code> (static text + current UTC time). It names the tools but says nothing about the app around the agent (profile page, raids, PDF reports); that gap is what sc-204 fills.</li>
+    <li><b>KNOWN PLAYER CONTEXT preamble</b>, built per turn by <code>_build_turn_preamble()</code> in <code>backend/app/api/ws.py</code> → <code>build_preamble()</code> in <code>backend/app/services/profile_context.py</code>, and injected into every model request of the turn (never stored):
+      <ul>
+        <li>the user's own characters (up to 10, <code>MAX_OWN_CHARACTERS</code>), friends, and main guild: name-server (region), class/spec and effective raid role;</li>
+        <li>the guild's recent-progression summary when ready (trimmed to 1500 chars);</li>
+        <li>whole <b>published</b> coaching briefs of the turn's content type for each profile character's spec, plus an index line per spec;</li>
+        <li>a <code>RECENTLY SEEN (this account)</code> block, capped at 1500 chars: the 10 most recent tracked raids, up to 15 known players, 10 known encounters and 10 known guilds captured from earlier tool results.</li>
+      </ul>
+      The preamble is empty when the tenant has no profile and no captured metadata.</li>
+    <li><b>This conversation's history</b>: the ADK session (session id = conversation id, user id = tenant id), with tool results older than 2 turns stubbed in the request.</li>
+    <li><b>Tool results</b>: public Warcraft Logs data, plus published coaching briefs through the brief loader.</li>
+  </ol>
+  <p><b>Not visible to the agent today:</b> other conversations' messages; the welcome page's recent-raids and Mythic+ store (<code>backend/app/api/recent_raids.py</code>); PDF reports; draft or held guides; users, invitations and admin data; which page or chat the user has open; chart artifacts as data (only its own <code>create_chart</code> calls in this session).</p>
+
+  <h3>What the agent can change today</h3>
+  <p><b>No agent tool writes app data.</b> There is no tool for profile, friends, guild, conversations, pins, raids or guides. The writes that do happen are side effects the WebSocket layer derives from <b>successful</b> tool results in <code>_handle_tool_end()</code> (<code>backend/app/api/ws.py</code>), in a short tenant-scoped transaction:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Trigger tool</th><th>Write</th><th>Code</th></tr></thead>
+    <tbody>
+      <tr><td>any of the 7 <code>get_report_*</code> tools</td><td>upsert a tracked raid (sidebar "Raids"); <code>raid_tracked</code> frame when new</td><td><code>backend/app/services/raids.py</code> (<code>REPORT_SCOPED_TOOLS</code>)</td></tr>
+      <tr><td><code>get_report_graph</code></td><td>store the graph JSON for the PDF report</td><td><code>backend/app/services/graphs.py</code></td></tr>
+      <tr><td><code>create_chart</code></td><td>persist a chart artifact; <code>artifact</code> frame</td><td><code>backend/app/services/artifacts.py</code>, <code>backend/app/services/charts.py</code></td></tr>
+      <tr><td><code>get_character_zone_rankings</code>, <code>get_character_encounter_rankings</code></td><td>record known players</td><td><code>backend/app/services/known_entities.py</code></td></tr>
+      <tr><td><code>find_encounter</code></td><td>record known encounters</td><td><code>backend/app/services/known_entities.py</code></td></tr>
+      <tr><td><code>get_report_fights</code></td><td>no write; <code>encounters</code> frame for the boss picker</td><td><code>backend/app/services/encounters.py</code></td></tr>
+      <tr><td><code>get_coaching_brief</code>, <code>get_cooldown_usage</code></td><td>stamp the guide's <code>last_wanted_at</code> (at most hourly, background), which drives stale-guide regeneration</td><td><code>wcl_agent/guides/guide_meta.py</code> → <code>touch_guide_wanted()</code> in <code>backend/app/services/guide.py</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>WCL lookups also fill the shared Redis cache, and <code>force_refresh=True</code> on the character tools claims a per-user, per-character refresh slot (one per minute).</p>
+
+  <h3>Every registered agent tool</h3>
+  <p>Checked against <code>TOOLS</code> in <code>wcl_agent/agent.py</code> (20 entries) plus the Gemini-only <code>web_search</code> sub-agent: 21 tools. All are <code>async def</code>. "Read" means the tool itself writes nothing; side effects from the table above are noted.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Tool</th><th>Module</th><th>What it does</th><th>R/W</th></tr></thead>
+    <tbody>
+      <tr><td><code>get_selected_encounter</code></td><td><code>wcl_agent/tools/tools.py</code></td><td>Encounter/difficulty/partition chosen at CLI startup (from <code>ToolContext.state</code>; usually none in the web app)</td><td>read</td></tr>
+      <tr><td><code>find_encounter</code></td><td><code>wcl_agent/tools/tools.py</code></td><td>Resolve a boss name to encounter id, zone, difficulties, default partition</td><td>read · capture</td></tr>
+      <tr><td><code>get_spec_options</code></td><td><code>wcl_agent/tools/tools.py</code></td><td>Valid PascalCase spec filter values for a class</td><td>read</td></tr>
+      <tr><td><code>get_rankings_distribution</code></td><td><code>wcl_agent/tools/tools.py</code></td><td>Leaderboard score percentiles for a class/spec on an encounter</td><td>read</td></tr>
+      <tr><td><code>compare_specs</code></td><td><code>wcl_agent/tools/tools.py</code></td><td>Every spec of a class side by side on an encounter</td><td>read</td></tr>
+      <tr><td><code>get_report_fights</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Report code → fights (kill/wipe), players and source ids</td><td>read · capture</td></tr>
+      <tr><td><code>get_report_table</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Damage/healing/casts/buffs/deaths/damage-taken tables, per player with <code>source_id</code></td><td>read · capture</td></tr>
+      <tr><td><code>get_report_events</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Raw combat event stream, paginated</td><td>read · capture</td></tr>
+      <tr><td><code>get_report_graph</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Time series (DPS/HPS/resources) for a fight</td><td>read · capture</td></tr>
+      <tr><td><code>get_report_rankings</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Parse percentiles for a fight, with <code>compare</code> and <code>timeframe</code> context</td><td>read · capture</td></tr>
+      <tr><td><code>get_report_player_details</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Gear, talents, specs and roles of a fight's players</td><td>read · capture</td></tr>
+      <tr><td><code>get_report_master_data</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Actor and ability id → name maps</td><td>read · capture</td></tr>
+      <tr><td><code>get_character_zone_rankings</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>One character's parses across a zone; optional <code>force_refresh</code></td><td>read · capture</td></tr>
+      <tr><td><code>get_character_encounter_rankings</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>One character's parse history on one boss; optional <code>force_refresh</code></td><td>read · capture</td></tr>
+      <tr><td><code>compare_player_to_cohort</code></td><td><code>wcl_agent/tools/benchmark.py</code></td><td>Benchmark a kill against ≤ 5 matched ~75th–95th percentile parses</td><td>read</td></tr>
+      <tr><td><code>get_cooldown_usage</code></td><td><code>wcl_agent/tools/cooldowns.py</code></td><td>Major-cooldown uses vs approximate opportunities over eligible time, from the spec's brief</td><td>read · stamp</td></tr>
+      <tr><td><code>get_coaching_brief</code></td><td><code>wcl_agent/guides/guides_tool.py</code></td><td>Published coaching brief for a spec and content type</td><td>read · stamp</td></tr>
+      <tr><td><code>create_chart</code></td><td><code>wcl_agent/tools/tools.py</code></td><td>Validate a chart spec from numbers already fetched; the backend renders and stores it</td><td>read · capture</td></tr>
+      <tr><td><code>check_rate_limit</code></td><td><code>wcl_agent/tools/tools.py</code></td><td>Remaining Warcraft Logs API points this hour</td><td>read</td></tr>
+      <tr><td><code>run_wcl_graphql</code></td><td><code>wcl_agent/tools/report_tools.py</code></td><td>Raw GraphQL escape hatch against the WCL v2 client API (described as read-only)</td><td>read</td></tr>
+      <tr><td><code>web_search</code></td><td><code>wcl_agent/agent.py</code> (<code>AgentTool</code>)</td><td>Gemini sub-agent with Google Search grounding; absent on Claude</td><td>read</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted"><b>read</b>: no app write · <b>capture</b>: the WS layer stores something from a successful result · <b>stamp</b>: marks the guide as in use. No tool is a <b>write</b> (changes user data) today. The frontend keeps a presentation entry per tool in <code>frontend/src/lib/spells.ts</code> and <code>frontend/src/toolLabels.ts</code>.</p>
+
+  <h3><span class="badge planned">Planned, not built</span>epic-203 "Self-aware agent" (all stories in Backlog)</h3>
+  <div class="tablewrap"><table>
+      <thead><tr><th>Story</th><th>Adds</th><th>R/W</th></tr></thead>
+      <tbody>
+        <tr><td>sc-204 (2 pts)</td><td>A short capability summary in the system prompt, <b>generated from the registered tools</b>, saying what Barnaby can and cannot change (profile, own characters, friends and roles, raids page, class guides, PDF reports, chat filters).</td><td>context</td></tr>
+        <tr><td>sc-205 (5 pts)</td><td>Tenant-scoped tools to add, update and remove characters and friends on the user's own profile, reusing <code>backend/app/api/profile.py</code> logic (<code>add_friend</code> / <code>patch_friend</code> / <code>delete_friend</code>); bulk add with validation and a per-item result.</td><td><b>write</b></td></tr>
+        <tr><td>sc-206 (3 pts)</td><td>Resolve "the dungeon/raid" from chat context and return its participants with name, realm, class, spec and role, so filters like "except the shaman" work before calling the profile tools.</td><td>read</td></tr>
+        <tr><td>sc-207 (3 pts)</td><td>A confirmation card in chat (Approve / Cancel) listing the exact changes, and profile/sidebar refresh after approval without a reload.</td><td>UI</td></tr>
+      </tbody>
+    </table></div>
+  <p>Related: sc-145 (the agent sets the per-chat character filter). No per-chat character filter exists in the code yet.</p>
+  <p class="why">Profile context arrives as a preamble, not a tool: it reuses the invisible-prompt pattern, stays current every turn, needs no extra tool round-trip, and keeps <code>wcl_agent</code> decoupled from the backend DB. The rejected alternative (a) was a <code>get_profile</code> ADK tool reading the DB, which "couples <code>wcl_agent</code> to the backend DB and adds a round-trip every turn". sc-205 deliberately reopens this for writes. <b>Alternatives:</b> seeding ADK session state at session creation (goes stale); rebuilding the instruction per turn (fights the per-model runner cache).<cite>specs/005-guild-context-artifacts/research.md R1</cite></p>
+  <p class="why">Dependency direction backend → <code>wcl_agent</code> only: <code>wcl_agent</code> must not import backend code; data from the app reaches tools through an injected loader (<code>set_brief_loader</code>).<cite>specs/009-grounded-coaching-prompt/research.md R7; specs/015-grounded-class-guides/research.md R7</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Design notes for sc-204/205 (not decided anywhere). (1) The same injection pattern fits profile tools: register backend callbacks at startup, and keep tenant and user identity in a ContextVar set per turn, as <code>set_refresh_actor()</code> and <code>current_turn</code> already do. A tool argument for tenant would be spoofable by the model. (2) A generated summary can be built from <code>TOOLS</code> plus a read/write tag per tool, so it cannot drift from the registry. Note that <code>build_agent</code> leaves out <code>web_search</code> on Claude, so the summary must be built per model. (3) sc-207's approval needs a new typed server→client frame and a client→server reply; today the client only ever sends <code>ChatTurn</code>.</p>
+</section>
+
+<!-- ============================================================ 5. STREAMING -->
+<section class="layer" id="streaming">
+  <h2>5. Stream protocol (FastAPI → browser)</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">fastapi&gt;=0.115.0</span>
+    <span class="chip">uvicorn[standard]&gt;=0.30.0</span>
+    <span class="chip">plotly&gt;=7.1.0</span>
+    <span class="chip muted">frames typed with Pydantic (via fastapi)</span>
+  </div>
+  <p>One WebSocket, <code>/ws/chat</code> (<code>backend/app/api/ws.py</code>). The handshake checks <code>Origin</code> and the <code>__Host-</code> session cookie before accept, and every turn re-validates the session. One turn runs at a time per socket. Frames are Pydantic models in <code>backend/app/schemas.py</code>, mirrored by the <code>Frame</code> union in <code>frontend/src/api/wsClient.ts</code>. Contracts: <code>specs/001-streaming-chat-frontend/contracts/websocket.md</code>, <code>specs/003-chat-followups-ux/contracts/websocket.md</code>, <code>specs/011-agent-rate-limit-relief/contracts/websocket-and-config.md</code>, <code>specs/019-sidebar-conversations/contracts/ws-conversation-title.md</code>, <code>specs/021-ratelimit-fallback/contracts/websocket-model-fallback.md</code>.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Frame <code>type</code></th><th>Direction</th><th>Payload</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td>(<code>ChatTurn</code>)</td><td>client → server</td><td><code>conversation_id?</code>, <code>model</code>, <code>content</code></td><td>the only client message</td></tr>
+      <tr><td><code>meta</code></td><td>server → client</td><td><code>conversation_id</code>, <code>seq</code></td><td>user message saved, turn starts</td></tr>
+      <tr><td><code>token</code></td><td>server → client</td><td><code>text</code></td><td>each streamed answer chunk (text delta)</td></tr>
+      <tr><td><code>tool_start</code></td><td>server → client</td><td><code>name</code>, <code>report_code?</code></td><td>a tool call began (args are not forwarded)</td></tr>
+      <tr><td><code>tool_end</code></td><td>server → client</td><td><code>name</code>, <code>ok</code>, <code>summary?</code> (≤ 140 chars), <code>ms?</code></td><td>a tool returned</td></tr>
+      <tr><td><code>tool_progress</code></td><td>server → client</td><td><code>id</code>, <code>done</code>, <code>total</code>, <code>note?</code></td><td>declared in schemas and the client type, but <b>no tool emits it today</b></td></tr>
+      <tr><td><code>grounding</code></td><td>server → client</td><td><code>used</code>, <code>sources[{title, uri}]</code></td><td>once per turn when web search was used</td></tr>
+      <tr><td><code>model_retry</code></td><td>server → client</td><td><code>attempt</code>, <code>max_attempts</code>, <code>wait_s</code></td><td>before each rate-limit backoff</td></tr>
+      <tr><td><code>model_fallback</code></td><td>server → client</td><td><code>from_model</code>, <code>to_model</code></td><td>at most once per turn, on the switch to the sibling</td></tr>
+      <tr><td><code>raid_tracked</code></td><td>server → client</td><td><code>report_code</code>, <code>label</code></td><td>a newly tracked raid</td></tr>
+      <tr><td><code>encounters</code></td><td>server → client</td><td><code>report_code</code>, <code>encounters[]</code></td><td>after <code>get_report_fights</code> with distinct bosses</td></tr>
+      <tr><td><code>artifact</code></td><td>server → client</td><td><code>artifact_id</code>, <code>kind</code>, <code>title</code>, <code>figure {data, layout}</code></td><td>after a successful <code>create_chart</code>; Plotly figure built server-side</td></tr>
+      <tr><td><code>done</code></td><td>server → client</td><td><code>message_id</code></td><td>agent message saved; composer unlocks</td></tr>
+      <tr><td><code>suggestions</code></td><td>server → client</td><td><code>message_id</code>, <code>suggestions[≤3]</code></td><td>after <code>done</code>, from a background task the next turn cancels; omitted when empty</td></tr>
+      <tr><td><code>conversation_title</code></td><td>server → client</td><td><code>conversation_id</code>, <code>title</code></td><td>after the first reply's <code>done</code>, once the generated title is saved</td></tr>
+      <tr><td><code>error</code></td><td>server → client</td><td><code>code</code>, <code>message</code></td><td><code>not_found</code>, <code>rate_limited</code>, <code>agent_error</code>, <code>unauthorized</code>, <code>empty_message</code>, <code>invalid_model</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>Interrupted replies (socket closed or agent error) are saved as <code>status="partial"</code>; a rate-limit failure saves nothing, so the player can resend.</p>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 740" role="img" aria-labelledby="d2t">
+      <title id="d2t">Sequence: the browser sends a ChatTurn; ws.py saves it, builds the preamble and sends meta; the agent runner drives ADK; tool calls stream tool_start and tool_end; text streams as token frames; done, then title and suggestions.</title>
+      <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+      <rect class="node ext" x="10" y="16" width="120" height="40" rx="8"/><text x="70" y="41" text-anchor="middle" class="t" style="font-size:13px">Browser</text>
+      <rect class="node ext" x="270" y="16" width="120" height="40" rx="8"/><text x="330" y="41" text-anchor="middle" class="t" style="font-size:13px">ws.py</text>
+      <rect class="node ext" x="410" y="16" width="120" height="40" rx="8"/><text x="470" y="41" text-anchor="middle" class="t" style="font-size:13px">agent_runner</text>
+      <rect class="node ext" x="545" y="16" width="110" height="40" rx="8"/><text x="600" y="41" text-anchor="middle" class="t" style="font-size:13px">ADK Runner</text>
+      <rect class="node ext" x="675" y="16" width="110" height="40" rx="8"/><text x="730" y="41" text-anchor="middle" class="t" style="font-size:13px">Model</text>
+      <rect class="node ext" x="800" y="16" width="100" height="40" rx="8"/><text x="850" y="41" text-anchor="middle" class="t" style="font-size:13px">Tools · WCL</text>
+      <rect class="node ext" x="910" y="16" width="84" height="40" rx="8"/><text x="952" y="41" text-anchor="middle" class="t" style="font-size:13px">Postgres</text>
+      <path class="life" d="M70,56 V728"/><path class="life" d="M330,56 V728"/><path class="life" d="M470,56 V728"/>
+      <path class="life" d="M600,56 V728"/><path class="life" d="M730,56 V728"/><path class="life" d="M850,56 V728"/><path class="life" d="M952,56 V728"/>
+
+      <path class="flow" d="M70,96 H326" marker-end="url(#ah2)"/><text x="200" y="89" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">ChatTurn {conversation_id, model, content}</text>
+      <path class="flow" d="M330,130 H948" marker-end="url(#ah2)"/><text x="640" y="123" text-anchor="middle" class="sub" style="font-size:11.5px">resolve/create conversation · save user message</text>
+      <path class="flow" d="M330,164 H948" marker-end="url(#ah2)"/><text x="640" y="157" text-anchor="middle" class="sub" style="font-size:11.5px">read profile, published briefs, RECENTLY SEEN → preamble</text>
+      <path class="flow" d="M330,198 H74" marker-end="url(#ah2)"/><text x="200" y="191" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">meta {conversation_id, seq}</text>
+      <path class="flow" d="M330,232 H466" marker-end="url(#ah2)"/><text x="400" y="225" text-anchor="middle" class="sub" style="font-size:11.5px">stream_response()</text>
+      <path class="flow" d="M470,266 H596" marker-end="url(#ah2)"/><text x="535" y="259" text-anchor="middle" class="sub" style="font-size:11.5px">run_async</text>
+      <path class="flow" d="M600,300 H726" marker-end="url(#ah2)"/><text x="665" y="293" text-anchor="middle" class="sub" style="font-size:11.5px">model request</text>
+      <path class="flow" d="M730,334 H604" marker-end="url(#ah2)"/><text x="665" y="327" text-anchor="middle" class="sub" style="font-size:11.5px">function_call ×N</text>
+      <path class="flow" d="M330,368 H74" marker-end="url(#ah2)"/><text x="200" y="361" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">tool_start {name, report_code?} ×N</text>
+      <path class="flow" d="M600,402 H846" marker-end="url(#ah2)"/><text x="725" y="395" text-anchor="middle" class="sub" style="font-size:11.5px">tools awaited concurrently</text>
+      <path class="flow" d="M850,436 H604" marker-end="url(#ah2)"/><text x="725" y="429" text-anchor="middle" class="sub" style="font-size:11.5px">results</text>
+      <path class="flow" d="M330,470 H948" marker-end="url(#ah2)"/><text x="640" y="463" text-anchor="middle" class="sub" style="font-size:11.5px">capture raid · graph · artifact · known players / encounters</text>
+      <path class="flow" d="M330,504 H74" marker-end="url(#ah2)"/><text x="200" y="497" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">tool_end {name, ok, summary?, ms?}</text>
+      <text x="200" y="520" text-anchor="middle" class="sub" style="font-size:11.5px">then raid_tracked · artifact · encounters</text>
+      <path class="flow" d="M600,538 H726" marker-end="url(#ah2)"/><text x="665" y="531" text-anchor="middle" class="sub" style="font-size:11.5px">next request</text>
+      <path class="flow" d="M730,572 H604" marker-end="url(#ah2)"/><text x="665" y="565" text-anchor="middle" class="sub" style="font-size:11.5px">text parts</text>
+      <path class="flow" d="M330,606 H74" marker-end="url(#ah2)"/><text x="200" y="599" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">token {text} × many</text>
+      <path class="flow" d="M330,640 H948" marker-end="url(#ah2)"/><text x="640" y="633" text-anchor="middle" class="sub" style="font-size:11.5px">save agent message · link this turn's captures</text>
+      <path class="flow" d="M330,674 H74" marker-end="url(#ah2)"/><text x="200" y="667" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">done {message_id}</text>
+      <path class="flow" d="M330,708 H74" marker-end="url(#ah2)"/><text x="200" y="701" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">conversation_title · suggestions</text>
+    </svg>
+    <figcaption>"User sends a chat message → streamed answer with tool calls". Frames to the browser are forwarded by <code>ws.py</code> from <code>agent_runner</code> records; <code>model_retry</code> / <code>model_fallback</code> / <code>grounding</code> can appear anywhere between <code>meta</code> and <code>done</code>.</figcaption>
+  </figure>
+  <details>
+    <summary>Same flow as text</summary>
+    <ol class="steps">
+      <li>Browser sends <code>ChatTurn</code>. <code>ws.py</code> re-checks the session, validates the model against the served set, resolves or creates the conversation, saves the user message and sends <code>meta</code>.</li>
+      <li>It builds the preamble (profile, published briefs, RECENTLY SEEN) and calls <code>stream_response()</code> with the turn's same-class fallback model.</li>
+      <li>Per round: the model returns function calls → <code>tool_start</code> per call → tools run concurrently → captures in Postgres → <code>tool_end</code> (+ <code>raid_tracked</code> / <code>artifact</code> / <code>encounters</code>).</li>
+      <li>The final round streams text → <code>token</code> frames. The agent message is saved, then <code>done</code> is sent.</li>
+      <li>In the background: <code>conversation_title</code> (first reply of an auto-named chat) and <code>suggestions</code> (≤ 3 follow-up questions).</li>
+    </ol>
+  </details>
+
+  <p class="why">WebSocket rather than SSE or polling: the owner asked for WebSockets; it is bidirectional, fits incremental token delivery, and one long-lived connection avoids per-chunk HTTP overhead, with room for client→server control frames later. <b>Alternatives:</b> Server-Sent Events (simpler, one-way); plain HTTP + polling (no real streaming).<cite>specs/001-streaming-chat-frontend/research.md §1</cite></p>
+  <p class="why">Kept the WebSocket when the UI moved to the "spellcasting" stream design: the existing frames already map 1:1 to that design's events, so an SSE-over-POST rewrite would be pure rework. Only <code>tool_end.summary</code>/<code>ms</code> and an optional <code>tool_progress</code> frame were added.<cite>specs/004-raid-sourcing-ux/research.md R6</cite></p>
+  <p class="why">Follow-up suggestions come from a separate, non-streaming call after the answer: it keeps the streamed answer clean (no in-band delimiters to strip), the shape can be enforced (max 3), and first-token latency is unaffected. <b>Alternatives:</b> an in-band trailing <code>&lt;suggestions&gt;</code> block; ADK structured output on the main turn.<cite>specs/003-chat-followups-ux/research.md R1</cite></p>
+  <p class="why"><code>done</code> before <code>suggestions</code>, and suggestions as a cancellable background task with a per-socket send lock, so the composer is never held up.<cite>documentation/ai_guide.md §17</cite></p>
+  <p class="why">Charts as one typed <code>ChartSpec</code> from <code>create_chart</code>, turned into Plotly JSON on the server: the agent decides when to chart, using data it already fetched; no Plotly in <code>wcl_agent</code>; the same spec also feeds the PDF renderer. <b>Alternatives:</b> auto-promoting every <code>get_report_graph</code> result to a chart; building Plotly JSON inside the tool; Plotly static export (<code>kaleido</code>) for the PDF.<cite>specs/005-guild-context-artifacts/research.md R3; specs/005-guild-context-artifacts/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">Generated titles reach the client as a typed <code>conversation_title</code> frame, on which the client refetches the list, so the list stays the one source of truth. <b>Alternatives:</b> polling the list after <code>done</code>; patching state in place from the frame.<cite>specs/019-sidebar-conversations/research.md R8</cite></p>
+  <p class="why">Authenticating the WebSocket at the handshake (session cookie + <code>Origin</code> check, before <code>accept()</code>) keeps one session model for HTTP and WS; the Origin check is the WS analogue of CSRF, and re-validating each turn makes a revoked session take effect mid-connection. <b>Alternatives:</b> a query-string token (leaks into logs); a separate WS auth message (reinvents the cookie).<cite>specs/006-multi-tenancy/research.md R6</cite></p>
+  <p class="why">All frames are typed Pydantic models because data that crosses a boundary must be an explicit typed model.<cite>.specify/memory/constitution.md Principle IV</cite></p>
+</section>
+
+<!-- ============================================================ 6. FRONTEND -->
+<section class="layer" id="frontend">
+  <h2>6. Frontend</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">react ^19.3.0</span>
+    <span class="chip">react-dom ^19.3.0</span>
+    <span class="chip">vite ^5.4.2</span>
+    <span class="chip">@vitejs/plugin-react ^4.3.1</span>
+    <span class="chip">typescript ^5.5.4</span>
+    <span class="chip">tailwindcss ^4.3.3</span>
+    <span class="chip">@tailwindcss/vite ^4.3.3</span>
+    <span class="chip">radix-ui ^1.7.0</span>
+    <span class="chip">class-variance-authority ^0.7.1</span>
+    <span class="chip">clsx ^2.1.1</span>
+    <span class="chip">tailwind-merge ^3.7.0</span>
+    <span class="chip">react-icons ^5.7.0</span>
+    <span class="chip">react-router-dom ^7.1.0</span>
+    <span class="chip">streamdown ^2.7.0</span>
+    <span class="chip">remark-gfm ^4.0.1</span>
+    <span class="chip">remark-math ^6.0.0</span>
+    <span class="chip">rehype-katex ^7.0.1</span>
+    <span class="chip">katex ^0.19.0</span>
+    <span class="chip">unist-util-visit ^5.1.0</span>
+    <span class="chip">react-plotly.js ^4.1.0</span>
+    <span class="chip">plotly.js-dist-min ^4.1.1</span>
+    <span class="chip">motion ^14.0.0</span>
+    <span class="chip">use-stick-to-bottom ^1.1.6</span>
+    <span class="chip">@tsparticles/react ^4.4.0</span>
+    <span class="chip">@tsparticles/slim ^4.4.0</span>
+  </div>
+
+  <h3>What it does and where it lives</h3>
+  <ul>
+    <li><b>Shell and routes.</b> <code>frontend/src/main.tsx</code>: <code>BackendBootGate</code> (polls <code>GET /api/health</code> every second and shows a boot overlay until every startup step is done) → <code>AuthProvider</code> → <code>createBrowserRouter</code> with public pages (<code>/login</code>, <code>/accept-invite</code>, <code>/reset-password</code>, <code>/forbidden</code>), the guarded chat <code>/app/*</code> → <code>App.tsx</code>, <code>/profile</code> → <code>ProfilePage.tsx</code>, and admin-only <code>/admin/users</code>. Non-chat pages are lazy chunks.</li>
+    <li><b>Dev server.</b> <code>frontend/vite.config.ts</code> registers <code>@vitejs/plugin-react</code> and <code>@tailwindcss/vite</code>, and proxies <code>/api</code> and <code>/ws</code> (WebSocket) to the backend (<code>VITE_BACKEND_URL</code>, default port 8000), so the browser sees one origin; production serves the build through nginx (<code>frontend/nginx.conf</code>).</li>
+    <li><b>Chat.</b> <code>frontend/src/App.tsx</code> holds the conversation state and the frame reducer (one <code>case</code> per frame type). <code>frontend/src/api/wsClient.ts</code> (<code>ChatSocket</code>, auto-reconnect) and <code>frontend/src/api/restClient.ts</code> talk to the backend. Streaming text lives outside React state in <code>frontend/src/lib/streamStore.ts</code>, so a token re-renders only the live message.</li>
+    <li><b>Chat rendering.</b> <code>components/MessageList.tsx</code> (scroll with <code>use-stick-to-bottom</code>) renders each reply through <code>components/StreamMarkdown.tsx</code>: <b>Streamdown</b> markdown (GFM built in; <code>remark-gfm</code> is declared but not imported in <code>src/</code>), per-word ink-in spans (<code>lib/rehypeWordSpans.ts</code>), adaptive smoothing (<code>hooks/useSmoothText.ts</code>), and <b>LaTeX</b> via <code>lib/mathPlugin.ts</code> (<code>remark-math</code> + <code>rehype-katex</code>, loaded on first use). Tool calls render as <code>SpellCard</code> (<code>RuneCircle</code>, <code>CastBar</code>, <code>motion</code>) keyed by <code>lib/spells.ts</code>. Charts render in <code>PlotlyArtifact.tsx</code> (lazy <code>react-plotly.js/factory</code> + <code>plotly.js-dist-min</code>). Also <code>EncounterPicker</code> (boss focus), <code>FollowUps</code> (suggestion buttons), "used web search" and model-fallback notes, and a per-reply PDF button.</li>
+    <li><b>Sidebar</b> (<code>components/Sidebar.tsx</code>, feature 019): New chat, a <b>Pinned</b> group on top (most recently pinned first), the rest of the conversations in server activity order, a pin <code>Toggle</code> per row and in the chat header, and the collapsible <b>Raids</b> section of tracked raids, each with one-click investigate (<code>POST /api/raids/{report_code}/investigate</code>).</li>
+    <li><b>Welcome page</b> (<code>components/WelcomePanel.tsx</code>, features 013 and 022): the no-conversation state, not a route. It shows Barnaby's greeting, "your recent raids" and "your recent Mythic+ runs" from <code>GET /api/recent-raids</code>, polls every 3 s while a refresh runs, and starts an investigation chat per raid or run.</li>
+    <li><b>Raids.</b> There is no separate raids route in <code>main.tsx</code>: tracked raids live in the sidebar's Raids section, recent raids and runs on the welcome page.</li>
+    <li><b>Profile page</b> (<code>pages/ProfilePage.tsx</code>, features 008 and 012): shadcn <code>Tabs</code> with <code>components/profile/CharactersTab.tsx</code> (several own characters, friends, roles, guild) and <code>components/profile/ClassGuidesTab.tsx</code> (Raid / Mythic+ guide library, <code>GuideViewerDialog</code>, <code>ReportGuideDialog</code>).</li>
+    <li><b>Design system.</b> 23 shadcn/ui components generated into <code>frontend/src/components/ui/</code> (new-york style, CSS variables, <code>react-icons</code> as icon library per <code>frontend/components.json</code>); theme tokens in <code>frontend/src/index.css</code>; legacy rules in <code>frontend/src/styles.css</code>; app wrappers <code>ConfirmDialog</code>, <code>StatusAlert</code>, <code>StatusBadge</code> outside <code>ui/</code>. Ambient background and particles: <code>components/Ambient.tsx</code>, <code>components/AmbientParticles.tsx</code>.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 560" role="img" aria-labelledby="d4t">
+      <title id="d4t">Frontend component map: boot gate, auth and router at the top; the chat shell App with sidebar, header, ambient, welcome panel, message list, composer and chat socket; profile and admin pages on the right; shared shadcn ui components.</title>
+      <defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+      <rect class="node ext" x="300" y="16" width="400" height="54" rx="10"/>
+      <text x="500" y="38" text-anchor="middle" class="t" style="font-size:13px">main.tsx: BackendBootGate → AuthProvider → Router</text>
+      <text x="500" y="58" text-anchor="middle" class="sub" style="font-size:11.5px">boot overlay until startup is done · RequireAuth on guarded routes</text>
+
+      <rect class="node" x="20" y="110" width="230" height="64" rx="10"/>
+      <text x="135" y="134" text-anchor="middle" class="t" style="font-size:13px">Public pages</text>
+      <text x="135" y="154" text-anchor="middle" class="sub" style="font-size:11.5px">/login · /accept-invite · /reset-password</text>
+      <text x="135" y="168" text-anchor="middle" class="sub" style="font-size:11.5px">/forbidden</text>
+
+      <rect class="node core" style="fill:var(--accent-soft)" x="300" y="110" width="400" height="54" rx="10"/>
+      <text x="500" y="132" text-anchor="middle" class="t" style="font-size:13px">/app/* → App.tsx (chat shell)</text>
+      <text x="500" y="152" text-anchor="middle" class="sub" style="font-size:11.5px">conversation state · frame reducer · PDF export</text>
+
+      <rect class="node" x="760" y="110" width="220" height="54" rx="10"/>
+      <text x="870" y="132" text-anchor="middle" class="t" style="font-size:13px">/profile → ProfilePage</text>
+      <text x="870" y="152" text-anchor="middle" class="sub" style="font-size:11.5px">lazy chunk · shadcn Tabs</text>
+      <rect class="node" x="760" y="196" width="220" height="88" rx="10"/>
+      <text x="772" y="218" class="t" style="font-size:13px">CharactersTab</text>
+      <text x="772" y="236" class="sub" style="font-size:11.5px">own characters, friends, roles, guild</text>
+      <text x="772" y="256" class="t" style="font-size:13px">ClassGuidesTab</text>
+      <text x="772" y="274" class="sub" style="font-size:11.5px">GuideViewer + ReportGuide dialogs</text>
+      <rect class="node" x="760" y="310" width="220" height="50" rx="10"/>
+      <text x="870" y="331" text-anchor="middle" class="t" style="font-size:13px">/admin/users (adminOnly)</text>
+      <text x="870" y="349" text-anchor="middle" class="sub" style="font-size:11.5px">AdminUsersPage</text>
+      <rect class="node ext" x="760" y="390" width="220" height="152" rx="10"/>
+      <text x="870" y="412" text-anchor="middle" class="t" style="font-size:13px">components/ui/ (shadcn, 23)</text>
+      <text x="870" y="434" text-anchor="middle" class="sub" style="font-size:11.5px">button · card · dialog · alert-dialog</text>
+      <text x="870" y="452" text-anchor="middle" class="sub" style="font-size:11.5px">tabs · toggle · toggle-group · item</text>
+      <text x="870" y="470" text-anchor="middle" class="sub" style="font-size:11.5px">badge · skeleton · spinner · tooltip</text>
+      <text x="870" y="488" text-anchor="middle" class="sub" style="font-size:11.5px">field · input · textarea · table · …</text>
+      <text x="870" y="514" text-anchor="middle" class="sub" style="font-size:11.5px">used by every screen</text>
+
+      <rect class="node" x="20" y="210" width="230" height="96" rx="10"/>
+      <text x="32" y="232" class="t" style="font-size:13px">Sidebar</text>
+      <text x="32" y="252" class="sub" style="font-size:11.5px">New chat</text>
+      <text x="32" y="270" class="sub" style="font-size:11.5px">Pinned group + conversations</text>
+      <text x="32" y="288" class="sub" style="font-size:11.5px">Raids (tracked, investigate)</text>
+      <rect class="node" x="270" y="210" width="220" height="96" rx="10"/>
+      <text x="282" y="232" class="t" style="font-size:13px">Chat header</text>
+      <text x="282" y="252" class="sub" style="font-size:11.5px">ModelSelect</text>
+      <text x="282" y="270" class="sub" style="font-size:11.5px">pin Toggle</text>
+      <text x="282" y="288" class="sub" style="font-size:11.5px">conversation PDF button</text>
+      <rect class="node" x="510" y="210" width="210" height="96" rx="10"/>
+      <text x="522" y="232" class="t" style="font-size:13px">Ambient</text>
+      <text x="522" y="252" class="sub" style="font-size:11.5px">background art</text>
+      <text x="522" y="270" class="sub" style="font-size:11.5px">AmbientParticles</text>
+      <text x="522" y="288" class="sub" style="font-size:11.5px">(tsparticles, lazy)</text>
+
+      <rect class="node" x="20" y="336" width="230" height="104" rx="10"/>
+      <text x="32" y="358" class="t" style="font-size:13px">WelcomePanel</text>
+      <text x="32" y="378" class="sub" style="font-size:11.5px">shown with no active chat</text>
+      <text x="32" y="396" class="sub" style="font-size:11.5px">recent raids + Mythic+ runs</text>
+      <text x="32" y="414" class="sub" style="font-size:11.5px">Investigate → new chat</text>
+      <rect class="node" x="270" y="336" width="450" height="120" rx="10"/>
+      <text x="282" y="358" class="t" style="font-size:13px">MessageList (use-stick-to-bottom)</text>
+      <text x="282" y="378" class="sub" style="font-size:11.5px">StreamMarkdown: Streamdown + KaTeX (lazy) + word ink-in</text>
+      <text x="282" y="396" class="sub" style="font-size:11.5px">SpellCard per tool call: RuneCircle · CastBar (motion)</text>
+      <text x="282" y="414" class="sub" style="font-size:11.5px">PlotlyArtifact (lazy) · EncounterPicker · FollowUps</text>
+      <text x="282" y="432" class="sub" style="font-size:11.5px">per-reply PDF · web-search and fallback notes</text>
+
+      <rect class="node" x="270" y="486" width="210" height="56" rx="10"/>
+      <text x="375" y="509" text-anchor="middle" class="t" style="font-size:13px">Composer</text>
+      <text x="375" y="527" text-anchor="middle" class="sub" style="font-size:11.5px">sends ChatTurn</text>
+      <rect class="node core" style="fill:var(--accent-soft)" x="510" y="486" width="210" height="56" rx="10"/>
+      <text x="615" y="509" text-anchor="middle" class="t" style="font-size:13px">ChatSocket (wsClient.ts)</text>
+      <text x="615" y="527" text-anchor="middle" class="sub" style="font-size:11.5px">frames → App, text → streamStore</text>
+
+      <path class="flow" d="M400,70 V90 H135 V106" marker-end="url(#ah4)"/>
+      <path class="flow" d="M500,70 V106" marker-end="url(#ah4)"/>
+      <path class="flow" d="M600,70 V90 H870 V106" marker-end="url(#ah4)"/>
+      <path class="flow" d="M870,164 V192" marker-end="url(#ah4)"/>
+      <path class="flow" d="M700,43 H992 V335 H984" marker-end="url(#ah4)"/>
+      <path class="flow" d="M420,164 V186 H135 V206" marker-end="url(#ah4)"/>
+      <path class="flow" d="M440,164 V206" marker-end="url(#ah4)"/>
+      <path class="flow" d="M600,164 V186 H615 V206" marker-end="url(#ah4)"/>
+      <path class="flow" d="M330,164 V180 H260 V384 H254" marker-end="url(#ah4)"/>
+      <path class="flow" d="M260,384 H266" marker-end="url(#ah4)"/>
+      <path class="flow" d="M480,514 H506" marker-end="url(#ah4)"/>
+      <path class="flow" d="M615,486 V460" marker-end="url(#ah4)"/>
+      <text x="625" y="476" class="sub" style="font-size:11.5px">frames</text>
+    </svg>
+    <figcaption>Frontend component map (<code>frontend/src/</code>). App renders either WelcomePanel or MessageList in the main column.</figcaption>
+  </figure>
+
+  <h3>Why it was built this way</h3>
+  <p class="why">React + Vite + TypeScript to start with: it met the first UI requirement with the least machinery and was easy to extend.<cite>specs/001-streaming-chat-frontend/research.md §7</cite></p>
+  <p class="why">React 19, Tailwind v4, shadcn/ui, <code>motion</code>, Streamdown, <code>use-stick-to-bottom</code> and tsparticles were a user-directed "full adoption" of the chat-UI skill stack. Streamdown (no broken markdown mid-stream), motion (declarative spell-card lifecycle) and stick-to-bottom (chat scroll) each solve a problem the hand-rolled code handled poorly; Tailwind v4 + shadcn provide the token architecture the theme needs. <b>Alternatives:</b> a curated subset or CSS-only (offered, declined by the user); staying on React 18 (fights current peer dependencies of motion, shadcn and Streamdown).<cite>specs/004-raid-sourcing-ux/research.md R7</cite></p>
+  <p class="why">shadcn/ui through the shadcn MCP is a constitution rule: one registry-backed implementation per control keeps screens consistent and accessible (Principle I applied to the UI). Hand-built components need a recorded reason, as for the spell cards, cast bars and rune spinner.<cite>.specify/memory/constitution.md Principle VII; specs/010-shadcn-ui-adoption/plan.md</cite></p>
+  <p class="why">Components come in through the shadcn CLI, which brings the <code>radix-ui</code> unified package and the icon-library mapping; the CLI quirks (lucide imports, the <code>cn</code> alias) are recorded for the next <code>shadcn add</code>. <b>Alternatives:</b> copying component sources by hand; writing our own primitives.<cite>specs/010-shadcn-ui-adoption/research.md R1</cite></p>
+  <p class="why">KaTeX math through Streamdown's plugin pipeline: math is an additive change, KaTeX only typesets complete delimiters (safe mid-stream), and <code>remark-math</code> leaves currency like <code>$5</code> alone.<cite>specs/005-guild-context-artifacts/research.md R5</cite></p>
+  <p class="why">Plotly in the browser: interactive, hoverable, zoomable charts were the user's explicit goal; a static image fails that. The risk is contained by <code>plotly.js-dist-min</code> and lazy loading.<cite>specs/005-guild-context-artifacts/plan.md (Complexity Tracking)</cite></p>
+  <p class="why"><code>react-router-dom</code>: public auth routes, the guarded app shell and the admin page could not be expressed by the single-<code>App</code> conditional render without a hand-rolled router.<cite>specs/006-multi-tenancy/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">Profile as a guarded <code>/profile</code> route with tabs mirrors the existing routing pattern, and reuses <code>StreamMarkdown</code> for guide content instead of a second markdown renderer.<cite>specs/008-profile-class-pages/research.md Decision 8</cite></p>
+  <p class="why">One <code>CharacterList</code> markup for own characters and friends (Principle I); no new registry component was needed.<cite>specs/012-multi-character-profile/research.md R8</cite></p>
+  <p class="why">The welcome page is the no-conversation state, not a new route: no navigation change, and it reuses the new-chat and greeting flow. It learns about new raids by polling, with no new transport. <b>Alternatives:</b> Server-Sent Events or pushing over the chat WebSocket (more work for no visible gain at a 3 s cadence).<cite>specs/013-welcome-recent-raids/research.md R11, R6</cite></p>
+  <p class="why">Pins as one nullable <code>pinned_at</code> column (answers both "is it pinned" and "in which order", covered by existing RLS); the shadcn <code>Toggle</code> for the pin control. <b>Alternatives:</b> a boolean plus an order column; a per-user pins table; the <code>@shadcn/sidebar</code> system (rewrites the sidebar); a dropdown menu per entry; drag-to-reorder.<cite>specs/019-sidebar-conversations/research.md R1, R9</cite></p>
+  <p class="why">Mythic+ runs on the welcome page reuse the shared report-summary query (keystone fields added to <code>REPORT_SUMMARY_FIELDS</code>), keeping one query.<cite>specs/022-welcome-mplus/research.md</cite></p>
+  <p class="why">The Vite proxy (and nginx in production) keeps the app same-origin, which is what makes the <code>__Host-</code> cookie, <code>SameSite=Lax</code> and header CSRF the simplest correct session design, with no credentialed CORS.<cite>specs/006-multi-tenancy/research.md R3</cite></p>
+  <p class="why">Streaming text kept outside React state, memoized shell components, KaTeX / particles / non-chat pages as lazy chunks: a token used to re-render the whole app.<cite>documentation/ai_guide.md §17</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span><b>Vite 5 and TypeScript.</b> Reason not recorded beyond "least machinery" (001 §7). Plausible trade-off: Vite's dev server and the official React and Tailwind v4 plugins (<code>@vitejs/plugin-react</code>, <code>@tailwindcss/vite</code>) need almost no configuration; TypeScript mirrors the backend's typed frames as the <code>Frame</code> union.</p>
+</section>
+
+<footer>
+  <div>Generated 2026-10-26 · sc-210</div>
+  <div>Facts checked against the code on branch <code>026-architecture-design-docs</code>; the tool list against <code>TOOLS</code> in <code>wcl_agent/agent.py</code>; versions as declared in <code>pyproject.toml</code> and <code>frontend/package.json</code> (lock versions noted where shown).</div>
+  <div>Sources used:</div>
+  <ul>
+    <li><code>.specify/memory/constitution.md</code></li>
+    <li><code>documentation/ai_guide.md</code></li>
+    <li><code>documentation/live_model_probe.md</code></li>
+    <li><code>documentation/wow_guide_grounding_plan_v2.md</code></li>
+    <li><code>specs/001-streaming-chat-frontend/research.md</code>, <code>plan.md</code>, <code>contracts/websocket.md</code></li>
+    <li><code>specs/002-agent-enhancements/research.md</code>, <code>spec.md</code></li>
+    <li><code>specs/003-chat-followups-ux/research.md</code>, <code>contracts/websocket.md</code></li>
+    <li><code>specs/004-raid-sourcing-ux/research.md</code></li>
+    <li><code>specs/005-guild-context-artifacts/research.md</code>, <code>plan.md</code></li>
+    <li><code>specs/006-multi-tenancy/plan.md</code></li>
+    <li><code>specs/008-profile-class-pages/research.md</code></li>
+    <li><code>specs/009-grounded-coaching-prompt/research.md</code>, <code>contracts/prompt.md</code></li>
+    <li><code>specs/010-shadcn-ui-adoption/research.md</code>, <code>plan.md</code></li>
+    <li><code>specs/011-agent-rate-limit-relief/research.md</code>, <code>contracts/websocket-and-config.md</code></li>
+    <li><code>specs/012-multi-character-profile/research.md</code></li>
+    <li><code>specs/013-welcome-recent-raids/research.md</code></li>
+    <li><code>specs/015-grounded-class-guides/research.md</code>, <code>spec.md</code>, <code>plan.md</code>, <code>contracts/guide-pipeline.md</code></li>
+    <li><code>specs/016-live-model-discovery/research.md</code></li>
+    <li><code>specs/019-sidebar-conversations/research.md</code>, <code>contracts/ws-conversation-title.md</code></li>
+    <li><code>specs/021-ratelimit-fallback/research.md</code>, <code>contracts/websocket-model-fallback.md</code></li>
+    <li><code>specs/022-welcome-mplus/research.md</code></li>
+    <li>Shortcut epic-203 and stories sc-204, sc-205, sc-206, sc-207 (descriptions as of 2026-10-26)</li>
+    <li>Code: <code>wcl_agent/agent.py</code>, <code>wcl_agent/llm/</code>, <code>wcl_agent/tools/</code>, <code>wcl_agent/guides/</code>, <code>backend/app/agent_runner.py</code>, <code>backend/app/api/ws.py</code>, <code>backend/app/schemas.py</code>, <code>backend/app/services/</code>, <code>frontend/src/</code></li>
+  </ul>
+</footer>
+</div>
+<script>
+(function(){
+  var btn=document.querySelector('.pausebtn');
+  if(!btn)return;
+  btn.addEventListener('click',function(){
+    var on=document.documentElement.classList.toggle('paused');
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    btn.textContent=on?'Play animations':'Pause animations';
+  });
+})();
+</script>
+</body>
+</html>
