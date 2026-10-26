@@ -31,6 +31,7 @@ import type {
   Conversation,
   Encounter,
   Message,
+  ProfileProposal,
   Raid,
   SpellCardState,
 } from "./types";
@@ -58,6 +59,9 @@ export default function App() {
   const [streamCards, setStreamCards] = useState<SpellCardState[]>([]);
   // US4: the boss ids the user has ticked on the latest sourcing turn (reset per turn).
   const [selectedBosses, setSelectedBosses] = useState<number[]>([]);
+  // Feature 031: proposals with no agent message (reload of an unfinished turn, or a turn
+  // that failed after proposing) still show as standalone cards.
+  const [looseProposals, setLooseProposals] = useState<ProfileProposal[]>([]);
 
   // Refs to avoid stale closures inside the socket frame handler.
   const socketRef = useRef<ChatSocket | null>(null);
@@ -71,6 +75,7 @@ export default function App() {
   const streamCardsRef = useRef<SpellCardState[]>([]);
   const pendingEncountersRef = useRef<Encounter[]>([]); // bosses surfaced this turn
   const pendingArtifactsRef = useRef<ChartArtifact[]>([]); // charts produced this turn
+  const pendingProposalsRef = useRef<ProfileProposal[]>([]); // proposals made this turn
   const activeEncountersRef = useRef<Encounter[]>([]); // bosses shown by the live picker
   const selectedBossesRef = useRef<number[]>([]);
   const greetingReqId = useRef(0); // invalidates a late greeting if a turn/chat starts first
@@ -180,6 +185,10 @@ export default function App() {
             },
           ];
           break;
+        case "proposal":
+          // Feature 031: like charts, the card attaches to the agent message on `done`.
+          pendingProposalsRef.current = [...pendingProposalsRef.current, f.proposal];
+          break;
         case "token":
           streamRef.current += f.text;
           streamStore.set(streamRef.current);
@@ -212,6 +221,7 @@ export default function App() {
           const tools = streamCardsRef.current;
           const encounters = pendingEncountersRef.current;
           const artifacts = pendingArtifactsRef.current;
+          const proposals = pendingProposalsRef.current;
           activeEncountersRef.current = encounters; // the live picker tracks this turn's bosses
           setMessages((m) => [
             ...m,
@@ -224,6 +234,7 @@ export default function App() {
               tools,
               encounters,
               artifacts,
+              proposals,
             },
           ]);
           setStreaming(false);
@@ -235,12 +246,17 @@ export default function App() {
           setCards([]);
           pendingEncountersRef.current = [];
           pendingArtifactsRef.current = [];
+          pendingProposalsRef.current = [];
           setSelectedBosses([]); // fresh picker, no stale selection (FR-020)
           void refreshConversations();
           void refreshRaids();
           break;
         }
-        case "error":
+        case "error": {
+          // Feature 031: a stored proposal is never invisible, even when its turn failed.
+          const orphans = pendingProposalsRef.current;
+          if (orphans.length) setLooseProposals((l) => [...l, ...orphans]);
+          pendingProposalsRef.current = [];
           setError(f.message);
           setStreaming(false);
           streamStore.set("");
@@ -252,6 +268,7 @@ export default function App() {
           pendingEncountersRef.current = [];
           pendingArtifactsRef.current = [];
           break;
+        }
       }
     },
     [refreshConversations, refreshRaids, setCards, setStreaming],
@@ -317,6 +334,7 @@ export default function App() {
     activeIdRef.current = id;
     setActiveId(id);
     setMessages(detail.messages.map((m) => ({ ...m })));
+    setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
     // Discovery rotates models, so a chat may have been created on one no longer served:
     // continue it on the default instead of a model every send would reject.
     const served = servedModelsRef.current;
@@ -339,6 +357,8 @@ export default function App() {
     activeEncountersRef.current = [];
     pendingEncountersRef.current = [];
     pendingArtifactsRef.current = [];
+    pendingProposalsRef.current = [];
+    setLooseProposals([]);
 
     const reqId = ++greetingReqId.current;
     getGreeting()
@@ -394,6 +414,7 @@ export default function App() {
       setCards([]);
       pendingEncountersRef.current = [];
       pendingArtifactsRef.current = [];
+      pendingProposalsRef.current = [];
       streamStore.set("");
       setStatus(THINKING_DEFAULT);
       setStreaming(true);
@@ -448,6 +469,13 @@ export default function App() {
     }
   }, []);
 
+  // Feature 031: a confirmation card's decision saved a follow-up line; show it if its chat
+  // is still the open one (otherwise it appears when that chat is opened).
+  const appendFollowUp = useCallback((conversationId: string, message: Message) => {
+    if (conversationId !== activeIdRef.current) return;
+    setMessages((m) => [...m, message]);
+  }, []);
+
   // One-click raid investigation (US1): the server creates an empty conversation
   // and owns the kickoff wording; we send it as a normal first turn.
   const handleInvestigateRaid = useCallback(async (reportCode: string) => {
@@ -458,6 +486,7 @@ export default function App() {
       activeIdRef.current = resp.conversation_id;
       setActiveId(resp.conversation_id);
       setMessages([]);
+      setLooseProposals([]);
       setModel(resp.model);
       modelRef.current = resp.model;
       sendText(resp.kickoff_prompt, {
@@ -480,6 +509,7 @@ export default function App() {
         activeIdRef.current = resp.conversation_id;
         setActiveId(resp.conversation_id);
         setMessages([]);
+        setLooseProposals([]);
         setModel(resp.model);
         modelRef.current = resp.model;
         sendText(resp.kickoff_prompt, {
@@ -589,6 +619,8 @@ export default function App() {
           onSelectBosses={setSelectedBosses}
           onPickSuggestion={send}
           onDownloadMessage={handleDownloadMessage}
+          looseProposals={looseProposals}
+          onFollowUp={appendFollowUp}
           footer={welcome}
         />
         <Composer disabled={streaming || !connected} onSend={send} />

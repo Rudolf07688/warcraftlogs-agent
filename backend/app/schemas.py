@@ -207,6 +207,8 @@ class ConversationDetail(ConversationOut):
     messages: list[MessageOut] = []
     # US2/FR-011: persisted charts, so reopening a conversation re-renders them.
     artifacts: list["ArtifactOut"] = []
+    # Feature 031: the chat's profile change proposals, for the confirmation cards.
+    proposals: list["ProfileProposalOut"] = []
 
 
 class ConversationListResponse(BaseModel):
@@ -389,6 +391,100 @@ class ProfileOut(BaseModel):
     guild: GuildOut | None = None
 
 
+# --- Profile change proposals (feature 029 / sc-205) ---------------------------
+# The single definition of the proposal shape is the design's #proposal-contract
+# (documentation/designs/self-aware-agent/capabilities-and-tools.html); 031 mirrors it in
+# frontend/src/types.ts. The agent tool returns it and every proposal service call does too.
+
+# The design's #validation-codes (the first five are repository.CharacterConflict's codes).
+ValidationCode = Literal[
+    "duplicate_character",
+    "duplicate_friend",
+    "already_friend",
+    "already_own",
+    "character_limit",
+    "friend_limit",
+    "invalid_name",
+    "invalid_realm",
+    "invalid_region",
+    "duplicate_item",
+    "not_found",
+    "no_change",
+    "invalid_item",
+]
+ProposalStatus = Literal["pending", "applied", "cancelled", "expired"]
+
+
+class ProfileChangeIn(BaseModel):
+    """One change the agent proposes. Addressed by identity, never by id (C5).
+
+    The strings carry no length limits on purpose: one bad item (e.g. a hostile character
+    name from a log) is shown as skipped instead of failing the whole tool call (D4, C14).
+    """
+
+    action: Literal["add", "update", "remove"]
+    target: Literal["own", "friend"]
+    name: str
+    realm: str
+    region: str
+    class_name: str | None = None
+    spec: str | None = None
+    # Add: null unless the user asked for a role (D9). Update: the new override (null clears).
+    raid_role: RaidRole | None = None
+    # Display only, never stored: the role played in the source run (D9).
+    played_role: RaidRole | None = None
+
+
+class ProposalValidation(BaseModel):
+    ok: bool
+    code: ValidationCode | None = None
+    message: str | None = None
+
+
+class ProposalItemResult(BaseModel):
+    status: Literal["applied", "skipped", "failed"]
+    code: str | None = None
+    character_id: uuid.UUID | None = None
+
+
+class ProposalItemOut(BaseModel):
+    index: int
+    action: Literal["add", "update", "remove"]
+    target: Literal["own", "friend"]
+    name: str
+    realm: str
+    region: str
+    class_name: str | None = None
+    spec: str | None = None
+    raid_role: RaidRole | None = None
+    played_role: RaidRole | None = None
+    previous_raid_role: RaidRole | None = None
+    character_id: uuid.UUID | None = None
+    validation: ProposalValidation
+    result: ProposalItemResult | None = None  # null until executed
+
+
+class ProfileProposalOut(BaseModel):
+    """A stored change proposal. tenant_id/user_id are server-only and never sent."""
+
+    id: uuid.UUID
+    conversation_id: uuid.UUID
+    message_seq: int | None = None  # set by 031 when the turn's answer is saved
+    status: ProposalStatus
+    created_at: datetime
+    expires_at: datetime
+    applied_at: datetime | None = None
+    items: list[ProposalItemOut]  # 1..MAX_PROPOSAL_ITEMS, in the order the agent gave them
+
+
+class ProposalDecisionOut(BaseModel):
+    """POST /api/profile/proposals/{id}/approve|cancel (feature 031). ``follow_up`` is the agent
+    message this call saved, or null when the proposal had already left ``pending``."""
+
+    proposal: ProfileProposalOut
+    follow_up: MessageOut | None = None
+
+
 # --- Spec guides (feature 008 / US2) — the GLOBAL shared library ---------------
 
 # Feature 015: every guide is one content type of one spec.
@@ -550,6 +646,14 @@ class ArtifactFrame(BaseModel):
     kind: str
     title: str
     figure: dict  # Plotly figure JSON: {"data": [...], "layout": {...}}
+
+
+class ProposalFrame(BaseModel):
+    """Feature 031: a stored profile change proposal, sent after a successful
+    ``propose_profile_changes`` call, for the confirmation card."""
+
+    type: Literal["proposal"] = "proposal"
+    proposal: ProfileProposalOut
 
 
 # --- Auth / tenancy (feature 006) --------------------------------------------

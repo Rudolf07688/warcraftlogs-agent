@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import {
   LuCastle,
   LuTrash2,
@@ -18,10 +18,11 @@ import {
   updateFriend,
   updateOwnCharacter,
 } from "../../api/restClient";
-import { classColor, classDisplayName, initials } from "../../lib/classColors";
-import { cn } from "../../lib/utils";
+import { classColor, classDisplayName } from "../../lib/classColors";
+import { useProfileChanged } from "../../lib/profileEvents";
 import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../../types";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { ClassAvatar } from "./ClassAvatar";
 import { StatusAlert } from "../StatusAlert";
 import { GUIDE_GLYPH, GUIDE_GLYPH_LABEL, GUIDE_LABEL_SHORT, GUIDE_TONE, StatusBadge } from "../StatusBadge";
 import { Avatar, AvatarFallback } from "../ui/avatar";
@@ -95,21 +96,6 @@ function identityLabel(c: Character): string {
   const spec = [c.class_name, c.active_spec].filter(Boolean).join(" ");
   const base = `${c.name}-${c.server} (${c.region})`;
   return spec ? `${base} — ${spec}` : base;
-}
-
-// A round avatar with the character's initials, ringed and tinted in their class colour.
-function ClassAvatar({ char, className }: { char: Character; className?: string }) {
-  const color = classColor(char.class_name);
-  const style: CSSProperties | undefined = color
-    ? { borderColor: color, color, background: `color-mix(in oklch, ${color} 16%, transparent)` }
-    : undefined;
-  return (
-    <Avatar className={cn("border-2 border-border", className)} aria-hidden="true">
-      <AvatarFallback className="bg-muted font-display font-semibold text-glow" style={style}>
-        {initials(char.name)}
-      </AvatarFallback>
-    </Avatar>
-  );
 }
 
 // US4: raid roles. "Auto" (no override) falls back to the spec-inferred default.
@@ -370,6 +356,9 @@ export function CharactersTab() {
     void refresh();
   }, [refresh]);
 
+  // Feature 031: an approved confirmation card (in any tab) changed the profile.
+  useProfileChanged(() => void refresh());
+
   // Poll while any guide is still resolving so the badges flip to "ready" on their own.
   useEffect(() => {
     if (!profile) return;
@@ -435,6 +424,8 @@ export function CharactersTab() {
         return `${who} is one of your characters.`;
       case "character_limit":
         return `You can register up to ${ownLimit} characters.`;
+      case "friend_limit":
+        return "You've reached the friend limit. Remove a friend before adding another.";
       default:
         return e.status === 409 ? `${who} is already added.` : GENERIC_ERROR;
     }

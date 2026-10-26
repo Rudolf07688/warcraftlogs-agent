@@ -17,6 +17,8 @@ import type {
   RecentRaidsRefresh,
   RecentRaidsResponse,
   Profile,
+  ProfileProposal,
+  ProposalDecision,
   RaidRole,
   Raid,
   Role,
@@ -235,10 +237,30 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     });
     bySeq.set(a.message_seq, list);
   }
-  const messages = raw.messages.map((m) =>
-    m.seq != null && bySeq.has(m.seq) ? { ...m, artifacts: bySeq.get(m.seq) } : m,
-  );
+  // Feature 031: confirmation cards go under their agent message too (an unlinked one stays
+  // only in `proposals`, and the chat shows it as a standalone card).
+  const proposalsBySeq = new Map<number, ProfileProposal[]>();
+  for (const p of raw.proposals ?? []) {
+    if (p.message_seq == null) continue;
+    const list = proposalsBySeq.get(p.message_seq) ?? [];
+    list.push(p);
+    proposalsBySeq.set(p.message_seq, list);
+  }
+  const messages = raw.messages.map((m) => {
+    const artifacts = m.seq != null ? bySeq.get(m.seq) : undefined;
+    const proposals = m.seq != null ? proposalsBySeq.get(m.seq) : undefined;
+    return artifacts || proposals ? { ...m, artifacts, proposals } : m;
+  });
   return { ...raw, messages };
+}
+
+// Feature 031: decide an agent's profile change proposal (the confirmation card).
+export async function approveProposal(id: string): Promise<ProposalDecision> {
+  return send("POST", `/api/profile/proposals/${id}/approve`, undefined, { csrf: true });
+}
+
+export async function cancelProposal(id: string): Promise<ProposalDecision> {
+  return send("POST", `/api/profile/proposals/${id}/cancel`, undefined, { csrf: true });
 }
 
 // Feature 019: pin or unpin a chat (tenant-scoped; returns the updated row).

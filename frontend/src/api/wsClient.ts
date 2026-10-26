@@ -1,4 +1,4 @@
-import type { Encounter } from "../types";
+import type { Encounter, ProfileProposal } from "../types";
 
 export type Frame =
   | { type: "meta"; conversation_id: string; seq: number }
@@ -20,6 +20,8 @@ export type Frame =
       title: string;
       figure: { data: unknown[]; layout: Record<string, unknown> };
     }
+  // Feature 031: a stored profile change proposal, for the confirmation card.
+  | { type: "proposal"; proposal: ProfileProposal }
   // US1: sent just after `done` (PERF-005), keyed by the finished agent message.
   | { type: "suggestions"; message_id?: string; suggestions: string[] }
   // Feature 019: a chat got its generated title (after its first reply's `done`).

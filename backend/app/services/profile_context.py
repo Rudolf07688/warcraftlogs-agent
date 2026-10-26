@@ -32,12 +32,24 @@ from wcl_agent.game.roster import roster_snapshot
 
 from ..config import settings
 
-from ..db.models import GuildProfile, KnownEncounter, KnownPlayer, TrackedRaid, UserCharacter
+from ..db.models import (
+    GuildProfile,
+    KnownEncounter,
+    KnownPlayer,
+    RecentMplusRun,
+    RecentRaid,
+    TrackedRaid,
+    UserCharacter,
+)
 
 # The guild summary excerpt stays trimmed (briefs are never trimmed: they fit or are omitted).
 _PER_GUIDE_CHARS = 1500
 # Fixed cap for the whole captured-metadata block (US1), independent of history size.
 _RECENT_CHARS = 1500
+# Feature 030: the recent-runs candidates (D5), at most this many per kind and characters in all.
+_RUNS_PER_KIND = 5
+_RUNS_CHARS = 600
+_DIFFICULTY = {1: "LFR", 3: "Normal", 4: "Heroic", 5: "Mythic"}
 
 _HEADER = (
     "KNOWN PLAYER CONTEXT (use only when the question is about the user, their "
@@ -96,7 +108,7 @@ def _recent_block(
     }
 
     lines: list[str] = []
-    raids = [r.label for r in known_raids if r.label]
+    raids = [f"{r.label} (report {r.report_code})" for r in known_raids if r.label]
     if raids:
         lines.append("- Raids: " + "; ".join(raids))
     players = [
@@ -116,6 +128,42 @@ def _recent_block(
     if not lines:
         return ""
     return _trim("\n".join([_RECENT_HEADER, *lines]), _RECENT_CHARS)
+
+
+def _mplus_run_ident(run: RecentMplusRun) -> str:
+    outcome = "timed" if run.timed else "depleted"
+    return (
+        f"{run.dungeon} +{run.key_level}, {run.started_at:%Y-%m-%d}, {outcome} "
+        f"(report {run.report_code}, fight {run.fight_id})"
+    )
+
+
+def _raid_run_ident(raid: RecentRaid) -> str:
+    parts = [raid.zone_name or raid.title, _DIFFICULTY.get(raid.difficulty), f"{raid.started_at:%Y-%m-%d}"]
+    return f"{', '.join(p for p in parts if p)} (report {raid.report_code})"
+
+
+def _runs_block(recent_raids: list[RecentRaid], recent_mplus_runs: list[RecentMplusRun]) -> str:
+    """Candidate runs for "the dungeon"/"the raid" (feature 030, D5), whole entries only.
+
+    At most ``_RUNS_PER_KIND`` per kind, newest first as supplied; entries that no longer
+    fit the character budget are dropped rather than cut, so a report code is never clipped.
+    """
+    lines: list[str] = []
+    used = 0
+    for label, idents in (
+        ("Recent M+ runs", [_mplus_run_ident(r) for r in recent_mplus_runs[:_RUNS_PER_KIND]]),
+        ("Recent raids", [_raid_run_ident(r) for r in recent_raids[:_RUNS_PER_KIND]]),
+    ):
+        kept: list[str] = []
+        for ident in idents:
+            if used + len(ident) + 2 > _RUNS_CHARS:
+                break
+            kept.append(ident)
+            used += len(ident) + 2
+        if kept:
+            lines.append(f"- {label}: " + "; ".join(kept))
+    return "\n".join(["RECENT RUNS (this account):", *lines]) if lines else ""
 
 
 _CONTENT_LABEL = {"raid": "Raid", "mplus": "Mythic+"}
@@ -195,6 +243,8 @@ def build_preamble(
     known_players: list[KnownPlayer] = (),
     known_encounters: list[KnownEncounter] = (),
     known_guilds: list[str] = (),
+    recent_raids: list[RecentRaid] = (),
+    recent_mplus_runs: list[RecentMplusRun] = (),
     briefs: dict[tuple[str, str], BriefRecord] = {},
     available: dict[tuple[str, str], dict[str, bool]] = {},
     content_type: str = "raid",
@@ -249,4 +299,7 @@ def build_preamble(
         blocks.append("\n".join(profile_lines))
     if recent:
         blocks.append(recent)
+    runs = _runs_block(list(recent_raids), list(recent_mplus_runs))
+    if runs:
+        blocks.append(runs)
     return "\n".join(blocks)

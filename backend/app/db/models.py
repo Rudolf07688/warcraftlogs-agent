@@ -516,6 +516,36 @@ class GuildProfile(Base):
     )
 
 
+class ProfileProposal(Base):
+    """A profile change the agent proposed; nothing is written until the user approves it
+    (feature 029, design C9). Bound to its tenant, user and conversation; also the audit
+    record of every agent-initiated change. Added by 0016_profile_proposals."""
+
+    __tablename__ = "profile_proposals"
+    __table_args__ = (
+        Index("ix_profile_proposals_tenant_conversation", "tenant_id", "conversation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    # The agent message the proposal belongs to; set at turn end, as Artifact.message_seq.
+    message_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # "pending" | "applied" | "cancelled" | "expired"
+    status: Mapped[str] = mapped_column(String(10), server_default="pending", default="pending")
+    items: Mapped[list] = mapped_column(_JSON)  # list[ProposalItemOut], validated via Pydantic
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SpecGuide(Base):
     """One guide per ``(class, spec, content_type)`` — a GLOBAL, shared library (features 008, 015).
 

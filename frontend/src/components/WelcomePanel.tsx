@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { LuCalendarClock, LuRefreshCw, LuSkull, LuSwords, LuTimer, LuUsers } from "react-icons/lu";
 import { getRecentRaids, refreshRecentRaids } from "../api/restClient";
+import { useProfileChanged } from "../lib/profileEvents";
 import type { RecentMplusRun, RecentRaid, RecentRaidsResponse } from "../types";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
@@ -202,6 +203,11 @@ function WelcomePanelImpl({ onInvestigate, onInvestigateMplus, disabled }: Props
       alive.current = false;
     };
   }, [load]);
+
+  // Feature 031: an approved card changed the own characters, so their recent runs changed.
+  useProfileChanged((change) => {
+    if (change.targets.includes("own")) void load();
+  });
 
   // Poll while a refresh is running (research R6).
   useEffect(() => {
