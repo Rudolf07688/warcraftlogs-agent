@@ -393,6 +393,9 @@ async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
     known_players = await repo.list_recent_known_players(session, tenant_id=tenant_id)
     known_encounters = await repo.list_recent_known_encounters(session, tenant_id=tenant_id)
     known_guilds = await repo.list_recent_known_guilds(session, tenant_id=tenant_id)
+    # Feature 030 (D5): candidates for "the dungeon / the raid", from rows already stored.
+    recent_raids = await repo.list_recent_raids(session, tenant_id=tenant_id, limit=5)
+    recent_mplus = await repo.list_recent_mplus_runs(session, tenant_id=tenant_id, limit=5)
     # Feature 015 / US2: whole coaching briefs of the content type this turn is about,
     # for each profile character's resolved spec (published briefs only, never drafts).
     profile_chars = list(own) + list(friends)
@@ -412,6 +415,8 @@ async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
         known_players=known_players,
         known_encounters=known_encounters,
         known_guilds=known_guilds,
+        recent_raids=[raid for raid, _ in recent_raids],
+        recent_mplus_runs=[run for run, _ in recent_mplus],
         briefs=turn.briefs if turn else {},
         available=turn.available if turn else {},
         content_type=turn.content_type if turn else "raid",

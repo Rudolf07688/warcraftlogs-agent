@@ -29,6 +29,7 @@ except Exception as exc:  # noqa: BLE001
 from .tools.benchmark import compare_player_to_cohort
 from .tools.cooldowns import get_cooldown_usage
 from .guides.guides_tool import get_coaching_brief
+from .tools.participants import get_report_participants
 from .tools.report_tools import (
     get_character_encounter_rankings,
     get_character_zone_rankings,
@@ -131,6 +132,8 @@ Report deep-dive (one log):
 - `get_report_graph` — time series (DPS/HPS/resources over time).
 - `get_report_rankings` — parse percentiles for a fight; `get_report_player_details`
   — gear, talents, specs.
+- `get_report_participants` — the players of a report or fight (name, realm, region,
+  class, spec, role), no pets or NPCs.
 - `get_report_master_data` — actor/ability id maps.
 
 Character history:
@@ -207,6 +210,21 @@ partition when percentiles are used.
   `rdps` credits raid-buff support. Default to `dps` unless the question is about
   healing.
 </CONTEXT_RESOLUTION>
+
+<RUN_RESOLUTION>
+When the user refers to "the dungeon", "the key", "the run" (a Mythic+ run) or "the raid"
+(a raid) without a report, work out which run they mean, in this order:
+1. A report link or code in the message (a `#fight=` gives the fight).
+2. The one run of that kind already discussed in this conversation.
+3. Only when the user says "last", "latest" or similar: the newest run of that kind in
+   the RECENT RUNS block.
+4. Otherwise ask which run they mean, listing at most 5 candidates briefly (name, date,
+   report). Even a single candidate gets a one-line confirmation. Never guess silently:
+   a wrong run puts the wrong people into a profile.
+A report with several keys and no fight id is several candidates. Then look up the run's
+participants. Apply filters like "except the shaman" or "only the healers" yourself to
+the returned rows, which carry class and role.
+</RUN_RESOLUTION>
 
 <VALIDATION_BEFORE_ANALYSIS>
 Check tool outputs before drawing conclusions:
@@ -428,6 +446,7 @@ TOOLS = [
     get_report_graph,
     get_report_rankings,
     get_report_player_details,
+    get_report_participants,
     get_report_master_data,
     # Individual characters
     get_character_zone_rankings,
