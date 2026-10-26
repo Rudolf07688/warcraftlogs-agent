@@ -174,3 +174,30 @@
   guild-summary runs: check that the profile/"can change" lines don't leak into generated guide or
   summary text (fallback: register the profile group for chat only); (b) "make <friend> a healer"
   and "remove <friend>" produce a correct card once 031 is in.
+
+## D17 — 2026-10-26: 031 AC 6 at 390px (sc-208)
+- **Question:** At 390px the page overflows to 698px both before and after 031, because the app has
+  no mobile layout (fixed 260px sidebar, chat header controls). (A) Accept AC 6 at bubble level
+  for 390px; (B) add a minimal narrow-screen layout in 031; (C) clip with overflow-x: hidden?
+- **Answer:** (A). At 390px, AC 6 holds if bubbles never exceed their column, wide content scrolls
+  inside the bubble, and the page width doesn't grow compared with base (698px before and
+  after). 1280px and 1920px must have no page overflow at all (measured: none). The header and
+  sidebar overflow stays with sc-175 (mobile layout); a comment with the measurements was added there.
+- **Why:** The overflow predates this sprint and comes from the layout shell, not the bubbles. (B) is
+  scope creep into sc-175, and (C) hides controls. The AC wording in plan.md was too broad for a
+  bubble story; this is the PO's clarification of the PO's own AC.
+
+## D18 — 2026-10-26: 031 (sc-207 + sc-208) accepted
+- **Answer:** ACCEPT at 87c17d8. The PO re-ran everything in dev-b: backend 1171 passed, 6 skipped,
+  1 deselected; `npm test` 12 passed; `npm run build` clean. Read `api/proposals.py` (CSRF-authenticated,
+  service-only, follow-up saved only on the call that leaves `pending`, invalid names never echoed,
+  Markdown escaped), the ws.py proposal frame (built from the stored row, scoped to the user), and
+  ProposalCard (no `dangerouslySetInnerHTML`/StreamMarkdown). package.json adds only 4 dev deps + a
+  `test` script. AC 1–7 are met, AC 6 per D17.
+- **Accepted deviations:** Cancel uses the `secondary` button variant; the follow-up is saved in its own
+  short tenant_scope; ClassAvatar lives in its own module. At 390px the card's content overflows its
+  narrow bubble (no page widening); same root cause as sc-175.
+- **Owner live checks (Under Review):** the first real-model run of the example request, the two-tab
+  refresh, and that live WCL `playerDetails` keys match the inferred fixtures (D12).
+- **sc-213 note:** comment added (the reload mapping already attaches artifacts; look at the figure
+  rebuild or PlotlyArtifact).
