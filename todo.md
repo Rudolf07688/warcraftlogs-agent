@@ -1,41 +1,36 @@
 # ----- To Do ----- #
-- Deployment / Hosting Plan
-- Implement redis - confirm browser cache usage. 
-- ~~Rate limit llm for 429s (Done: 011)~~
-  ~~- Also catch 429 timeouts as tool errors so it doesn't break the agent loop~~
-- ~~[Small] Add option to add a multiple characters~~
-- PDF reports still look terrible with some html/markdown markers visible
-  - Need to use proper pdf generation
-- ~~Dashboard from previous pulled stats~~
-  - ~~Use this data as cache layer to answer questions (maybe fill in a template?)~~ -> Redis
-- Add symmantic search vector store
+Ticket IDs refer to the Shortcut "Team 1" board.
+
+## Agent / AI
+- Add symmantic search vector store `epic-100`
   - Look for data related to the user's query or whatever the agent decides would be a good search term.
   - Essentially used as a cache to speed up api call waiting.
   - Agent must be able to run more than one search terms in parallel
-- Add a "spin up sub-agent" tool call
+- Add a "spin up sub-agent" tool call `epic-101`
   - Agent creates an agent with a prompt (all tools available)
   - Long term: Give subagent REPL enviroment
-- Upload warcraftlogs file directly
-- Rework Raids page
-  - Make tabs instead of dropdown
-  - Show previously pulled data from that raid (participents, duration, my character's parse etc)
-  - Add button to start a new chat with the current "analyze this raid" message
-- Agent skills for how to assess WoW numbers in terms of performance
-- Select which character this chat is about ("filter") with checkboxes on every chat
-  - Default is no filter - all characters - more general overview unless asked specifically in chat
-    - e.g. "How did my mage do on ..."
-      - Bonus premium goal: the ai is able to change the UI filter button (as if the user clicked the filters in the UI) when a user asks a targeted question.
-- Every single fetch must be stored in the db
-  - Over time we will have saved all relavent data, building up a massive database of information
-  - I want to structure the app so that 80% of questions don't require external api calls (fast)
-- Unstructured directory `./wcl_agent/*.py`
-- API rate limits
+- Agent skills for how to assess WoW numbers in terms of performance `sc-149`
+- API rate limits `sc-163`
   - The agent is making too many requests to build the class guides, running out of request before completing the guide.
   - We must put together some agent skill or pattern to help the agent find the information it needs quicker and easier.
-- If current model returns 429 errors, switch to the second available model in class
+- If current model returns 429 errors, switch to the second available model in class `sc-164` `sc-176`
   - If already switch, switch back to the first model
     - If it still gives 429s then report that to the user and ask to try again in a bit.
-- Worker server (BIG - must be specced accordingly and done properly)
+- Self-aware agent `epic-203`
+  - Agent must be "self aware" of the harness it operates in, for example:
+    - When asked "Add the characters from the dungeon to my friends, except the shamen" it should be able to add it to your character profile
+  - Design docs: HTML architecture report with diagrams, animated arrows and the technologies per layer with the reasoning behind each choice `sc-209` `sc-210`
+
+## Data / Caching
+- Implement redis - confirm browser cache usage. `sc-147`
+- Every single fetch must be stored in the db `epic-103`
+  - Over time we will have saved all relavent data, building up a massive database of information
+  - I want to structure the app so that 80% of questions don't require external api calls (fast)
+- Upload warcraftlogs file directly `epic-102`
+
+## Infra / Platform
+- Deployment / Hosting Plan `sc-146`
+- Worker server (BIG - must be specced accordingly and done properly) `epic-196`
   - Have a separate container running for background tasks running independently
   - These tasks can include:
     - Building raid and dungeon guides continuously when new pieces of information are found
@@ -44,33 +39,45 @@
   - NATS message queue to handle tasks and failures
     - (maybe deadletter, maybe retry queue?)
     - NATS backend / task state captured with postgres for persistent data requirements (including stuff like audit trails)
-  
+- Unstructured directory `./wcl_agent/*.py` `sc-150` `sc-171`
 
+## Reports
+- ~~PDF reports still look terrible with some html/markdown markers visible `epic-99`~~
+  - ~~Need to use proper pdf generation~~
 
-**[ UI / Design ]**
-- Chat interface redesign
+## UI / Design
+- Chat interface redesign `epic-105`
   - mayby rather single-lane chat
   - Scroll to top of the question-message once answer is fully complete.
-- Slightly increase default font size
-- Showing to many recent raids in the welcome chat
-  - Rather include some recent m+ runs as well when available
-  - 6 raids and 6 dungeons max (most recent ones, in order)
-- In the left side bar, previous conversations must be above the "Raids" section.
-  - Generate conversation name based on the messages
-- On account creation take the player straight to the profile page and ask them to fill in at least one character
+  - Chat bubbles to scale to a percentage of the width of screen, not fixed amount `sc-208`
+- ~~Slightly increase default font size `sc-152`~~
+- ~~Showing to many recent raids in the welcome chat `sc-153`~~
+  - ~~Rather include some recent m+ runs as well when available~~
+  - ~~6 raids and 6 dungeons max (most recent ones, in order)~~
+- ~~In the left side bar, previous conversations must be above the "Raids" section. `sc-154`~~
+  - ~~Generate conversation name based on the messages `sc-155`~~
+- ~~Pinnabable chats `sc-165`~~
+  - ~~In chat window and sidebar.~~
+- Rework Raids page `epic-106`
+  - Make tabs instead of dropdown
+  - Show previously pulled data from that raid (participents, duration, my character's parse etc)
+  - Add button to start a new chat with the current "analyze this raid" message
+- Select which character this chat is about ("filter") with checkboxes on every chat `epic-107`
+  - Default is no filter - all characters - more general overview unless asked specifically in chat
+    - e.g. "How did my mage do on ..."
+      - Bonus premium goal: the ai is able to change the UI filter button (as if the user clicked the filters in the UI) when a user asks a targeted question.
+- On account creation take the player straight to the profile page and ask them to fill in at least one character `epic-162`
   - not forced / skippable
   - Also include a simple selector to select their main class
     - Also select main content (Raid / M+ or both)
     - This will start generating guides for that spec in the background.
-- Pinnabable chats
-  - In chat window and sidebar.
 
 ## QA Hits
 Medium findings still open:
-- PERF-001: the app waits for model discovery before serving anything.
-- SEC-003: remote images in model output can leak data.
-- SEC-004: the login rate limit is shared by all users behind the proxy.
-- SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty.
+- PERF-001: the app waits for model discovery before serving anything. `sc-156`
+- SEC-003: remote images in model output can leak data. `sc-157`
+- SEC-004: the login rate limit is shared by all users behind the proxy. `sc-158`
+- SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty. `sc-159`
 
 ---
 # Done 
@@ -144,4 +151,9 @@ Medium findings still open:
 - ~~Show that report is being generated / downloaded while waiting~~
   - ~~Feels like it doesn't work~~
 
-
+# ----- Moved from To Do (2026-10-26) ----- #
+- ~~Rate limit llm for 429s (Done: 011)~~
+  - ~~Also catch 429 timeouts as tool errors so it doesn't break the agent loop~~
+- ~~[Small] Add option to add a multiple characters~~
+- ~~Dashboard from previous pulled stats~~
+  - ~~Use this data as cache layer to answer questions (maybe fill in a template?)~~ -> Redis

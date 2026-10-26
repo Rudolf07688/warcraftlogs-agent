@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Backend, Data &amp; Infra</title>
+<meta name="description" content="WCL Agent architecture: deployment, FastAPI backend, auth and tenancy, database, Redis cache, Warcraft Logs client, PDF reports and the planned worker server.">
+<style>
+/* Theme tokens: copied verbatim from sprints/2026-10-25/sprint-report.html (fonts fall back to system fonts; nothing is fetched). */
+:root{
+  --bg:#f5f6f9; --surface:#ffffff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+
+/* Page */
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+h1,h2,h3{font-family:var(--f-display);font-stretch:85%;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,5vw,42px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:24px;font-weight:700}
+h3{font-size:18px;font-weight:700;margin-top:6px}
+p{margin:0;max-width:72ch}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--sunk);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.muted{color:var(--muted)}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+
+/* Top nav (identical on all three pages) */
+.topnav{display:flex;flex-wrap:wrap;gap:4px;padding-block:10px;border-bottom:1px solid var(--line)}
+.topnav a{color:var(--muted);text-decoration:none;font-weight:600;padding:7px 12px;border-radius:8px}
+.topnav a:hover{color:var(--fg);background:var(--sunk)}
+.topnav a[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
+
+header.top{padding-block:32px 8px;display:grid;gap:12px}
+.lede{font-size:18px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.pausebtn{appearance:none;font:600 14px var(--f-body);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+.pausebtn:hover{background:var(--sunk)}
+.pausebtn[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+
+/* Layer sections */
+.layer{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;margin-top:24px;display:grid;gap:12px;min-width:0}
+.layer>*{min-width:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chips .eyebrow{margin-right:4px}
+.chip{font:600 12.5px var(--f-mono);background:var(--sunk);border:1px solid var(--line);border-radius:99px;padding:2px 9px;overflow-wrap:anywhere}
+p.why{border-left:3px solid var(--ok);padding:4px 0 4px 12px}
+p.why cite{display:block;font:normal 12.5px var(--f-mono);color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+p.why.inferred{border-left-color:var(--warn)}
+.badge{display:inline-block;font:700 11px var(--f-body);letter-spacing:.06em;text-transform:uppercase;border-radius:6px;padding:1px 7px;margin-right:6px;vertical-align:1px;border:1.5px solid currentColor}
+.badge.inf{color:var(--warn);background:var(--warn-soft)}
+.badge.cited{color:var(--ok);background:var(--ok-soft)}
+.badge.planned{color:var(--q3);background:transparent}
+.layer.planned{border-style:dashed;border-color:var(--q3)}
+ul,ol{margin:0;padding-left:22px}
+li{margin-block:3px}
+.note{background:var(--sunk);border-radius:8px;padding:10px 14px}
+
+/* Tables */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--line)}
+th{background:var(--sunk);font-weight:700}
+tr:last-child td{border-bottom:0}
+.tablewrap code{overflow-wrap:break-word}
+@media (max-width:600px){.layer{padding:14px}}
+
+/* Diagrams (inline SVG) */
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;margin:0}
+.diagram svg{width:100%;height:auto;display:block}
+.diagram figcaption{font-size:14px;color:var(--muted);margin-top:8px}
+.dg text{fill:var(--fg);font-family:var(--f-body);font-size:17px}
+.dg .t{font-weight:700}
+.dg .sub{fill:var(--muted);font-size:14px}
+.dg .lbl{fill:var(--muted);font-size:14px;paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
+.dg .node{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+.dg .node.ext{fill:var(--sunk)}
+.dg .node.store{fill:var(--accent-soft);stroke:var(--accent)}
+.dg .node.core{stroke:var(--accent);stroke-width:2}
+.dg .zone{fill:none;stroke:var(--muted);stroke-width:1.2;stroke-dasharray:6 5}
+.dg .zlbl{fill:var(--muted);font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.dg .life{stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5}
+.dg .ah{fill:var(--accent)}
+.dg .ah2{fill:var(--muted)}
+.flow{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-dasharray:9 6;animation:flow 1.1s linear infinite}
+.flow.ret{stroke:var(--muted)}
+@keyframes flow{to{stroke-dashoffset:-15}}
+html.paused .flow{animation-play-state:paused}
+@media (prefers-reduced-motion: reduce){.flow{animation:none;stroke-dasharray:none}}
+
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:14px;color:var(--muted);display:grid;gap:8px}
+footer ul{columns:2 260px}
+footer code{font-size:12.5px}
+
+/* Page furniture shared by the detail pages */
+.toc{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:15px;padding-top:4px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px;color:var(--muted)}
+.steps{font-size:15px;color:var(--fg)}
+.steps li::marker{color:var(--muted);font-family:var(--f-mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="topnav"><a href="index.html">Overview</a><a href="backend-data-infra.html" aria-current="page">Backend, data &amp; infra</a><a href="agent-frontend.html">Agent &amp; frontend</a></nav>
+
+<header class="top">
+  <span class="eyebrow">Architecture · detail page</span>
+  <h1>Backend, data &amp; infra</h1>
+  <p class="lede">Everything below the chat UI and around the agent: how the stack is deployed, the FastAPI app, login and tenant isolation, the database, the Redis cache, the Warcraft Logs client and the PDF report pipeline. The agent runtime and the React UI are on <a href="agent-frontend.html">Agent &amp; frontend</a>.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="legend"><span><span class="badge cited">Cited</span>reason recorded in the repo</span><span><span class="badge inf">Inferred</span>no recorded reason</span><span><span class="badge planned">Planned, not built</span></span></span>
+  </div>
+  <nav class="toc" aria-label="On this page">
+    <a href="#deploy">Deployment &amp; runtime</a><a href="#backend">Backend</a><a href="#auth">Auth &amp; tenancy</a><a href="#data">Data</a><a href="#cache">Caching &amp; fetch store</a><a href="#wcl">WCL client</a><a href="#blizzard">Blizzard / Battle.net</a><a href="#reports">PDF reports</a><a href="#planned">Worker server</a><a href="#drift">Drift &amp; open points</a>
+  </nav>
+</header>
+
+<!-- ============================================================ DEPLOY -->
+<section class="layer" id="deploy">
+  <h2>Deployment &amp; runtime</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">requires-python &gt;=3.14</span><span class="chip">uv (uv.lock)</span><span class="chip">postgres:17</span><span class="chip">redis:8-alpine</span><span class="chip">uvicorn[standard]&gt;=0.30.0</span><span class="chip">python-dotenv&gt;=1.0.1</span><span class="chip">pydantic-settings&gt;=2.4.0</span></div>
+
+  <h3>What runs, and where it lives</h3>
+  <p><code>docker-compose.yml</code> defines four services. <code>docker compose up --build</code> brings up the whole stack locally.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Service</th><th>Image / build</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>db</code></td><td><code>postgres:17</code></td><td>Named volume <code>pgdata</code>. Port bound to <code>127.0.0.1:5432</code> only. Health check <code>pg_isready</code>. <code>POSTGRES_USER</code> is the table owner. The app's runtime role (<code>APP_DB_USER</code>) is created by migration <code>0004_rls</code>, not by an init script.</td></tr>
+      <tr><td><code>redis</code></td><td><code>redis:8-alpine</code></td><td><code>--maxmemory 256mb --maxmemory-policy allkeys-lru</code>, no RDB snapshot, no AOF. Port <code>127.0.0.1:6379</code> only. Health check <code>redis-cli ping</code>.</td></tr>
+      <tr><td><code>backend</code></td><td><code>backend/Dockerfile</code></td><td>Runs <code>uv sync --frozen --no-dev</code>, then <code>uvicorn backend.app.main:app</code> on port 8000. Waits for healthy <code>db</code> and <code>redis</code>. Connects as the runtime role through <code>DATABASE_URL</code>. Alembic uses <code>DATABASE_OWNER_URL</code>. Google Application Default Credentials (ADC) are mounted read-only at <code>/gcp/adc.json</code>. The image also carries the Pango/HarfBuzz libraries and DejaVu, Noto CJK and Noto Color Emoji fonts for PDF rendering.</td></tr>
+      <tr><td><code>frontend</code></td><td><code>frontend/Dockerfile</code>, target <code>dev</code></td><td>Vite dev server on port 5173. It proxies <code>/api</code> and <code>/ws</code> to <code>backend:8000</code> (<code>frontend/vite.config.ts</code>). Target <code>prod</code> builds static files served by nginx with the same proxy paths (<code>frontend/nginx.conf</code>).</td></tr>
+    </tbody>
+  </table></div>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 620" role="img" aria-labelledby="ct-title ct-desc">
+      <title id="ct-title">Container and deployment diagram</title>
+      <desc id="ct-desc">On the developer host, Docker Compose runs four containers: frontend, backend, db and redis. The browser reaches the frontend on port 5173, which proxies to the backend. The backend uses db and redis on the compose network and reads the host .env and the gcloud credentials file. Host tools reach db and redis on loopback ports. The backend calls Vertex AI and the Warcraft Logs API over HTTPS.</desc>
+      <defs>
+        <marker id="ct-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="ct-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="zone" x="10" y="10" width="660" height="600" rx="14"/>
+      <text class="zlbl" x="26" y="34">Developer host</text>
+      <rect class="zone" x="26" y="120" width="330" height="475" rx="12"/>
+      <text class="zlbl" x="42" y="143">docker compose network</text>
+      <rect class="zone" x="690" y="200" width="260" height="300" rx="14"/>
+      <text class="zlbl" x="706" y="224">Internet</text>
+
+      <rect class="node" x="40" y="160" width="300" height="80" rx="10"/>
+      <text class="t" x="190" y="192" text-anchor="middle">frontend</text>
+      <text class="sub" x="190" y="215" text-anchor="middle">Vite dev server :5173</text>
+
+      <rect class="node core" x="40" y="290" width="300" height="110" rx="10"/>
+      <text class="t" x="190" y="322" text-anchor="middle">backend</text>
+      <text class="sub" x="190" y="345" text-anchor="middle">uvicorn backend.app.main:app</text>
+      <text class="sub" x="190" y="367" text-anchor="middle">:8000 · FastAPI + agent</text>
+
+      <rect class="node store" x="40" y="465" width="145" height="110" rx="10"/>
+      <text class="t" x="112" y="497" text-anchor="middle">db</text>
+      <text class="sub" x="112" y="520" text-anchor="middle">postgres:17</text>
+      <text class="sub" x="112" y="542" text-anchor="middle">vol pgdata</text>
+
+      <rect class="node store" x="195" y="465" width="145" height="110" rx="10"/>
+      <text class="t" x="267" y="497" text-anchor="middle">redis</text>
+      <text class="sub" x="267" y="520" text-anchor="middle">redis:8-alpine</text>
+      <text class="sub" x="267" y="542" text-anchor="middle">256 MB LRU</text>
+
+      <rect class="node ext" x="385" y="160" width="270" height="80" rx="10"/>
+      <text class="t" x="520" y="192" text-anchor="middle">Browser</text>
+      <text class="sub" x="520" y="215" text-anchor="middle">localhost:5173</text>
+
+      <rect class="node ext" x="385" y="300" width="270" height="100" rx="10"/>
+      <text class="t" x="520" y="330" text-anchor="middle">Host files</text>
+      <text class="sub" x="520" y="353" text-anchor="middle">.env (env_file)</text>
+      <text class="sub" x="520" y="375" text-anchor="middle">gcloud ADC → /gcp/adc.json (ro)</text>
+
+      <rect class="node ext" x="385" y="480" width="270" height="95" rx="10"/>
+      <text class="t" x="520" y="510" text-anchor="middle">Host tools (uv run)</text>
+      <text class="sub" x="520" y="533" text-anchor="middle">bin/*.sh · alembic · backend.cli</text>
+      <text class="sub" x="520" y="555" text-anchor="middle">via 127.0.0.1 ports</text>
+
+      <rect class="node ext" x="705" y="245" width="230" height="80" rx="10"/>
+      <text class="t" x="820" y="278" text-anchor="middle">Vertex AI</text>
+      <text class="sub" x="820" y="301" text-anchor="middle">Gemini · Claude</text>
+
+      <rect class="node ext" x="705" y="400" width="230" height="80" rx="10"/>
+      <text class="t" x="820" y="433" text-anchor="middle">Warcraft Logs API</text>
+      <text class="sub" x="820" y="456" text-anchor="middle">OAuth + GraphQL v2</text>
+
+      <path class="flow" marker-end="url(#ct-ah)" d="M385,200 H342"/>
+      <text class="lbl" x="363" y="190" text-anchor="middle">:5173</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M190,240 V288"/>
+      <text class="lbl" x="200" y="270">proxy /api, /ws</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M112,400 V463"/>
+      <text class="lbl" x="120" y="437">SQL</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M267,400 V463"/>
+      <text class="lbl" x="275" y="437">RESP</text>
+      <path class="flow ret" marker-end="url(#ct-ah2)" d="M385,350 H342"/>
+      <path class="flow" marker-end="url(#ct-ah)" d="M310,290 V268 H703"/>
+      <text class="lbl" x="600" y="262" text-anchor="middle">HTTPS · ADC</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M320,400 V440 H703"/>
+      <text class="lbl" x="600" y="434" text-anchor="middle">HTTPS GraphQL</text>
+      <path class="flow ret" marker-end="url(#ct-ah2)" d="M385,527 H342"/>
+    </svg>
+    <figcaption>Local stack as defined in <code>docker-compose.yml</code>. Only the frontend (5173) and backend (8000) ports are open to the LAN. Postgres and Redis bind to loopback, for host tools only.</figcaption>
+  </figure>
+
+  <h3>Configuration and secrets</h3>
+  <ul>
+    <li>All secrets and settings come from the root <code>.env</code> (gitignored). <code>.env.example</code> is the tracked template, with every setting commented.</li>
+    <li><code>backend/app/config.py</code> reads them into one typed <code>Settings(BaseSettings)</code> from pydantic-settings. It also calls <code>load_dotenv()</code>, because <code>wcl_agent/</code> and ADK read <code>os.getenv</code> directly.</li>
+    <li>Google auth is ADC everywhere. No API key or key file is in the repo or in <code>.env</code>.</li>
+  </ul>
+
+  <h3>Start and database-init scripts</h3>
+  <ul>
+    <li><code>bin/00_init_migrate_db.sh</code>: <code>uv sync --all-extras</code> (it creates <code>.venv</code> if that fails), starts only <code>db</code>, then runs <code>alembic upgrade head</code>. If the upgrade fails, it tries the fresh-database path: upgrade to <code>0002_auth_tenancy</code>, run <code>backend.cli.bootstrap_admin</code>, then upgrade to head.</li>
+    <li><code>bin/01_start_app.sh [--build]</code>: runs the init script, then <code>docker compose up -d</code>, prints <code>docker compose ps</code> and follows the logs.</li>
+    <li><code>backend/cli/init_db.py</code> does the same migrate → founder → migrate sequence as one idempotent Python command (<code>uv run python -m backend.cli.init_db</code>).</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">One <code>docker compose up</code> gives a full local stack, and secrets come only from the root <code>.env</code> through <code>env_file</code>. The owner asked for exactly this: "locally testable with a docker compose file that injects our root .env file".<cite>specs/001-streaming-chat-frontend/research.md §6 · specs/001-streaming-chat-frontend/spec.md (Input)</cite></p>
+  <p class="why">ADC is mounted read-only rather than shipping a key, so the same code path works unchanged on Cloud Run with an attached service account.<cite>specs/001-streaming-chat-frontend/research.md §6 · documentation/deployment.md</cite></p>
+  <p class="why">Config is read from environment variables, so only the secret source changes between local <code>.env</code> and Secret Manager in production.<cite>specs/001-streaming-chat-frontend/research.md §9 · backend/app/config.py (module docstring)</cite></p>
+  <p class="why">Postgres and Redis bind to loopback only (QA finding SEC-001). Redis has no auth, so it must not face the LAN.<cite>docker-compose.yml (comments on db and redis ports)</cite></p>
+  <p class="why">Redis runs without persistence and with LRU eviction. It is a disposable cache, so recreating the container just empties it.<cite>specs/014-redis-wcl-cache/research.md R11 · docker-compose.yml</cite></p>
+  <p class="why">There are two database roles. The owner runs migrations, and the app connects as a runtime role without BYPASSRLS, so row-level security actually constrains it.<cite>specs/006-multi-tenancy/research.md R4</cite></p>
+  <p class="why">The founder must exist before <code>0003_tenant_columns</code> backfills existing rows to the founder's tenant, which is why init is a three-step sequence.<cite>backend/cli/init_db.py (docstring) · specs/006-multi-tenancy/research.md R8</cite></p>
+  <p class="why">The frontend image uses a glibc Node base, not Alpine. Tailwind v4's native binaries crash on musl. The <code>prod</code> target exists so production serves a minified, code-split bundle (PERF-011).<cite>frontend/Dockerfile (header comment)</cite></p>
+  <p class="why">Python 3.14 and uv are fixed by the constitution's stack section (<code>uv sync</code>/<code>uv add</code>/<code>uv run</code>, a committed <code>uv.lock</code>). The constitution states the standard but gives no reason for it.<cite>.specify/memory/constitution.md (Technology Stack &amp; Standards)</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Reason not recorded for choosing Python 3.14 and uv specifically. Plausible trade-off: uv gives fast, lockfile-reproducible installs, which the Dockerfile relies on (<code>uv sync --frozen</code>). Pinning the newest Python avoids a later upgrade, at the cost of needing every dependency to have 3.14 wheels.</p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Reason not recorded for the <code>bin/</code> scripts (added in commits <code>025343b</code> and <code>dc48c83</code>, with no spec). Plausible trade-off: they wrap the quickstart steps into one command for local bring-up. They duplicate the logic of <code>backend/cli/init_db.py</code>, and any upgrade failure triggers the bootstrap path.</p>
+
+  <h3>Deployment plan status</h3>
+  <p><span class="badge planned">Planned, not built</span><code>documentation/deployment.md</code> is the design-for-later plan, and ticket <code>sc-146</code> (Deployment / Hosting Plan) is still open. The plan: backend on Cloud Run with an attached service account, Cloud SQL for PostgreSQL 17, secrets from Secret Manager as environment variables, session affinity for WebSockets, and CPU always allocated so in-process background refreshes are not throttled. A managed Redis for production is out of scope so far (<code>specs/014-redis-wcl-cache/plan.md</code>, Technical Context).</p>
+  <p class="note">Parts of <code>documentation/deployment.md</code> are out of date. It still says access is "public + unauthenticated for v1" and that tables are made by <code>create_all</code>. Feature 006 replaced both with invite-only login and Alembic.</p>
+</section>
+
+<!-- ============================================================ BACKEND -->
+<section class="layer" id="backend">
+  <h2>Backend (FastAPI)</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fastapi&gt;=0.115.0</span><span class="chip">uvicorn[standard]&gt;=0.30.0</span><span class="chip">pydantic-settings&gt;=2.4.0</span><span class="chip">asyncio</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/main.py</code> builds the app. The lifespan starts the fetch writer (see <a href="#cache">caching</a>), then runs the boot sequence as a background task: genai serializers, ADK session tables, the live class roster, the guide loader, model discovery and greeting priming. A <code>ReadinessGate</code> middleware returns 503 to everything except <code>/api/health</code> until boot finishes, and the frontend shows the boot progress. On shutdown it drains the fetch writer, closes the WCL HTTP pools and Redis clients, and disposes the database engine.</li>
+    <li>The code is layered: routers in <code>backend/app/api/</code> → logic in <code>backend/app/services/</code> → queries in <code>backend/app/db/repository.py</code> and <code>backend/app/repositories/</code> → ORM in <code>backend/app/db/models.py</code>. Boundary types live in <code>backend/app/schemas.py</code>.</li>
+    <li>The standalone <code>wcl_agent/</code> package holds the WCL client, the cache, the agent tools and the model helpers. It has no database imports. The backend plugs persistence in through a callback.</li>
+    <li>Background work runs in the same process: <code>backend/app/services/background.py</code> (<code>spawn</code>) holds task references and skips duplicate keys.</li>
+  </ul>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Router file</th><th>Prefix</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>api/auth.py</code></td><td><code>/api/auth</code></td><td>Login, logout, <code>/me</code>, invitation accept, password reset</td></tr>
+      <tr><td><code>api/admin_users.py</code></td><td><code>/api/admin</code></td><td>Platform admin: invitations, users</td></tr>
+      <tr><td><code>api/admin_guides.py</code></td><td><code>/api/admin</code></td><td>Admin guide operations</td></tr>
+      <tr><td><code>api/cache_stats.py</code></td><td><code>/api/admin</code></td><td><code>GET /api/admin/cache-stats</code>: per-family hit rates</td></tr>
+      <tr><td><code>api/models.py</code></td><td><code>/api</code></td><td>Discovered model list for the dropdown</td></tr>
+      <tr><td><code>api/conversations.py</code></td><td><code>/api/conversations</code></td><td>Chat list, open, pin, rename, delete</td></tr>
+      <tr><td><code>api/reports.py</code></td><td><code>/api/conversations</code></td><td>PDF downloads (see <a href="#reports">reports</a>)</td></tr>
+      <tr><td><code>api/profile.py</code></td><td><code>/api/profile</code></td><td>Own characters, friends, guild</td></tr>
+      <tr><td><code>api/guides.py</code></td><td><code>/api/guides</code></td><td>Class/spec guide library</td></tr>
+      <tr><td><code>api/raids.py</code></td><td><code>/api/raids</code></td><td>Tracked raids</td></tr>
+      <tr><td><code>api/recent_raids.py</code></td><td><code>/api/recent-raids</code></td><td>Welcome-page recent raids and Mythic+ runs</td></tr>
+      <tr><td><code>api/greeting.py</code></td><td><code>/api</code></td><td>Cached new-chat greeting</td></tr>
+      <tr><td><code>api/ws.py</code></td><td><code>/ws/chat</code></td><td>Streaming chat turns (covered on <a href="agent-frontend.html">Agent &amp; frontend</a>)</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Paths in the table are relative to <code>backend/app/</code>. There are 43 HTTP and WebSocket route handlers in total. Health is <code>GET /health</code> and <code>GET /api/health</code> in <code>main.py</code>.</p>
+
+  <h3>Why</h3>
+  <p class="why">FastAPI with asyncio is a constitution rule: all endpoints are <code>async def</code>, and request-path I/O is non-blocking. "A single async framework keeps I/O-bound work (the dominant cost in this app — external API calls) efficient and the backend consistent." The owner also asked for it in the first feature.<cite>.specify/memory/constitution.md Principle V · specs/001-streaming-chat-frontend/spec.md (Input)</cite></p>
+  <p class="why">Blocking or CPU-heavy work (password hashing, model probes, PDF rendering) is pushed to threads, not run on the event loop.<cite>.specify/memory/constitution.md Principle V · specs/002-agent-enhancements/research.md §7</cite></p>
+  <p class="why">Pydantic models are for data that crosses a boundary (API bodies, messages, external payloads such as cached WCL values). Frozen dataclasses are for internal value objects and config, such as <code>RequestIdentity</code>, <code>FetchedResponse</code>, <code>ReportDocument</code> and the cache's <code>FamilyConfig</code>. Pydantic itself is not listed in <code>pyproject.toml</code>; it comes in through FastAPI and pydantic-settings.<cite>.specify/memory/constitution.md Principle IV</cite></p>
+  <p class="why">Boot runs in the background so the port opens at once and <code>/api/health</code> can show which step failed instead of a dead port. After boot, <code>gc.freeze()</code> moves the startup heap out of the garbage collector's reach. This cut a measured ~80 ms event-loop stall per large WCL payload to ~3 ms.<cite>backend/app/main.py (_boot docstring and comments, feature 013 SC-008)</cite></p>
+  <p class="why">Background jobs are in-process tasks, with a database row as the lock where several instances could race. This needs no job queue (Principle III). An in-memory set alone would break on restart and with several instances, and Cloud Tasks was rejected in clarification.<cite>specs/013-welcome-recent-raids/research.md R4, R5</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Reason not recorded for uvicorn as the server (it comes with the FastAPI choice). Plausible trade-off: it is the default ASGI server for FastAPI. The <code>[standard]</code> extra brings the WebSocket and fast-loop support the chat needs. It runs a single worker today, which the in-process rate limiter and background tasks assume.</p>
+</section>
+
+<!-- ============================================================ AUTH -->
+<section class="layer" id="auth">
+  <h2>Auth &amp; multi-tenancy</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pwdlib[argon2]&gt;=0.2.1</span><span class="chip">PostgreSQL row-level security</span><span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Invite-only accounts.</b> A platform admin invites by email. The link is shown once to the admin to share by hand, because no email provider is configured (<code>backend/app/services/link_delivery.py</code>). The first admin is created only from the command line (<code>backend/cli/bootstrap_admin.py</code>). No HTTP endpoint can do it.</li>
+    <li><b>Passwords</b> (<code>backend/app/auth/passwords.py</code>): Argon2id via pwdlib, run in a thread under a bounded semaphore. A minimum length of 15 is checked before hashing. Unknown emails are checked against a dummy hash, so timing doesn't reveal which accounts exist.</li>
+    <li><b>Sessions</b> (<code>backend/app/auth/sessions.py</code>, <code>backend/app/auth/tokens.py</code>): a random opaque token in a <code>__Host-</code> cookie (Secure, HttpOnly, SameSite=Lax). Only its sha256 digest is stored, in <code>auth_sessions</code>. Sessions have an idle and an absolute expiry, and <code>last_seen_at</code> writes are throttled.</li>
+    <li><b>CSRF</b> (<code>backend/app/auth/csrf.py</code>): every unsafe request needs an <code>X-CSRF-Token</code> header, computed as HMAC(<code>SECRET_KEY</code>, session id), plus an <code>Origin</code>/<code>Referer</code> check against <code>SITE_URL</code>. The WebSocket handshake checks the same cookie and Origin before accepting.</li>
+    <li><b>Request identity</b> (<code>backend/app/auth/dependencies.py</code>, <code>backend/app/tenancy/context.py</code>): <code>require_session</code> builds a frozen <code>RequestIdentity</code> from the session only. <code>get_tenant_db</code> opens a transaction and sets <code>app.tenant_id</code> and <code>app.user_id</code> transaction-locally with <code>set_config(…, true)</code>. Every tenant-owned repository function also takes a keyword-only <code>tenant_id</code>.</li>
+    <li><b>Row-level security.</b> Policy <code>tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid</code> is enabled and forced on 14 tenant-owned tables. The list is in <a href="#data">Data</a>. <code>spec_guides</code>, <code>guide_inaccuracy_reports</code> and <code>raw_fetches</code> are global by design. ADK's own session tables are isolated by ADK <code>user_id</code> = tenant id, not by RLS.</li>
+    <li><b>Login rate limit</b> (<code>backend/app/auth/rate_limit.py</code>): an in-process limiter behind a <code>RateLimiter</code> protocol. Progressive delay starts after 5 consecutive failures and is capped at 30 s. It is never a permanent lockout. Counts are kept per account (<code>users.failed_login_count</code>, <code>users.login_blocked_until</code>) and per source in memory. Public token endpoints get fixed-window caps.</li>
+    <li><b>Audit and redaction.</b> <code>auth_audit_events</code> is append-only. <code>backend/app/auth/redaction.py</code> strips values of password, token, cookie and csrf keys from logs.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why"><code>documentation/multi_tenancy_guide.md</code> is the governing contract. Feature 006 adopts it and records only app-specific adaptations.<cite>specs/006-multi-tenancy/research.md (preamble)</cite></p>
+  <p class="why">pwdlib's recommended Argon2id hasher is what the guide prescribes. Running it off the event loop under a semaphore keeps the backend non-blocking and bounds CPU and memory during a login flood. <b>Alternatives:</b> passlib (less aligned with current FastAPI guidance); hashing on the event loop; a new dummy hash per request.<cite>specs/006-multi-tenancy/research.md R2 · documentation/multi_tenancy_guide.md (Password hashing)</cite></p>
+  <p class="why">Opaque server-side sessions in a <code>__Host-</code> cookie, with a header CSRF token. Same-origin deployment through the Vite or nginx proxy makes this the simplest correct design, with no credentialed CORS. <b>Alternatives:</b> JWT (the guide forbids it, and JWTs can't be revoked server-side); double-submit CSRF cookie (weaker); tokens in <code>localStorage</code> (readable by XSS).<cite>specs/006-multi-tenancy/research.md R3</cite></p>
+  <p class="why">RLS plus a separate non-owner runtime role is defence in depth for the feature's worst risk, cross-tenant leaks. The tenant id is set transaction-locally, because session-level <code>SET</code> leaks across pooled connections. <b>Alternatives:</b> app-level scoping only (a single point of failure); one superuser role (bypasses RLS).<cite>specs/006-multi-tenancy/research.md R4</cite></p>
+  <p class="why">An explicit <code>tenant_id</code> argument on every repository function, with one combined id-and-tenant lookup that returns 404 for a foreign row. <b>Alternative:</b> a global SQLAlchemy event that injects filters, rejected as too implicit and easy to bypass.<cite>specs/006-multi-tenancy/research.md R5</cite></p>
+  <p class="why">The rate limiter is in-process at single-process scale, behind an interface so a shared backend can replace it. <b>Alternative:</b> Redis at the time (speculative infrastructure, YAGNI).<cite>specs/006-multi-tenancy/research.md R7 · specs/006-multi-tenancy/plan.md (Constitution Check)</cite></p>
+  <p class="why"><code>tenants</code> and <code>tenant_memberships</code> are kept although v1 is one user per tenant. This matches the guide's RLS contract and avoids a second painful migration later.<cite>specs/006-multi-tenancy/plan.md (Constitution Check, Principle III)</cite></p>
+  <p class="why">Guides are a global library without RLS, because they are generic class advice, not user data. This is the one deliberate deviation from tenant scoping.<cite>specs/008-profile-class-pages/research.md Decision 1</cite></p>
+  <p class="note"><b>Drift from research:</b> R3 planned a stored sha256 of a random CSRF token. The code instead derives it statelessly with HMAC, so a reload or another tab recovers the same token. The reason is recorded in the <code>backend/app/auth/csrf.py</code> docstring. Also, the guide recommends shared limits in Redis once there are several workers. Redis now exists (feature 014), but the limiter is still in-process.</p>
+</section>
+
+<!-- ============================================================ DATA -->
+<section class="layer" id="data">
+  <h2>Data (PostgreSQL, SQLAlchemy, Alembic)</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">postgres:17</span><span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span><span class="chip">asyncpg&gt;=0.29.0</span><span class="chip">alembic&gt;=1.13.0</span><span class="chip">aiosqlite&gt;=0.22.1 (test)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/db/session.py</code>: one async engine (<code>create_async_engine</code>, <code>pool_pre_ping</code>). The pool defaults to 10 connections + 20 overflow with a 10 s timeout (<code>DB_POOL_*</code>). ADK's <code>DatabaseSessionService</code> shares the pool.</li>
+    <li><code>backend/app/db/models.py</code>: the ORM. JSON columns become JSONB on Postgres, and UUIDs use the generic <code>Uuid</code> type, so the same models also run on SQLite in tests.</li>
+    <li><code>backend/migrations/</code> (<code>env.py</code>, <code>versions/0001…0015</code>) with <code>backend/alembic.ini</code>. Alembic connects as the owner role. ADK creates its own session tables with <code>prepare_tables()</code>, outside Alembic.</li>
+  </ul>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Area</th><th>Tables (from <code>backend/app/db/models.py</code>)</th><th>Scope</th></tr></thead>
+    <tbody>
+      <tr><td>Identity &amp; auth</td><td><code>users</code>, <code>tenants</code>, <code>tenant_memberships</code>, <code>invitations</code>, <code>auth_sessions</code>, <code>password_reset_tokens</code>, <code>auth_audit_events</code></td><td>Global auth tables</td></tr>
+      <tr><td>Chat</td><td><code>conversations</code>, <code>messages</code>, <code>artifacts</code> (agent chart specs), <code>captured_graphs</code> (WCL graph JSON for PDFs)</td><td>Tenant + RLS</td></tr>
+      <tr><td>Profile</td><td><code>user_characters</code> (role <code>self</code>, up to 10, or <code>friend</code>), <code>guild_profile</code></td><td>Tenant + RLS</td></tr>
+      <tr><td>Raids &amp; activity</td><td><code>tracked_raids</code>, <code>recent_raids</code>, <code>recent_raid_characters</code>, <code>recent_raid_refresh</code> (per-tenant refresh claim), <code>recent_mplus_runs</code>, <code>recent_mplus_run_characters</code></td><td>Tenant + RLS</td></tr>
+      <tr><td>Agent memory</td><td><code>known_players</code>, <code>known_encounters</code></td><td>Tenant + RLS</td></tr>
+      <tr><td>Guides</td><td><code>spec_guides</code> (one row per class, spec and content type: published version and latest run), <code>guide_inaccuracy_reports</code></td><td>Global, no RLS</td></tr>
+      <tr><td>Raw WCL store</td><td><code>raw_fetches</code> (one row per query key; <code>payload</code> JSONB, <code>report_codes</code> JSONB with a GIN index)</td><td>Global, no RLS</td></tr>
+      <tr><td>ADK sessions</td><td>Created by ADK itself, not in our ORM</td><td>ADK <code>user_id</code> = tenant id</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Migration</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>0001_baseline</code></td><td>Snapshot of the pre-Alembic tables</td></tr>
+      <tr><td><code>0002_auth_tenancy</code></td><td>Auth and tenant tables</td></tr>
+      <tr><td><code>0003_tenant_columns</code></td><td>Phased <code>tenant_id</code> on 7 tables: nullable, backfill to founder, NOT NULL, indexes</td></tr>
+      <tr><td><code>0004_rls</code></td><td>Enable and force RLS, add policies, create the runtime role and its grants</td></tr>
+      <tr><td><code>0005_known_entities</code> … <code>0015_rescan_mplus_runs</code></td><td>Known players and encounters, raid role, spec guides and their provenance and content types, recent raids, conversation pin and title, <code>raw_fetches</code>, recent M+ runs, and a data-only M+ re-scan</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Why</h3>
+  <p class="why">PostgreSQL 17 was the owner's call ("We will spin up a backend postgres 17 database to keep track of app state over time"). The deployment plan targets Cloud SQL for PostgreSQL 17.<cite>specs/001-streaming-chat-frontend/spec.md (Input) · documentation/deployment.md</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Reason not recorded for Postgres over other databases. Plausible trade-off: later features lean on Postgres-only features, namely row-level security (006), JSONB with GIN indexes (020) and <code>citext</code> emails. Tests run on SQLite and so skip RLS, which a separate Postgres-only RLS test has to cover.</p>
+  <p class="why">The app owns a small schema with SQLAlchemy 2.0 async and asyncpg, so history is queryable for the sidebar and survives restarts. <b>Alternative:</b> ADK <code>DatabaseSessionService</code> as the only store, deferred because it couples our data to ADK's internal schema. ADK sessions were added alongside later, in feature 002.<cite>specs/001-streaming-chat-frontend/research.md §5</cite></p>
+  <p class="why">Alembic replaced <code>create_all</code> plus hand-written <code>ALTER … IF NOT EXISTS</code>. Multi-tenancy needed phased NOT NULL backfills, foreign keys, per-tenant unique constraints, and RLS plus grants, all reversible and in order. <b>Alternatives:</b> more hand-written ALTERs (no phased backfill, no downgrade); drop and recreate (destroys the founder's data); SQLModel (needless churn).<cite>specs/006-multi-tenancy/research.md R1</cite></p>
+  <p class="why">The models are portable to SQLite (JSON→JSONB variant, generic <code>Uuid</code>), so one set of models backs both production and fast unit tests.<cite>backend/app/db/models.py (module comments) · specs/006-multi-tenancy/research.md R1</cite></p>
+  <p class="why"><code>raw_fetches</code> is global because Warcraft Logs data is public, like the shared Redis cache (decision 6). <code>report_codes</code> is a separate JSONB array with a GIN index, so batched rows can be found by report code without parsing GraphQL. <b>Alternatives:</b> a key inside <code>params</code>; guessing from variable names.<cite>specs/020-fetch-persistence/research.md R7 · backend/migrations/versions/0013_raw_fetches.py</cite></p>
+  <p class="why">The per-tenant recent-raids refresh claim is a row in <code>recent_raid_refresh</code> taken with one <code>UPDATE … RETURNING</code>. It works the same on one instance or many and recovers on its own after a crash. <b>Alternatives:</b> an in-memory set; <code>pg_advisory_lock</code> (per connection, records no outcome, and SQLite doesn't have it).<cite>specs/013-welcome-recent-raids/research.md R4</cite></p>
+</section>
+
+<!-- ============================================================ CACHE -->
+<section class="layer" id="cache">
+  <h2>Caching (Redis) &amp; fetch persistence</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">redis&gt;=6 (redis.asyncio)</span><span class="chip">redis:8-alpine</span><span class="chip">fakeredis&gt;=2.30 (test)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>wcl_agent/cache/cache.py</code>: <code>get_or_load(family, key, model, loader, ttl=…, force_refresh=…)</code> is the only way code touches Redis. Values are Pydantic models (<code>wcl_agent/cache/cache_models.py</code>), stored as JSON. TTLs get random jitter. A per-key <code>SET lock NX PX</code> guards against stampedes. "Not found" answers are cached briefly. A corrupt value is deleted and treated as a miss. Same-process lookups of one key share one call.</li>
+    <li>There are 14 families. Seven are WCL data: <code>char_id</code> 24 h, <code>char_overview</code> 10 min, <code>char_reports</code> 5 min, <code>report_summary</code> and <code>report_player</code> 24 h (2 min while a report is still being logged), <code>oauth_token</code> (token expiry − 60 s) and <code>world_zones</code> 1 h. The others hold guide-pipeline sources and the model catalog. <code>char_id</code>, <code>world_zones</code> and <code>game_classes</code> also have a short in-process memo.</li>
+    <li>A report counts as finished when its end time is at least 2 h old (<code>wcl_agent/cache/normalize.py</code>, <code>FINAL_AFTER</code>).</li>
+    <li>Fail-open: there is one Redis client per event loop, with 250 ms socket timeouts and a 5 s circuit after a failure. Without <code>REDIS_URL</code>, or with <code>WCL_CACHE_ENABLED=false</code>, the loader is simply called.</li>
+    <li>Daily per-family counters in Redis (<code>wcl:metrics:v1:{family}:{YYYYMMDD}</code>) feed <code>GET /api/admin/cache-stats</code> (<code>backend/app/api/cache_stats.py</code>).</li>
+    <li><b>Fetch persistence</b> (<code>backend/app/services/fetch_persistence.py</code>, <code>backend/app/repositories/raw_fetches.py</code>): the backend registers <code>FetchWriter.offer</code> with <code>wcl_client.set_fetch_sink</code>. Every successful network response is queued, up to 500 items and 64 MB; when full, the newest is dropped and a throttled warning is logged. One consumer task upserts it into <code>raw_fetches</code> by <code>query_key</code>, and only a newer <code>fetched_at</code> replaces a row. Postgres decodes the JSON (<code>CAST(:p AS jsonb) #- '{data,_cost}'</code>), so the event loop never parses multi-MB bodies. On shutdown the queue drains for up to 5 s.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 920 700" role="img" aria-labelledby="sq1-title sq1-desc">
+      <title id="sq1-title">Sequence: WCL fetch with cache and persistence</title>
+      <desc id="sq1-desc">An agent tool calls get_or_load. On a Redis miss it takes a lock, calls the WCL client, which posts to the Warcraft Logs API, offers the raw bytes to the FetchWriter, and returns a payload that becomes a Pydantic model stored in Redis. The FetchWriter later upserts the response into the raw_fetches table.</desc>
+      <defs>
+        <marker id="sq1-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="sq1-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <g>
+        <rect class="node" x="17" y="10" width="116" height="48" rx="8"/><text class="t" x="75" y="40" text-anchor="middle">Agent tool</text>
+        <rect class="node core" x="147" y="10" width="116" height="48" rx="8"/><text class="t" x="205" y="40" text-anchor="middle">get_or_load</text>
+        <rect class="node store" x="277" y="10" width="116" height="48" rx="8"/><text class="t" x="335" y="40" text-anchor="middle">Redis</text>
+        <rect class="node core" x="407" y="10" width="116" height="48" rx="8"/><text class="t" x="465" y="40" text-anchor="middle">WCL client</text>
+        <rect class="node ext" x="537" y="10" width="116" height="48" rx="8"/><text class="t" x="595" y="40" text-anchor="middle">WCL API</text>
+        <rect class="node" x="667" y="10" width="116" height="48" rx="8"/><text class="t" x="725" y="40" text-anchor="middle">FetchWriter</text>
+        <rect class="node store" x="792" y="10" width="116" height="48" rx="8"/><text class="t" x="850" y="40" text-anchor="middle">Postgres</text>
+      </g>
+      <path class="life" d="M75,58 V690 M205,58 V690 M335,58 V690 M465,58 V690 M595,58 V690 M725,58 V690 M850,58 V690"/>
+
+      <path class="flow" marker-end="url(#sq1-ah)" d="M75,100 H202"/><text class="lbl" x="140" y="92" text-anchor="middle">1 get_or_load(key)</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M205,142 H332"/><text class="lbl" x="270" y="134" text-anchor="middle">2 GET key</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M335,184 H208"/><text class="lbl" x="270" y="176" text-anchor="middle">3 miss (hit: return)</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M205,226 H332"/><text class="lbl" x="270" y="218" text-anchor="middle">4 SET lock NX PX</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M205,268 H462"/><text class="lbl" x="335" y="260" text-anchor="middle">5 loader() → query()</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M465,300 H505 V322 H468"/><text class="lbl" x="514" y="316">6 single-flight · lane slot · token</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M465,364 H592"/><text class="lbl" x="530" y="356" text-anchor="middle">7 POST GraphQL</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M595,406 H468"/><text class="lbl" x="530" y="398" text-anchor="middle">8 200 or retry</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M465,448 H722"/><text class="lbl" x="595" y="440" text-anchor="middle">9 offer(bytes), no wait</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M465,490 H208"/><text class="lbl" x="335" y="482" text-anchor="middle">10 payload → Pydantic model</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M205,532 H332"/><text class="lbl" x="270" y="524" text-anchor="middle">11 SET value, DEL lock</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M205,574 H78"/><text class="lbl" x="140" y="566" text-anchor="middle">12 model</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M725,616 H847"/><text class="lbl" x="787" y="608" text-anchor="middle">13 upsert</text>
+
+      <rect class="node" x="560" y="636" width="350" height="50" rx="8" style="fill:none;stroke:var(--q3);stroke-dasharray:6 4"/>
+      <text class="sub" x="735" y="666" text-anchor="middle" style="fill:var(--q3)">Planned (sc-129): read raw_fetches first</text>
+    </svg>
+    <figcaption>How one cached WCL lookup flows today. Uncached families (whole-raid tables, events, graphs, rankings) skip steps 2–4 and 11, but still go through the client, so they are still persisted.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>A tool (or a background job) asks <code>get_or_load</code> for a typed family and key.</li>
+    <li>It reads the key from Redis.</li>
+    <li>On a hit it decodes the model and returns it. The flow ends here.</li>
+    <li>On a miss it takes a short per-key lock. Losers poll for the winner's value for up to 2 s.</li>
+    <li>It calls the loader, which calls <code>AsyncWCLClient.query</code>.</li>
+    <li>The client joins an identical in-flight request if there is one. Otherwise it waits for a lane slot and gets an OAuth token from memory, Redis or the token endpoint.</li>
+    <li>It POSTs the GraphQL query, with a cost field injected.</li>
+    <li>On 429 or 5xx it backs off and retries, up to 2 times.</li>
+    <li>The raw bytes are offered to the fetch writer. This never blocks: when the queue is full, the response is dropped.</li>
+    <li>The payload is turned into the family's Pydantic model.</li>
+    <li>The model is written to Redis with TTL and jitter, the counters are updated, and the lock is released.</li>
+    <li>The model goes back to the tool.</li>
+    <li>Later, the writer's own task upserts the response into <code>raw_fetches</code>.</li>
+  </ol>
+  <p class="note"><span class="badge planned">Planned, not built</span>A cache → DB → API read order is not built yet. Today <code>raw_fetches</code> is write-only, and the read path is Redis → API. "Nothing reads from the table yet (DB-first reads are sc-129)." (<code>specs/020-fetch-persistence/spec.md</code>, Input)</p>
+
+  <h3>Why</h3>
+  <p class="why">Redis was the owner's choice, with <code>documentation/redis_cache_spec.md</code> as the design. The goals: fewer Warcraft Logs calls and less latency on repeat lookups, staying under the API rate limit, and a visible hit rate per key family.<cite>specs/014-redis-wcl-cache/spec.md (Input) · documentation/redis_cache_spec.md §1</cite></p>
+  <p class="why">A shared Redis replaces the old in-process, tenant-scoped cache, which was per process, lost on restart and had no cross-process stampede protection. The new service is logged as justified complexity.<cite>specs/014-redis-wcl-cache/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">Keys carry no user or tenant ids, because the data is public and users share entries. This reverses feature 006's tenant-prefixed cache keys.<cite>documentation/redis_cache_spec.md §2 · specs/014-redis-wcl-cache/research.md R10</cite></p>
+  <p class="why">Typed Pydantic values rather than raw dicts (Principle IV); validation failure is the "corrupt" path. Same-process lock losers re-send the same GraphQL, which the client's single-flight joins, so it costs no second request. <b>Alternatives:</b> raw dicts; an extra in-process single-flight around the lock.<cite>specs/014-redis-wcl-cache/research.md R3</cite></p>
+  <p class="why">One client per event loop, short timeouts and a circuit, so a dead Redis costs at most 250 ms and then nothing. Redis is never a hard dependency, and <code>wcl_agent</code> stays usable without it (the CLI needs no Redis). <b>Alternatives:</b> one global client (breaks multi-loop tests and the CLI); no circuit (every call pays the timeout during an outage).<cite>specs/014-redis-wcl-cache/research.md R4 · specs/014-redis-wcl-cache/plan.md (Constraints)</cite></p>
+  <p class="why">Only some families are cached. Event-level data, whole-raid tables and arbitrary rankings are large and rarely repeated. <code>world_zones</code> was added as a seventh WCL family because <code>current_patch()</code> runs on every chat turn. <b>Alternatives:</b> caching all report tables (unbounded key space); keeping lookups by name with no <code>char_id</code> (no negative cache).<cite>specs/014-redis-wcl-cache/research.md R1 · specs/014-redis-wcl-cache/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">The write-through hook sits at the end of <code>AsyncWCLClient._fetch</code>. That code runs exactly once per network call, sees raw responses and covers uncached callers too. <b>Alternatives:</b> hooking <code>get_or_load</code> (misses uncached queries and sees typed models); hooking <code>query()</code> (runs once per single-flight waiter).<cite>specs/020-fetch-persistence/research.md R1</cite></p>
+  <p class="why">A bounded queue with one consumer and drop-newest: it never slows the chat, uses one DB connection, and keeps ordering trivial. <b>Alternatives:</b> batching rows per transaction (one bad row would fail the batch); a bounded task set (N connections, unordered writes).<cite>specs/020-fetch-persistence/research.md R4</cite></p>
+  <p class="why">The database decodes the JSON, because parsing in a thread would still leave SQLAlchemy's JSON bind running <code>json.dumps</code> on the loop. Feature 013 measured stalls of about 80 ms from that kind of work.<cite>specs/020-fetch-persistence/research.md R3</cite></p>
+  <p class="why">One row per query key, upserted. The product owner chose this because no history is needed yet, and judging finality at write time would cost a lookup per write.<cite>specs/020-fetch-persistence/research.md R2</cite></p>
+</section>
+
+<!-- ============================================================ WCL -->
+<section class="layer" id="wcl">
+  <h2>Warcraft Logs API client</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">httpx&gt;=0.27.0</span><span class="chip">asyncio</span><span class="chip">GraphQL v2</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>wcl_agent/client/wcl_client.py</code>: <code>AsyncWCLClient</code> on a shared <code>httpx.AsyncClient</code> (timeout 60 s, connect 5 s, max 16 connections), one per event loop (<code>get_async_client()</code>). Query strings live in <code>wcl_agent/client/queries.py</code>.</li>
+    <li><b>Single chokepoint.</b> <code>query()</code> handles single-flight: a shared task per sha256(query + sorted variables), cancelled only when no waiter is left. <code>_fetch</code> handles the 75 s overall timeout (<code>WCL_QUERY_TIMEOUT_S</code>), the lane slot, OAuth, retries, cost logging and the fetch sink.</li>
+    <li><b>OAuth</b> client credentials: process memo first, then the shared <code>oauth_token</code> Redis entry, then the token endpoint. A 401 refreshes once and retries.</li>
+    <li><b>Lanes.</b> <code>LaneLimiter</code> caps requests in flight at <code>WCL_MAX_CONCURRENCY</code> (6). Background work (guides, patch lookup, recent raids) runs inside <code>background_lane()</code>. It may hold at most <code>WCL_BACKGROUND_CONCURRENCY</code> (2) slots and never takes one while a chat lookup is waiting.</li>
+    <li><b>Retries and backoff.</b> 429 and 5xx get up to 2 retries with <code>0.5 s · 2^n</code> plus jitter, or <code>Retry-After</code> capped at 10 s. Backoff waits outside the slot and never outlasts the query timeout. A 429 with a longer <code>Retry-After</code> means the hourly budget is spent: the client fails fast for every call until it resets.</li>
+    <li><b>Cost.</b> Every query gets <code>_cost: rateLimitData { … }</code> injected into its top-level selection. Points spent are logged per operation, and the latest snapshot answers rate-limit checks for 30 s without a request of its own.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">A native async httpx client replaced <code>requests</code> plus threads. That gave real cancellation and removed GIL contention: QA measured 35 ms average and 157 ms worst-case loop lag. httpx was already a dependency. <b>Alternatives:</b> aiohttp (a new dependency); keeping threads and adding cancel flags (doesn't fix contention, and <code>requests</code> can't cancel cleanly).<cite>specs/013-welcome-recent-raids/research.md R7</cite></p>
+  <p class="why">Lanes stop background work from taking chat slots, in about 40 lines with no dependency. <b>Alternatives:</b> two separate semaphores (background could still take interactive slots while chat queues); a priority-queue dispatcher (more machinery for the same behaviour).<cite>specs/013-welcome-recent-raids/research.md R8</cite></p>
+  <p class="why">Retries on 429 and 5xx, and cost injection at the one chokepoint, cover every call, including uncached ones and agent-written GraphQL. <b>Alternative:</b> a separate <code>rateLimitData</code> query per call (doubles requests).<cite>specs/014-redis-wcl-cache/research.md R6</cite></p>
+  <p class="why">One shared client and one class/spec map are the constitution's own example of single-source code.<cite>.specify/memory/constitution.md Principle I</cite></p>
+  <p class="why">The OAuth token keeps a process memo in front of Redis, so a Redis outage never turns into an OAuth request per WCL call.<cite>specs/014-redis-wcl-cache/research.md R5</cite></p>
+</section>
+
+<!-- ============================================================ BLIZZARD -->
+<section class="layer" id="blizzard">
+  <h2>Blizzard / Battle.net sources</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">httpx&gt;=0.27.0</span><span class="chip">html.parser (stdlib)</span><span class="chip">redis (cache families)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>The class-guide pipeline needs the exact live game build and the newest hotfixes, so a guide never targets the wrong patch. Both come straight from Blizzard. Warcraft Logs only knows the patch as major.minor.</p>
+  <ul>
+    <li><code>backend/app/services/guide_pipeline/briefing.py</code>: <code>fetch_live_version()</code> and <code>fetch_hotfix_feed()</code>. Each uses a short-lived <code>httpx.AsyncClient</code> (10 s timeout, its own User-Agent). They are not part of the shared WCL client, its lanes or OAuth.</li>
+    <li><b>Live build.</b> <code>GET https://us.version.battle.net/v2/products/wow/versions</code> (<code>WOW_VERSION_URL</code>, <code>backend/app/config.py</code>). This is the launcher's unauthenticated, pipe-separated versions file. <code>parse_versions()</code> reads only the <code>us</code> row of product <code>wow</code> (<code>VersionsName</code>, <code>BuildId</code>, <code>## seqn</code>), so a PTR build can never leak into a guide. It is cached in the <code>live_version</code> family for 15 minutes (<code>wcl_agent/cache/cache.py</code>).</li>
+    <li><b>Hotfixes.</b> <code>GET https://worldofwarcraft.blizzard.com/en-us/news</code> (<code>WOW_NEWS_URL</code>) finds the newest "Hotfixes:" article. <code>parse_hotfix_article()</code> reads its JSON-LD date and walks the body with the stdlib <code>html.parser</code> into per-class/per-spec entries, so only the touched specs' guides go stale. It is cached in the <code>hotfix_feed</code> family for 30 minutes.</li>
+    <li><b>Best effort.</b> Any failure returns <code>None</code> and logs a warning. The briefing then falls back to the last cached value, then to WCL's major.minor patch. Blizzard being down never blocks guide generation.</li>
+    <li><b>Grounded research.</b> Blizzard's official sites are also tier 1 (fetchable) in the research step's <code>SOURCE_TIERS</code> (<code>backend/app/services/guide_pipeline/research.py</code>). See <a href="agent-frontend.html#guides">Agent &amp; frontend → class guides</a>.</li>
+    <li><b>Not Blizzard.</b> The class/spec roster comes from Warcraft Logs game data (<code>wcl_agent/game/roster.py</code>), not the Blizzard Game Data API.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The versions endpoint is the only source of the exact build (e.g. <code>12.1.5.70448</code>). It needs no credentials and has no rate-limit headers or published terms; it is the launcher's undocumented endpoint, hence the 15-minute cache and the WCL floor. <b>Alternatives:</b> WCL partitions only (major.minor, too coarse for FR-007); scraping patch notes (fragile, slower).<cite>specs/015-grounded-class-guides/research.md R1</cite></p>
+  <p class="why">The news "Hotfixes:" articles are the official tier-1 source. They give per-spec granularity, so only touched specs go stale, and the parse needs only the stdlib.<cite>specs/015-grounded-class-guides/research.md R2</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span><code>.env.example</code> declares <code>BLIZZARD_CLIENT_ID</code> / <code>BLIZZARD_CLIENT_SECRET</code> for the Blizzard Game Data API, but no code reads them and no spec records a decision. They look reserved for a future OAuth client-credentials integration (e.g. character profiles or media). Today both Blizzard sources above are public and unauthenticated.<cite>.env.example; grep of backend/ and wcl_agent/</cite></p>
+</section>
+
+<!-- ============================================================ REPORTS -->
+<section class="layer" id="reports">
+  <h2>PDF reports</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">weasyprint&gt;=70.0</span><span class="chip">markdown-it-py&gt;=4.2.0</span><span class="chip">mdit-py-plugins&gt;=0.6.1</span><span class="chip">nh3&gt;=0.3.7</span><span class="chip">matplotlib&gt;=3.11.2</span><span class="chip">plotly&gt;=7.1.0</span><span class="chip">pypdf&gt;=6.21.1 (test)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Endpoints</b> (<code>backend/app/api/reports.py</code>): <code>GET /api/conversations/{id}/report.pdf</code> (whole chat) and <code>GET /api/conversations/{id}/messages/{message_id}/report.pdf</code> (one answer). Both require a session and use the tenant-scoped DB session.</li>
+    <li><b>Findings rewrite</b> (<code>backend/app/services/report_synthesis.py</code>): one-shot Vertex AI call with <code>WCL_REPORT_MODEL</code> (the same Vertex client the agent uses, installed with google-adk), run in a thread and capped at 60 s. It turns the chat into a findings document. It runs in parallel with chart drawing.</li>
+    <li><b>Charts</b> (<code>backend/app/services/charts.py</code>): one <code>ChartSpec</code> has two renderers. <code>chart_spec_to_plotly</code> builds the figure dict that the browser draws with plotly.js. <code>chart_spec_to_svg</code> and <code>graph_to_svg</code> draw vector SVG with matplotlib for the PDF. At most 20 figures per report.</li>
+    <li><b>Render</b> (<code>backend/app/services/pdf_report.py</code>): markdown-it-py (commonmark plus table and strikethrough; tasklists and dollarmath plugins), then maths as matplotlib mathtext SVG, then nh3 sanitising with an allow-list, then remote images swapped for their alt text, then HTML plus print CSS, then WeasyPrint. WeasyPrint uses a URL fetcher that allows only <code>data:</code> URLs. Colours come from <code>backend/app/services/report_theme.py</code>, the chat's "Tavern Hearth" dark theme.</li>
+    <li><b>Threading.</b> Charts and the render run on a single <code>pdf-render</code> thread pool (60 s for charts, 90 s for the render). The report fails closed: any synthesis or render failure returns 500 <code>pdf_generation_failed</code>, never a partial file.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 920 700" role="img" aria-labelledby="sq2-title sq2-desc">
+      <title id="sq2-title">Sequence: PDF report download</title>
+      <desc id="sq2-desc">The browser requests the report. The reports endpoint checks the session, loads messages, graphs and charts from Postgres, then in parallel asks report_synthesis for a findings document from Vertex AI and has the render thread draw charts as SVG. It then has the render thread run markdown-it, nh3 and WeasyPrint, and returns the PDF.</desc>
+      <defs>
+        <marker id="sq2-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="sq2-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <g>
+        <rect class="node ext" x="17" y="10" width="116" height="48" rx="8"/><text class="t" x="75" y="40" text-anchor="middle">Browser</text>
+        <rect class="node core" x="152" y="10" width="126" height="48" rx="8"/><text class="t" x="215" y="40" text-anchor="middle">reports.py</text>
+        <rect class="node store" x="297" y="10" width="116" height="48" rx="8"/><text class="t" x="355" y="40" text-anchor="middle">Postgres</text>
+        <rect class="node" x="432" y="10" width="126" height="48" rx="8"/><text class="t" x="495" y="40" text-anchor="middle">synthesis</text>
+        <rect class="node ext" x="577" y="10" width="116" height="48" rx="8"/><text class="t" x="635" y="40" text-anchor="middle">Vertex AI</text>
+        <rect class="node" x="732" y="10" width="136" height="48" rx="8"/><text class="t" x="800" y="40" text-anchor="middle">pdf-render</text>
+      </g>
+      <path class="life" d="M75,58 V690 M215,58 V690 M355,58 V690 M495,58 V690 M635,58 V690 M800,58 V690"/>
+
+      <path class="flow" marker-end="url(#sq2-ah)" d="M75,100 H212"/><text class="lbl" x="145" y="92" text-anchor="middle">1 GET report.pdf</text>
+      <path class="flow" marker-end="url(#sq2-ah)" d="M215,142 H352"/><text class="lbl" x="285" y="134" text-anchor="middle">2 session + tenant</text>
+      <path class="flow" marker-end="url(#sq2-ah)" d="M215,184 H352"/><text class="lbl" x="285" y="176" text-anchor="middle">3 chat + charts</text>
+      <path class="flow ret" marker-end="url(#sq2-ah2)" d="M355,226 H218"/><text class="lbl" x="285" y="218" text-anchor="middle">4 rows</text>
+
+      <rect x="160" y="244" width="750" height="252" rx="8" style="fill:none;stroke:var(--muted);stroke-dasharray:3 4"/>
+      <text class="zlbl" x="170" y="488">par · in parallel</text>
+      <path class="flow" marker-end="url(#sq2-ah)" d="M215,284 H492"/><text class="lbl" x="355" y="276" text-anchor="middle">5 synthesize_findings()</text>
+      <path class="flow" marker-end="url(#sq2-ah)" d="M495,326 H632"/><text class="lbl" x="565" y="318" text-anchor="middle">6 generate_content</text>
+      <path class="flow" marker-end="url(#sq2-ah)" d="M215,368 H797"/><text class="lbl" x="700" y="360" text-anchor="middle">7 draw charts → SVG</text>
+      <path class="flow ret" marker-end="url(#sq2-ah2)" d="M635,410 H498"/><text class="lbl" x="565" y="402" text-anchor="middle">8 findings Markdown</text>
+      <path class="flow ret" marker-end="url(#sq2-ah2)" d="M495,442 H218"/><text class="lbl" x="355" y="434" text-anchor="middle">9 findings_md</text>
+      <path class="flow ret" marker-end="url(#sq2-ah2)" d="M800,478 H218"/><text class="lbl" x="700" y="470" text-anchor="middle">10 SVG figures (≤ 20)</text>
+
+      <path class="flow" marker-end="url(#sq2-ah)" d="M215,528 H797"/><text class="lbl" x="560" y="520" text-anchor="middle">11 render_report_pdf(ReportDocument)</text>
+      <path class="flow" marker-end="url(#sq2-ah)" d="M800,552 H840 V574 H803"/><text class="lbl" x="790" y="569" text-anchor="end">12 markdown-it → nh3 → WeasyPrint</text>
+      <path class="flow ret" marker-end="url(#sq2-ah2)" d="M800,632 H218"/><text class="lbl" x="560" y="624" text-anchor="middle">13 PDF bytes</text>
+      <path class="flow ret" marker-end="url(#sq2-ah2)" d="M215,674 H78"/><text class="lbl" x="145" y="666" text-anchor="middle">14 200 PDF</text>
+    </svg>
+    <figcaption>The whole-chat download. The per-message download is the same, scoped to one answer and its question, and it marks an interrupted answer as partial.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>The browser requests <code>/api/conversations/{id}/report.pdf</code> with its session cookie.</li>
+    <li><code>require_session</code> and <code>get_tenant_db</code> resolve the identity and set the RLS tenant.</li>
+    <li>The endpoint loads the messages, <code>captured_graphs</code>, <code>artifacts</code> and a tracked-raid label for the title.</li>
+    <li>Rows come back. A foreign or missing chat returns 404.</li>
+    <li>In parallel with step 7, <code>synthesize_findings</code> starts.</li>
+    <li>It calls the report model on Vertex AI in a thread, with a 60 s cap.</li>
+    <li>Each chart is a separate job on the render thread, so one bad chart becomes "Chart unavailable" instead of failing the report.</li>
+    <li>The findings Markdown comes back from Vertex AI.</li>
+    <li>It is returned to the endpoint. Empty output or an error fails closed.</li>
+    <li>SVG figures come back, capped at 20.</li>
+    <li>The endpoint builds a typed <code>ReportDocument</code> and sends it to the render thread.</li>
+    <li>Markdown → HTML, maths → SVG, nh3 sanitising, then WeasyPrint with <code>data:</code>-only fetching.</li>
+    <li>The PDF bytes come back.</li>
+    <li>The endpoint returns <code>application/pdf</code> as an attachment, or 500 <code>pdf_generation_failed</code>.</li>
+  </ol>
+
+  <h3>Why</h3>
+  <p class="why">WeasyPrint supports CSS Paged Media (running headers, "page X of Y", headings kept with their content, repeating table headers) with no layout code of ours. It adds no browser process and rendered in 0.21 s in the spike. <b>Alternatives:</b> headless Chromium via Playwright (about 300 MB, a subprocess per request, weaker paged media); keeping ReportLab and patching its hand-written parser (failed three times); xhtml2pdf (weak CSS).<cite>specs/017-proper-pdf-generation/research.md R1 · specs/017-proper-pdf-generation/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">markdown-it-py follows CommonMark and GFM tables, and <code>dollarmath</code> leaves "$5 and $10" alone. <b>Alternatives:</b> Python-Markdown (installed but unused, poor nested lists and maths, so it was removed); mistune (less mature plugins).<cite>specs/017-proper-pdf-generation/research.md R2</cite></p>
+  <p class="why">nh3 (Rust ammonia) keeps basic tags and drops the rest, including <code>&lt;script&gt;</code> bodies. Images may only be our own <code>data:</code> URIs. <b>Alternatives:</b> <code>html=False</code> (tags would show as text); bleach (deprecated upstream).<cite>specs/017-proper-pdf-generation/research.md R3</cite></p>
+  <p class="why">Fetching is limited to <code>data:</code>, which blocks <code>file:</code> too, so model output can't pull server files into a PDF.<cite>specs/017-proper-pdf-generation/research.md R6</cite></p>
+  <p class="why">Equations and charts are rendered with matplotlib as SVG: it was already a dependency, and WeasyPrint runs no JavaScript (so no KaTeX) and has no MathML. One <code>ChartSpec</code> feeds two renderers. <b>Alternatives:</b> latex2mathml; a TeX toolchain; KaTeX via Node; Plotly static export via kaleido (bundles Chromium).<cite>specs/017-proper-pdf-generation/research.md R4, R5</cite></p>
+  <p class="why">Fonts are DejaVu plus Noto CJK and Noto Color Emoji as system packages, so no glyph renders as a box. This costs about 120 MB of image size, and <code>fonts-noto-cjk</code> is the one line to drop if size matters more.<cite>specs/017-proper-pdf-generation/research.md R7, R8</cite></p>
+  <p class="why">The PDF uses the chat's dark "Tavern Hearth" colours. That was the owner's choice on 2026-10-20 ("the PDF looks like the chat").<cite>backend/app/services/report_theme.py (module docstring)</cite></p>
+  <p class="why">The PDF is rendered from captured graph JSON instead of re-calling WCL at export time. That would spend rate budget and might not reproduce the exact filters.<cite>specs/002-agent-enhancements/research.md §6</cite></p>
+  <p class="note"><b>History:</b> feature 002 first chose ReportLab + matplotlib + <code>markdown</code> to avoid system libraries (<code>specs/002-agent-enhancements/research.md</code> §6). Feature 017 replaced that with the pipeline above. <b>Note:</b> the <code>plotly</code> Python package is declared in <code>pyproject.toml</code>, but no Python module imports it. <code>chart_spec_to_plotly</code> builds the figure dict by hand, and the browser draws it with <code>plotly.js-dist-min</code> and <code>react-plotly.js</code>.</p>
+</section>
+
+<!-- ============================================================ PLANNED -->
+<section class="layer planned" id="planned">
+  <h2><span class="badge planned">Planned, not built</span>Worker server + NATS</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">none yet (NATS is named in todo.md only)</span></div>
+  <p>Shortcut epic <code>epic-196</code>. The owner's note in <code>todo.md</code> (Infra / Platform) reads, in short:</p>
+  <ul>
+    <li>A separate container for background tasks, running independently of the API.</li>
+    <li>Jobs such as building raid and dungeon guides continuously as new information appears, with a small update profile so it doesn't hit model rate limits. Also building an "offline" character profile bit by bit from previous chat data.</li>
+    <li>A NATS message queue for tasks and failures, maybe with dead-letter and retry queues. Task state is kept in Postgres for persistent needs such as audit trails.</li>
+    <li>Marked "BIG — must be specced accordingly and done properly".</li>
+  </ul>
+  <p><b>What exists today instead:</b> all background work runs inside the backend process. That covers guide generation (capped by <code>WCL_GUIDE_MAX_CONCURRENCY</code>), the recent-raids refresh (with a Postgres claim row), conversation titles and the fetch writer, all through <code>backend/app/services/background.py</code> and the WCL background lane.</p>
+  <p class="why">The only recorded intent is the owner note above. There is no spec, research or plan for it yet.<cite>todo.md (Infra / Platform, "Worker server") · Shortcut epic-196</cite></p>
+  <p class="why">Until now, the recorded stance was "no job queue" (Principle III), and Cloud Tasks was rejected for the recent-raids refresh. A worker service and NATS would be new infrastructure, so the plan must justify them in its Complexity Tracking table.<cite>specs/013-welcome-recent-raids/research.md R4, R5 · .specify/memory/constitution.md Principle III</cite></p>
+</section>
+
+<!-- ============================================================ DRIFT -->
+<section class="layer" id="drift">
+  <h2>Drift &amp; open points found while writing this</h2>
+  <ul>
+    <li><code>documentation/deployment.md</code> still says access is "public + unauthenticated" and that tables come from <code>create_all</code>. Both changed in feature 006.</li>
+    <li><code>documentation/oauth_integration_guide.md</code> is a byte-for-byte copy of <code>documentation/multi_tenancy_guide.md</code>. There is no separate OAuth design.</li>
+    <li>The login rate limiter is in-process. The guide wants shared limits (Redis) once there is more than one worker, and Redis is now available.</li>
+    <li>DB-first reads from <code>raw_fetches</code> (sc-129) are not built. The table only grows.</li>
+    <li>The <code>plotly</code> Python dependency has no importer.</li>
+    <li><code>.env.example</code> declares <code>BLIZZARD_CLIENT_ID</code> / <code>BLIZZARD_CLIENT_SECRET</code>, but nothing reads them. The Blizzard sources in use are unauthenticated.</li>
+    <li><code>backend/Dockerfile</code> installs uv with an unpinned <code>pip install uv</code>. Dependencies themselves are locked by <code>uv.lock</code>.</li>
+    <li><code>specs/006-multi-tenancy/plan.md</code> names a <code>sessions</code> table. The real table is <code>auth_sessions</code>.</li>
+  </ul>
+</section>
+
+<footer>
+  <div>Generated 2026-10-26 · sc-209</div>
+  <div>Sources used:</div>
+  <ul>
+    <li><code>pyproject.toml</code></li>
+    <li><code>docker-compose.yml</code></li>
+    <li><code>backend/Dockerfile</code>, <code>frontend/Dockerfile</code></li>
+    <li><code>.env.example</code></li>
+    <li><code>bin/00_init_migrate_db.sh</code>, <code>bin/01_start_app.sh</code></li>
+    <li><code>.specify/memory/constitution.md</code></li>
+    <li><code>documentation/deployment.md</code></li>
+    <li><code>documentation/multi_tenancy_guide.md</code></li>
+    <li><code>documentation/redis_cache_spec.md</code></li>
+    <li><code>specs/001-streaming-chat-frontend/spec.md</code>, <code>research.md</code></li>
+    <li><code>specs/002-agent-enhancements/research.md</code></li>
+    <li><code>specs/006-multi-tenancy/research.md</code>, <code>plan.md</code></li>
+    <li><code>specs/008-profile-class-pages/research.md</code></li>
+    <li><code>specs/013-welcome-recent-raids/research.md</code></li>
+    <li><code>specs/014-redis-wcl-cache/spec.md</code>, <code>plan.md</code>, <code>research.md</code></li>
+    <li><code>specs/017-proper-pdf-generation/research.md</code>, <code>plan.md</code></li>
+    <li><code>specs/020-fetch-persistence/spec.md</code>, <code>research.md</code></li>
+    <li><code>backend/app/main.py</code>, <code>backend/app/config.py</code></li>
+    <li><code>backend/app/db/models.py</code>, <code>backend/app/db/session.py</code></li>
+    <li><code>backend/migrations/versions/</code></li>
+    <li><code>backend/app/auth/</code>, <code>backend/app/tenancy/context.py</code></li>
+    <li><code>backend/cli/init_db.py</code></li>
+    <li><code>backend/app/api/reports.py</code></li>
+    <li><code>backend/app/services/pdf_report.py</code>, <code>charts.py</code>, <code>report_synthesis.py</code>, <code>report_theme.py</code>, <code>fetch_persistence.py</code>, <code>background.py</code></li>
+    <li><code>wcl_agent/client/wcl_client.py</code>, <code>wcl_agent/cache/cache.py</code></li>
+    <li><code>todo.md</code></li>
+  </ul>
+</footer>
+</div>
+<script>
+(function(){
+  var btn=document.querySelector('.pausebtn');
+  if(!btn)return;
+  btn.addEventListener('click',function(){
+    var on=document.documentElement.classList.toggle('paused');
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    btn.textContent=on?'Play animations':'Pause animations';
+  });
+})();
+</script>
+</body>
+</html>
