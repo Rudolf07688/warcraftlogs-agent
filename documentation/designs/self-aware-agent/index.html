@@ -232,13 +232,15 @@ blockquote.ask{margin:0;font-size:20px;font-family:var(--f-display);font-stretch
 <!-- ============================================================ RULES -->
 <section class="layer" id="rules">
   <h2>Product rules both parts follow</h2>
-  <p>These are the product owner's decisions for sprint 2026-10-26 (<code>sprints/2026-10-26/decisions.md</code>).</p>
+  <p>These are the product owner's decisions for sprint 2026-10-26 (<code>sprints/2026-10-26/decisions.md</code>) that shape this feature.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Rule</th><th>What it means here</th></tr></thead>
     <tbody>
       <tr><td><b>D4</b> · Approve all valid items, or cancel</td><td>No per-item toggles in v1. Invalid items are on the card, marked as skipped, and never applied. In the contract: <code>validation.ok</code> and <code>result.status = "skipped"</code>.</td></tr>
       <tr><td><b>D5</b> · Ambiguous "the dungeon / the raid"</td><td>Use the run in the chat context. If there's none, or several, Barnaby asks which one. He picks the latest only when the user says so. Owned by part 2.</td></tr>
       <tr><td><b>D6</b> · Every agent write needs approval</td><td>Adds, raid-role updates and removals, for own characters and friends alike, all go through a proposal and the card. The tool has no write mode.</td></tr>
+      <tr><td><b>D8</b> · At most 50 friends</td><td><code>MAX_FRIENDS = 50</code> in the shared write path, for REST and agent adds alike. Profiles already over the cap keep their friends; only new adds are refused (<code>friend_limit</code>).</td></tr>
+      <tr><td><b>D9</b> · Raid role on adds from a run</td><td>Left empty (inferred from spec) by default; the card shows the role played in the run for information. An explicit role only when the user asks for one.</td></tr>
     </tbody>
   </table></div>
 </section>
