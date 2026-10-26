@@ -13,6 +13,12 @@
 and the sprint decisions `sprints/2026-10-26/decisions.md` D4–D11. Where this spec says "per the
 design", the design's decision is binding.
 
+## Clarifications
+
+### Session 2026-10-26
+
+- Q: Should the capability summary also name app features that have no tool (sc-204's story text lists profile, raids, class guides, PDF reports, chat filters)? → A: Yes, option B (PO decision D13): one fixed app-facts line, naming only features that exist on the base, with no tool names, inside the budget. There is no per-chat character filter (sc-144 isn't built), so it is not named; the boss checkboxes under a report (EncounterPicker) are. There is no separate Raids page on the base; recent raids and Mythic+ runs are on the welcome screen.
+
 ## Scope
 
 **In scope (this feature)**: the generated capability summary (sc-204); the profile change
@@ -193,7 +199,11 @@ returns 409 `friend_limit`; "Tarren Mill" then "tarren-mill" is a duplicate over
   parallel independent calls), a line per tool, a "you can change" line emitted only when the
   profile tool is registered (own characters and friends including raid roles, only through a
   proposal the user approves), and a "you cannot" line (guild, settings, other users' data,
-  writing without approval) (C1).
+  writing without approval) (C1), and one fixed app-facts line naming the app features the user
+  uses themselves that exist on the base: the Profile page (own characters, friends, main guild,
+  raid roles, Class guides tab), recent raids and Mythic+ runs on the welcome screen, PDF download
+  of a reply, the boss checkboxes under a report, and the model picker. The line names no tool and
+  no feature that isn't built (D13).
 - **FR-003**: When web search is not registered, the summary MUST say so and tell Barnaby to state
   that current-patch verification was not possible (C4).
 - **FR-004**: The summary MUST stay within 4,000 characters for the largest tool set, with each
