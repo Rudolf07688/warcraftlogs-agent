@@ -21,20 +21,20 @@ US2/US3 because proposal execution writes through it.
 
 ## Phase 1: Setup
 
-- [ ] T001 Record the baseline (1066 passed, 3 skipped, 1 deselected on 1da8bca) and the owned-file list in `specs/029-agent-profile-proposals/checkpoint.md`
+- [X] T001 Record the baseline (1066 passed, 3 skipped, 1 deselected on 1da8bca) and the owned-file list in `specs/029-agent-profile-proposals/checkpoint.md`
 - [ ] T000 **Sequencing gate (SM)**: before the first edit to `wcl_agent/agent.py`, `backend/app/api/ws.py` or `backend/tests/test_prompt_contract.py`, wait for "030 MERGED, rebase" and rebase this branch onto the sprint tip. 030 adds `get_report_participants` to `TOOLS`, a `<RUN_RESOLUTION>` block (no tool names), `_build_turn_preamble` and one D5 clause test. Phases 2 and 4 don't need these files and can start earlier
-- [ ] T002 Create the package marker `backend/app/agent_tools/__init__.py` (one-line module docstring, C6)
+- [X] T002 Create the package marker `backend/app/agent_tools/__init__.py` (one-line module docstring, C6)
 
 ---
 
 ## Phase 2: Foundational (blocks US2 and US3)
 
-- [ ] T003 [P] Add `ValidationCode`, `ProfileChangeIn`, `ProposalValidation`, `ProposalItemResult`, `ProposalItemOut`, `ProfileProposalOut` to `backend/app/schemas.py`, below the Profile section, exactly per data-model.md (no length constraints on `ProfileChangeIn` strings, R1; `items` 1–30)
-- [ ] T004 [P] Add the `ProfileProposal` ORM model (table `profile_proposals`, columns + index per data-model.md, `_UUID`/`_JSON` as `Artifact`) to `backend/app/db/models.py`
-- [ ] T005 Create `backend/migrations/versions/0016_profile_proposals.py`: revision `"0016_profile_proposals"`, down_revision `"0015_rescan_mplus_runs"`; the table, index, and Postgres-only ENABLE/FORCE RLS + `tenant_isolation` policy + GRANT to `APP_DB_USER` (copy the 0014 helpers `_runtime_role`, `_PREDICATE`); the downgrade drops the policy, index and table
-- [ ] T006 Create `backend/app/repositories/profile_proposals.py`: `insert_proposal(session, row)`, `get_proposal_row(session, proposal_id, *, tenant_id, user_id, for_update=False)` (`with_for_update()` as in `repositories/invitations.py`), `list_proposal_rows(session, *, tenant_id, user_id, conversation_id)` ordered by `created_at`; every query filters on tenant **and** user (R7)
-- [ ] T007 [P] Add `current_identity: ContextVar[RequestIdentity | None]` (default `None`, with a comment citing C7) to `backend/app/tenancy/context.py`
-- [ ] T008 Add `test_migration_0016_upgrades_and_downgrades` (SQLite + Alembic `Operations`, pattern of `test_recent_mplus.py::test_migration_0014_upgrades_and_downgrades`; asserts the down_revision, the table and index after upgrade, and that the table is gone after downgrade) to `backend/tests/test_profile_proposals.py`; run it
+- [X] T003 [P] Add `ValidationCode`, `ProfileChangeIn`, `ProposalValidation`, `ProposalItemResult`, `ProposalItemOut`, `ProfileProposalOut` to `backend/app/schemas.py`, below the Profile section, exactly per data-model.md (no length constraints on `ProfileChangeIn` strings, R1; `items` 1–30)
+- [X] T004 [P] Add the `ProfileProposal` ORM model (table `profile_proposals`, columns + index per data-model.md, `_UUID`/`_JSON` as `Artifact`) to `backend/app/db/models.py`
+- [X] T005 Create `backend/migrations/versions/0016_profile_proposals.py`: revision `"0016_profile_proposals"`, down_revision `"0015_rescan_mplus_runs"`; the table, index, and Postgres-only ENABLE/FORCE RLS + `tenant_isolation` policy + GRANT to `APP_DB_USER` (copy the 0014 helpers `_runtime_role`, `_PREDICATE`); the downgrade drops the policy, index and table
+- [X] T006 Create `backend/app/repositories/profile_proposals.py`: `insert_proposal(session, row)`, `get_proposal_row(session, proposal_id, *, tenant_id, user_id, for_update=False)` (`with_for_update()` as in `repositories/invitations.py`), `list_proposal_rows(session, *, tenant_id, user_id, conversation_id)` ordered by `created_at`; every query filters on tenant **and** user (R7)
+- [X] T007 [P] Add `current_identity: ContextVar[RequestIdentity | None]` (default `None`, with a comment citing C7) to `backend/app/tenancy/context.py`
+- [X] T008 Add `test_migration_0016_upgrades_and_downgrades` (SQLite + Alembic `Operations`, pattern of `test_recent_mplus.py::test_migration_0014_upgrades_and_downgrades`; asserts the down_revision, the table and index after upgrade, and that the table is gone after downgrade) to `backend/tests/test_profile_proposals.py`; run it
 
 **Checkpoint**: `uv run --extra test pytest -q backend/tests/test_profile_proposals.py` green; the full suite still at baseline.
 
@@ -79,11 +79,11 @@ no prose edit.
 `friend_limit`; realm slugs count as duplicates.
 **Independent test**: `test_profile.py` passes unchanged; the new REST tests below pass.
 
-- [ ] T016 [US4] Create `backend/app/services/profile_service.py` per `contracts/proposal-tool-and-service.md`: `CharacterNotFound`, `add_character` (`repo.add_character`; an `IntegrityError` becomes `CharacterConflict("duplicate_character"|"duplicate_friend")`; no commit), `set_raid_role`, `remove_character`, `schedule_guides` (C8)
-- [ ] T017 [US4] Refactor the bodies of `_add`/`_patch`/`_delete` in `backend/app/api/profile.py` onto the service: `CharacterConflict` → 409 detail=code (after rollback), `CharacterNotFound` → 404 `not_found`, commit via `commit_and_rescope`, then `schedule_guides`. Route signatures, codes and details unchanged
-- [ ] T018 [US4] In `backend/app/db/repository.py`: `MAX_FRIENDS = 50` next to `MAX_OWN_CHARACTERS` with a D8 comment; a friend count check in `add_character` raising `CharacterConflict("friend_limit")` (new adds only); `find_character_identity` compares `replace(replace(lower(trim(server)),' ','-'),'''','')` with `server_slug(server)` (import from `wcl_agent.cache.normalize`); update the `CharacterConflict` docstring code list
-- [ ] T019 [P] [US4] Add `case "friend_limit": return "You've reached the friend limit. Remove a friend before adding another.";` to the error mapper in `frontend/src/components/profile/CharactersTab.tsx` (R8)
-- [ ] T020 [US4] Add REST tests to `backend/tests/test_profile_proposals.py` (using `as_user`):
+- [X] T016 [US4] Create `backend/app/services/profile_service.py` per `contracts/proposal-tool-and-service.md`: `CharacterNotFound`, `add_character` (`repo.add_character`; an `IntegrityError` becomes `CharacterConflict("duplicate_character"|"duplicate_friend")`; no commit), `set_raid_role`, `remove_character`, `schedule_guides` (C8)
+- [X] T017 [US4] Refactor the bodies of `_add`/`_patch`/`_delete` in `backend/app/api/profile.py` onto the service: `CharacterConflict` → 409 detail=code (after rollback), `CharacterNotFound` → 404 `not_found`, commit via `commit_and_rescope`, then `schedule_guides`. Route signatures, codes and details unchanged
+- [X] T018 [US4] In `backend/app/db/repository.py`: `MAX_FRIENDS = 50` next to `MAX_OWN_CHARACTERS` with a D8 comment; a friend count check in `add_character` raising `CharacterConflict("friend_limit")` (new adds only); `find_character_identity` compares `replace(replace(lower(trim(server)),' ','-'),'''','')` with `server_slug(server)` (import from `wcl_agent.cache.normalize`); update the `CharacterConflict` docstring code list
+- [X] T019 [P] [US4] Add `case "friend_limit": return "You've reached the friend limit. Remove a friend before adding another.";` to the error mapper in `frontend/src/components/profile/CharactersTab.tsx` (R8)
+- [X] T020 [US4] Add REST tests to `backend/tests/test_profile_proposals.py` (using `as_user`):
   - the 51st `POST /api/profile/friends` → 409 `friend_limit`;
   - a profile seeded with 52 friends lists all 52 and refuses a 53rd;
   - "Tarren Mill" then "tarren-mill" (same name/region) → 409 `duplicate_friend`;

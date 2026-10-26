@@ -3,6 +3,9 @@
 Feature 012: a tenant registers up to ``repo.MAX_OWN_CHARACTERS`` own characters (``/self``),
 managed exactly like friends (``/friends``) through the same repository functions.
 
+Feature 029: character writes go through ``services/profile_service`` (the one write path,
+shared with agent proposals); these handlers keep only the HTTP mapping.
+
 Locking a character or guild schedules a non-blocking background guide task (US6, scoped to
 the tenant) and returns immediately with a ``pending`` status.
 """
@@ -12,7 +15,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import get_tenant_db, require_csrf, require_session
@@ -25,6 +27,7 @@ from ..schemas import (
     GuildOut,
     ProfileOut,
 )
+from ..services import profile_service
 from ..services.guide import schedule_character_guide, schedule_guild_summary
 from ..tenancy.context import RequestIdentity, commit_and_rescope
 
@@ -53,25 +56,11 @@ async def _add(
 ) -> CharacterOut:
     """Add an own or friend character, then schedule its background guide task."""
     try:
-        char = await repo.add_character(
-            db,
-            tenant_id=identity.tenant_id,
-            role=role,
-            name=body.name,
-            server=body.server,
-            region=body.region,
-            raid_role=body.raid_role,
-        )
+        char = await profile_service.add_character(db, identity, body, role)
         await commit_and_rescope(db, identity)
     except repo.CharacterConflict as exc:
         await db.rollback()
         raise _conflict(exc)
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="duplicate_character" if role == "self" else "duplicate_friend",
-        )
     schedule_character_guide(char.id, identity.tenant_id)
     return await _char_out(db, char)
 
@@ -80,10 +69,9 @@ async def _patch(
     db: AsyncSession, identity: RequestIdentity, char_id: uuid.UUID, body: CharacterPatchIn, role: str
 ) -> CharacterOut:
     """Set a character's raid-role override in place (US4). ``null`` reverts to inferred."""
-    char = await repo.update_character_role(
-        db, char_id, tenant_id=identity.tenant_id, role=role, raid_role=body.raid_role
-    )
-    if char is None:
+    try:
+        char = await profile_service.set_raid_role(db, identity, char_id, body.raid_role, role)
+    except profile_service.CharacterNotFound:
         raise HTTPException(status_code=404, detail="not_found")
     await commit_and_rescope(db, identity)
     return await _char_out(db, char)
@@ -92,8 +80,9 @@ async def _patch(
 async def _delete(
     db: AsyncSession, identity: RequestIdentity, char_id: uuid.UUID, role: str
 ) -> None:
-    deleted = await repo.delete_character(db, char_id, tenant_id=identity.tenant_id, role=role)
-    if not deleted:
+    try:
+        await profile_service.remove_character(db, identity, char_id, role)
+    except profile_service.CharacterNotFound:
         raise HTTPException(status_code=404, detail="not_found")
 
 

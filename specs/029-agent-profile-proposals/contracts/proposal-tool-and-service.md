@@ -56,7 +56,11 @@ and scopes every query on tenant and user.
 | `add_character(db, identity, body: CharacterIn, role) -> UserCharacter` | `repo.add_character`, flush, no commit | `CharacterConflict(code)`; an `IntegrityError` becomes `CharacterConflict("duplicate_character" \| "duplicate_friend")` |
 | `set_raid_role(db, identity, char_id, raid_role, role) -> UserCharacter` | `repo.update_character_role`, no commit | `CharacterNotFound` |
 | `remove_character(db, identity, char_id, role) -> None` | `repo.delete_character` | `CharacterNotFound` |
-| `schedule_guides(char_ids, tenant_id) -> None` | `schedule_character_guide` per id; callers run it after commit | none |
+
+Guide tasks: callers call `schedule_character_guide` after their commit. The design's
+`schedule_guides` wrapper is dropped. The existing REST tests patch
+`backend.app.api.profile.schedule_character_guide`, so `_add` keeps that call, and AC 4 needs
+those tests unchanged.
 
 ## REST (unchanged surface, `backend/app/api/profile.py`)
 

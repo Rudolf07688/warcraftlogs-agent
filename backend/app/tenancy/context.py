@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from sqlalchemy import text
@@ -32,6 +33,13 @@ class RequestIdentity:
     membership_role: str | None
     is_platform_admin: bool
     session_id: uuid.UUID
+
+
+# Feature 029 (design C7): the identity of the chat turn that is running, for backend agent
+# tools. The chat socket sets it per turn; ADK's producer task copies the context, so a tool
+# reads it inside the turn. ``None`` outside an authenticated chat turn (greeting, guide
+# jobs), where such tools fail closed.
+current_identity: ContextVar[RequestIdentity | None] = ContextVar("current_identity", default=None)
 
 
 async def set_scope(
