@@ -19,6 +19,7 @@ from ..schemas import (
     ConversationOut,
     ConversationUpdate,
 )
+from ..services import profile_proposals
 from ..services.charts import chart_spec_to_plotly
 from ..tenancy.context import RequestIdentity
 
@@ -73,6 +74,9 @@ async def get_conversation(
         )
         for a in artifacts
     ]
+    # Feature 031: each confirmation card in its real state (pending, applied, cancelled,
+    # expired), linked to its agent message by message_seq.
+    detail.proposals = await profile_proposals.list_proposals(identity, conv_id)
     return detail
 
 

@@ -3,8 +3,8 @@
 Design: `participants-and-confirmation.html#transport` (REST table), `#followup`. Router
 `backend/app/api/proposals.py`, prefix `/api/profile/proposals`, registered in `main.py`.
 
-Dependencies: `require_csrf` (session + CSRF) and `get_tenant_db` (only for saving the follow-up
-line). The routes call **only** `profile_proposals.get_proposal`, `execute_proposal` and
+Dependencies: `require_csrf` (session + CSRF). The follow-up line is saved in a short
+`tenant_scope` opened only for that write (research R2). The routes call **only** `profile_proposals.get_proposal`, `execute_proposal` and
 `cancel_proposal`, and never touch `user_characters`.
 
 | Route | 200 body (`ProposalDecisionOut`) | Errors (`detail`) |

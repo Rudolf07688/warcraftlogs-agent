@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import ProfileProposal
@@ -56,3 +56,31 @@ async def list_proposal_rows(
         .order_by(ProfileProposal.created_at)
     )
     return list(result.scalars().all())
+
+
+async def set_message_seq(
+    session: AsyncSession,
+    proposal_ids: list[uuid.UUID],
+    seq: int,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> None:
+    """Link this turn's proposals to its saved answer (feature 031), as artifacts are linked.
+
+    Only the given ids: a proposal whose turn never finished keeps ``message_seq`` null and
+    shows as a standalone card instead of moving under a later answer.
+    """
+    if not proposal_ids:
+        return
+    await session.execute(
+        update(ProfileProposal)
+        .where(
+            ProfileProposal.id.in_(proposal_ids),
+            ProfileProposal.tenant_id == tenant_id,
+            ProfileProposal.user_id == user_id,
+            ProfileProposal.message_seq.is_(None),
+        )
+        .values(message_seq=seq)
+    )
+    await session.flush()

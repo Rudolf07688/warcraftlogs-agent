@@ -28,8 +28,11 @@ points below are the ones those documents leave to the implementer.
 - **Decision**: `POST …/approve`: `before = get_proposal(identity, id)` (a `ProposalError` maps to
   HTTP); `after = execute_proposal(identity, id)`. If `before.status == "pending"` and
   `after.status == "applied"`, build the line from `after.items` and save it with
-  `repo.add_message(db, after.conversation_id, "agent", line, tenant_id=…)` on the request's tenant
-  session (`get_tenant_db`, committed on exit), and return it as `follow_up` (`MessageOut`).
+  `repo.add_message(session, after.conversation_id, "agent", line, tenant_id=…)` in a short
+  `tenant_scope(identity.tenant_id, user_id=…)` opened only for that write (as ws.py does), and
+  return it as `follow_up` (`MessageOut`). The design names `get_tenant_db`, but that would hold a
+  second connection open while the service runs its own transaction, so the route uses
+  `require_csrf` plus the short scope (same tenant RLS path, PERF-006).
   Otherwise `follow_up = null`. Cancel is the same, with `cancel_proposal` and the fixed line
   "Cancelled. Your profile is unchanged."
 - **Rationale**: The design's REST table: "the route reads the status first and only saves a line
