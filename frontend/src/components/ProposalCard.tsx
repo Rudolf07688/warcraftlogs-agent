@@ -15,7 +15,8 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "./ui/item";
+import { ClassAvatar } from "./profile/ClassAvatar";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "./ui/item";
 import { Spinner } from "./ui/spinner";
 
 // Feature 031 (sc-207): the in-chat confirmation card for an agent's profile change proposal
@@ -110,6 +111,9 @@ function ItemRow({ item }: { item: ProposalItem }) {
         : null;
   return (
     <Item role="listitem" variant="outline" size="sm" className={skipped ? "opacity-60" : undefined}>
+      <ItemMedia>
+        <ClassAvatar char={item} className="size-9" />
+      </ItemMedia>
       <ItemContent className="min-w-0">
         <ItemTitle className="flex-wrap">
           {item.name}

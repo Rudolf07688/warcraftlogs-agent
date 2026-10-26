@@ -90,9 +90,11 @@ points below are the ones those documents leave to the implementer.
 
 ## R7 Avatar reuse
 
-- **Decision**: Export `ClassAvatar` from `components/profile/CharactersTab.tsx`, with its prop typed
-  as `{ name: string; class_name: string | null }` (a `Character` still satisfies it), and use it in
-  the card's `ItemMedia`.
+- **Decision**: Move `ClassAvatar` out of `components/profile/CharactersTab.tsx` into its own
+  `components/profile/ClassAvatar.tsx`, with its prop typed as `{ name: string; class_name: string |
+  null }` (a `Character` still satisfies it), and use it in the card's `ItemMedia`. An export from
+  CharactersTab would pull the whole lazy profile module into the chat bundle (measured +19 kB,
+  PERF-011), so the shared module is the reuse that keeps the split (SM grant).
 - **Rationale**: The design says "the same row style as the profile's character list". Reusing the
   component (not just `classColor`/`initials`) keeps one implementation (I). `CharactersTab.tsx` is
   029-held until merge, so this is an after-029 step. Until then the card's `ItemMedia` is left out,

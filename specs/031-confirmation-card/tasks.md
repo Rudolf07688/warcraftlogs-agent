@@ -55,8 +55,8 @@ uses a fake proposal typed from the contract (029's `ProfileProposalOut` field n
 
 - [X] T018 [US3] [NOW] In `frontend/src/components/ProposalCard.tsx`, call `notifyProfileChanged({ proposal, targets })` after an approve that applied ≥ 1 item (targets = distinct `target` of applied items), and `useProfileChanged` to take `change.proposal` when `change.proposal.id === proposal.id`
 - [X] T019 [P] [US3] [NOW] In `frontend/src/components/WelcomePanel.tsx`, add `useProfileChanged(c => { if (c.targets.includes("own")) void load(); })`
-- [X] T020 [US3] [AFTER-029] In `frontend/src/components/profile/CharactersTab.tsx`, add `useProfileChanged(() => void refresh())` and `export` `ClassAvatar`, with its prop typed `{ name: string; class_name: string | null }`
-- [ ] T021 [US3] [AFTER-029] In `frontend/src/components/ProposalCard.tsx`, render `<ItemMedia><ClassAvatar char={item} … /></ItemMedia>` per row (R7)
+- [X] T020 [US3] [AFTER-029] In `frontend/src/components/profile/CharactersTab.tsx`, add `useProfileChanged(() => void refresh())`, and move `ClassAvatar` (prop typed `{ name: string; class_name: string | null }`) into the new `frontend/src/components/profile/ClassAvatar.tsx` (SM grant: an export from CharactersTab pulled the lazy profile module into the chat bundle)
+- [X] T021 [US3] [AFTER-029] In `frontend/src/components/ProposalCard.tsx`, render `<ItemMedia><ClassAvatar char={item} … /></ItemMedia>` per row (R7)
 - [X] T022 [P] [US3] [NOW] Extend `frontend/src/components/ProposalCard.test.tsx`: a same-tab `notifyProfileChanged` with the same id and status `applied` switches a pending card to Applied; a different id leaves it pending
 
 ## Phase 6: US4 — The card always shows its real state (P2)
