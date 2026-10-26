@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Participants &amp; Confirmation</title>
+<meta name="description" content="Self-aware agent design, part 2 (sc-212): how Barnaby resolves which run is meant and who was in it, and how the user approves a profile change on a card in the chat (for sc-206 and sc-207).">
+<style>
+/* Theme tokens: copied verbatim from sprints/2026-10-25/sprint-report.html (fonts fall back to system fonts; nothing is fetched). */
+:root{
+  --bg:#f5f6f9; --surface:#ffffff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+
+/* Page */
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+h1,h2,h3{font-family:var(--f-display);font-stretch:85%;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,5vw,42px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:24px;font-weight:700}
+h3{font-size:18px;font-weight:700;margin-top:6px}
+p{margin:0;max-width:72ch}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--sunk);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.muted{color:var(--muted)}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+
+/* Top nav (identical on all three pages) */
+.topnav{display:flex;flex-wrap:wrap;gap:4px;padding-block:10px;border-bottom:1px solid var(--line)}
+.topnav a{color:var(--muted);text-decoration:none;font-weight:600;padding:7px 12px;border-radius:8px}
+.topnav a:hover{color:var(--fg);background:var(--sunk)}
+.topnav a[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
+
+header.top{padding-block:32px 8px;display:grid;gap:12px}
+.lede{font-size:18px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.pausebtn{appearance:none;font:600 14px var(--f-body);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+.pausebtn:hover{background:var(--sunk)}
+.pausebtn[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+
+/* Layer sections */
+.layer{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;margin-top:24px;display:grid;gap:12px;min-width:0}
+.layer>*{min-width:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chips .eyebrow{margin-right:4px}
+.chip{font:600 12.5px var(--f-mono);background:var(--sunk);border:1px solid var(--line);border-radius:99px;padding:2px 9px;overflow-wrap:anywhere}
+p.why{border-left:3px solid var(--ok);padding:4px 0 4px 12px}
+p.why cite{display:block;font:normal 12.5px var(--f-mono);color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+p.why.inferred{border-left-color:var(--warn)}
+.badge{display:inline-block;font:700 11px var(--f-body);letter-spacing:.06em;text-transform:uppercase;border-radius:6px;padding:1px 7px;margin-right:6px;vertical-align:1px;border:1.5px solid currentColor}
+.badge.inf{color:var(--warn);background:var(--warn-soft)}
+.badge.cited{color:var(--ok);background:var(--ok-soft)}
+.badge.planned{color:var(--q3);background:transparent}
+.layer.planned{border-style:dashed;border-color:var(--q3)}
+ul,ol{margin:0;padding-left:22px}
+li{margin-block:3px}
+.note{background:var(--sunk);border-radius:8px;padding:10px 14px}
+
+/* Tables */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--line)}
+th{background:var(--sunk);font-weight:700}
+tr:last-child td{border-bottom:0}
+.tablewrap code{overflow-wrap:break-word}
+@media (max-width:600px){.layer{padding:14px}}
+
+/* Diagrams (inline SVG) */
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;margin:0}
+.diagram svg{width:100%;height:auto;display:block}
+.diagram figcaption{font-size:14px;color:var(--muted);margin-top:8px}
+.dg text{fill:var(--fg);font-family:var(--f-body);font-size:17px}
+.dg .t{font-weight:700}
+.dg .sub{fill:var(--muted);font-size:14px}
+.dg .lbl{fill:var(--muted);font-size:14px;paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
+.dg .node{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+.dg .node.ext{fill:var(--sunk)}
+.dg .node.store{fill:var(--accent-soft);stroke:var(--accent)}
+.dg .node.core{stroke:var(--accent);stroke-width:2}
+.dg .zone{fill:none;stroke:var(--muted);stroke-width:1.2;stroke-dasharray:6 5}
+.dg .zlbl{fill:var(--muted);font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.dg .life{stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5}
+.dg .ah{fill:var(--accent)}
+.dg .ah2{fill:var(--muted)}
+.flow{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-dasharray:9 6;animation:flow 1.1s linear infinite}
+.flow.ret{stroke:var(--muted)}
+@keyframes flow{to{stroke-dashoffset:-15}}
+html.paused .flow{animation-play-state:paused}
+@media (prefers-reduced-motion: reduce){.flow{animation:none;stroke-dasharray:none}}
+
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:14px;color:var(--muted);display:grid;gap:8px}
+footer ul{columns:2 260px}
+footer code{font-size:12.5px}
+
+/* Page furniture shared by the detail pages */
+.toc{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:15px;padding-top:4px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px;color:var(--muted)}
+.steps{font-size:15px;color:var(--fg)}
+.steps li::marker{color:var(--muted);font-family:var(--f-mono)}
+</style>
+<style>
+/* Page additions for this design page (028). The block above is copied verbatim from documentation/architecture/backend-data-infra.html. */
+.badge.oq{color:var(--q5);background:transparent}
+p.why.oq{border-left-color:var(--q5)}
+.dg .btn{fill:var(--accent);stroke:var(--accent)}
+.dg .btntext{fill:var(--surface);font-weight:700}
+.dg .pill{stroke-width:1.5}
+.dg .pill.ok{fill:var(--ok-soft);stroke:var(--ok)}
+.dg .pill.warn{fill:var(--warn-soft);stroke:var(--warn)}
+.dg .pill.muted{fill:var(--sunk);stroke:var(--line)}
+.dg .pill.acc{fill:var(--accent-soft);stroke:var(--accent)}
+.dg .oktext{fill:var(--ok);font-weight:700}
+.dg .warntext{fill:var(--warn);font-weight:700}
+.dg .acctext{fill:var(--accent);font-weight:700}
+.dg .dim{opacity:.55}
+.dg .mono{font-family:var(--f-mono);font-size:13px;fill:var(--muted)}
+.dg .collector{fill:none;stroke:var(--accent);stroke-width:1.6;stroke-dasharray:3 4}
+pre.code{font-family:var(--f-mono);font-size:13.5px;line-height:1.5;background:var(--sunk);border-radius:8px;padding:10px 14px;margin:0;overflow-x:auto;white-space:pre}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="topnav"><a href="index.html">Feature overview</a><a href="capabilities-and-tools.html">Capabilities &amp; tools</a><a href="participants-and-confirmation.html" aria-current="page">Participants &amp; confirmation</a><a href="../../architecture/index.html">Architecture</a></nav>
+
+<header class="top">
+  <span class="eyebrow">Self-aware agent · feature design, part 2 of 2 · sc-212</span>
+  <h1>Participants &amp; in-chat confirmation</h1>
+  <p class="lede">This page covers how Barnaby works out which run "the dungeon" or "the raid" means and who was in it (for <b>sc-206</b>), and how the user approves the resulting profile change on a card in the chat (for <b>sc-207</b>). Its example is the owner's own request: <i>"Add the characters from the dungeon to my friends, except the shaman."</i> The shape of a change proposal and the server side that stores and executes it belong to <a href="capabilities-and-tools.html">part 1</a>. This page only links to them. The general architecture is on the <a href="../../architecture/index.html">architecture pages</a>, and this page doesn't repeat it.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="legend"><span><span class="badge cited">Cited</span>grounded in code, a spec or a decision</span><span><span class="badge inf">Inferred</span>not grounded, to be checked in the build</span><span><span class="badge oq">Open question</span>needs an answer, options listed</span><span><span class="badge planned">New</span>file or function that doesn't exist yet</span></span>
+  </div>
+  <nav class="toc" aria-label="On this page">
+    <a href="#glance">Decisions at a glance</a><a href="#flow">End-to-end flow</a><a href="#resolution">Run resolution</a><a href="#participants">Participant data</a><a href="#filters">Filters</a><a href="#handoff">Hand-off to the proposal</a><a href="#transport">Frames &amp; approval call</a><a href="#card">Confirmation card</a><a href="#followup">After approve / cancel</a><a href="#refresh">Profile refresh</a><a href="#edges">Edge cases</a><a href="#tests">Tests</a><a href="#files">Files by feature</a><a href="#open">Open questions</a>
+  </nav>
+</header>
+
+<!-- ============================================================ GLANCE -->
+<section class="layer" id="glance">
+  <h2>Decisions at a glance</h2>
+  <p>For the builders of <b>030</b> (sc-206) and <b>031</b> (sc-207). Each row links to the section with the reasoning and the alternatives.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Question</th><th>Decision</th><th>Built in</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#resolution">Which run is "the dungeon"?</a></td><td>Follow decision D5. A report named in the message wins. Next comes the one run of that kind already discussed in this chat. "Last" or "latest" picks the newest stored run. In every other case Barnaby asks, listing up to 5 candidates. The preamble gains a compact <b>Recent runs</b> line that carries report codes and fight ids.</td><td>030</td></tr>
+      <tr><td><a href="#participants">Where do name, realm, class, spec and role come from?</a></td><td>A <b>new, slim tool</b>, <code>get_report_participants(report_code, fight_id=0)</code>, in its own module. One WCL request (<code>playerDetails</code> plus the report region) goes through the single WCL client. It returns at most 120 characters per player.</td><td>030</td></tr>
+      <tr><td><a href="#filters">"Except the shaman", "only the healers"</a></td><td>The <b>model</b> filters the structured rows (every row has <code>class</code> and <code>role</code>). There are no filter arguments. The card shows the result before anything is written.</td><td>030 (prompt), 029 (proposal)</td></tr>
+      <tr><td><a href="#transport">How does the proposal reach the browser?</a></td><td>A new server→client WS frame, <code>proposal</code>. <code>ws._handle_tool_end</code> emits it after re-reading the stored proposal by id. On reload, <code>GET /api/conversations/{id}</code> returns it with the agent message it belongs to.</td><td>031</td></tr>
+      <tr><td><a href="#transport">How does the approval get back?</a></td><td><b>REST</b>, not WS: <code>POST /api/profile/proposals/{id}/approve</code> and <code>…/cancel</code>, with CSRF. Both call 029's shared service and are idempotent.</td><td>031</td></tr>
+      <tr><td><a href="#card">The card</a></td><td>shadcn <code>card</code>, <code>item</code>, <code>badge</code>, <code>button</code>, <code>spinner</code> and <code>alert</code>, all already installed. Approve covers every valid item and Cancel cancels the whole proposal (D4). Skipped rows are shown but never applied.</td><td>031</td></tr>
+      <tr><td><a href="#followup">What does Barnaby say afterwards?</a></td><td>A short, server-built, facts-only line, saved as an agent message and returned with the REST response. No model call.</td><td>031</td></tr>
+      <tr><td><a href="#refresh">How do the profile page and friend lists refresh?</a></td><td>The approve response is the trigger. A small <code>profileEvents</code> module (a <code>BroadcastChannel</code> plus a same-tab event) makes the profile page, the welcome panel and other tabs refetch. Barnaby's own context refreshes by itself on the next turn.</td><td>031</td></tr>
+    </tbody>
+  </table></div>
+  <p class="why">These decisions follow the product owner's decisions. <b>D4</b>: v1 approves all valid items or cancels, skipped items are shown and never applied, and there are no per-item toggles. <b>D5</b>: use the run in the chat context, otherwise ask, and pick the newest only on "last"/"latest". <b>D6</b>: every agent-initiated profile change goes through a proposal and the card.<cite>sprints/2026-10-26/decisions.md D4–D6</cite></p>
+</section>
+
+<!-- ============================================================ FLOW -->
+<section class="layer" id="flow">
+  <h2>End-to-end flow for the example request</h2>
+  <p>"Add the characters from the dungeon to my friends, except the shaman": user request → resolve run → participants → filter → proposal → card → approve → refresh. The proposal tool, its service and the stored proposal are part 1's design (<a href="capabilities-and-tools.html">capabilities &amp; tools</a>). They appear here only as one lifeline.</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 890" role="img" aria-labelledby="sq-title sq-desc">
+      <title id="sq-title">Sequence: from the chat request to the refreshed profile</title>
+      <desc id="sq-desc">The browser sends a chat turn. The backend passes it with the preamble to Barnaby, who resolves the run, calls get_report_participants, which fetches playerDetails and the report region through the WCL client and returns compact rows. Barnaby filters out the shaman and the user's own characters and calls the proposal tool, whose service stores a pending proposal in Postgres. The backend sends a proposal frame, then the answer tokens and done. The user clicks Approve, the browser posts to the approve endpoint, which calls execute_proposal; the service writes the friends. The backend returns the applied proposal and a follow-up line, and the browser updates the card and refreshes the profile views.</desc>
+      <defs>
+        <marker id="sq-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="sq-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <g>
+        <rect class="node" x="8" y="6" width="124" height="56" rx="8"/><text class="t" x="70" y="30" text-anchor="middle">Browser</text><text class="sub" x="70" y="50" text-anchor="middle">chat UI</text>
+        <rect class="node core" x="143" y="6" width="124" height="56" rx="8"/><text class="t" x="205" y="30" text-anchor="middle">Backend</text><text class="sub" x="205" y="50" text-anchor="middle">ws.py · REST</text>
+        <rect class="node core" x="278" y="6" width="124" height="56" rx="8"/><text class="t" x="340" y="30" text-anchor="middle">Barnaby</text><text class="sub" x="340" y="50" text-anchor="middle">ADK agent</text>
+        <rect class="node" x="413" y="6" width="124" height="56" rx="8" style="stroke:var(--q3);stroke-dasharray:6 4"/><text class="t" x="475" y="30" text-anchor="middle">Participants</text><text class="sub" x="475" y="50" text-anchor="middle">new tool · 030</text>
+        <rect class="node ext" x="548" y="6" width="124" height="56" rx="8"/><text class="t" x="610" y="30" text-anchor="middle">WCL client</text><text class="sub" x="610" y="50" text-anchor="middle">→ WCL API</text>
+        <rect class="node" x="683" y="6" width="124" height="56" rx="8" style="stroke:var(--q3);stroke-dasharray:6 4"/><text class="t" x="745" y="30" text-anchor="middle">Proposals</text><text class="sub" x="745" y="50" text-anchor="middle">part 1 · 029</text>
+        <rect class="node store" x="818" y="6" width="124" height="56" rx="8"/><text class="t" x="880" y="30" text-anchor="middle">Postgres</text><text class="sub" x="880" y="50" text-anchor="middle">tenant RLS</text>
+      </g>
+      <path class="life" d="M70,62 V880 M205,62 V880 M340,62 V880 M475,62 V880 M610,62 V880 M745,62 V880 M880,62 V880"/>
+
+      <path class="flow" marker-end="url(#sq-ah)" d="M70,105 H202"/><text class="lbl" x="137" y="97" text-anchor="middle">1 ChatTurn</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M205,149 H337"/><text class="lbl" x="272" y="141" text-anchor="middle">2 turn + preamble</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M340,185 H380 V207 H343"/><text class="lbl" x="388" y="202">3 resolve run (D5)</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M340,245 H472"/><text class="lbl" x="407" y="237" text-anchor="middle">4 participants(code, fight)</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M475,289 H607"/><text class="lbl" x="542" y="281" text-anchor="middle">5 playerDetails + region</text>
+      <path class="flow ret" marker-end="url(#sq-ah2)" d="M610,333 H478"/><text class="lbl" x="542" y="325" text-anchor="middle">6 JSON</text>
+      <path class="flow ret" marker-end="url(#sq-ah2)" d="M475,377 H343"/><text class="lbl" x="407" y="369" text-anchor="middle">7 compact rows</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M340,413 H380 V435 H343"/><text class="lbl" x="388" y="430">8 filter: no shaman, no own</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M340,473 H742"/><text class="lbl" x="560" y="465" text-anchor="middle">9 propose friends (4 rows)</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M745,517 H877"/><text class="lbl" x="811" y="509" text-anchor="middle">10 store pending</text>
+      <path class="flow ret" marker-end="url(#sq-ah2)" d="M745,561 H343"/><text class="lbl" x="560" y="553" text-anchor="middle">11 proposal (pending, id)</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M205,605 H73"/><text class="lbl" x="137" y="597" text-anchor="middle">12 proposal frame</text>
+      <path class="flow ret" marker-end="url(#sq-ah2)" d="M205,649 H73"/><text class="lbl" x="137" y="641" text-anchor="middle">13 tokens · done</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M70,693 H202"/><text class="lbl" x="137" y="685" text-anchor="middle">14 POST approve</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M205,737 H742"/><text class="lbl" x="475" y="729" text-anchor="middle">15 execute_proposal(id)</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M745,781 H877"/><text class="lbl" x="811" y="773" text-anchor="middle">16 add friends</text>
+      <path class="flow ret" marker-end="url(#sq-ah2)" d="M205,825 H73"/><text class="lbl" x="137" y="817" text-anchor="middle">17 applied + line</text>
+      <path class="flow" marker-end="url(#sq-ah)" d="M70,849 H110 V871 H73"/><text class="lbl" x="118" y="866">18 card applied · profile views refetch</text>
+    </svg>
+    <figcaption>Dashed boxes are new. The browser sees the proposal (12) before the answer text ends (13). The approval (14) is a separate REST call, not part of the chat turn.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>The browser sends the message as a normal <code>ChatTurn</code> over <code>/ws/chat</code>.</li>
+    <li><code>ws._handle_turn</code> saves it and builds the per-turn preamble (profile, known raids, and the new <b>Recent runs</b> line), then streams the agent.</li>
+    <li>Barnaby resolves "the dungeon" to one report and fight (see <a href="#resolution">run resolution</a>). If that isn't possible, he asks a question and the turn ends there.</li>
+    <li>He calls <code>get_report_participants(report_code, fight_id)</code>.</li>
+    <li>The tool sends one GraphQL request through <code>AsyncWCLClient.query</code>, so single-flight, rate-limit lanes and <code>raw_fetches</code> persistence all apply.</li>
+    <li>WCL returns the <code>playerDetails</code> JSON (players grouped as tanks, healers and dps) and the report region.</li>
+    <li>The tool returns compact rows: name, realm, region, class, spec and role.</li>
+    <li>Barnaby drops the shaman and the user's own characters (listed in KNOWN PLAYER CONTEXT).</li>
+    <li>He calls part 1's <code>propose_profile_changes</code> with the remaining rows (target friend, <code>raid_role</code> null).</li>
+    <li>Its service validates each item and stores a <b>pending</b> proposal. Nothing is written to the profile.</li>
+    <li>The tool result carries the proposal id.</li>
+    <li><code>_handle_tool_end</code> re-reads the stored proposal by id (tenant-scoped) and sends a <code>proposal</code> frame.</li>
+    <li>Barnaby ends with one short line ("approve it on the card"). <code>done</code> saves the agent message, which a reload uses to place the card.</li>
+    <li>The user clicks <b>Approve</b>, and the browser calls <code>POST /api/profile/proposals/{id}/approve</code>.</li>
+    <li>The route calls 029's <code>execute_proposal</code>, which goes through the same shared profile service as the profile REST API.</li>
+    <li>The service adds the valid friends and schedules their guide tasks, exactly like a manual add.</li>
+    <li>The response carries the applied proposal (per-item results) and the follow-up line, which is already saved as an agent message.</li>
+    <li>The card switches to <i>Applied</i>, the line is appended to the chat, and <code>notifyProfileChanged()</code> makes the profile views refetch.</li>
+  </ol>
+</section>
+
+<!-- ============================================================ RESOLUTION -->
+<section class="layer" id="resolution">
+  <h2>Run resolution: which run is "the dungeon"? (sc-206)</h2>
+  <h3>What Barnaby can see today</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Source</th><th>Where</th><th>Carries a report code?</th></tr></thead>
+    <tbody>
+      <tr><td>A report link or code in the message</td><td>the user's text</td><td>Yes. A <code>#fight=</code> in a link gives the fight.</td></tr>
+      <tr><td>Earlier tool calls in this chat</td><td>ADK session history, stored by <code>DatabaseSessionService</code> (<code>backend/app/agent_runner.py</code>). Old results are trimmed to stubs, but function-call arguments and <code>provenance</code> (report code, fight id) are kept (<code>wcl_agent/llm/context_trim.py</code>, <code>_KEPT_KEYS</code>).</td><td>Yes</td></tr>
+      <tr><td>The "investigate" kickoff of a chat</td><td><code>kickoff_prompt_for</code> (<code>backend/app/api/raids.py</code>) and <code>mplus_kickoff_prompt_for</code> (<code>backend/app/api/recent_raids.py</code>) put the report code, and for M+ the fight id, into the first message</td><td>Yes</td></tr>
+      <tr><td>Tracked raids (sidebar)</td><td>the preamble "Raids:" line in <code>profile_context._recent_block</code>, built from <code>repo.list_tracked_raids(limit=10)</code></td><td><b>No</b>, only the label</td></tr>
+      <tr><td>Welcome-page recent raids and M+ runs</td><td><code>recent_raids</code> and <code>recent_mplus_runs</code> tables, via <code>repo.list_recent_raids</code> and <code>repo.list_recent_mplus_runs</code></td><td>Stored, but <b>not in the agent's context</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Decision</h3>
+  <p>Barnaby resolves the run himself, from his context, following the flow below. To give him candidates when the chat has no run yet, <b>030 adds a compact "Recent runs" line to the preamble</b> and adds report codes to the existing "Raids:" line. Both are read from tables that are already stored, so this adds no WCL request. The format, at most 5 runs of each kind with the newest first, trimmed to about 600 characters:</p>
+  <pre class="code">- Recent M+ runs: Ara-Kara +12, 2026-10-25, timed (report a1B2c3, fight 7); …
+- Recent raids: Nerub-ar Palace, Heroic, 2026-10-24 (report x9Y8z7); …
+- Raids: &lt;label&gt; (report x9Y8z7); …</pre>
+  <p>Kind matters: "the dungeon", "the key" and "the run" mean an M+ run, and "the raid" means a raid. A generic "the log" means either. A report with several keys and no fight id counts as several candidates.</p>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 690" role="img" aria-labelledby="df-title df-desc">
+      <title id="df-title">Decision flow: resolving an ambiguous run</title>
+      <desc id="df-desc">Starting from a phrase like the dungeon or the raid, Barnaby checks four questions in order. First, a report link or code in the message: use it, and ask which key if the report holds several and no fight was given. Second, runs of that kind already in this chat: one is used, several lead to a question listing them. Third, whether the user said last or latest: take the newest matching run from Recent runs, or ask for a link if there is none. Fourth, candidates in Recent runs: one or more lead to a question listing up to five, none leads to asking for a report link. Every use outcome continues to get_report_participants; every ask outcome ends the turn with one short question.</desc>
+      <defs>
+        <marker id="df-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="df-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="node core" x="40" y="8" width="880" height="52" rx="10"/>
+      <text class="t" x="480" y="40" text-anchor="middle">"the dungeon" · "the raid" · "last night's run"  →  kind = M+ or raid</text>
+
+      <rect class="node" x="40" y="100" width="400" height="64" rx="8"/><text class="t" x="60" y="128">1 Report link or code</text><text class="sub" x="60" y="150">in the user's message?</text>
+      <rect class="node" x="40" y="214" width="400" height="64" rx="8"/><text class="t" x="60" y="242">2 Run(s) of that kind already</text><text class="sub" x="60" y="264">in this chat (tool calls, kickoff)?</text>
+      <rect class="node" x="40" y="340" width="400" height="64" rx="8"/><text class="t" x="60" y="368">3 Said "last", "latest",</text><text class="sub" x="60" y="390">"last night's"?</text>
+      <rect class="node" x="40" y="454" width="400" height="64" rx="8"/><text class="t" x="60" y="482">4 Candidates of that kind</text><text class="sub" x="60" y="504">in Recent runs / Raids lines?</text>
+
+      <rect class="node store" x="530" y="100" width="370" height="64" rx="8"/><text class="t" x="546" y="128">Use it (+ fight from #fight=)</text><text class="sub" x="546" y="150">several keys, no fight → ask which key</text>
+      <rect class="node store" x="530" y="196" width="370" height="44" rx="8"/><text class="t" x="546" y="224">One → use it, no question</text>
+      <rect class="node ext" x="530" y="250" width="370" height="44" rx="8"/><text class="t" x="546" y="278">Several → ask, listing them</text>
+      <rect class="node store" x="530" y="340" width="370" height="64" rx="8"/><text class="t" x="546" y="368">Newest matching run</text><text class="sub" x="546" y="390">none stored → ask for a report link</text>
+      <rect class="node ext" x="530" y="436" width="370" height="44" rx="8"/><text class="t" x="546" y="464">≥ 1 → ask which (newest first, ≤ 5)</text>
+      <rect class="node ext" x="530" y="490" width="370" height="44" rx="8"/><text class="t" x="546" y="518">0 → ask for a report link</text>
+
+      <rect class="node core" x="40" y="600" width="900" height="56" rx="10"/>
+      <text class="t" x="490" y="634" text-anchor="middle">get_report_participants(report_code, fight_id)</text>
+
+      <path class="flow" marker-end="url(#df-ah)" d="M240,60 V97"/>
+      <path class="flow" marker-end="url(#df-ah)" d="M240,164 V211"/><text class="lbl" x="252" y="194">no</text>
+      <path class="flow" marker-end="url(#df-ah)" d="M240,278 V337"/><text class="lbl" x="252" y="314">none</text>
+      <path class="flow" marker-end="url(#df-ah)" d="M240,404 V451"/><text class="lbl" x="252" y="432">no</text>
+      <path class="flow" marker-end="url(#df-ah)" d="M440,132 H527"/><text class="lbl" x="484" y="124" text-anchor="middle">yes</text>
+      <path class="flow" marker-end="url(#df-ah)" d="M440,236 H486 V218 H527"/>
+      <path class="flow" marker-end="url(#df-ah)" d="M486,236 V272 H527"/>
+      <path class="flow" marker-end="url(#df-ah)" d="M440,372 H527"/><text class="lbl" x="484" y="364" text-anchor="middle">yes</text>
+      <path class="flow" marker-end="url(#df-ah)" d="M440,486 H486 V458 H527"/>
+      <path class="flow" marker-end="url(#df-ah)" d="M486,486 V512 H527"/>
+      <path class="collector" d="M900,218 H935 M900,372 H935 M900,132 H935 V597" marker-end="url(#df-ah)"/>
+      <text class="lbl" x="926" y="588" text-anchor="end">use</text>
+      <text class="sub" x="40" y="580">Every "ask" box ends the turn with one short question. The answer names the run, so the next turn exits at step 1 or 2.</text>
+    </svg>
+    <figcaption>Accent (blue) boxes continue to the participants tool. Grey boxes are a question back to the user. Nothing is ever picked silently (D5).</figcaption>
+  </figure>
+
+  <p class="why">D5 is the product rule: use the run in the chat context, otherwise ask with a short list, and pick the newest only on "last" or "latest". A wrong guess would write the wrong people into the profile, and one question is cheap.<cite>sprints/2026-10-26/decisions.md D5</cite></p>
+  <p class="why">The same "ask one concise question instead of guessing" rule is already part of the prompt contract, so the new guidance extends a clause the model already follows.<cite>wcl_agent/agent.py &lt;CONTEXT_RESOLUTION&gt; ("If an omitted value … could change a report-specific answer, ask one concise question") · backend/tests/test_prompt_contract.py</cite></p>
+  <p class="why">Candidates go in the preamble, not in a new "list my runs" tool. The rows are already stored per tenant (features 013 and 022) and the preamble is rebuilt every turn (<code>ws._build_turn_preamble</code>), so they cost one small DB read and no model round trip. A tool would need the DB inside <code>wcl_agent</code>, which "stays DB-free". <b>Alternatives:</b> a backend-registered "list recent runs" tool (an extra round and a second injection pattern); a WCL <code>recentReports</code> lookup per character (WCL quota, and it duplicates what feature 013 already stores).<cite>wcl_agent/client/wcl_client.py (module docstring: "the package itself stays DB-free") · backend/app/db/repository.py list_recent_raids, list_recent_mplus_runs · constitution I, III</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>A one-candidate case with no chat context still gets a question ("Do you mean Ara-Kara +12 from yesterday?"). D5 reads "if there is none [in the chat context] … Barnaby asks". A one-line confirmation is cheap, and it stops an old run being used when the user meant a newer one that isn't stored yet.</p>
+  <p class="why">Where the guidance lives: a short <code>&lt;RUN_RESOLUTION&gt;</code> paragraph (or an addition to <code>&lt;CONTEXT_RESOLUTION&gt;</code>) in <code>wcl_agent/agent.py</code>, guarded by a clause test in <code>test_prompt_contract.py</code>. <code>agent.py</code> is 029's file until it merges, so 030 adds this together with its one-line registration.<cite>sprints/2026-10-26/plan.md (overlap table: wcl_agent/agent.py)</cite></p>
+</section>
+
+<!-- ============================================================ PARTICIPANTS -->
+<section class="layer" id="participants">
+  <h2>Participant data: name, realm, class, spec and role (sc-206)</h2>
+  <h3>What the existing tools give</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Existing source</th><th>Name</th><th>Realm</th><th>Region</th><th>Class</th><th>Spec</th><th>Role</th><th>Size and cache</th></tr></thead>
+    <tbody>
+      <tr><td><code>get_report_player_details</code> (<code>report_tools.py</code>), <code>playerDetails(fightIDs)</code></td><td>yes</td><td>yes <span class="badge inf">Inferred</span></td><td>no</td><td>yes</td><td>yes, a <code>specs</code> list</td><td>yes, the <code>tanks</code>/<code>healers</code>/<code>dps</code> groups</td><td>Raw JSON scalar, capped at 60,000 chars (<code>MAX_JSON_CHARS</code>). Not a cache family. Shape varies with combatant info.</td></tr>
+      <tr><td><code>get_report_master_data</code>, <code>masterData.actors</code></td><td>yes</td><td>not queried</td><td>no</td><td><code>subType</code></td><td>no</td><td>no</td><td>All actors (players, pets, NPCs) plus every ability. Large. Not cached.</td></tr>
+      <tr><td><code>get_report_fights</code> / <code>load_report_summary</code> (<code>REPORT_SUMMARY_FIELDS</code>)</td><td>yes</td><td>not queried</td><td>no</td><td>yes</td><td>no</td><td>no</td><td>Cached 24 h (<code>report_summary</code> family). Per-fight <code>player_ids</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Only <code>playerDetails</code> carries spec and role, but the existing tool returns it raw and possibly huge, without a region. The guide data sheet already parses the same JSON into its three role groups (<code>backend/app/services/guide_pipeline/datasheet.py</code>, <code>_player_details</code>).</p>
+
+  <h3>Decision: a new slim tool in its own module</h3>
+  <p><span class="badge planned">New</span><code>wcl_agent/tools/participants.py</code> → <code>async def get_report_participants(report_code: str, fight_id: int = 0) -&gt; dict</code>, registered with one line in <code>TOOLS</code> (<code>wcl_agent/agent.py</code>).</p>
+  <ul>
+    <li><b>Query.</b> One request through the existing helper <code>report_tools._report_fields(code, "region { slug } playerDetails(fightIDs: $fightIDs)", ", $fightIDs: [Int]", {"fightIDs": _fight_ids(fight_id)})</code>. This reuses <code>_report_fields</code>, <code>_fight_ids</code> and the single client, so Redis-backed tokens, single-flight, lanes and <code>raw_fetches</code> persistence all come for free. No combatant info is requested.</li>
+    <li><b>Parse.</b> A pure function, <code>participants_from_player_details(details, region)</code>, walks <code>data.playerDetails.{tanks,healers,dps}</code> the same way <code>datasheet._player_details</code> does. The role comes from the group. The spec is the entry in <code>specs</code> with the highest <code>count</code>. The class is the player's <code>type</code>. Entries whose class is not a playable class in the roster are dropped, which removes pets and NPCs. Rows are sorted by role (tank, healer, dps), then by name.</li>
+    <li><b>Fight scope.</b> For an M+ run, pass the keystone fight id, which gives exactly that key's 5 players. For a raid, <code>fight_id=0</code> gives everyone who appeared in any fight, including swaps.</li>
+    <li><b>Envelope.</b> <code>with_envelope(…, Provenance(report_code=…, fight_id=…))</code>, like the other report tools, so <code>provenance</code> survives context trimming.</li>
+    <li><b>Tracked raid.</b> Add the tool name to <code>REPORT_SCOPED_TOOLS</code> (<code>backend/app/services/raids.py</code>), so a participants lookup tracks the raid like any other report tool.</li>
+  </ul>
+  <pre class="code">{"status": "success",
+ "report_code": "a1B2c3", "fight_id": 7, "region": "eu",
+ "participants": [
+   {"name": "Kazrok",     "realm": "Draenor",     "region": "eu", "class": "Warrior", "spec": "Protection", "role": "tank"},
+   {"name": "Brightmane", "realm": "Tarren Mill", "region": "eu", "class": "Paladin", "spec": "Holy",       "role": "healer"},
+   {"name": "Zul'kar",    "realm": "Silvermoon",  "region": "eu", "class": "Shaman",  "spec": "Elemental",  "role": "dps"}, …],
+ "provenance": {…}, "completeness": {…}}</pre>
+  <p><b>Output-size budget (030 asserts it):</b> each participant row is at most <b>120 characters</b> of JSON. A 5-player M+ result is at most <b>1,500 characters</b> in total, so it stays under the 1,500-char <code>context_trim</code> stub threshold and survives later turns intact. A 40-player raid fixture is at most <b>6,000 characters</b>. The result never carries <code>_truncated</code>.</p>
+
+  <p class="why">A new tool, not a flag on <code>get_report_player_details</code>. A <code>compact=True</code> switch would give one tool two output shapes, which is harder for the model to choose between and harder for 029's generated capability summary to describe. It would still lack the region. The existing tool stays as it is for gear and talent questions. <b>Alternatives:</b> slim the existing tool's output (breaks its gear/talent use); <code>masterData</code> or <code>report_summary</code> plus a realm field (still no spec or role, so a second call would be needed); using <code>playerDetails</code> raw (up to 60 KB of nested JSON for the model to parse).<cite>wcl_agent/tools/report_tools.py get_report_player_details, get_report_master_data, MAX_JSON_CHARS · sprints/2026-10-26/plan.md 030 AC 1, AC 3</cite></p>
+  <p class="why">Reuse: no new client, no new cache code and no second copy of a query. The <code>playerDetails</code> field call is the same one <code>get_report_player_details</code> uses, composed through the shared <code>_report_fields</code> helper. A module of its own plus a one-line registration is the shape the scrum master asked for, so 030 doesn't collide with 029 in <code>agent.py</code>.<cite>constitution I · brief 028 ("030's tool lives in its own module under wcl_agent/tools/")</cite></p>
+  <p class="why">No new cache family in v1. The participants of a run are asked about once per request, and the result then sits in the conversation. A repeat costs one request, which <code>raw_fetches</code> stores for the planned DB-first reads (sc-129). <b>Alternative:</b> a <code>report_participants</code> family with a 24 h TTL for finished reports. That's a follow-up if the cache-stats page shows repeats.<cite>specs/014-redis-wcl-cache/research.md R1 (playerDetails deliberately not a family) · documentation/architecture/backend-data-infra.html#cache</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>The exact <code>playerDetails</code> keys (<code>name</code>, <code>server</code>, <code>type</code>, <code>specs[{spec,count}]</code>) and <code>Report.region { slug }</code> come from the WCL v2 schema as remembered, not from a recorded response in the repo. The test fixtures only show <code>name</code> and <code>combatantInfo</code>. <b>030's first task:</b> record one real response (from <code>raw_fetches</code> or a live call) and build the fixtures from it. If <code>Report.region</code> doesn't exist, take the region from <code>guild { server { region { slug } } }</code>. If that is empty too, use the region of the user's own character found in the run.</p>
+</section>
+
+<!-- ============================================================ FILTERS -->
+<section class="layer" id="filters">
+  <h2>Filters: "except the shaman", "only the healers"</h2>
+  <p><b>Decision:</b> the model applies filters to the structured rows. The participants tool has no filter arguments. Each row carries canonical values (<code>class</code> as WCL's class name, <code>role</code> ∈ <code>tank | healer | dps</code>, the same vocabulary as <code>RaidRole</code> in <code>backend/app/schemas.py</code>), so a filter is a plain equality check over at most 40 rows.</p>
+  <ul>
+    <li><b>Several matches</b> ("the shaman" when two shamans played): all of them are excluded, and Barnaby names them in his reply ("left out both shamans, Zul'kar and Rainsong"). The card shows exactly who will be added.</li>
+    <li><b>No match</b> ("except the shaman" with no shaman in the run): Barnaby asks before proposing ("No shaman was in that run. Add all 4?"). A filter that matches nothing usually means the run or the class is wrong.</li>
+    <li><b>The user's own characters</b> are always left out of an "add friends" proposal. They are listed in KNOWN PLAYER CONTEXT, and the proposal validation would mark them as skipped anyway.</li>
+  </ul>
+  <p class="why">The model filters because filter phrasing is open-ended ("everyone but me", "the two DPS warriors", "not the pug healer"). Covering that with arguments would need a small query language, and the list is small. The approval card is the safety net: nothing is written until the user has seen the exact rows (D4, D6). <b>Alternatives:</b> <code>exclude_classes</code>/<code>roles</code>/<code>exclude_names</code> arguments (deterministic, but they keep growing and still need the model to map words to values); filtering inside the proposal tool (mixes two jobs).<cite>sc-212 ("by the model on structured data, or by tool arguments") · decisions.md D4, D6 · constitution III</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Model filtering can't be unit-tested without a model. 030 AC 4 is met by a test showing that the structured output supports both example filters exactly (see <a href="#tests">Tests</a>). The model's own choice is checked by the owner's live run of the example request.</p>
+</section>
+
+<!-- ============================================================ HANDOFF -->
+<section class="layer" id="handoff">
+  <h2>Hand-off to the proposal (shape owned by part 1)</h2>
+  <p>The change-proposal contract (v1) is defined <b>once</b>, in part 1: <a href="capabilities-and-tools.html#proposal-contract">proposal contract</a>, with <a href="capabilities-and-tools.html#proposal-item">items</a>, <a href="capabilities-and-tools.html#validation-codes">validation codes</a> and the <a href="capabilities-and-tools.html#proposal-service-api">service API</a>. This page doesn't redefine any of it. The <code>proposal</code> frame, the card and the REST responses all carry part 1's wire model, <code>ProfileProposalOut</code>, unchanged. The names below are part 1's.</p>
+  <p>What this page uses from it:</p>
+  <ul>
+    <li><b>The proposal</b>: <code>id</code>, <code>conversation_id</code>, <code>status</code> (pending | applied | cancelled | expired; expired is computed), <code>expires_at</code> (30 min after creation), <code>applied_at</code>, and <code>items</code> (at most 30).</li>
+    <li><b>Each item</b>: <code>index</code>, <code>action</code>, <code>target</code> (own | friend), <code>name</code>, <code>realm</code>, <code>region</code>, <code>class_name</code>, <code>spec</code>, <code>raid_role</code>, <code>previous_raid_role</code>, <code>validation {ok, code, message}</code>, and <code>result {status: applied | skipped | failed, code, character_id}</code>, which stays null while pending.</li>
+    <li><b>The service</b> (<code>backend/app/services/profile_proposals.py</code>, owned by 029): <code>get_proposal</code>, <code>execute_proposal</code> (idempotent, re-validates every item) and <code>cancel_proposal</code>, each called as <code>(identity, proposal_id)</code> in its own tenant-scoped transaction. Failures raise <code>ProposalError(code)</code> with <code>not_found</code>, <code>proposal_expired</code>, <code>proposal_cancelled</code> or <code>proposal_applied</code>.</li>
+  </ul>
+  <p>Mapping one participant row to an "add friend" item: <code>name</code> → <code>name</code>, <code>realm</code> → <code>realm</code>, <code>region</code> → <code>region</code>, <code>class</code> → <code>class_name</code>, <code>spec</code> → <code>spec</code>, <code>target</code> = friend and <code>raid_role</code> = null (inferred, see OQ-4). The role the player had in the run is not carried, but the card's spec shows it. Part 1's validation turns a missing or unknown realm (<code>invalid_realm</code>), an unknown region (<code>invalid_region</code>), an existing friend or own character, the friend limit, a repeated row (<code>duplicate_item</code>) or a hostile name (<code>invalid_name</code>) into the item's validation result.</p>
+  <p class="why">One contract, linked rather than restated: the card, the frame and the service can't drift apart.<cite>sc-212 ("Part 1 owns the proposal shape … must use the same shape") · plan.md overlap table · contract v1 relayed by the scrum master 2026-10-26, incl. D8 (friend_limit, MAX_FRIENDS = 50)</cite></p>
+  <p class="why oq"><span class="badge oq">Open question</span>Mismatches between part 1's contract and this design are listed under <a href="#open">Open questions</a> as OQ-1, OQ-2 and OQ-5. None of them changes the shape.</p>
+</section>
+
+<!-- ============================================================ TRANSPORT -->
+<section class="layer" id="transport">
+  <h2>Frames and the approval call (extending ws.py and the frontend types)</h2>
+  <h3>Server → client: a new <code>proposal</code> frame</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Frame <code>type</code></th><th>Direction</th><th>Payload</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td><code>proposal</code> <span class="badge planned">New</span></td><td>server → client</td><td><code>proposal</code>: part 1's <code>ProfileProposalOut</code>, as <code>get_proposal</code> returns it</td><td>Inside a turn, after a successful proposal-tool call (between <code>meta</code> and <code>done</code>). Additive: older clients ignore unknown frames.</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>Backend</b> (<code>backend/app/api/ws.py</code>, <code>_handle_tool_end</code>): when <code>name == "propose_profile_changes"</code> and <code>ok</code> is true, take the proposal id from the proposal in the tool result. Load it with <code>get_proposal(identity, id)</code>, which opens its own short transaction (no DB connection is held while the model streams, PERF-006), and send <code>ProposalFrame(proposal=…)</code>. The frame is built from the stored row, not from the tool result the model saw. A <code>ProposalError</code> (for example another tenant's id) sends no frame and is logged.</li>
+    <li><b>Schema</b> (<code>backend/app/schemas.py</code>): <code>class ProposalFrame(BaseModel): type: Literal["proposal"] = "proposal"; proposal: ProfileProposalOut</code>. <code>ConversationDetail</code> gains <code>proposals: list[ConversationProposalOut] = []</code>, where <span class="badge planned">New</span><code>ConversationProposalOut</code> is <code>{message_seq: int | None, proposal: ProfileProposalOut}</code>, the same idea as <code>ArtifactOut.message_seq</code>.</li>
+    <li><b>Message link (no new column)</b>: <code>GET /api/conversations/{id}</code> lists the conversation's proposals and attaches each one to the <b>first agent message created at or after</b> <code>proposal.created_at</code>. A proposal is made during a turn, and that turn's answer is saved after it. If no such message exists (the turn failed or the socket dropped), <code>message_seq</code> is null. Listing needs a read that the service API doesn't have yet (OQ-2).</li>
+    <li><b>Frontend</b> (<code>frontend/src/api/wsClient.ts</code> <code>Frame</code> union, <code>frontend/src/types.ts</code>): add <code>{ type: "proposal"; proposal: ProfileProposal }</code>, where <code>ProfileProposal</code> mirrors <code>ProfileProposalOut</code> (part 1 asks 031 to add it to <code>types.ts</code>). <code>Message</code> gains <code>proposals?: ProfileProposal[]</code>, and <code>ConversationDetail</code> gains <code>proposals</code>. <code>App.tsx</code> collects them per turn in a <code>pendingProposalsRef</code> and attaches them on <code>done</code>, like <code>pendingArtifactsRef</code>.</li>
+  </ul>
+
+  <h3>Client → server: REST, not a WS frame</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Call</th><th>Success</th><th>Errors (<code>detail</code> code)</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /api/profile/proposals/{id}/approve</code> <span class="badge planned">New</span></td><td><code>200 {proposal, follow_up}</code>: the applied proposal with per-item results, plus the saved follow-up agent message (<code>MessageOut</code>). A repeat call returns the stored result with <code>follow_up: null</code> (the route reads the status first and only saves a line when this call applied it).</td><td><code>404 not_found</code> (unknown id, or another tenant or user) · <code>409 proposal_expired</code> · <code>409 proposal_cancelled</code></td></tr>
+      <tr><td><code>POST /api/profile/proposals/{id}/cancel</code> <span class="badge planned">New</span></td><td><code>200 {proposal, follow_up}</code>, status cancelled. A repeat cancel returns the stored state with <code>follow_up: null</code>.</td><td><code>404 not_found</code> · <code>409 proposal_applied</code> · <code>409 proposal_expired</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>Both routes live in a new <code>backend/app/api/proposals.py</code> (router prefix <code>/api/profile/proposals</code>, registered in <code>backend/app/main.py</code>). They use the same dependencies as every profile write, <code>require_csrf</code> and <code>get_tenant_db</code>, and call only 029's service (<code>get_proposal</code>, <code>execute_proposal</code>, <code>cancel_proposal</code>). A <code>ProposalError(code)</code> becomes <code>404</code> for <code>not_found</code> and <code>409</code> with that code for the rest, in the existing error envelope. The routes never touch profile rows themselves.</p>
+
+  <p class="why">REST for the decision. It is how every profile write already works (CSRF, the tenant-scoped session, <code>commit_and_rescope</code>, the error envelope), so approval uses the same security path as a manual add. It also works while a turn is streaming. The socket's receive loop parses every inbound message as a <code>ChatTurn</code> and awaits each turn to completion, so a WS approval would wait behind a running answer and would need a second, discriminated inbound type. <b>Alternatives:</b> a client→server <code>proposal_decision</code> WS frame (new inbound union, queued behind turns, and no CSRF-style check per message); sending the approval as a chat message for the model to act on (a model round trip, and the model could misread it).<cite>backend/app/api/ws.py (module docstring, chat receive loop, ChatTurn(**raw)) · backend/app/api/profile.py (require_csrf, get_tenant_db) · documentation/architecture/agent-frontend.html#boundary ("today the client only ever sends ChatTurn")</cite></p>
+  <p class="why">A frame for the proposal, mirroring charts. <code>create_chart</code> already follows the same pattern: a tool result captured in <code>_handle_tool_end</code>, persisted, sent as a typed frame, attached to the agent message on <code>done</code>, and returned by <code>GET /api/conversations/{id}</code>. Typed frames are a constitution rule. <b>Alternative:</b> the browser polls for pending proposals after <code>done</code> (an extra request every turn, and late cards).<cite>backend/app/api/ws.py _handle_tool_end (ArtifactFrame) · backend/app/api/conversations.py get_conversation · constitution IV · plan.md 031 footprint ("frames, or a REST route, per the 028 design")</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Today the frontend ignores <code>detail.artifacts</code> when a chat is reopened (<code>selectConversation</code> maps only <code>detail.messages</code>), so a reload doesn't show charts. Proposals must not repeat this, because 031 AC 4 requires a reload to show the card's real state. 031 attaches <code>detail.proposals</code> to messages by <code>message_seq</code>. A proposal with no <code>seq</code> (no answer was saved after it) renders as a standalone card after the last message. Charts on reload are out of scope (a follow-up).</p>
+</section>
+
+<!-- ============================================================ CARD -->
+<section class="layer" id="card">
+  <h2>The confirmation card (sc-207)</h2>
+  <p>The card renders inside Barnaby's bubble, under the answer text, where charts render today (<code>MessageList.tsx</code>). It has one row per item and two actions: <b>Approve</b> applies every valid item and <b>Cancel</b> cancels the whole proposal (D4). Items that failed validation are shown, marked as skipped, and never applied.</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 640" role="img" aria-labelledby="cw-title cw-desc">
+      <title id="cw-title">Wireframe: the confirmation card in a Barnaby message</title>
+      <desc id="cw-desc">A Barnaby message says three friends from Ara-Kara plus 12 are lined up, with the shaman left out, and asks the user to approve on the card. Below it a card titled Proposed change, friends, with a Pending badge and the source run and expiry time. Four rows: Kazrok, Brightmane and Velyra each with an Add badge, and Nightpaw dimmed with a Skipped, already a friend badge. The footer has an Approve 3 button, a Cancel button and a note that skipped rows are never applied. Under the card, three small variants show the applied, cancelled and expired states.</desc>
+      <rect class="node ext" x="10" y="8" width="940" height="540" rx="14"/>
+      <text class="t" x="34" y="40">Barnaby</text>
+      <text x="34" y="72">Three friends lined up from Ara-Kara +12. I left out Zul'kar, the shaman.</text>
+      <text x="34" y="96">Nothing changes until you approve it on the card.</text>
+
+      <rect class="node core" x="34" y="118" width="892" height="412" rx="12"/>
+      <text class="t" x="58" y="154">Proposed change · Friends</text>
+      <text class="sub" x="58" y="178">From Ara-Kara +12 · report a1B2c3, fight 7 · expires 21:47</text>
+      <rect class="pill acc" x="800" y="134" width="104" height="28" rx="14"/><text class="acctext" x="852" y="154" text-anchor="middle" style="font-size:14px">Pending</text>
+      <path class="life" d="M58,196 H902" style="stroke-dasharray:none"/>
+
+      <g>
+        <circle cx="82" cy="230" r="18" class="node store"/><text class="t" x="82" y="236" text-anchor="middle" style="font-size:13px">KA</text>
+        <text class="t" x="112" y="226">Kazrok</text><text class="sub" x="112" y="248">Draenor · EU · Protection Warrior</text>
+        <rect class="pill ok" x="800" y="216" width="104" height="28" rx="14"/><text class="oktext" x="852" y="236" text-anchor="middle" style="font-size:14px">+ Add</text>
+      </g>
+      <g>
+        <circle cx="82" cy="290" r="18" class="node store"/><text class="t" x="82" y="296" text-anchor="middle" style="font-size:13px">BR</text>
+        <text class="t" x="112" y="286">Brightmane</text><text class="sub" x="112" y="308">Tarren Mill · EU · Holy Paladin</text>
+        <rect class="pill ok" x="800" y="276" width="104" height="28" rx="14"/><text class="oktext" x="852" y="296" text-anchor="middle" style="font-size:14px">+ Add</text>
+      </g>
+      <g>
+        <circle cx="82" cy="350" r="18" class="node store"/><text class="t" x="82" y="356" text-anchor="middle" style="font-size:13px">VE</text>
+        <text class="t" x="112" y="346">Velyra</text><text class="sub" x="112" y="368">Silvermoon · EU · Fire Mage</text>
+        <rect class="pill ok" x="800" y="336" width="104" height="28" rx="14"/><text class="oktext" x="852" y="356" text-anchor="middle" style="font-size:14px">+ Add</text>
+      </g>
+      <g class="dim">
+        <circle cx="82" cy="410" r="18" class="node"/><text class="t" x="82" y="416" text-anchor="middle" style="font-size:13px">NI</text>
+        <text class="t" x="112" y="406">Nightpaw</text><text class="sub" x="112" y="428">Tarren Mill · EU · Feral Druid</text>
+        <rect class="pill warn" x="640" y="396" width="264" height="28" rx="14"/><text class="warntext" x="772" y="416" text-anchor="middle" style="font-size:14px">Skipped · already a friend</text>
+      </g>
+      <path class="life" d="M58,448 H902" style="stroke-dasharray:none"/>
+
+      <rect class="btn" x="58" y="468" width="150" height="42" rx="8"/><text class="btntext" x="133" y="495" text-anchor="middle">Approve 3</text>
+      <rect class="node" x="222" y="468" width="112" height="42" rx="8"/><text class="t" x="278" y="495" text-anchor="middle">Cancel</text>
+      <text class="sub" x="356" y="495">Skipped rows are never applied (D4).</text>
+
+      <rect class="pill ok" x="10" y="568" width="300" height="56" rx="10"/><text class="oktext" x="26" y="592">✓ Applied</text><text class="sub" x="26" y="613">3 added · 1 skipped</text>
+      <rect class="pill muted" x="330" y="568" width="300" height="56" rx="10"/><text class="t" x="346" y="592">Cancelled</text><text class="sub" x="346" y="613">nothing in your profile changed</text>
+      <rect class="pill warn" x="650" y="568" width="300" height="56" rx="10"/><text class="warntext" x="666" y="592">Expired</text><text class="sub" x="666" y="613">this proposal expired, ask again</text>
+    </svg>
+    <figcaption>Wireframe, not a visual spec: 031 uses the app's tokens and shadcn parts. Bottom row: the same card's header and footer in its three end states. The rows stay, and each shows its per-item result.</figcaption>
+  </figure>
+
+  <h3>Parts (shadcn registry, found through the shadcn MCP)</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Card part</th><th>Registry item</th><th>In the repo</th></tr></thead>
+    <tbody>
+      <tr><td>Frame, title, source line, status badge, footer</td><td><code>@shadcn/card</code>: <code>Card</code>, <code>CardHeader</code>, <code>CardTitle</code>, <code>CardDescription</code>, <code>CardAction</code>, <code>CardContent</code>, <code>CardFooter</code></td><td>installed, <code>frontend/src/components/ui/card.tsx</code></td></tr>
+      <tr><td>One row per item</td><td><code>@shadcn/item</code>: <code>ItemGroup</code>, <code>Item</code> (<code>variant="outline" size="sm"</code>), <code>ItemMedia</code>, <code>ItemContent</code>, <code>ItemTitle</code>, <code>ItemDescription</code>, <code>ItemActions</code></td><td>installed. Same row style as the profile's character list (<code>CharactersTab.tsx</code>).</td></tr>
+      <tr><td>Status and per-item action, validation or result</td><td><code>@shadcn/badge</code></td><td>installed</td></tr>
+      <tr><td>Approve / Cancel, busy state</td><td><code>@shadcn/button</code> (default + <code>outline</code>), <code>@shadcn/spinner</code> inside Approve while the request runs</td><td>installed</td></tr>
+      <tr><td>Error ("couldn't apply, try again") and expired notice</td><td><code>@shadcn/alert</code></td><td>installed</td></tr>
+      <tr><td>Class initials in the row media</td><td>none. Reuse <code>classColor()</code> and <code>initials()</code> from <code>frontend/src/lib/classColors.ts</code>.</td><td>existing helper, as in the profile list</td></tr>
+    </tbody>
+  </table></div>
+  <p>No new registry item is needed. MCP searches (<code>registries: ["@shadcn"]</code>) for <code>card</code>, <code>item</code>, <code>button group</code> and <code>sonner</code> found <code>button-group</code> and <code>sonner</code> as possible extras. Neither is used: two buttons in <code>CardFooter</code> need no group, and a toast would repeat what the card already shows (and <code>sonner</code> would add a dependency). 031 runs the MCP audit checklist on the finished card (constitution VII). Hand-built: only the composition component itself, <span class="badge planned">New</span><code>frontend/src/components/ProposalCard.tsx</code>.</p>
+
+  <h3>What each row shows (from part 1's item fields)</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Item state</th><th>Row badge</th><th>Second line</th></tr></thead>
+    <tbody>
+      <tr><td>pending, <code>validation.ok</code></td><td><code>action</code>: "+ Add", "− Remove", or "Role: <code>previous_raid_role</code> → <code>raid_role</code>" (update). Target in the title: "Friends" or "Your characters".</td><td><code>realm</code> · <code>region</code> (upper case) · <code>spec</code> <code>class_name</code>, plus <code>raid_role</code> when set</td></tr>
+      <tr><td>pending, not <code>ok</code></td><td>warn: "Skipped · " + the label for <code>validation.code</code> (below). The row is dimmed.</td><td><code>validation.message</code> when the server set one</td></tr>
+      <tr><td><code>result.status</code> applied</td><td>ok: "Added", "Removed" or "Role set"</td><td>as pending</td></tr>
+      <tr><td><code>result.status</code> skipped</td><td>warn: "Skipped · " + label</td><td>as pending</td></tr>
+      <tr><td><code>result.status</code> failed</td><td>bad: "Failed · " + label for <code>result.code</code></td><td>"Valid when proposed, changed since"</td></tr>
+    </tbody>
+  </table></div>
+  <p>Labels for part 1's <a href="capabilities-and-tools.html#validation-codes">validation codes</a>: <code>duplicate_friend</code>, <code>already_friend</code> → "already a friend"; <code>already_own</code>, <code>duplicate_character</code> → "your own character"; <code>character_limit</code> → "character limit reached"; <code>friend_limit</code> → "friend limit (50) reached" (D8); <code>invalid_name</code> → "name not valid"; <code>invalid_realm</code> → "realm unknown, add by hand"; <code>invalid_region</code> → "region unknown"; <code>invalid_item</code> → "not valid"; <code>duplicate_item</code> → "listed twice"; <code>not_found</code> → "no longer in your profile"; <code>no_change</code> → "already set". An unknown code shows "not applied". The labels live in one map in <code>ProposalCard.tsx</code>, and the follow-up line uses the same wording on the server.</p>
+
+  <h3>Behaviour</h3>
+  <ul>
+    <li><b>Approve N</b>: N counts the valid items. With N = 0, Approve is disabled and the description says "Nothing to apply". Only Cancel is offered.</li>
+    <li><b>Double click</b>: the first click disables both buttons and shows the spinner until the response arrives. The server is idempotent anyway.</li>
+    <li><b>Expiry</b>: shown as a time in <code>CardDescription</code>, with no live countdown. A pending card whose <code>expires_at</code> has passed renders as Expired without a request. The server's <code>409 proposal_expired</code> is the authority.</li>
+    <li><b>Hostile names</b>: names and realms render as plain text nodes (React escapes them), never through <code>StreamMarkdown</code>.</li>
+    <li><b>Accessibility</b>: the card is a labelled group (<code>aria-labelledby</code> the title). A polite live region announces the state change ("Applied: 3 added, 1 skipped"). Focus stays on the card after Approve or Cancel.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 300" role="img" aria-labelledby="st-title st-desc">
+      <title id="st-title">Card states</title>
+      <desc id="st-desc">A pending card goes to approving when Approve is clicked, then to applied. It goes to cancelling when Cancel is clicked, then to cancelled. It becomes expired when its time passes or the server answers proposal_expired. A network or server error during approving returns it to pending with an alert, so the user can retry.</desc>
+      <defs>
+        <marker id="st-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="st-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="pill acc" x="30" y="120" width="170" height="56" rx="10"/><text class="acctext" x="115" y="154" text-anchor="middle">Pending</text>
+      <rect class="node" x="330" y="40" width="190" height="56" rx="10"/><text class="t" x="425" y="74" text-anchor="middle">Approving…</text>
+      <rect class="node" x="330" y="130" width="190" height="56" rx="10"/><text class="t" x="425" y="164" text-anchor="middle">Cancelling…</text>
+      <rect class="pill warn" x="330" y="220" width="190" height="56" rx="10"/><text class="warntext" x="425" y="254" text-anchor="middle">Expired</text>
+      <rect class="pill ok" x="650" y="40" width="190" height="56" rx="10"/><text class="oktext" x="745" y="74" text-anchor="middle">Applied</text>
+      <rect class="pill muted" x="650" y="130" width="190" height="56" rx="10"/><text class="t" x="745" y="164" text-anchor="middle">Cancelled</text>
+
+      <path class="flow" marker-end="url(#st-ah)" d="M200,136 H260 V68 H327"/><text class="lbl" x="268" y="62">Approve</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M200,152 H327"/><text class="lbl" x="268" y="146" text-anchor="middle">Cancel</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M200,166 H260 V248 H327"/><text class="lbl" x="268" y="270">time passes</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M520,68 H647"/><text class="lbl" x="584" y="60" text-anchor="middle">200</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M520,158 H647"/><text class="lbl" x="584" y="150" text-anchor="middle">200</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M520,82 H548 V248 H523"/><text class="lbl" x="556" y="226">409 expired</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M400,40 V20 H115 V117"/><text class="lbl" x="128" y="14">error → Alert, retry</text>
+    </svg>
+    <figcaption>Any state also jumps straight to the server's state when a response or a broadcast from another tab says so (for example Applied in tab 2, or a 409 proposal_applied after a Cancel). The card always shows what the server says.</figcaption>
+  </figure>
+  <p class="why">D4 sets the card's two buttons and the skipped-row rule. D6 makes it the only way an agent change is applied. The parts come from the shadcn registry through the MCP, and the item rows reuse the profile list's look, so a friend looks the same in the card and on the profile page.<cite>decisions.md D4, D6 · constitution VII · frontend/src/components/profile/CharactersTab.tsx (Item rows, classColor)</cite></p>
+</section>
+
+<!-- ============================================================ FOLLOWUP -->
+<section class="layer" id="followup">
+  <h2>What Barnaby says (before and after the decision)</h2>
+  <ul>
+    <li><b>When proposing</b> (the proposal turn): one or two lines that name the run and anything left out, and say nothing changes until approved. He never says "added" before approval. The wording rule belongs to part 1's prompt guidance. This page needs only that the turn ends after the proposal.</li>
+    <li><b>After Approve</b>: a server-built line, saved as an agent message in the proposal's conversation and returned as <code>follow_up</code>:
+      <pre class="code">Done. Added 3 friends: Kazrok, Brightmane and Velyra. Skipped 1: Nightpaw (already a friend).
+Done. Removed 1 friend: Nightpaw. Set Velyra's role to healer.
+Added 2 friends: Kazrok and Brightmane. Couldn't add Velyra (realm unknown). Nothing else changed.</pre></li>
+    <li><b>After Cancel</b>: <code>Cancelled. Your profile is unchanged.</code></li>
+    <li><b>Expired</b>: no message. The card says "This proposal expired. Ask Barnaby again."</li>
+  </ul>
+  <p class="why">A template, not a model call. The line only restates per-item results the service returned, so it can't drift from what happened. It costs no model quota and no rate-limit risk, and it appears instantly. The personality rule says banter may not change a fact, and a template keeps every fact exact. <b>Alternative:</b> a hidden follow-up turn so Barnaby answers in his own voice (a model round trip per click, it can fail on a 429, and it could misstate counts).<cite>wcl_agent/agent.py &lt;PERSONALITY&gt; ("Banter may not add, remove, exaggerate, or soften a fact") · plan.md 031 AC 2 ("Barnaby posts a short follow-up line (per the design)")</cite></p>
+  <p class="why">Barnaby knows the new state on his next turn without extra work. The KNOWN PLAYER CONTEXT preamble is rebuilt from the profile tables on every turn, so the new friends are in his context next time. The follow-up line isn't added to the ADK session.<cite>backend/app/api/ws.py _build_turn_preamble (repo.get_profile per turn)</cite></p>
+</section>
+
+<!-- ============================================================ REFRESH -->
+<section class="layer" id="refresh">
+  <h2>Profile page and friend lists refresh without a reload</h2>
+  <p>Where profile data shows today: the <b>profile page</b> (<code>/profile</code>, <code>ProfilePage</code> → <code>CharactersTab</code>, which loads <code>getProfile()</code> on mount and after its own mutations), and the <b>welcome panel</b> in a new chat (<code>WelcomePanel</code>: recent raids and M+ runs of the user's own characters). The chat sidebar has no friend list. It lists conversations and tracked raids.</p>
+  <p><b>Decision:</b> <span class="badge planned">New</span><code>frontend/src/lib/profileEvents.ts</code> with two functions:</p>
+  <ul>
+    <li><code>notifyProfileChanged(detail)</code> posts <code>{proposal, targets: ["friend" | "own"]}</code> on a <code>BroadcastChannel("wcl-profile")</code> and dispatches the same event in the current tab.</li>
+    <li><code>useProfileChanged(callback)</code> subscribes to both, and unsubscribes on unmount.</li>
+  </ul>
+  <p>The card calls <code>notifyProfileChanged</code> after a successful approve. Subscribers: <code>CharactersTab</code> calls its existing <code>refresh()</code>, which also covers a profile page open in another tab. <code>WelcomePanel</code> calls its existing <code>load()</code> when <code>own</code> characters changed. A <code>ProposalCard</code> showing the same proposal id in another tab takes the broadcast proposal as its new state.</p>
+  <p class="why">Same-tab navigation needs nothing: <code>/profile</code> is its own route and refetches on mount. The live update matters for a profile page in another tab, for the welcome panel, and for the same card open twice. A browser-side channel covers all three without server work. <b>Alternatives:</b> a server push frame to every socket of the tenant (needs a connection registry, and across workers a Redis pub/sub, which is a lot for this); polling the profile (wasteful); a full page reload (what the story rules out).<cite>frontend/src/main.tsx (routes) · frontend/src/components/profile/CharactersTab.tsx refresh() · frontend/src/components/WelcomePanel.tsx load() · constitution III</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Other devices (a phone with the profile open) see the change on their next load. That's acceptable for v1. Server push is a follow-up if the owner asks for it.</p>
+</section>
+
+<!-- ============================================================ EDGES -->
+<section class="layer" id="edges">
+  <h2>Edge cases</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Case</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><b>Expired proposal</b></td><td>The card renders Expired as soon as <code>expires_at</code> has passed (on load, or on a click after expiry), and Approve becomes unavailable. The server answers <code>409 proposal_expired</code> to a late approve or cancel, and nothing is written. The text reads "This proposal expired. Ask Barnaby again." There is no follow-up message. The time-to-live is part 1's (30 min), and <code>expired</code> is computed by the service whenever a pending proposal is read past <code>expires_at</code>.</td></tr>
+      <tr><td><b>Reload mid-confirmation</b></td><td><code>GET /api/conversations/{id}</code> returns the proposals with their <code>message_seq</code>, and the card renders in its real state (pending, applied, cancelled or expired). A pending, unexpired card is still actionable. If no answer was saved after the proposal (the reload hit mid-turn), it has no <code>message_seq</code> and renders as a standalone card at the end of the chat. A turn that was still running server-side links up on the next load.</td></tr>
+      <tr><td><b>Two tabs</b></td><td>Both show the card. The first Approve wins. An Approve in the second tab gets <code>200</code> with the stored result (idempotent: no second write, no second follow-up line). A Cancel there gets <code>409 proposal_applied</code>. Either way the card shows Applied. <span class="badge inf">Inferred</span> Two clicks landing in the same few milliseconds could each see "pending" before executing, and then both save a follow-up line. That's harmless (the profile is written once) and not worth a lock. With the broadcast channel, the second tab's card and profile page usually update before the user clicks.</td></tr>
+      <tr><td><b>Approval after the conversation moved on</b></td><td>The proposal stays actionable until it expires, whatever was said since. The card stays on its original message. On execution, part 1's service re-validates every item against the current profile, so a friend added by hand in the meantime becomes <code>result.status</code> failed with <code>duplicate_friend</code> ("Failed · already a friend"). The follow-up line is appended at the end of the chat (latest <code>seq</code>). A newer proposal never cancels an older one in v1.</td></tr>
+      <tr><td><b>Character already a friend</b></td><td>The item's validation marks it at proposal time, and the row shows "Skipped · already a friend". It doesn't count toward Approve N and is never applied. The same goes for the user's own character ("Skipped · your own character"), though Barnaby already leaves those out.</td></tr>
+      <tr><td><b>Cross-realm</b></td><td>Normal in M+. Each row carries its own realm from WCL, and the identity is name + realm + region, so two players with the same name on different realms are two rows. The card always shows the realm.</td></tr>
+      <tr><td><b>Unknown realm or region</b></td><td>The tool returns <code>realm: null</code> (or <code>region: null</code>) rather than guessing. Part 1's validation marks the item <code>invalid_realm</code> or <code>invalid_region</code> ("Skipped · realm unknown, add by hand"). The rest of the proposal still applies.</td></tr>
+      <tr><td>More than 30 players after filtering</td><td>Over part 1's <code>MAX_PROPOSAL_ITEMS</code> (30), for example a raid with many swaps. Barnaby doesn't propose. He says how many players there are and asks the user to narrow it down ("only the healers", "only last night's kill").</td></tr>
+      <tr><td>Friend limit</td><td>An add over <code>MAX_FRIENDS</code> (50, D8) is "Skipped · friend limit (50) reached" at proposal time, or "Failed · …" if the limit was reached by the time it executed.</td></tr>
+      <tr><td>Socket drops before the frame arrives</td><td>The proposal is stored, and the next load of the chat shows the card.</td></tr>
+      <tr><td>Approve while another answer streams</td><td>Allowed. REST doesn't wait for the socket's turn loop.</td></tr>
+      <tr><td>The turn fails after the proposal was made</td><td>On <code>error</code>, <code>App.tsx</code> keeps the turn's pending proposals and shows them as a standalone card, so a stored proposal is never invisible.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="why">Idempotent, tenant-bound, expiring proposals are part 1's server guarantees, and they make the two-tab and late-approval cases safe without any client locking. Re-validation at execution time is what makes a late approval correct.<cite>plan.md 029 AC 5 · 031 AC 4 · decisions.md D4</cite></p>
+</section>
+
+<!-- ============================================================ TESTS -->
+<section class="layer" id="tests">
+  <h2>Tests</h2>
+  <h3>030: participant resolution (backend, faked WCL)</h3>
+  <ul>
+    <li><span class="badge planned">New</span><code>backend/tests/test_participants_tool.py</code>, using the existing fake client (<code>backend/tests/wcl_fakes.py</code>, <code>mock_async_client</code>):
+      <ul>
+        <li><b>Raid</b> fixture (20 players in tanks, healers and dps groups): every row has name, realm, region, class, spec and role. The spec is the highest-count entry. Rows are sorted. Pets and NPCs are absent.</li>
+        <li><b>M+</b> fixture: <code>fight_id=7</code> is sent as <code>fightIDs: [7]</code>, and exactly 5 rows come back.</li>
+        <li><b>Unknown realm</b>: a player without <code>server</code> gives <code>realm: null</code>, and no row is dropped silently.</li>
+        <li><b>Size budget</b>: every row is ≤ 120 chars, the M+ result is ≤ 1,500, and a 40-player fixture is ≤ 6,000. No <code>_truncated</code>.</li>
+        <li><b>Filters</b> (030 AC 4): on the M+ fixture, <code>[p for p in rows if p["class"] != "Shaman"]</code> and <code>[p for p in rows if p["role"] == "healer"]</code> give exactly the expected names.</li>
+        <li><b>One request</b>: the fake sees one query, and the result has <code>provenance.report_code</code>.</li>
+        <li>An unknown report gives <code>{"status": "error"}</code>.</li>
+      </ul></li>
+    <li><b>Ambiguous run</b>: <code>test_profile_context.py</code> asserts the Recent runs line (codes, fight ids, newest first, the cap and trim). <code>test_prompt_contract.py</code> asserts the run-resolution clause ("ask … listing", "last/latest"). The model's own choice is checked live by the owner.</li>
+  </ul>
+  <h3>031: confirmation card and approval</h3>
+  <ul>
+    <li><b>Component test</b> of <code>ProposalCard</code>: pending (rows, skipped rows marked, "Approve 3"), approved (per-item results), cancelled and expired. A double click calls approve once. An error shows the alert and returns to pending. This needs a frontend test runner (see OQ-3).</li>
+    <li><b>WS protocol test</b> (pattern of <code>backend/tests/test_model_fallback_ws.py</code>: a fake socket and a patched <code>stream_response</code>): a stream that yields a <code>propose_profile_changes</code> <code>tool_end</code> produces a <code>proposal</code> frame carrying the stored <code>ProfileProposalOut</code>, before <code>done</code>. <code>GET /api/conversations/{id}</code> then returns it with the agent message's <code>seq</code>. A tool result with another tenant's id produces no frame.</li>
+    <li><b>REST tests</b>: approve gives 200, applied, with the follow-up saved. A second approve gives the same result, no second write and no second line. Cancel writes nothing. Expired gives 409 <code>proposal_expired</code>. Cancel after approve gives 409 <code>proposal_applied</code>. Another tenant gives 404. Approval goes through 029's shared service (a spy on <code>execute_proposal</code>).</li>
+    <li><b>End-to-end happy path</b> (backend-level, with fakes): faked WCL for the M+ fixture plus a scripted stream that calls the real participants tool and the real proposal tool with the shaman left out. The <code>proposal</code> frame follows, then approve, then <code>GET /api/profile</code> lists every player except the shaman as a new friend. This is the sprint-level acceptance "with fakes in tests". The browser-level run is the owner's live check (there is no browser test runner in the repo).</li>
+  </ul>
+  <p class="why">These reuse the existing test patterns: the fake WCL client, the fake socket with a patched stream, and the SQLite tenant fixtures. The prompt-contract test style makes guidance clauses survive later prompt edits.<cite>backend/tests/test_model_fallback_ws.py · backend/tests/wcl_fakes.py · backend/tests/test_prompt_contract.py · plan.md 030 AC 4–5, 031 AC 5</cite></p>
+</section>
+
+<!-- ============================================================ FILES -->
+<section class="layer" id="files">
+  <h2>Files by feature (checked to exist, or marked New)</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Feature</th><th>File</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td>030</td><td><code>wcl_agent/tools/participants.py</code> <span class="badge planned">New</span></td><td><code>get_report_participants</code>, <code>participants_from_player_details</code></td></tr>
+      <tr><td>030</td><td><code>wcl_agent/agent.py</code></td><td>one line in <code>TOOLS</code>, plus the run-resolution guidance (after 029 merges, or by grant)</td></tr>
+      <tr><td>030</td><td><code>backend/app/services/profile_context.py</code></td><td><code>build_preamble</code> / <code>_recent_block</code>: Recent runs line, report codes on the Raids line</td></tr>
+      <tr><td>030</td><td><code>backend/app/api/ws.py</code></td><td><code>_build_turn_preamble</code>: read <code>list_recent_mplus_runs</code> / <code>list_recent_raids</code> (limit 5) and pass them in. Shared with 031 one after the other: 030 first.</td></tr>
+      <tr><td>030</td><td><code>backend/app/services/raids.py</code></td><td>add the tool to <code>REPORT_SCOPED_TOOLS</code></td></tr>
+      <tr><td>030</td><td><code>frontend/src/toolLabels.ts</code>, <code>frontend/src/lib/spells.ts</code></td><td>optional label and spell entry (a fallback label exists)</td></tr>
+      <tr><td>030</td><td><code>backend/tests/test_participants_tool.py</code> <span class="badge planned">New</span>, <code>test_profile_context.py</code>, <code>test_prompt_contract.py</code></td><td>tests</td></tr>
+      <tr><td>031</td><td><code>backend/app/api/ws.py</code></td><td><code>_handle_tool_end</code>: <code>proposal</code> frame (after 029 merges)</td></tr>
+      <tr><td>031</td><td><code>backend/app/schemas.py</code></td><td><code>ProposalFrame</code>, <code>ConversationProposalOut</code>, <code>ConversationDetail.proposals</code>, the approve/cancel response model (<code>ProfileProposalOut</code> itself is 029's)</td></tr>
+      <tr><td>031</td><td><code>backend/app/api/proposals.py</code> <span class="badge planned">New</span>, <code>backend/app/main.py</code></td><td>approve/cancel routes, plus one <code>include_router</code> line</td></tr>
+      <tr><td>031</td><td><code>backend/app/api/conversations.py</code></td><td><code>get_conversation</code> returns proposals, each linked to its message by time</td></tr>
+      <tr><td>031</td><td><code>frontend/src/api/wsClient.ts</code>, <code>frontend/src/types.ts</code>, <code>frontend/src/api/restClient.ts</code></td><td>frame, types, <code>approveProposal</code> / <code>cancelProposal</code></td></tr>
+      <tr><td>031</td><td><code>frontend/src/components/ProposalCard.tsx</code> <span class="badge planned">New</span>, <code>frontend/src/lib/profileEvents.ts</code> <span class="badge planned">New</span></td><td>card, refresh channel</td></tr>
+      <tr><td>031</td><td><code>frontend/src/components/MessageList.tsx</code>, <code>frontend/src/App.tsx</code></td><td>render cards, collect frames, attach on <code>done</code>/reload, append the follow-up</td></tr>
+      <tr><td>031</td><td><code>frontend/src/components/profile/CharactersTab.tsx</code>, <code>frontend/src/components/WelcomePanel.tsx</code></td><td>subscribe with <code>useProfileChanged</code></td></tr>
+      <tr><td>029 (part 1)</td><td><code>propose_profile_changes</code>, <code>ProfileProposalOut</code>, the <code>profile_proposals</code> table (migration <code>0016</code>), <code>backend/app/services/profile_proposals.py</code> (<code>get_proposal</code> / <code>execute_proposal</code> / <code>cancel_proposal</code>, plus the read in OQ-2), the shared profile service</td><td>called from here, never redefined</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">For the scrum master: 031's footprint in plan.md doesn't list <code>App.tsx</code>, <code>main.py</code>, <code>conversations.py</code>, <code>CharactersTab.tsx</code> or <code>WelcomePanel.tsx</code>. 030 needs <code>profile_context.py</code>, <code>raids.py</code> and the preamble part of <code>ws.py</code>. 030 and 031 are on the same track and run one after the other, so <code>ws.py</code> can pass from 030 to 031.</p>
+</section>
+
+<!-- ============================================================ OPEN -->
+<section class="layer" id="open">
+  <h2>Open questions and follow-ups</h2>
+  <p class="why oq"><span class="badge oq">OQ-1</span><b>No display-only "played role" on an item.</b> Contract v1 carries <code>class_name</code> and <code>spec</code> for display, and <code>raid_role</code> as the override to store. With <code>raid_role</code> null on adds (OQ-4), the card shows spec and class but not the role the player had in the run. Options: (a) accept this, since the spec implies the role, <i>recommended</i>; (b) part 1 adds a display-only <code>played_role</code>.</p>
+  <p class="why oq"><span class="badge oq">OQ-2</span><b>Reading a conversation's proposals.</b> Proposals are stored in Postgres with <code>conversation_id</code> (good for reload), but the v1 service API has only <code>get_proposal</code> by id, and there's no message link column. 031 AC 4 needs the cards on reload. Options: (a) 029 adds a read-only <code>list_proposals(identity, conversation_id)</code>, and <code>conversations.py</code> links each proposal to the first agent message at or after its <code>created_at</code>, <i>recommended</i>, because it needs no new column; (b) 029 also stores a nullable <code>message_seq</code>, set by 031 at <code>done</code>, which is exact but adds a column and a write; (c) 031 queries the table itself (a second path past the service, rejected).</p>
+  <p class="why oq"><span class="badge oq">OQ-3</span><b>Frontend test runner.</b> The frontend has no test runner (<code>frontend/package.json</code> has only dev, build and preview scripts), but 031 AC 5 asks for a component test. Options: (a) add <code>vitest</code>, <code>@testing-library/react</code> and <code>jsdom</code> as dev dependencies (a <code>package.json</code> grant for 031), <i>recommended</i>; (b) move the card's state logic into a pure function and test it from Python (not possible, since it's TypeScript); (c) drop the component test (fails AC 5).</p>
+  <p class="why oq"><span class="badge oq">OQ-4</span><b>Role on friends added from a run.</b> The run shows the role played (a druid healed this key), but the profile's <code>raid_role</code> is a user override, otherwise inferred from the resolved spec (contract v1: on add, null = inferred). Options: (a) Barnaby passes <code>raid_role</code> null on adds unless the user asks for a role, <i>recommended</i>, because the inferred role follows the character's main spec; (b) set the override to the played role (it can freeze an off-spec).</p>
+  <p class="why oq"><span class="badge oq">OQ-5</span><b>Realm spelling in the duplicate check.</b> <code>repo.find_character_identity</code> compares <code>lower(server)</code>, so "Tarren Mill" and "tarren-mill" don't match, and "already a friend" could miss a friend typed as a slug. Contract v1 doesn't say how <code>realm</code> is compared. Options: (a) part 1's validation compares <code>server_slug()</code> values, <i>recommended</i>; (b) the participants tool emits slugs (the card would show "tarren-mill").</p>
+  <p class="why oq"><span class="badge oq">OQ-6</span><b>Per-item selection</b> on the card (untick one row). D4 keeps it out of v1. Follow-up story if the owner wants it.</p>
+  <p class="why oq"><span class="badge oq">OQ-7</span><b>Should the outcome enter the ADK session?</b> (a) No: the next turn's preamble carries the real profile, <i>recommended</i>; (b) yes, as a synthetic event, so Barnaby can quote the outcome word for word.</p>
+  <p><b>Follow-ups (not in this sprint):</b> a <code>report_participants</code> cache family if repeats show up; capturing participants as known players; server push of profile changes to other devices; restoring charts on chat reload (the same gap the proposals close for themselves); letting a newer proposal supersede an older pending one.</p>
+</section>
+
+<footer>
+  <div>Generated 2026-10-26 · sc-212 · feature 028</div>
+  <div>Sources used:</div>
+  <ul>
+    <li><code>sprints/2026-10-26/plan.md</code>, <code>decisions.md</code> (D4–D6, D8)</li>
+    <li>Part 1 proposal contract v1 and addenda (dev-a-027, relayed by the scrum master 2026-10-26): <code>capabilities-and-tools.html#proposal-contract</code></li>
+    <li><code>.specify/memory/constitution.md</code> (I, III, IV, VII)</li>
+    <li><code>documentation/architecture/agent-frontend.html</code>, <code>backend-data-infra.html</code></li>
+    <li><code>wcl_agent/agent.py</code> (prompt sections, <code>TOOLS</code>)</li>
+    <li><code>wcl_agent/tools/report_tools.py</code></li>
+    <li><code>wcl_agent/client/queries.py</code>, <code>wcl_client.py</code></li>
+    <li><code>wcl_agent/llm/context_trim.py</code></li>
+    <li><code>wcl_agent/cache/cache_models.py</code>, <code>normalize.py</code></li>
+    <li><code>backend/app/api/ws.py</code>, <code>profile.py</code>, <code>conversations.py</code>, <code>raids.py</code>, <code>recent_raids.py</code></li>
+    <li><code>backend/app/schemas.py</code></li>
+    <li><code>backend/app/db/repository.py</code>, <code>models.py</code></li>
+    <li><code>backend/app/services/profile_context.py</code>, <code>raids.py</code>, <code>known_entities.py</code>, <code>guide_pipeline/datasheet.py</code></li>
+    <li><code>backend/app/agent_runner.py</code></li>
+    <li><code>backend/tests/test_model_fallback_ws.py</code>, <code>test_guide_pipeline_datasheet.py</code></li>
+    <li><code>frontend/src/App.tsx</code>, <code>main.tsx</code>, <code>types.ts</code></li>
+    <li><code>frontend/src/api/wsClient.ts</code>, <code>restClient.ts</code></li>
+    <li><code>frontend/src/components/MessageList.tsx</code>, <code>Sidebar.tsx</code>, <code>WelcomePanel.tsx</code>, <code>profile/CharactersTab.tsx</code></li>
+    <li><code>frontend/src/components/ui/*</code>, <code>frontend/src/lib/classColors.ts</code></li>
+    <li><code>specs/014-redis-wcl-cache/research.md</code></li>
+    <li>shadcn MCP (<code>@shadcn</code> registry): card, item, badge, button, spinner, alert, button-group, sonner</li>
+  </ul>
+</footer>
+</div>
+<script>
+(function(){
+  var btn=document.querySelector('.pausebtn');
+  if(!btn)return;
+  btn.addEventListener('click',function(){
+    var on=document.documentElement.classList.toggle('paused');
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    btn.textContent=on?'Play animations':'Pause animations';
+  });
+})();
+</script>
+</body>
+</html>
