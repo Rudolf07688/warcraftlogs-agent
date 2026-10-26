@@ -32,14 +32,14 @@
 
 ## Phase 5: AFTER 029 MERGES ONLY (do not start before the scrum master says so; then rebase onto the sprint tip)
 
-- [ ] T010 [US2] `backend/app/api/ws.py` `_build_turn_preamble`: read `repo.list_recent_raids` and `repo.list_recent_mplus_runs` (limit 5) and pass them to `build_preamble`; run impact first
-- [ ] T011 [US1] Register `get_report_participants` in `wcl_agent/agent.py` in 029's `TOOL_GROUPS`/`TOOLS` (not backend `extra_groups`)
-- [ ] T012 [US2] Add the `<RUN_RESOLUTION>` guidance to `wcl_agent/agent.py` (D5 order, kind mapping, one-candidate confirm, at most 5 candidates, filter on rows)
-- [ ] T013 [US2] Clause test in `backend/tests/test_prompt_contract.py` for the D5 guidance (deterministic check for SC-003)
+- [X] T010 [US2] `backend/app/api/ws.py` `_build_turn_preamble`: read `repo.list_recent_raids` and `repo.list_recent_mplus_runs` (limit 5) and pass them to `build_preamble`; run impact first
+- [X] T011 [US1] Register `get_report_participants` in `wcl_agent/agent.py` in 029's `TOOL_GROUPS`/`TOOLS` (not backend `extra_groups`)
+- [X] T012 [US2] Add the `<RUN_RESOLUTION>` guidance to `wcl_agent/agent.py` (D5 order, kind mapping, one-candidate confirm, at most 5 candidates, filter on rows)
+- [X] T013 [US2] Clause test in `backend/tests/test_prompt_contract.py` for the D5 guidance (deterministic check for SC-003)
 
 ## Phase 6: Hand-off
 
-- [ ] T014 Full backend test run, frontend build, `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --force` then `detect-changes --scope all --repo .`, ownership check against the grant, restore `CLAUDE.md` and `.specify/feature.json`, then report to the scrum master
+- [X] T014 Full backend test run, frontend build, `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --force` then `detect-changes --scope all --repo .`, ownership check against the grant, restore `CLAUDE.md` and `.specify/feature.json`, then report to the scrum master
 
 ## Dependencies
 

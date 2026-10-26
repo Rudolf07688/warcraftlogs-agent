@@ -19,6 +19,7 @@ SECTIONS = [
     "TOOLS",
     "EVIDENCE_PLAN",
     "CONTEXT_RESOLUTION",
+    "RUN_RESOLUTION",
     "VALIDATION_BEFORE_ANALYSIS",
     "ANALYSIS_ROUTING",
     "BENCHMARK_POLICY",
@@ -221,3 +222,11 @@ def test_time_block_is_last_so_the_prefix_stays_cacheable():
 
     assert _INSTRUCTION_BODY.rstrip().endswith("</CURRENT_TIME>")
     assert _INSTRUCTION_BODY.index("<CURRENT_TIME>") > len(_INSTRUCTION_BODY) - 100
+
+
+def test_run_resolution_follows_decision_d5():
+    """Feature 030 (D5): ask with candidates, never guess; newest only on "last"/"latest"."""
+    body = section("RUN_RESOLUTION").lower()
+    for clause in ("last", "latest", "recent runs", "at most 5", "never guess silently", "confirmation"):
+        assert clause in body, f"missing D5 clause: {clause!r}"
+    assert "get_report_participants" not in body  # tool usage lives in its docstring

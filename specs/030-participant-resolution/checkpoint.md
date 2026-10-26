@@ -14,3 +14,5 @@
 
 **Baseline (before code)**: full backend suite 1066 passed, 3 skipped, 1 deselected.
 **Phases 1-4 done**: suite 1081 passed, 3 skipped, 1 deselected; `npm run build` ok. detect-changes: medium, only `build_preamble` flows (eval run_case), kwargs optional. Next: phase 5 after "029 MERGED, rebase".
+
+**Phase 5 done (re-sequenced before 029, per scrum master)**: agent.py (TOOLS entry, one line in the hand-written TOOLS list because `test_every_registered_tool_is_described` still requires the name; <RUN_RESOLUTION> has no literal tool name), ws.py `_build_turn_preamble` (two reads + kwargs), test_prompt_contract.py (D5 clause test). Suite: 1083 passed, 3 skipped, 1 deselected. detect-changes: low. 029 must fold the TOOLS name line into its generated summary.
