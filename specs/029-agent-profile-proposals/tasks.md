@@ -159,7 +159,7 @@ cross-user, expiry and cancel, and check the rows.
 - [X] T035 [P] `cd frontend && npm run build` green
 - [X] T036 `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --force` in the worktree, then `detect-changes --scope all --repo .`; re-run if partial or truncated; no unexpected symbols
 - [X] T037 Ownership check: `git diff --name-only 1da8bca...HEAD` lists only plan.md's 23 rows; `git checkout -- CLAUDE.md .specify/feature.json` before each commit; ws.py diff is exactly 2 lines
-- [ ] T038 Update `specs/029-agent-profile-proposals/checkpoint.md` and send the scrum master the hand-off (branch, base, commits, files, test counts, risks, how to verify each AC)
+- [X] T038 Update `specs/029-agent-profile-proposals/checkpoint.md` and send the scrum master the hand-off (branch, base, commits, files, test counts, risks, how to verify each AC)
 
 ---
 
