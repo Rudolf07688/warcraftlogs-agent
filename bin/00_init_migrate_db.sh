@@ -18,18 +18,25 @@ echo " -- Initializing and Migrating Database -- "
 
 source .env
 
-# -- UV -- #
+# ------------------ UV ------------------ #
 uv sync --all-extras
 if [ $? != 0 ]; then
     echo "uv sync failed; creating new venv"
     uv venv .venv
 fi
 
-# --- Fresh UV env -- #
+# -- Fresh UV env -- #
 source .venv/bin/activate
 uv sync --all-extras
 if [ $? != 0 ]; then
     echo "ERROR: UV environment setup failed"
+    exit 1
+fi
+
+# ------------------ Start Database ------------------ #
+docker compose up -d db
+if [ $? != 0 ]; then
+    echo "ERROR: Failed to start database"
     exit 1
 fi
 
