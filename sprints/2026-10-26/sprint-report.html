@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL App Sprint 2026-10-26</title>
+<style>
+/* Standalone sprint report: no network requests, light/dark tokens, one readable column. */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:32px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--bad);background:var(--bad-soft);border-radius:8px;padding:12px 16px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Sprint report · local only · not published</div>
+  <h1>Sprint 2026-10-26: self-aware agent (epic 203)</h1>
+  <div class="meta">
+    <span>Branch <b class="mono">sprint-2026-10-26</b></span>
+    <span>Base <b class="mono">cf370e8</b></span>
+    <span>Code tip <b class="mono">cec5e61</b> (artefact commit follows)</span>
+    <span>Not pushed · not merged to main</span>
+  </div>
+  <p>Barnaby now knows what the app can do and can change your profile safely. You ask in chat, he works out the run and its players, proposes the exact change, you approve it on a card, and the profile refreshes without a reload. The owner's example: <em>"Add the characters from the dungeon to my friends, except the shaman."</em></p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="v">20<small> / 20 pts</small></div><div class="s">Delivered vs planned (target 19–23)</div></div>
+  <div class="kpi"><div class="v">7<small> stories</small></div><div class="s">All Under Review, waiting for your live test</div></div>
+  <div class="kpi"><div class="v">5<small> features</small></div><div class="s">027–031, each accepted on the first review</div></div>
+  <div class="kpi"><div class="v">1171<small> passed</small></div><div class="s">Backend tests (base 1066), 0 new failures; frontend 12 passed</div></div>
+  <div class="kpi"><div class="v">34<small> QA findings</small></div><div class="s">0 Critical · 2 High · 7 Medium · 25 Low, all deferred (owner)</div></div>
+</div>
+
+<section>
+  <h2>The flow that shipped</h2>
+  <div class="card flow">
+    <span>You ask in chat</span><i>→</i><span>Barnaby resolves the run (asks if unclear, D5)</span><i>→</i>
+    <span><code>get_report_participants</code></span><i>→</i><span>filters ("except the shaman")</span><i>→</i>
+    <span><code>propose_profile_changes</code> (stores a proposal, writes nothing)</span><i>→</i>
+    <span>card in chat: Approve / Cancel</span><i>→</i><span>shared profile service writes</span><i>→</i><span>profile and other tabs refresh</span>
+  </div>
+</section>
+
+<section>
+  <h2>Stories and features</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Feature</th><th>Story</th><th>Pts</th><th>What it does</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td>027 · design</td><td>sc-211</td><td><span class="pts p3">3</span></td><td>Design doc: capability summary, profile write tools, the proposal contract, the security model</td><td><span class="tag t-acc">Under Review</span></td></tr>
+      <tr><td>028 · design</td><td>sc-212</td><td><span class="pts p3">3</span></td><td>Design doc: run resolution, participants, confirmation card, frames, refresh</td><td><span class="tag t-acc">Under Review</span></td></tr>
+      <tr><td>029 · track A</td><td>sc-204</td><td><span class="pts p2">2</span></td><td>"What I can do" summary generated from the registered tools (hand-written list removed), plus the app-features line (D13)</td><td><span class="tag t-acc">Under Review</span></td></tr>
+      <tr><td>029 · track A</td><td>sc-205</td><td><span class="pts p5">5</span></td><td>Profile proposal tool; proposals table (migration 0016, RLS); one shared profile write path; 50-friend cap (D8); realm-slug duplicate check</td><td><span class="tag t-acc">Under Review</span></td></tr>
+      <tr><td>030 · track B</td><td>sc-206</td><td><span class="pts p3">3</span></td><td>Slim participants tool (one WCL request); RECENT RUNS candidates in the preamble; run-resolution guidance</td><td><span class="tag t-acc">Under Review</span></td></tr>
+      <tr><td>031 · track B</td><td>sc-207</td><td><span class="pts p3">3</span></td><td>Confirmation card (shadcn), WS proposal frame, REST approve/cancel, follow-up line, cross-tab refresh, reload state</td><td><span class="tag t-acc">Under Review</span></td></tr>
+      <tr><td>031 · track B</td><td>sc-208</td><td><span class="pts p1">1</span></td><td>Chat bubbles as a % of the column (agent min(90%,1200px), user min(75%,900px)); long URLs wrap</td><td><span class="tag t-acc">Under Review</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="eyebrow">Design docs: documentation/designs/self-aware-agent/ (index.html, capabilities-and-tools.html, participants-and-confirmation.html)</p>
+</section>
+
+<section>
+  <h2>Crucial QA findings (deferred by the owner, fix first next time)</h2>
+  <div class="callout">
+    <p><b>sc-241 (High): one invalid proposal item crashes the whole chat turn.</b> A null or blank realm or region (the participants tool returns <code>realm: null</code> when Warcraft Logs has no server), or a role written as "Healer"/"DPS", makes the tool fail: no card, a raw Python error in chat, and the valid rows are lost. The cause is <code>backend/app/services/profile_proposals.py:116-121</code> together with ADK leaving failed items as dicts. <b>Your example request can hit this live</b> if the real data has no <code>server</code> field.</p>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>Ticket</th><th>Priority</th><th>Finding</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>sc-241</td><td><span class="tag t-bad">High</span></td><td>BUG-001/SPEC-001/SPEC-002: an invalid item crashes the tool and the turn; a missing realm gets the wrong code</td><td><code>services/profile_proposals.py:116</code>, <code>agent_tools/profile_tools.py:43</code></td></tr>
+      <tr><td>sc-242</td><td><span class="tag t-warn">Medium</span></td><td>BUG-002/SPEC-003/SEC-006: overlapping approvals post the follow-up twice or return 500 after applying</td><td><code>api/proposals.py:117-142</code></td></tr>
+      <tr><td>sc-243</td><td><span class="tag t-warn">Medium</span></td><td>BUG-003/SPEC-011: the card shows in the wrong chat after a mid-turn switch; the status says "Searching Warcraft Logs"</td><td><code>frontend/src/App.tsx:217-271</code>, <code>toolLabels.ts:28</code></td></tr>
+      <tr><td>sc-244</td><td><span class="tag t-ok">Low</span></td><td>SPEC-006/007/009/010: the architecture docs and contracts are stale for the new write path (SPEC-008 is on sc-172)</td><td><code>documentation/architecture/*.html</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Other deferred QA tickets (qa-deferred, Lowest)</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Ticket</th><th>Pts</th><th>Findings</th></tr></thead>
+    <tbody>
+      <tr><td>sc-221</td><td><span class="pts p3">3</span></td><td>SEC-001/002/003: harden the write path against injected log text (the only Medium security finding)</td></tr>
+      <tr><td>sc-222</td><td><span class="pts p2">2</span></td><td>SEC-004/005: reset the identity ContextVar; user-level RLS on profile_proposals</td></tr>
+      <tr><td>sc-220</td><td><span class="pts p3">3</span></td><td>BUG-007/SPEC-005, PERF-001/004: preamble budgets and cost with many friends</td></tr>
+      <tr><td>sc-219</td><td><span class="pts p3">3</span></td><td>BUG-004/005/006, SPEC-004, PERF-007/008: card state edge cases</td></tr>
+      <tr><td>sc-225</td><td><span class="pts p2">2</span></td><td>PERF-003/005/006: approve and read round trips, guide fan-out</td></tr>
+      <tr><td>sc-223</td><td><span class="pts p2">2</span></td><td>SEC-007/BUG-008: cap race, legacy realm-spelling duplicates</td></tr>
+      <tr><td>sc-224</td><td><span class="pts p1">1</span></td><td>PERF-002: cache participants lookups</td></tr>
+    </tbody>
+  </table></div>
+  <p>No duplicates: each was compared with the 14 existing QA tickets, and each of those got a "Not reported in QA sweep 2026-10-26" breadcrumb (the sweep was scoped to the sprint diff). The reports are in <code>qa-reports/2026-10-26/</code> and the triage in <code>sprints/2026-10-26/qa-triage.md</code>.</p>
+</section>
+
+<section>
+  <h2>What you need to test live (Under Review)</h2>
+  <div class="card"><ol>
+    <li><b>The example request with a real model and a real report:</b> "Add the characters from the dungeon to my friends, except the shaman." Check that Barnaby picks or asks about the run, leaves out the shaman and your own characters, and shows a card; that Approve adds them; and that the profile page updates. If you get an error instead of a card, that's sc-241.</li>
+    <li><b>Real Warcraft Logs data:</b> "who was in &lt;report&gt;". The <code>playerDetails</code> fields (server, type, specs) are inferred, not recorded (D12). Check that realms and regions come back filled.</li>
+    <li><b>Ambiguous run:</b> with no run in the chat, Barnaby should ask, listing up to 5 candidates. He picks the newest only when you say "last" or "latest" (D5).</li>
+    <li><b>Role and removal edits:</b> "make &lt;friend&gt; a healer" and "remove &lt;friend&gt;" produce a correct card. Friends added from a run keep a role inferred from their spec (D9).</li>
+    <li><b>Two tabs:</b> approving in one tab updates the card and the profile page in the other.</li>
+    <li><b>Shared runner leakage:</b> the greeting, class-guide and guild-summary text shouldn't mention profile changes. The profile tool is registered on the shared runner (D16).</li>
+    <li><b>Bubble widths</b> at your usual window sizes. Phone width still overflows because of the sidebar and header, which is sc-175.</li>
+    <li><b>Design docs</b> (sc-211, sc-212): read them and say if you want anything changed. I accepted them as the build gate (D2).</li>
+  </ol></div>
+</section>
+
+<section>
+  <h2>Key decisions this sprint</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>#</th><th>Decision</th></tr></thead>
+    <tbody>
+      <tr><td>D2 / D7 / D12</td><td>The PO accepted the design docs; you reviewed the plan once before code, then gave the go.</td></tr>
+      <tr><td>D4</td><td>v1 is approve all valid items or cancel; invalid rows are shown as skipped (per-item selection is sc-214).</td></tr>
+      <tr><td>D5</td><td>Run resolution never guesses: use the chat's run, otherwise ask; the newest only on "last/latest".</td></tr>
+      <tr><td>D6</td><td>Every agent profile change goes through a proposal and your approval.</td></tr>
+      <tr><td>D8</td><td>50-friend cap in the shared write path (manual adds too); existing friends are kept.</td></tr>
+      <tr><td>D9</td><td>Friends added from a run keep an inferred role unless you ask for one.</td></tr>
+      <tr><td>D10</td><td>The approve/cancel outcome isn't injected into the agent session; the next turn's preamble carries the real profile.</td></tr>
+      <tr><td>D13</td><td>The capability summary names only features that exist (no character filter yet).</td></tr>
+      <tr><td>D17</td><td>At 390px, sc-208 is judged at bubble level; page overflow is sc-175.</td></tr>
+      <tr><td>D19</td><td>No QA fix round (owner); every finding deferred, the crucial ones flagged.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The full log is in <code>sprints/2026-10-26/decisions.md</code> (D1–D19).</p>
+</section>
+
+<section>
+  <h2>Backlog changes</h2>
+  <div class="card"><ul>
+    <li><b>New follow-ups:</b> sc-213 (charts not restored on reopen, bug), sc-214 (per-item card selection), sc-215 (bubble caps in rem), sc-216 (shared naive-timestamp helper; five copies).</li>
+    <li><b>QA:</b> sc-219..225 and sc-241..244 (above). Breadcrumbs on sc-156..159, sc-176..185 and sc-172; sc-175 got the 390px measurements.</li>
+    <li><b>Ranking:</b> next up is sc-241 (crucial), then epic 103: sc-178 (gate) and sc-129 DB-first reads, then sc-163 playbooks, sc-197 worker spec and sc-146 deployment plan. The full ranking is in <code>plan.md</code>.</li>
+  </ul></div>
+</section>
+
+<footer>Written by the product owner agent on 2026-10-26. Local file only: not published, not pushed.</footer>
+</div>
+</body>
+</html>

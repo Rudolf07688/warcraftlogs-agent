@@ -201,3 +201,11 @@
   refresh, and that live WCL `playerDetails` keys match the inferred fixtures (D12).
 - **sc-213 note:** comment added (the reload mapping already attaches artifacts; look at the figure
   rebuild or PlotlyArtifact).
+
+## D19 — 2026-10-26: Wrap-up; no QA fix round (owner, via team-lead)
+- **Answer:** The owner was leaving and asked to wrap up as fast as possible. There's no fix-now
+  round: every QA finding, including the crucial ones, is deferred to the board. The crucial ones are
+  sc-241 (High), sc-242 and sc-243 (Medium) and sc-244 (Low, docs), each marked "Crucial, found in
+  sprint 2026-10-26 QA". The PO's FN-1..4 message to the SM crossed with this and was withdrawn; the
+  SM staffed nothing. Then one final /shortcut-sync, change detection and the artefact commit on
+  sprint-2026-10-26. No push and no merge to main (the owner decides later).

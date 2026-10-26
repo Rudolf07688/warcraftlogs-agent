@@ -263,7 +263,7 @@ Plan B total: 22 points. Epic 203's build stories then lead the next sprint.
 
 ---
 
-## Full ranked backlog (68 open stories at planning, plus sc-213/214/215/216 filed during the sprint; sc-209/sc-210 are Under Review and excluded)
+## Full ranked backlog (68 open stories at planning, plus sc-213..216 and QA tickets sc-219..225 and sc-241..244 filed during the sprint; sc-209/sc-210 are Under Review and excluded)
 
 Shortcut Priority mirrors this ranking: **Highest** = this sprint, **High** = next up,
 **Medium** = next sprints, **Low** = later, **Lowest** = long term and all `qa-deferred`
@@ -332,6 +332,9 @@ note in the launch brief).
 | 53 | sc-120 (Long term) REPL tool for sub-agents | 5 | Lowest | Needs sc-116 and sc-119. |
 | 54 | sc-121 (Long term) Load log data into the REPL | 2 | Lowest | Needs sc-120 and stored data. |
 | 55 | sc-122 (Long term) Sandbox security review | 2 | Lowest | Gates shipping sc-119/120. |
+| 55a | sc-241 QA invalid proposal item crashes the turn (`qa-deferred`, **crucial**) | 2 | High | Owner's call: crucial QA findings get High. Fix first next sprint; it can break the example request live. |
+| 55b | sc-242 QA overlapping approvals: double follow-up or 500 (`qa-deferred`, crucial) | 2 | Medium | Crucial; small, same files as sc-241. |
+| 55c | sc-243 QA card in the wrong chat after a mid-turn switch (`qa-deferred`, crucial) | 2 | Medium | Crucial; small frontend guard plus a label. |
 | 56 | sc-177 QA raw_fetches write amplification and growth (`qa-deferred`) | 3 | Lowest | QA tier, top: same table as sc-178/sc-129, do it alongside them. |
 | 57 | sc-158 QA SEC-004 per-client login limit (`qa-deferred`) | 2 | Lowest | QA tier; needed before any shared deployment (sc-146). |
 | 58 | sc-157 QA SEC-003 block remote images (`qa-deferred`) | 2 | Lowest | QA tier; small, frontend only. |
@@ -345,3 +348,11 @@ note in the launch brief).
 | 66 | sc-184 QA web search after fallback (`qa-deferred`) | 2 | Lowest | QA tier; needs a live check first. |
 | 67 | sc-182 QA M+ refresh efficiency (`qa-deferred`) | 2 | Lowest | QA tier. |
 | 68 | sc-181 QA sidebar activity order (`qa-deferred`) | 1 | Lowest | QA tier; predates the last sprint. |
+| 69 | sc-221 QA SEC-001/002/003 harden the agent write path against injected log text (`qa-deferred`) | 3 | Lowest | **Top deferred security item** (the only Medium security finding on the new write path). Do it right after sc-241..243. |
+| 70 | sc-222 QA SEC-004/005 identity context reset + user-level RLS (`qa-deferred`) | 2 | Lowest | QA tier; defence in depth, do with sc-185. |
+| 71 | sc-220 QA preamble budgets and cost with many friends (`qa-deferred`) | 3 | Lowest | QA tier; matters once users bulk-add friends. |
+| 72 | sc-219 QA confirmation card state edge cases (`qa-deferred`) | 3 | Lowest | QA tier; cosmetic or rare multi-tab cases. |
+| 73 | sc-225 QA proposal approve/read DB round trips, guide fan-out (`qa-deferred`) | 2 | Lowest | QA tier. |
+| 74 | sc-223 QA profile cap race + legacy slug duplicates (`qa-deferred`) | 2 | Lowest | QA tier. |
+| 75 | sc-224 QA cache participants lookups (`qa-deferred`) | 1 | Lowest | QA tier; the 028 design's planned follow-up. |
+| 76 | sc-244 QA architecture docs and contracts stale for the self-aware agent (`qa-deferred`) | 1 | Low | Crucial-list docs item; the owner set Low. |
