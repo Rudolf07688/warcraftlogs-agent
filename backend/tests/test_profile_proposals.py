@@ -507,7 +507,8 @@ async def test_rls_cross_tenant_select_blocked(pg_sessionmaker):
 async def test_rls_insert_for_another_tenant_rejected(pg_sessionmaker):
     async with pg_sessionmaker() as s:
         await _set_tenant(s, str(uuid.uuid4()))
-        with pytest.raises(Exception):
+        # WITH CHECK rejects it (before any foreign-key check runs).
+        with pytest.raises(Exception, match="row-level security"):
             await s.execute(
                 sa.text(
                     "INSERT INTO profile_proposals (id, tenant_id, user_id, conversation_id, items, expires_at) "

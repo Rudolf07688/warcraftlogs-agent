@@ -71,6 +71,44 @@ migration 0016, **except** `wcl_agent/agent.py`, `backend/app/api/ws.py` and
 "030 MERGED, rebase", rebase onto the sprint tip, and only then edit them (T000). S1 also
 starts only after that. Shared-runner fail-closed tests were added to T027 (SM note).
 
+## Implementation progress (after GO, 2026-10-26)
+
+Commits:
+- afedf60: phases 2 and 4 plus S1's renderer.
+- 44de352: service and tool.
+- (next): RLS test tightening and this checkpoint.
+
+| Area | Tasks | Status |
+|---|---|---|
+| Foundational | T001–T008 | done |
+| US4 | T016–T020 | done (`test_profile.py` unchanged and green) |
+| US2 | T021, T022, T024, T026 | done |
+| US3 | T029–T033 | done |
+| US1, part 1 | T009, part of T013 (S1: `capabilities.py` + renderer tests, 15 green) | done |
+
+Full suite after 44de352: 1126 passed, 6 skipped (3 of them Postgres-only), 1 deselected.
+
+**Open** (all after "030 MERGED, rebase"):
+- T010–T012, the rest of T013, T014, T015 (S1: agent.py, docstrings, prompt contract);
+- T023 (ws.py, 2 lines);
+- T025 (`_get_runner`);
+- T027 backend-agent registration test, T028 scripted turn;
+- T034–T038.
+
+**T033 Postgres run (2026-10-26)**: `docker run postgres:17` on port 15429 with dummy
+credentials. Steps: `alembic upgrade 0002_auth_tenancy` → `bootstrap_admin` (dummy env) →
+`upgrade head` (… → 0016_profile_proposals) → `downgrade -1` (→ 0015; the table and policy
+are gone) → `upgrade head` (0016).
+
+After the second upgrade:
+- `relrowsecurity` and `relforcerowsecurity` are both `t`;
+- the policy `tenant_isolation` uses `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`;
+- `wcl_app` has SELECT/INSERT/UPDATE/DELETE.
+
+`TEST_DATABASE_URL=…wcl_app…:15429` ran `test_rls.py` (3) plus the 3 `profile_proposals`
+RLS tests: 6 passed. The insert test asserts the error is "row-level security". The
+container is stopped.
+
 ## Open questions
 
 - Waiting for the scrum master: confirmation of S1 at the tasks gate, "030 MERGED, rebase",

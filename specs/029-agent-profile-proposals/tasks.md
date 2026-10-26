@@ -147,7 +147,7 @@ cross-user, expiry and cancel, and check the rows.
   - cancel semantics; executing a cancelled proposal → `proposal_cancelled`;
   - `list_proposals` is oldest first with the real statuses (AC 5)
 - [X] T032 [US3] Postgres-only RLS tests (skipped without `TEST_DATABASE_URL`, `test_rls.py` pattern) in `backend/tests/test_profile_proposals.py`: no rows without context, cross-tenant select blocked, an insert for another tenant rejected (AC 7)
-- [ ] T033 [US3] Manual Postgres check on port 15429 per `quickstart.md` §3 (docker run, dummy credentials): `alembic upgrade head` → `downgrade -1` → `upgrade head`, plus the Postgres-only tests under the runtime role. Record the output in checkpoint.md
+- [X] T033 [US3] Manual Postgres check on port 15429 per `quickstart.md` §3 (docker run, dummy credentials): `alembic upgrade head` → `downgrade -1` → `upgrade head`, plus the Postgres-only tests under the runtime role. Record the output in checkpoint.md
 
 **Checkpoint**: every 029 AC is covered by a passing test.
 
