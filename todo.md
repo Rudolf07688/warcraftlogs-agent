@@ -20,6 +20,7 @@ Ticket IDs refer to the Shortcut "Team 1" board.
   - Agent must be "self aware" of the harness it operates in, for example:
     - When asked "Add the characters from the dungeon to my friends, except the shamen" it should be able to add it to your character profile
   - Design docs: HTML architecture report with diagrams, animated arrows and the technologies per layer with the reasoning behind each choice `sc-209` `sc-210`
+  - Feature design docs for the epic-203 build tickets (capabilities + profile tools; participants + in-chat confirmation) `sc-211` `sc-212`
 
 ## Data / Caching
 - Implement redis - confirm browser cache usage. `sc-147`
