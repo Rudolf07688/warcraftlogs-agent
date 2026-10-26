@@ -63,8 +63,16 @@ proposals · R9 follow-up appended only for the active conversation.
   user 708 / agent 850, page width = viewport; a long URL no longer overflows the bubble (base
   scrollWidth 1508 > 858). 390: the page is 698 wide before AND after (fixed 260px sidebar +
   header controls, no mobile layout = sc-175). Escalated to the SM (A/B/C), decision pending.
-- T032 audit checklist run once (named imports ok, no new deps, tsc clean, no eslint in repo, no
-  Playwright MCP, so the headless Chrome harness was used). Re-run after T021 (avatars).
+- T032 audit checklist run again after T021 (avatars): named imports ok, no new deps, tsc clean, no
+  eslint in the repo, no Playwright MCP (headless Chrome harness used instead).
+- After the 029 rebase (a7d550b): backend slice committed 6fc609f, avatars + tab refresh a7b202b
+  (ClassAvatar moved to its own module, SM grant). Full backend suite 1169 passed, 6 skipped, 1
+  deselected (sprint tip 1152 + 17 new). npm test 12 passed; npm run build clean.
+- D17 (PO): AC 6 at 390 = A. Final widths: 390 page 698 = base 698; 1280 page = viewport (user
+  708, agent 850); 1920 page = viewport (user 900, agent 1200; base 820/860).
+- Bundle (vite build): base a7d550b main 1108.9 kB / ProfilePage 94.2 kB; final main 1120.2 kB /
+  ProfilePage 90.4 kB (an export from CharactersTab had given main 1137.0 / ProfilePage 77.5).
+- Harness deleted; preview on 18031 stopped. Status: hand-off sent; stories stay In Progress.
 
 ## Where implementation starts
 

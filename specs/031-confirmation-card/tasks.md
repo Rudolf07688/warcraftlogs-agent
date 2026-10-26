@@ -78,13 +78,13 @@ uses a fake proposal typed from the contract (029's `ProfileProposalOut` field n
 **Independent test**: Headless Chrome at 390/1280/1920.
 
 - [X] T030 [P] [US5] [NOW] In `frontend/src/styles.css`: `.message { max-width: min(90%, 1200px); min-width: 0; overflow-wrap: anywhere; }`, `.message.user { max-width: min(75%, 900px); }`, remove the `.message.agent` `max-width`, and `.welcome-panel { max-width: min(90%, 1200px); }` (R5)
-- [ ] T031 [US5] [NOW] Build and serve with `vite preview` on port 18031. With headless Chrome at 390, 1280 and 1920, check `scrollWidth <= innerWidth` and the bubble widths on a page with long messages, a wide table and long code. Record the numbers in checkpoint.md / the hand-off
+- [X] T031 [US5] [NOW] Build and serve with `vite preview` on port 18031. With headless Chrome at 390, 1280 and 1920, check `scrollWidth <= innerWidth` and the bubble widths on a page with long messages, a wide table and long code. Record the numbers in checkpoint.md / the hand-off
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T032 Run the shadcn MCP audit checklist (`get_audit_checklist`) on `ProposalCard.tsx` and fix what it flags
-- [ ] T033 `cd frontend && npm test && npm run build`; `uv run --extra test pytest -q` (no new failures vs base)
-- [ ] T034 `git checkout -- CLAUDE.md .specify/feature.json`; ownership check (`git diff --name-only 1685bd5...HEAD` + uncommitted ⊆ grant); `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --force` then `detect-changes --scope all --repo .` in the worktree (not partial or truncated)
+- [X] T032 Run the shadcn MCP audit checklist (`get_audit_checklist`) on `ProposalCard.tsx` and fix what it flags
+- [X] T033 `cd frontend && npm test && npm run build`; `uv run --extra test pytest -q` (no new failures vs base)
+- [X] T034 `git checkout -- CLAUDE.md .specify/feature.json`; ownership check (`git diff --name-only 1685bd5...HEAD` + uncommitted ⊆ grant); `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --force` then `detect-changes --scope all --repo .` in the worktree (not partial or truncated)
 - [ ] T035 Hand-off to the scrum master: branch, base, commits, files, test results, risks, how to verify each AC
 
 ## Dependencies & execution order
