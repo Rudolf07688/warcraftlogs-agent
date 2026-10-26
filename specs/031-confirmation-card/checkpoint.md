@@ -39,12 +39,32 @@ proposals · R9 follow-up appended only for the active conversation.
 
 ## Open questions
 
-- Sent to dev-a-029 (no answer yet): the tool result shape (`result.proposal.id`), the service
-  signatures `(identity, uuid)` + `ProposalError.code`, cancel past expiry returns `expired`, guide
-  tasks scheduled by `execute_proposal`, and whether a `set_message_seq`-like helper already
-  exists or is planned (SM note 1: avoid two helpers).
+- None blocking. dev-a-029 confirmed (029 @ 8e9bf9e): success result `{"status":"success",
+  "proposal": <json>, "note"}`, with `result["proposal"]["id"]` a str UUID (an error has no
+  `proposal` key); service functions `(identity, uuid)` each in their own `tenant_scope`;
+  `ProposalError.code` in `backend.app.services.profile_proposals`; cancel past expiry stores and
+  returns `expired` (no raise); execute past expiry raises `proposal_expired`; execute on applied
+  returns it unchanged; execute on cancelled raises `proposal_cancelled`; cancel on applied raises
+  `proposal_applied`; guide tasks are scheduled by `execute_proposal`. No `set_message_seq`
+  equivalent exists or is planned, so 031 writes it (filter tenant_id AND user_id AND message_seq IS
+  NULL). The status is computed on read (pending past expiry reads as `expired`). A skipped item
+  has `result.code` = its validation code.
 - `types.ts` mirror built from 029's branch `schemas.py` (afedf60). Re-check field names after the
   merge.
+
+## Baseline and progress
+
+- Backend baseline before any code change (base 1685bd5 + docs): `uv run --extra test pytest -q`
+  → **1083 passed, 3 skipped, 1 deselected**.
+- [NOW] done: T001–T013, T018, T019, T022, T023, T030. `npm test`: 12 passed. `npm run build`:
+  clean.
+- T031 widths (throwaway harness `frontend/harness-031/`, untracked, never commit; preview on 18031,
+  chrome-headless-shell): 1920 user 900 / agent 1200 (base 820/860), page width = viewport; 1280
+  user 708 / agent 850, page width = viewport; a long URL no longer overflows the bubble (base
+  scrollWidth 1508 > 858). 390: the page is 698 wide before AND after (fixed 260px sidebar +
+  header controls, no mobile layout = sc-175). Escalated to the SM (A/B/C), decision pending.
+- T032 audit checklist run once (named imports ok, no new deps, tsc clean, no eslint in repo, no
+  Playwright MCP, so the headless Chrome harness was used). Re-run after T021 (avatars).
 
 ## Where implementation starts
 

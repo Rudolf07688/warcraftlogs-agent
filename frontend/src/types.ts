@@ -66,6 +66,58 @@ export interface Message {
   artifacts?: ChartArtifact[];
   // Feature 021: the turn moved to the same-class sibling model (live session only).
   fallback?: { from: string; to: string };
+  // Feature 031: profile change proposals made during this turn (confirmation cards).
+  proposals?: ProfileProposal[];
+}
+
+// Feature 031: a stored profile change proposal. Mirrors the backend's ProfileProposalOut
+// (feature 029), whose single definition is the design's #proposal-contract.
+export type ProposalStatus = "pending" | "applied" | "cancelled" | "expired";
+
+export interface ProposalValidation {
+  ok: boolean;
+  code: string | null;
+  message: string | null;
+}
+
+export interface ProposalItemResult {
+  status: "applied" | "skipped" | "failed";
+  code: string | null;
+  character_id: string | null;
+}
+
+export interface ProposalItem {
+  index: number;
+  action: "add" | "update" | "remove";
+  target: "own" | "friend";
+  name: string;
+  realm: string;
+  region: string;
+  class_name: string | null;
+  spec: string | null;
+  raid_role: RaidRole | null;
+  played_role: RaidRole | null; // display only: the role played in the source run
+  previous_raid_role: RaidRole | null;
+  character_id: string | null;
+  validation: ProposalValidation;
+  result: ProposalItemResult | null; // null until executed
+}
+
+export interface ProfileProposal {
+  id: string;
+  conversation_id: string;
+  message_seq: number | null; // the agent message it belongs to; null until its turn is done
+  status: ProposalStatus;
+  created_at: string;
+  expires_at: string;
+  applied_at: string | null;
+  items: ProposalItem[];
+}
+
+// POST /api/profile/proposals/{id}/approve|cancel: the follow-up line is null on a repeat.
+export interface ProposalDecision {
+  proposal: ProfileProposal;
+  follow_up: Message | null;
 }
 
 // US2: an agent-declared chart, rendered inline as an interactive Plotly figure.
@@ -99,6 +151,8 @@ export interface SpellCardState {
 
 export interface ConversationDetail extends Conversation {
   messages: Message[];
+  // Feature 031: every proposal of the chat, with its real status (reload).
+  proposals?: ProfileProposal[];
 }
 
 export interface Raid {

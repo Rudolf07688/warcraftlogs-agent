@@ -13,7 +13,7 @@ interface Props {
 
 - Parts: `Card` (+ Header/Title/Description/Action/Content/Footer), `ItemGroup`/`Item variant="outline"
   size="sm"` with `ItemMedia` (`ClassAvatar`), `ItemContent`/`ItemTitle`/`ItemDescription`,
-  `ItemActions` (`Badge`), `Button` (default "Approve N" + outline "Cancel") with `Spinner`, and
+  `ItemActions` (`Badge`), `Button` (default "Approve N" + secondary "Cancel"; the repo's button has no outline variant) with `Spinner`, and
   `Alert` (error / expired).
 - Title: "Proposed profile changes". Description: "Nothing changes until you approve · Expires HH:MM"
   (pending), "Nothing to apply" (N = 0), and the end-state text: "Applied: 3 added, 1 skipped" /
