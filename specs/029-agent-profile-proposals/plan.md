@@ -125,6 +125,11 @@ specs/029-agent-profile-proposals/
 | 22 | `backend/tests/test_profile_proposals.py` | **New** | validator, service, idempotency, tenancy, expiry, per-item, guides-after-commit, REST friend_limit + slug duplicate, migration up/down (SQLite), RLS (Postgres-only) |
 | 23 | `specs/029-agent-profile-proposals/**` | New | feature docs |
 
+**Sequencing (SM, 2026-10-26)**: rows 2, 12 and 20 (`agent.py`, `ws.py`,
+`test_prompt_contract.py`) are granted effective after 030 merges. Rebase onto the sprint tip
+first (tasks T000). `get_report_participants` joins the "Report deep-dive" group, and 030's
+`<RUN_RESOLUTION>` block stays (it names no tool).
+
 There are no dependency or lockfile changes. Migration 0016 is the only migration (already
 reserved for 029). `backend/tests/test_profile.py` is **not** touched (AC 4).
 

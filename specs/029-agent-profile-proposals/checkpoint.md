@@ -63,11 +63,21 @@ wcl_agent/agent.py, wcl_agent/tools/tools.py, wcl_agent/tools/report_tools.py,
 backend/tests/test_capabilities.py, backend/tests/test_prompt_contract.py. Everything else is
 mine. Sub-agents don't commit.
 
+## Grant (2026-10-26)
+
+The plan was approved at c8690dd. Everything is granted, including the 2 ws.py lines and
+migration 0016, **except** `wcl_agent/agent.py`, `backend/app/api/ws.py` and
+`backend/tests/test_prompt_contract.py`. Those take effect after 030 merges: wait for
+"030 MERGED, rebase", rebase onto the sprint tip, and only then edit them (T000). S1 also
+starts only after that. Shared-runner fail-closed tests were added to T027 (SM note).
+
 ## Open questions
 
-- Waiting for the scrum master: the ownership grant (including the 2-line ws.py edit), the
-  sub-agent split approval, and whether I tell dev-b-030 directly that its registration is one
-  entry in a `TOOL_GROUPS` group tuple.
+- Waiting for the scrum master: confirmation of S1 at the tasks gate, "030 MERGED, rebase",
+  and "GO implement 029".
+- D13 wording: the SM's resync listed a "Raids page", but the base has none (routes are
+  /app, /profile, /admin/users). The line names "recent raids and Mythic+ runs on the welcome
+  screen" instead (flagged to the SM).
 
 ## Where implementation starts (after GO)
 

@@ -34,6 +34,19 @@ check forced. Each entry: Decision / Rationale / Alternatives.
   creates the producer task inside its own body (agent_runner.py:182–201). The producer
   therefore copies a context that already holds the identity. `ReadonlyContext.user_id` and
   `.session` exist in ADK 2.10 (`readonly_context.py:62–69`).
+- **Shared runner (greeting, guide and guild-summary flows)**: these run the same agent
+  through `stream_response` with `user_id="local_user"` and session ids `greeting-…` /
+  `guide-<hex>` (`backend/app/greeting.py:52`, `backend/app/services/guide.py:174`). The tool
+  needs all three of: an identity, a tenant match with `tool_context.user_id`, and a session
+  id that parses as a UUID. The service also checks that the conversation belongs to that
+  tenant. In those flows it therefore always fails closed and stores nothing (tested). The
+  can-change line says Barnaby proposes changes *when the user asks*, so a guide or summary
+  prompt has no reason to call it. **Decision**: keep one runner per model (design C6). The
+  alternative was registering `PROFILE_TOOLS` only for chat turns: a second runner per
+  model, picked in `stream_response` by `user_id != USER_ID`. It changes the HIGH-risk
+  `_get_runner` and splits the cached prefix, for a model-behaviour risk no offline test can
+  measure. It remains the fallback if the live check shows guide text mentioning profile
+  changes.
 - **ws.py footprint**: one statement, `current_identity.set(identity)`. The existing import
   line 28 (`from ..tenancy.context import RequestIdentity, apply_tenant_scope, tenant_scope`)
   gains `current_identity`. That is two changed lines in total, both in the 029 grant.

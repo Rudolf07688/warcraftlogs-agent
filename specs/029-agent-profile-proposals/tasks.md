@@ -22,6 +22,7 @@ US2/US3 because proposal execution writes through it.
 ## Phase 1: Setup
 
 - [ ] T001 Record the baseline (1066 passed, 3 skipped, 1 deselected on 1da8bca) and the owned-file list in `specs/029-agent-profile-proposals/checkpoint.md`
+- [ ] T000 **Sequencing gate (SM)**: before the first edit to `wcl_agent/agent.py`, `backend/app/api/ws.py` or `backend/tests/test_prompt_contract.py`, wait for "030 MERGED, rebase" and rebase this branch onto the sprint tip. 030 adds `get_report_participants` to `TOOLS`, a `<RUN_RESOLUTION>` block (no tool names), `_build_turn_preamble` and one D5 clause test. Phases 2 and 4 don't need these files and can start earlier
 - [ ] T002 Create the package marker `backend/app/agent_tools/__init__.py` (one-line module docstring, C6)
 
 ---
@@ -46,7 +47,7 @@ US2/US3 because proposal execution writes through it.
 no prose edit.
 
 - [ ] T009 [P] [US1] Create `wcl_agent/capabilities.py` per `contracts/capability-summary.md` and research R3: `ToolGroup`, `render_capability_summary(groups, *, web_search)`, `CAPABILITY_SUMMARY_MAX_CHARS = 4000`, `MAX_TOOL_LINE_CHARS = 160`. Read name/description via `FunctionTool(fn)` or `BaseTool.name/.description`, use the first paragraph collapsed and cut at a sentence end to fit 160. Fixed lines: the usage rule, the no-web-search line, can-change and D13 app-facts (only when a group has a note), and cannot (always; two wordings)
-- [ ] T010 [US1] In `wcl_agent/agent.py`: `TOOL_GROUPS` (labels from today's TOOLS comments), `TOOLS` = flattened groups; the `<TOOLS>` body becomes `@@CAPABILITIES@@`; `build_instruction(ctx=None, *, capabilities="")` fills both tokens; `build_agent(model, retry=None, *, extra_groups=())` assembles groups (+ the web group for non-Anthropic), renders once, registers the flattened list, and uses `functools.partial(build_instruction, capabilities=summary)`; `INSTRUCTION` moves below `root_agent` as `root_agent.instruction(None)`. Keep the module comment about the time block being last (R4)
+- [ ] T010 [US1] In `wcl_agent/agent.py`: `TOOL_GROUPS` (labels from today's TOOLS comments; 030's `get_report_participants` goes in the "Report deep-dive" group next to `get_report_player_details`), `TOOLS` = flattened groups; keep 030's `<RUN_RESOLUTION>` block unchanged; the `<TOOLS>` body becomes `@@CAPABILITIES@@`; `build_instruction(ctx=None, *, capabilities="")` fills both tokens; `build_agent(model, retry=None, *, extra_groups=())` assembles groups (+ the web group for non-Anthropic), renders once, registers the flattened list, and uses `functools.partial(build_instruction, capabilities=summary)`; `INSTRUCTION` moves below `root_agent` as `root_agent.instruction(None)`. Keep the module comment about the time block being last (R4)
 - [ ] T011 [P] [US1] Docstring additions in `wcl_agent/tools/tools.py`: `get_selected_encounter` ("there may be none in the web app"), `compare_specs` (read `completeness.sample_scope`; `top_parses` are leads, not a benchmark), per the design's hint table (C4)
 - [ ] T012 [P] [US1] Docstring addition in `wcl_agent/tools/report_tools.py`: `run_wcl_graphql` ("validate the response before using it")
 - [ ] T013 [US1] Create `backend/tests/test_capabilities.py`:
@@ -119,7 +120,9 @@ the row, and that the profile is unchanged.
   - no identity → fails closed and stores nothing; mismatched tenant → fails closed;
   - the proposal is bound to tenant/user/conversation;
   - declarations: `FunctionTool` declaration builds for Gemini and converts for Claude (`function_declaration_to_tool_param`), with no tenant/user/id parameter;
-  - the agent `_get_runner` would build (via `build_agent(..., extra_groups=(PROFILE_TOOLS,))`) registers `propose_profile_changes` and lists it in its summary
+  - the agent `_get_runner` would build (via `build_agent(..., extra_groups=(PROFILE_TOOLS,))`) registers `propose_profile_changes` and lists it in its summary;
+  - **shared-runner flows** (SM note): the tool fails closed and stores nothing in the greeting shape (no identity, `user_id="local_user"`, session `greeting-…`) and the guide/guild-summary shape (session `guide-<hex>`, no identity). It also fails closed with an identity set but a non-UUID session id, or a session that isn't a conversation of that tenant;
+  - the can-change line is phrased as "when the user asks", so it invites no unsolicited proposals (asserted on the rendered text)
 - [ ] T028 [US2] Offline scripted agent turn in `backend/tests/test_profile_tools.py` (R9): a `_ScriptedLlm(BaseLlm)` makes one `propose_profile_changes` call (a hostile name + 2 valid adds), then answers. It runs through a real `Runner` + `InMemorySessionService` with `current_identity` set and SQLite patched, and asserts the tool result, the stored row (hostile item `invalid_name`, others ok) and that `user_characters` is unchanged (AC 3, 6; SC-008)
 
 **Checkpoint**: US2 is testable on its own (the proposal exists and the profile is unchanged).
@@ -162,6 +165,7 @@ cross-user, expiry and cancel, and check the rows.
 
 ## Dependencies & order
 
+- T000 (030 merged + rebase) gates every edit to agent.py, ws.py and test_prompt_contract.py (T010, T014, T023) and S1's start.
 - Phase 1 → Phase 2 → {Phase 3 (S1) ∥ Phase 4} → Phase 5 → Phase 6 → Phase 7.
 - US1 (Phase 3) touches no file of Phases 2/4/5/6, so it runs in parallel. T025 (registration)
   needs T010 (`extra_groups`), and T027's backend-agent test needs both.
