@@ -3,10 +3,14 @@ feature 015 whole coaching briefs per content type)."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from backend.app.db.models import (
     GuildProfile,
     KnownEncounter,
     KnownPlayer,
+    RecentMplusRun,
+    RecentRaid,
     TrackedRaid,
     UserCharacter,
 )
@@ -251,3 +255,56 @@ def test_every_own_character_excluded_from_recently_seen():
     text = build_preamble([_own("Alpha"), _own("Beta")], [], None, known_players=known)
     assert "- Players: Stranger-Draenor (EU)" in text
     assert text.count("Alpha-Draenor (EU)") == 1 and text.count("Beta-Draenor (EU)") == 1
+
+
+# --- Feature 030: report codes and recent-run candidates (D5) ---------------------------
+
+def _mplus(i: int, dungeon: str = "Ara-Kara", timed: bool = True) -> RecentMplusRun:
+    return RecentMplusRun(
+        report_code=f"M{i}abc", fight_id=i, dungeon=dungeon, key_level=10 + i,
+        started_at=datetime(2026, 10, 25 - i, 20, tzinfo=UTC), timed=timed,
+    )
+
+
+def _recent_raid(i: int, difficulty: int | None = 4) -> RecentRaid:
+    return RecentRaid(
+        report_code=f"X{i}abc", title=f"Night {i}", zone_name="Nerub-ar Palace",
+        started_at=datetime(2026, 10, 24 - i, 19, tzinfo=UTC),
+        ended_at=datetime(2026, 10, 24 - i, 22, tzinfo=UTC), difficulty=difficulty,
+    )
+
+
+def test_raids_line_carries_report_codes():
+    text = build_preamble([], [], None, known_raids=[TrackedRaid(report_code="x9Y8z7", label="Raid A")])
+    assert "- Raids: Raid A (report x9Y8z7)" in text
+
+
+def test_recent_runs_lines_list_candidates_with_codes():
+    text = build_preamble(
+        [], [], None,
+        recent_mplus_runs=[_mplus(0), _mplus(1, "Dawnbreaker", timed=False)],
+        recent_raids=[_recent_raid(0), _recent_raid(1, difficulty=None)],
+    )
+    assert "- Recent M+ runs: Ara-Kara +10, 2026-10-25, timed (report M0abc, fight 0); " in text
+    assert "Dawnbreaker +11, 2026-10-24, depleted (report M1abc, fight 1)" in text
+    assert "- Recent raids: Nerub-ar Palace, Heroic, 2026-10-24 (report X0abc); " in text
+    assert "Nerub-ar Palace, 2026-10-23 (report X1abc)" in text
+
+
+def test_recent_runs_are_capped_at_five_per_kind_and_whole_entries():
+    text = build_preamble(
+        [], [], None,
+        recent_mplus_runs=[_mplus(i % 9) for i in range(8)],
+        recent_raids=[_recent_raid(i % 9) for i in range(8)],
+    )
+    runs = text[text.index("RECENT RUNS"):]
+    assert runs.count("(report M") == 5 and runs.count("(report X") == 5
+    assert len(runs) <= 700  # about 600 characters of entries plus the header
+    assert all(entry.endswith(")") for entry in runs.split(": ", 1)[1].splitlines()[0].split("; "))
+
+
+def test_recent_runs_absent_leaves_preamble_unchanged():
+    self_char = UserCharacter(role="self", name="Thrall", server="Stormrage", region="US")
+    baseline = build_preamble([self_char], [], None)
+    assert build_preamble([self_char], [], None, recent_raids=[], recent_mplus_runs=[]) == baseline
+    assert "RECENT RUNS" not in baseline

@@ -109,6 +109,12 @@ export const SPELLS: Record<string, Spell> = {
     verb: "Inspecting the champion",
     flavor: ["Reading gear and talents…", "Studying the loadout…"],
   },
+  get_report_participants: {
+    icon: GiPerson,
+    hue: ARCANE,
+    verb: "Gathering the party",
+    flavor: ["Counting heads and classes…", "Reading the roll call…"],
+  },
   get_report_master_data: {
     icon: GiStoneTablet,
     hue: GOLD,

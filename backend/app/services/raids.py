@@ -31,6 +31,7 @@ REPORT_SCOPED_TOOLS = frozenset(
         "get_report_graph",
         "get_report_rankings",
         "get_report_player_details",
+        "get_report_participants",
         "get_report_master_data",
     }
 )

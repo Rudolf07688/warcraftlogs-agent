@@ -12,6 +12,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_report_graph: "Reading the timeline",
   get_report_rankings: "Checking parses",
   get_report_player_details: "Reading gear & talents",
+  get_report_participants: "Listing the players",
   get_report_master_data: "Resolving names",
   get_character_zone_rankings: "Looking up the character",
   get_character_encounter_rankings: "Looking up the character",
