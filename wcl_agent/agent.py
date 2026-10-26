@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from google.adk.agents import Agent
@@ -26,6 +28,7 @@ try:
 except Exception as exc:  # noqa: BLE001
     logger.warning("Anthropic (Claude) model class not registered: %s", exc)
 
+from .capabilities import ToolGroup, render_capability_summary
 from .tools.benchmark import compare_player_to_cohort
 from .tools.cooldowns import get_cooldown_usage
 from .guides.guides_tool import get_coaching_brief
@@ -66,7 +69,10 @@ from .llm.vertex import adk_client_kwargs
 # may be tuned, clauses may not be dropped. No braces anywhere: the body is plain text and
 # `build_instruction` fills the time token on every model request (feature 015, R4). The
 # time block is LAST so everything before it stays a stable, cacheable prefix (QA PERF-003).
+# The <TOOLS> body is the capabilities token: `build_agent` renders it once from the same
+# tool groups it registers (feature 029, R4), so the list cannot drift from the tools.
 _TIME_TOKEN = "@@CURRENT_TIME@@"
+_CAPABILITIES_TOKEN = "@@CAPABILITIES@@"
 _INSTRUCTION_BODY = """
 You are Barnaby, a World of Warcraft raid-performance analyst with full access to the
 Warcraft Logs v2 API. Your primary objective is accurate, actionable coaching from
@@ -108,64 +114,7 @@ last.
 </SOURCE_AUTHORITY>
 
 <TOOLS>
-Use only tools exposed in this session. Combine them freely; when a question needs
-several independent lookups (several specs, encounters, or players), issue those tool
-calls together in parallel rather than one at a time.
-
-Population (leaderboard):
-- `get_selected_encounter` — the encounter/difficulty/partition chosen at startup
-  (there may be none in the web app).
-- `find_encounter` — resolve a boss name to encounter_id, zone, difficulties, and
-  default partition.
-- `get_spec_options` — exact PascalCase class/spec filter values.
-- `get_rankings_distribution` / `compare_specs` — score percentiles computed over the
-  top of the leaderboard; read `completeness.sample_scope`. Their `top_parses` are
-  leads for drilling into a report, not a benchmark.
-
-Report deep-dive (one log):
-- `get_report_fights` — report code → fight ids, kill/wipe, players and source ids.
-- `get_report_table` — the workhorse: DamageDone/Healing (set source_id for one
-  player's abilities), Casts, Buffs/Debuffs uptime, Deaths, DamageTaken (set
-  hostility_type='Enemies' for what the boss did).
-- `get_report_events` — raw event stream for timing questions; page with
-  `nextPageTimestamp` via start_time.
-- `get_report_graph` — time series (DPS/HPS/resources over time).
-- `get_report_rankings` — parse percentiles for a fight; `get_report_player_details`
-  — gear, talents, specs.
-- `get_report_participants` — the players of a report or fight (name, realm, region,
-  class, spec, role), no pets or NPCs.
-- `get_report_master_data` — actor/ability id maps.
-
-Character history:
-- `get_character_zone_rankings` / `get_character_encounter_rankings`. Only when the user
-  explicitly asks to refresh or check a character again, pass `force_refresh=True`; if the
-  result says `"refresh": "skipped_recent"`, tell them it was refreshed moments ago.
-
-Benchmark:
-- `compare_player_to_cohort` — a matched cohort (≤5 similar kill parses, ~75th–95th
-  percentile, duration ±15%) with median/range casts per minute per ability and
-  throughput; the player's rates are per minute alive. Pass `source_id` when a name
-  is ambiguous.
-- `get_cooldown_usage` — a player's major-cooldown uses vs approximate opportunities
-  over eligible time (fight minus time dead and intermissions), using the cooldowns of
-  the spec's coaching brief for the report's content type (pass `content_type` "raid"
-  or "mplus" to override); otherwise rates only.
-- `get_coaching_brief` — the verified coaching brief for a spec and content type
-  (Raid or Mythic+) when it is not already in the context.
-
-Charts and budget:
-- `create_chart` — render a chart from numbers you already fetched.
-- `check_rate_limit` — remaining Warcraft Logs API points.
-
-Fallback:
-- `run_wcl_graphql` — only when the typed tools cannot answer (roots: worldData,
-  reportData, characterData, guildData, gameData, rateLimitData). Validate the
-  response before using it.
-
-External knowledge:
-- `web_search` — current mechanics, patch notes, guides, news. It may be absent in
-  this session; then answer from the data you have and say that current-patch
-  verification was not possible.
+@@CAPABILITIES@@
 </TOOLS>
 
 <EVIDENCE_PLAN>
@@ -406,19 +355,16 @@ play, never the person.
 """.strip()
 
 
-def build_instruction(ctx=None) -> str:
-    """The agent instruction with the current UTC time (an ADK ``InstructionProvider``).
+def build_instruction(ctx=None, *, capabilities: str = "") -> str:
+    """The agent instruction with the capability summary and the current UTC time.
 
-    ADK calls it for every model request, so the time stays correct however long the
-    process runs; a provider also bypasses ADK's ``{state}`` substitution.
+    An ADK ``InstructionProvider``: ADK calls it for every model request, so the time stays
+    correct however long the process runs, and a provider bypasses ADK's ``{state}``
+    substitution. ``capabilities`` is the rendered summary that fills the ``<TOOLS>`` section
+    (``build_agent`` binds it with ``functools.partial``).
     """
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    return _INSTRUCTION_BODY.replace(_TIME_TOKEN, now)
-
-
-# Backwards-compatible snapshot for tests and tools that read the text; the agent itself
-# always uses ``build_instruction``.
-INSTRUCTION = build_instruction()
+    return _INSTRUCTION_BODY.replace(_CAPABILITIES_TOKEN, capabilities).replace(_TIME_TOKEN, now)
 
 
 # Single source of truth for the default model id: the same WCL_DEFAULT_MODEL env
@@ -431,36 +377,47 @@ DEFAULT_MODEL = os.getenv("WCL_DEFAULT_MODEL", "gemini-3.6-flash")
 # signal the backend uses to surface a "used web search" indicator (US3).
 WEB_SEARCH_AGENT_NAME = "web_search"
 
-# Single source of truth for the agent's tools (reused by every model variant).
-TOOLS = [
-    # Leaderboard / population
-    get_selected_encounter,
-    find_encounter,
-    get_spec_options,
-    get_rankings_distribution,
-    compare_specs,
-    # Report deep-dive
-    get_report_fights,
-    get_report_table,
-    get_report_events,
-    get_report_graph,
-    get_report_rankings,
-    get_report_player_details,
-    get_report_participants,
-    get_report_master_data,
-    # Individual characters
-    get_character_zone_rankings,
-    get_character_encounter_rankings,
-    # Benchmark / coaching (feature 009)
-    compare_player_to_cohort,
-    get_cooldown_usage,
-    get_coaching_brief,
-    # Visualization
-    create_chart,
-    # Utility / escape hatch
-    check_rate_limit,
-    run_wcl_graphql,
-]
+# Single source of truth for the agent's tools (reused by every model variant), grouped for
+# the generated capability summary (feature 029). A new WCL tool is one entry in a group:
+# it is then registered, listed in ``TOOLS`` and described in the instruction.
+TOOL_GROUPS: tuple[ToolGroup, ...] = (
+    ToolGroup(
+        "Population (leaderboard)",
+        (
+            get_selected_encounter,
+            find_encounter,
+            get_spec_options,
+            get_rankings_distribution,
+            compare_specs,
+        ),
+    ),
+    ToolGroup(
+        "Report deep-dive (one log)",
+        (
+            get_report_fights,
+            get_report_table,
+            get_report_events,
+            get_report_graph,
+            get_report_rankings,
+            get_report_player_details,
+            get_report_participants,
+            get_report_master_data,
+        ),
+    ),
+    ToolGroup(
+        "Character history",
+        (get_character_zone_rankings, get_character_encounter_rankings),
+    ),
+    ToolGroup(
+        "Benchmark and coaching",
+        (compare_player_to_cohort, get_cooldown_usage, get_coaching_brief),
+    ),
+    ToolGroup("Charts and budget", (create_chart, check_rate_limit)),
+    ToolGroup("Fallback", (run_wcl_graphql,)),
+)
+
+# The WCL tools flattened, kept for existing imports (tests); the agent registers groups.
+TOOLS = [tool for group in TOOL_GROUPS for tool in group.tools]
 
 
 def _is_anthropic(model: str) -> bool:
@@ -507,7 +464,12 @@ def _retrying_model(model: str, policy: RetryPolicy):
     return RetryingGemini(model=model, policy=policy)
 
 
-def build_agent(model: str = DEFAULT_MODEL, retry: RetryPolicy | None = None) -> Agent:
+def build_agent(
+    model: str = DEFAULT_MODEL,
+    retry: RetryPolicy | None = None,
+    *,
+    extra_groups: Sequence[ToolGroup] = (),
+) -> Agent:
     """Build the WCL analyst agent for a given model id (DRY factory).
 
     Gemini models get web grounding (via the `web_search` sub-agent tool);
@@ -516,6 +478,10 @@ def build_agent(model: str = DEFAULT_MODEL, retry: RetryPolicy | None = None) ->
 
     ``retry`` (feature 011) is the rate-limit retry + round-cap policy; ``None`` means
     the dataclass defaults (the CLI path). The backend passes one built from settings.
+
+    ``extra_groups`` (feature 029, design C6) adds backend-side tools, such as the profile
+    tool, after the WCL groups. The capability summary in the instruction and the registered
+    tool list are both built from the same groups.
     """
     policy = retry or RetryPolicy()
     # Eagerly build google-genai model serializers (they default to defer_build=True) so ADK
@@ -524,15 +490,17 @@ def build_agent(model: str = DEFAULT_MODEL, retry: RetryPolicy | None = None) ->
     ensure_genai_serializers_built()
     # Every tool is a coroutine (feature 013): ADK awaits it on the loop, so parallel tool
     # calls overlap their WCL I/O with no worker threads.
-    tools: list = list(TOOLS)
-    if not _is_anthropic(model):
-        tools.append(_build_web_search_tool(model))
+    groups = [*TOOL_GROUPS, *extra_groups]
+    web_search = not _is_anthropic(model)
+    if web_search:
+        groups.append(ToolGroup("External knowledge", (_build_web_search_tool(model),)))
+    summary = render_capability_summary(groups, web_search=web_search)
     return Agent(
         name="wcl_agent",
         model=_retrying_model(model, policy),
         description="Analyzes Warcraft Logs ranking and report data for any question.",
-        instruction=build_instruction,
-        tools=tools,
+        instruction=functools.partial(build_instruction, capabilities=summary),
+        tools=[tool for group in groups for tool in group.tools],
         # Feature 011: count model requests per turn and enforce the lookup-round cap.
         before_model_callback=make_before_model_callback(policy),
         # Native thinking planner — fits Gemini 3.x thinking models (unlike the
@@ -546,3 +514,7 @@ def build_agent(model: str = DEFAULT_MODEL, retry: RetryPolicy | None = None) ->
 
 # Default agent (used by the terminal CLI and `adk` tooling).
 root_agent = build_agent()
+
+# Backwards-compatible snapshot for tests and tools that read the text (CLI / Gemini variant,
+# no profile group); the agent itself always uses its bound ``build_instruction``.
+INSTRUCTION = root_agent.instruction(None)

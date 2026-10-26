@@ -25,7 +25,7 @@ from ..config import settings
 from ..db import repository as repo
 from ..model_state import fallback_model_for, is_valid_model
 from ..scratch import TurnScratch
-from ..tenancy.context import RequestIdentity, apply_tenant_scope, tenant_scope
+from ..tenancy.context import RequestIdentity, apply_tenant_scope, current_identity, tenant_scope
 from ..schemas import (
     ArtifactFrame,
     ChatTurn,
@@ -263,6 +263,7 @@ async def _handle_turn(
         # WCL data is public and cached for every tenant alike (feature 014 supersedes
         # FR-019); only the forced-refresh limit is per user, for this turn (US4).
         set_refresh_actor(str(identity.user_id))
+        current_identity.set(identity)  # backend agent tools act as this user (029, C7)
         preamble = await _build_turn_preamble(session, tenant_id, turn.content)
 
     # Stream the agent response, accumulating tokens into the final content.

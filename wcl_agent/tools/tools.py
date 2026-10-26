@@ -144,7 +144,8 @@ def _summarize(entries: list[dict[str, Any]]) -> dict[str, Any]:
 async def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
     """Return the encounter, difficulty, and season the user chose at startup.
 
-    Call this first to confirm what you are analyzing before fetching rankings.
+    Call this first to confirm what you are analyzing before fetching rankings. There may
+    be none in the web app; then use find_encounter.
 
     Returns:
         dict: {"status": "success", "selection": {...}} with the encounter name,
@@ -394,7 +395,9 @@ async def compare_specs(
     """Compare every spec of a class on the given encounter side-by-side.
 
     Runs get_rankings_distribution for each spec of the class and returns their
-    median/max/p95 scores together, ranked by median.
+    median/max/p95 scores together, ranked by median. Read completeness.sample_scope for
+    what the scores cover. The top_parses are leads for drilling into a report, not a
+    benchmark.
 
     Args:
         class_name (str): Class name in any casing (e.g. 'hunter').

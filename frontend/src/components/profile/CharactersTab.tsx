@@ -435,6 +435,8 @@ export function CharactersTab() {
         return `${who} is one of your characters.`;
       case "character_limit":
         return `You can register up to ${ownLimit} characters.`;
+      case "friend_limit":
+        return "You've reached the friend limit. Remove a friend before adding another.";
       default:
         return e.status === 409 ? `${who} is already added.` : GENERIC_ERROR;
     }

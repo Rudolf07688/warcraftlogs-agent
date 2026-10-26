@@ -815,7 +815,7 @@ async def run_wcl_graphql(query: str, variables_json: str = "") -> dict[str, Any
     (guild(...)), gameData (abilities/items/classes/factions), and rateLimitData.
     Fields like characterRankings, table, events, graph, zoneRankings return a
     JSON scalar (request them with no sub-selection). Endpoint is the public
-    client API — private reports are not accessible.
+    client API — private reports are not accessible. Validate the response before using it.
 
     Args:
         query (str): A complete GraphQL query string.

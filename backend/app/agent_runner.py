@@ -34,6 +34,7 @@ from google.genai import types
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
 from wcl_agent.llm.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
 
+from .agent_tools.profile_tools import PROFILE_TOOLS
 from .config import settings
 from .scratch import TurnScratch
 
@@ -77,7 +78,10 @@ def _get_runner(model: str) -> Runner:
             round_cap=settings.wcl_turn_round_cap,
         )
         runner = Runner(
-            agent=build_agent(model, retry=policy),
+            # Feature 029 (C6): the backend-side profile tool joins the WCL tools and the
+            # generated capability summary. Outside an authenticated chat turn (greeting,
+            # guide jobs) it fails closed.
+            agent=build_agent(model, retry=policy, extra_groups=(PROFILE_TOOLS,)),
             app_name=APP_NAME,
             session_service=_get_session_service(),
         )

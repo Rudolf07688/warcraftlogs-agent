@@ -18,6 +18,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
+from wcl_agent.cache.normalize import server_slug
+
 from ..services.encounters import merge_encounters
 from ..services.recent_raid_types import ListedReport, MplusRun, ReportDetails
 from .models import (
@@ -1011,11 +1013,15 @@ async def assign_message_seq_to_turn_captures(
 # Feature 012: a tenant may register several characters as its own (``role == "self"``).
 # The limit lives here only; the API exposes it as ``ProfileOut.own_limit``.
 MAX_OWN_CHARACTERS = 10
+# Feature 029 (decision D8): each friend costs preamble tokens on every model request and a
+# background guide task, so adds stop at 50. Profiles already over the cap keep every friend.
+MAX_FRIENDS = 50
 
 
 class CharacterConflict(Exception):
     """A character add was refused. ``code`` is the API ``detail``: ``duplicate_character``,
-    ``duplicate_friend``, ``already_friend``, ``already_own`` or ``character_limit``."""
+    ``duplicate_friend``, ``already_friend``, ``already_own``, ``character_limit`` or
+    ``friend_limit``."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -1025,12 +1031,19 @@ class CharacterConflict(Exception):
 async def find_character_identity(
     session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
 ) -> UserCharacter | None:
-    """Return the tenant's character with this identity in either role (case-insensitive)."""
+    """Return the tenant's character with this identity in either role (case-insensitive).
+
+    Realms compare by WCL slug (feature 029, design C12), so "Tarren Mill" and "tarren-mill"
+    are one realm; the SQL mirrors ``server_slug`` and the stored spelling is unchanged.
+    """
+    stored_slug = func.replace(
+        func.replace(func.lower(func.trim(UserCharacter.server)), " ", "-"), "'", ""
+    )
     result = await session.execute(
         select(UserCharacter).where(
             UserCharacter.tenant_id == tenant_id,
             func.lower(UserCharacter.name) == name.lower(),
-            func.lower(UserCharacter.server) == server.lower(),
+            stored_slug == server_slug(server),
             func.lower(UserCharacter.region) == region.lower(),
         )
     )
@@ -1092,7 +1105,7 @@ async def add_character(
     """Add an own (``role="self"``) or friend character.
 
     Raises ``CharacterConflict`` when the identity is already saved in either role, or when
-    the own-character limit is reached. ``IntegrityError`` remains the backstop for a
+    the own-character or friend limit is reached. ``IntegrityError`` remains the backstop for a
     same-role race on the DB unique constraint.
     """
     existing = await find_character_identity(
@@ -1104,14 +1117,15 @@ async def add_character(
                 "duplicate_character" if role == "self" else "duplicate_friend"
             )
         raise CharacterConflict("already_friend" if role == "self" else "already_own")
-    if role == "self":
-        count = await session.scalar(
-            select(func.count())
-            .select_from(UserCharacter)
-            .where(UserCharacter.tenant_id == tenant_id, UserCharacter.role == "self")
-        )
-        if (count or 0) >= MAX_OWN_CHARACTERS:
-            raise CharacterConflict("character_limit")
+    count = await session.scalar(
+        select(func.count())
+        .select_from(UserCharacter)
+        .where(UserCharacter.tenant_id == tenant_id, UserCharacter.role == role)
+    )
+    if role == "self" and (count or 0) >= MAX_OWN_CHARACTERS:
+        raise CharacterConflict("character_limit")
+    if role == "friend" and (count or 0) >= MAX_FRIENDS:
+        raise CharacterConflict("friend_limit")
     char = UserCharacter(
         tenant_id=tenant_id,
         role=role,
