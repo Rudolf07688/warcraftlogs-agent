@@ -25,6 +25,7 @@ from wcl_agent.cache.normalize import server_slug
 
 from ..db import repository as repo
 from ..db.models import ProfileProposal, UserCharacter
+from ..db.timestamps import as_utc
 from ..repositories import profile_proposals as rows
 from ..schemas import (
     CharacterIn,
@@ -85,11 +86,6 @@ class ProposalError(Exception):
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-def _aware(value: datetime) -> datetime:
-    """Timestamps read back without a zone (SQLite) are UTC."""
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 # --- Validation (C12, C13) ---------------------------------------------------------
@@ -216,7 +212,7 @@ async def _load_profile(db, tenant_id: uuid.UUID) -> list[UserCharacter]:
 
 
 def _status(row: ProfileProposal, now: datetime) -> str:
-    if row.status == "pending" and now >= _aware(row.expires_at):
+    if row.status == "pending" and now >= as_utc(row.expires_at):
         return "expired"
     return row.status
 
@@ -227,9 +223,9 @@ def _to_out(row: ProfileProposal, now: datetime | None = None) -> ProfileProposa
         conversation_id=row.conversation_id,
         message_seq=row.message_seq,
         status=_status(row, now or _now()),
-        created_at=_aware(row.created_at),
-        expires_at=_aware(row.expires_at),
-        applied_at=_aware(row.applied_at) if row.applied_at else None,
+        created_at=as_utc(row.created_at),
+        expires_at=as_utc(row.expires_at),
+        applied_at=as_utc(row.applied_at) if row.applied_at else None,
         items=row.items,
     )
 

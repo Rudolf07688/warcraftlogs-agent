@@ -109,6 +109,22 @@ After the second upgrade:
 RLS tests: 6 passed. The insert test asserts the error is "row-level security". The
 container is stopped.
 
+## Implementation complete (2026-10-26)
+
+- Rebased onto sprint-2026-10-26 @ 1685bd5 (030 merged).
+- S1 did agent.py (TOOL_GROUPS with get_report_participants in "Report deep-dive"; the
+  hand-written list, including 030's temporary line, removed; <RUN_RESOLUTION> kept), the
+  docstrings and test_prompt_contract.py (4 tests).
+- I did ws.py (2 lines), the _get_runner registration, D15's `backend/app/db/timestamps.py`
+  (`as_utc`), the backend-runner registration test and the offline scripted agent turn.
+- Full suite: **1152 passed, 6 skipped, 1 deselected**, no failures. `npm run build` is green.
+- Backend Gemini `<TOOLS>` summary (largest set): 3,267 chars; longest tool line 144.
+- GitNexus `analyze --force` + `detect-changes --scope all`: 13 files, risk "critical",
+  driven by `build_agent`/`_get_runner` (the HIGH risk accepted at the plan gate). No
+  unexpected symbols.
+- Ownership: every changed path is on the grant (plus D15's timestamps.py).
+  `.specify/feature.json` is never committed. `test_profile.py` is unchanged.
+
 ## Open questions
 
 - Waiting for the scrum master: confirmation of S1 at the tasks gate, "030 MERGED, rebase",

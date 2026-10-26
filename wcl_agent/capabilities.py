@@ -29,11 +29,12 @@ _USAGE_RULE = (
 _NO_WEB_SEARCH = (
     "No web search in this session: say that current-patch verification was not possible."
 )
-# What the agent may change, and only through a proposal card the user approves (D13).
+# What the agent may change, and only through a proposal card the user approves.
 _CAN_CHANGE = (
     "You can change, when the user asks: their own characters and friends, including raid roles, "
     "only by proposing the change; nothing is written until the user approves it on the card."
 )
+# Decision D13: what lives in the app and is done by the user, not the agent.
 _APP_FACTS = (
     "In the app (the user does these themselves): the Profile page (own characters, friends, main "
     "guild, raid roles; Class guides tab), recent raids and Mythic+ runs on the welcome screen, "

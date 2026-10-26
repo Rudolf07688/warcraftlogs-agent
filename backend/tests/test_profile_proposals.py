@@ -518,3 +518,17 @@ async def test_rls_insert_for_another_tenant_rejected(pg_sessionmaker):
             )
             await s.flush()
         await s.rollback()
+
+
+# --- Shared timestamp helper (D15) ---------------------------------------------------------
+
+
+def test_as_utc_takes_naive_timestamps_as_utc():
+    from datetime import timezone
+
+    from backend.app.db.timestamps import as_utc
+
+    naive = datetime(2026, 10, 26, 12, 0)
+    assert as_utc(naive) == datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
+    aware = datetime(2026, 10, 26, 14, 0, tzinfo=timezone(timedelta(hours=2)))
+    assert as_utc(aware) is aware  # an aware value keeps its zone

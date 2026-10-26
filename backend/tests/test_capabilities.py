@@ -10,7 +10,14 @@ from __future__ import annotations
 import pytest
 from google.adk.tools.base_tool import BaseTool
 
-from wcl_agent.agent import TOOLS, _build_web_search_tool
+from wcl_agent.agent import (
+    _INSTRUCTION_BODY,
+    TOOL_GROUPS,
+    TOOLS,
+    _build_web_search_tool,
+    build_agent,
+    root_agent,
+)
 from wcl_agent.capabilities import (
     CAPABILITY_SUMMARY_MAX_CHARS,
     MAX_TOOL_LINE_CHARS,
@@ -170,3 +177,52 @@ def test_usage_rule_comes_first(web_search):
     text = render_capability_summary([ToolGroup("G", (fake_alpha,))], web_search=web_search)
     assert text.startswith("Use only tools exposed in this session.")
     assert "in parallel rather than one at a time." in text
+
+
+# Agent-level checks (feature 029, T013): the instruction is generated from the groups.
+CLAUDE = "claude-sonnet-4@20250514"
+GEMINI = "gemini-3.6-flash"
+
+
+def tools_section(text: str) -> str:
+    return text.split("<TOOLS>\n", 1)[1].split("</TOOLS>", 1)[0]
+
+
+def test_instruction_body_tools_section_holds_only_the_token():
+    assert tools_section(_INSTRUCTION_BODY).strip() == "@@CAPABILITIES@@"
+
+
+def test_claude_agent_has_no_web_search_line_and_gemini_does():
+    claude = tools_section(build_agent(CLAUDE).instruction(None))
+    gemini = tools_section(build_agent(GEMINI).instruction(None))
+    assert NO_WEB_LINE in claude and "- web_search:" not in claude
+    assert "- web_search: " in gemini and NO_WEB_LINE not in gemini
+
+
+def test_root_agent_has_no_can_change_or_app_lines():
+    text = root_agent.instruction(None)
+    assert "You can change" not in text
+    assert "In the app" not in text
+    assert "You cannot change any app data" in text
+
+
+def test_extra_group_is_registered_and_listed():
+    agent = build_agent(CLAUDE, extra_groups=(ToolGroup("Profile", (fake_profile_tool,), note="x"),))
+    assert fake_profile_tool in agent.tools
+    text = agent.instruction(None)
+    assert "- fake_profile_tool: " in text
+    assert "You can change, when the user asks:" in text
+
+
+def test_largest_real_set_stays_within_budget():
+    agent = build_agent(GEMINI, extra_groups=(ToolGroup("Profile", (fake_profile_tool,), note="x"),))
+    text = agent.instruction(None)
+    summary = tools_section(text)
+    assert len(summary) <= CAPABILITY_SUMMARY_MAX_CHARS
+    assert all(len(line) <= MAX_TOOL_LINE_CHARS for line in tool_lines(summary))
+    assert "{" not in text and "}" not in text
+
+
+def test_participants_tool_is_in_the_report_deep_dive_group():
+    group = next(g for g in TOOL_GROUPS if g.label.startswith("Report deep-dive"))
+    assert "get_report_participants" in [t.__name__ for t in group.tools]

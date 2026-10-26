@@ -7,6 +7,7 @@ be dropped.
 
 from __future__ import annotations
 
+import functools
 import re
 
 import pytest
@@ -85,14 +86,19 @@ def test_old_top_parse_benchmark_removed():
 
 
 def test_every_registered_tool_is_described():
-    missing = [fn.__name__ for fn in TOOLS if fn.__name__ not in INSTRUCTION]
-    assert not missing, f"tools not mentioned in INSTRUCTION: {missing}"
+    # The <TOOLS> section is generated from the registered tool groups (feature 029).
+    tools_section = section("TOOLS")
+    missing = [fn.__name__ for fn in TOOLS if fn.__name__ not in tools_section]
+    assert not missing, f"tools not mentioned in the TOOLS section: {missing}"
 
 
 def test_web_search_described_as_optional():
-    assert "web_search" in INSTRUCTION
-    lowered = INSTRUCTION.lower()
-    assert any(p in lowered for p in ("may be absent", "may be unavailable", "not available", "unavailable"))
+    from wcl_agent.agent import build_agent
+
+    assert "- web_search:" in section("TOOLS")  # the Gemini default has it listed
+    claude = build_agent("claude-sonnet-4@20250514").instruction(None)
+    assert "- web_search:" not in claude
+    assert "no web search in this session" in claude.lower()
 
 
 def test_evidence_contract_scopes_to_logged_play_and_allows_guide_authoring():
@@ -153,7 +159,11 @@ def test_old_guide_heading_labels_removed():
 
 
 def test_cooldown_tool_takes_content_type():
-    assert "content_type" in section("TOOLS")
+    import inspect
+
+    from wcl_agent.tools.cooldowns import get_cooldown_usage
+
+    assert "content_type" in inspect.getdoc(get_cooldown_usage)
     assert any(fn.__name__ == "get_coaching_brief" for fn in TOOLS)
 
 
@@ -204,7 +214,9 @@ def test_agent_uses_the_instruction_provider():
     from wcl_agent.agent import build_agent, build_instruction
 
     agent = build_agent("claude-sonnet-4@20250514")
-    assert callable(agent.instruction) and agent.instruction is build_instruction
+    assert isinstance(agent.instruction, functools.partial)
+    assert agent.instruction.func is build_instruction
+    assert "capabilities" in agent.instruction.keywords
 
 
 def test_no_template_braces():
