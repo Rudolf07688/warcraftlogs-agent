@@ -207,6 +207,8 @@ class ConversationDetail(ConversationOut):
     messages: list[MessageOut] = []
     # US2/FR-011: persisted charts, so reopening a conversation re-renders them.
     artifacts: list["ArtifactOut"] = []
+    # Feature 031: the chat's profile change proposals, for the confirmation cards.
+    proposals: list["ProfileProposalOut"] = []
 
 
 class ConversationListResponse(BaseModel):
@@ -475,6 +477,14 @@ class ProfileProposalOut(BaseModel):
     items: list[ProposalItemOut]  # 1..MAX_PROPOSAL_ITEMS, in the order the agent gave them
 
 
+class ProposalDecisionOut(BaseModel):
+    """POST /api/profile/proposals/{id}/approve|cancel (feature 031). ``follow_up`` is the agent
+    message this call saved, or null when the proposal had already left ``pending``."""
+
+    proposal: ProfileProposalOut
+    follow_up: MessageOut | None = None
+
+
 # --- Spec guides (feature 008 / US2) — the GLOBAL shared library ---------------
 
 # Feature 015: every guide is one content type of one spec.
@@ -636,6 +646,14 @@ class ArtifactFrame(BaseModel):
     kind: str
     title: str
     figure: dict  # Plotly figure JSON: {"data": [...], "layout": {...}}
+
+
+class ProposalFrame(BaseModel):
+    """Feature 031: a stored profile change proposal, sent after a successful
+    ``propose_profile_changes`` call, for the confirmation card."""
+
+    type: Literal["proposal"] = "proposal"
+    proposal: ProfileProposalOut
 
 
 # --- Auth / tenancy (feature 006) --------------------------------------------

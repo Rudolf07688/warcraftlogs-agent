@@ -1,11 +1,12 @@
 import { memo, useState, type ReactNode } from "react";
-import type { Message, SpellCardState } from "../types";
+import type { Message, ProfileProposal, SpellCardState } from "../types";
 import { StickToBottom } from "use-stick-to-bottom";
 import { FollowUps } from "./FollowUps";
 import { StreamMarkdown } from "./StreamMarkdown";
 import { SpellCard } from "./SpellCard";
 import { EncounterPicker } from "./EncounterPicker";
 import { PlotlyArtifact } from "./PlotlyArtifact";
+import { ProposalCard } from "./ProposalCard";
 import { useStreamText } from "../lib/streamStore";
 
 interface Props {
@@ -18,6 +19,10 @@ interface Props {
   onSelectBosses: (ids: number[]) => void;
   onPickSuggestion: (text: string) => void;
   onDownloadMessage: (messageId: string) => void;
+  /** Feature 031: proposals not linked to a message (their turn never finished). */
+  looseProposals: ProfileProposal[];
+  /** Feature 031: append the line a confirmation card's decision saved. */
+  onFollowUp: (conversationId: string, message: Message) => void;
   /** Rendered after the messages (feature 013: the welcome panel in a new chat). */
   footer?: ReactNode;
 }
@@ -99,6 +104,8 @@ function MessageListImpl({
   onSelectBosses,
   onPickSuggestion,
   onDownloadMessage,
+  looseProposals,
+  onFollowUp,
   footer,
 }: Props) {
   return (
@@ -127,6 +134,11 @@ function MessageListImpl({
                   {m.role === "agent" &&
                     m.artifacts?.map((a) => (
                       <PlotlyArtifact key={a.artifact_id} artifact={a} />
+                    ))}
+                  {/* Feature 031: confirmation cards for the profile changes proposed this turn. */}
+                  {m.role === "agent" &&
+                    m.proposals?.map((p) => (
+                      <ProposalCard key={p.id} proposal={p} onFollowUp={onFollowUp} />
                     ))}
                   {/* US5: export just this reply (its question + its charts) as a PDF. */}
                   {m.role === "agent" && m.id && (
@@ -187,6 +199,14 @@ function MessageListImpl({
                 </div>
               );
             })}
+
+            {/* Feature 031: a proposal whose turn never finished still gets its card. */}
+            {looseProposals.map((p) => (
+              <div key={p.id} className="message agent">
+                <div className="message-role">Barnaby</div>
+                <ProposalCard proposal={p} onFollowUp={onFollowUp} />
+              </div>
+            ))}
 
             {streaming && <LiveMessage status={status} streamCards={streamCards} />}
 

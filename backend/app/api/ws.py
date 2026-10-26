@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
@@ -23,6 +24,7 @@ from ..auth.csrf import origin_matches
 from ..auth.dependencies import authenticate_session
 from ..config import settings
 from ..db import repository as repo
+from ..repositories import profile_proposals as proposal_rows
 from ..model_state import fallback_model_for, is_valid_model
 from ..scratch import TurnScratch
 from ..tenancy.context import RequestIdentity, apply_tenant_scope, current_identity, tenant_scope
@@ -36,6 +38,7 @@ from ..schemas import (
     MetaFrame,
     ModelFallbackFrame,
     ModelRetryFrame,
+    ProposalFrame,
     RaidTrackedFrame,
     SuggestionsFrame,
 )
@@ -43,6 +46,7 @@ from ..suggestions import generate_followups
 from ..services import conversation_titles
 from ..services import graphs as graphs_service
 from ..services import known_entities
+from ..services import profile_proposals
 from ..services import raids as raids_service
 from ..services.artifacts import capture_artifact_from_tool
 from ..services.charts import chart_spec_to_plotly
@@ -104,11 +108,12 @@ async def _forward_tool_start(ws: WebSocket, record: dict) -> None:
 
 async def _handle_tool_end(
     ws: WebSocket, record: dict, conv_id, identity: RequestIdentity
-) -> None:
+) -> uuid.UUID | None:
     """Forward a user-safe tool_end and route the full record to capture services.
 
     Captures run in their own short tenant-scoped transaction (PERF-006): no DB connection
-    is held while the model streams.
+    is held while the model streams. Returns the id of a proposal sent as a frame (031), so
+    the turn can link it to its answer at ``done``.
     """
     tenant_id = identity.tenant_id
     name = record["name"]
@@ -205,6 +210,24 @@ async def _handle_tool_end(
     if encounters and isinstance(report_code, str):
         await _send(ws, EncountersFrame(report_code=report_code, encounters=encounters))
 
+    if name == "propose_profile_changes" and ok:
+        return await _send_proposal(ws, result, identity)
+    return None
+
+
+async def _send_proposal(ws: WebSocket, result: dict, identity: RequestIdentity) -> uuid.UUID | None:
+    """Feature 031: send the stored proposal (not the tool result the model saw) for the
+    confirmation card. ``get_proposal`` reads it in its own short transaction and scopes it to
+    this user, so an id from another tenant sends nothing."""
+    try:
+        proposal_id = uuid.UUID(str((result.get("proposal") or {})["id"]))
+        proposal = await profile_proposals.get_proposal(identity, proposal_id)
+    except (KeyError, TypeError, ValueError, profile_proposals.ProposalError) as exc:
+        logger.warning("proposal frame skipped: %r", exc)
+        return None
+    await _send(ws, ProposalFrame(proposal=proposal))
+    return proposal.id
+
 
 async def _persist_partial(conv_id, tokens: list[str], identity: RequestIdentity) -> None:
     """Persist whatever streamed so far as a `partial` agent message (US2/FR-009).
@@ -270,6 +293,7 @@ async def _handle_turn(
     # US2: a per-turn scratch store holds each tool's full output on disk so large
     # concurrent results are preserved and picked up after every call completes.
     tokens: list[str] = []
+    proposal_ids: list[uuid.UUID] = []  # feature 031: proposals sent this turn
     switched = False  # feature 021: the turn moved to the sibling model
     scratch = TurnScratch(str(conv_id))
     try:
@@ -290,7 +314,9 @@ async def _handle_turn(
             elif kind == "tool_start":
                 await _forward_tool_start(ws, record)
             elif kind == "tool_end":
-                await _handle_tool_end(ws, record, conv_id, identity)
+                proposal_id = await _handle_tool_end(ws, record, conv_id, identity)
+                if proposal_id is not None:
+                    proposal_ids.append(proposal_id)
             elif kind == "grounding":
                 await ws.send_json(record)
             elif kind == "model_retry":
@@ -335,6 +361,10 @@ async def _handle_turn(
         # so per-message reports and reload-time rendering can scope them correctly.
         await repo.assign_message_seq_to_turn_captures(
             session, conv_id, agent_msg.seq, tenant_id=tenant_id
+        )
+        # Feature 031: this turn's confirmation cards belong under this answer too.
+        await proposal_rows.set_message_seq(
+            session, proposal_ids, agent_msg.seq, tenant_id=tenant_id, user_id=identity.user_id
         )
         agent_msg_id = agent_msg.id
 
