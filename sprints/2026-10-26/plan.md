@@ -263,7 +263,7 @@ Plan B total: 22 points. Epic 203's build stories then lead the next sprint.
 
 ---
 
-## Full ranked backlog (68 open stories at planning, plus sc-213/214 filed during the sprint; sc-209/sc-210 are Under Review and excluded)
+## Full ranked backlog (68 open stories at planning, plus sc-213/214/215/216 filed during the sprint; sc-209/sc-210 are Under Review and excluded)
 
 Shortcut Priority mirrors this ranking: **Highest** = this sprint, **High** = next up,
 **Medium** = next sprints, **Low** = later, **Lowest** = long term and all `qa-deferred`
@@ -303,6 +303,7 @@ note in the launch brief).
 | 27 | sc-140 Scroll to question on completion | 1 | Medium | In the new layout, or it gets written twice. |
 | 28 | sc-144 Character filter checkboxes | 5 | Medium | Chat header, so after the redesign. |
 | 29 | sc-145 (Stretch) Agent sets the character filter | 5 | Low | Needs sc-144; reuses epic 203's "agent drives the app" pattern. |
+| 28a | sc-215 Bubble width caps in rem (scale with font size) | 1 | Low | Raised at 031 spec sign-off; small CSS follow-up to sc-208. |
 | 29a | sc-214 Per-item selection on the profile-change card | 2 | Low | Epic 203 follow-up (D4 kept it out of v1); contract already supports it. |
 | 30 | sc-201 Background job: raid and dungeon guides | 5 | Low | First job on the worker (needs sc-198..200). |
 | 31 | sc-202 Background job: offline character profile | 5 | Low | Worker job; can reuse sc-205's profile service. |
@@ -322,6 +323,7 @@ note in the launch brief).
 | 45 | sc-124 Log upload endpoint and storage | 2 | Low | After the spike. |
 | 46 | sc-125 Log upload UI with progress | 2 | Low | After sc-124. |
 | 47 | sc-126 Ingest uploaded logs for the agent | 5 | Low | Into the stored-fetch shape (sc-130), so after it. |
+| 47a | sc-216 One shared naive-timestamp-as-UTC helper | 1 | Low | Five copies on base (constitution I); 029 adds the helper, this moves the rest. |
 | 48 | sc-171 wcl_agent follow-ups: de-stutter module names | 2 | Low | Cheap, but no feature waits on it. |
 | 49 | sc-173 Add ruff with isort rules | 2 | Low | Mechanical; touches many files, so best between sprints. |
 | 50 | sc-172 ai_guide.md stale facts | 1 | Low | Docs only. |

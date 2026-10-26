@@ -148,3 +148,29 @@
   rebase must carry `get_report_participants` into `TOOL_GROUPS` (checked at 029 acceptance).
 - **Owner live check (Under Review):** "who was in <report>" against a real report (the fixtures
   are Inferred, D12), and the full example request once 029 and 031 are in.
+
+## D15 — 2026-10-26: Duplicate "naive timestamp as UTC" helper (029)
+- **Question:** 029's `profile_proposals.py` needs the `_aware(dt)` logic that already exists in
+  five places on base (guide.py, invitation_service.py, auth/sessions.py, and inline in
+  password_reset_service.py and admin_users.py). File a chore, or fix it now?
+- **Answer:** Both, split. 029 must not add a sixth copy: it adds **one** small shared helper (its
+  choice of module, e.g. `backend/app/db/` or a `timeutil` module) and uses it in its own new code.
+  Moving the five existing copies onto it is a Backlog chore, sc-216 (1 pt, Low), because those
+  files are outside 029's footprint and the change is unrelated to sc-205.
+- **Why:** New code follows constitution I without widening 029's scope.
+
+## D16 — 2026-10-26: 029 (sc-204 + sc-205) accepted
+- **Answer:** ACCEPT at c28d1ef (code ends at ca6cdf1). The PO re-ran the backend suite in dev-a
+  (1152 passed, 6 skipped, 1 deselected) and read: `agent_tools/profile_tools.py` (identity from
+  `current_identity` + session, fails closed on a mismatch or non-UUID session), the
+  `repositories/profile_proposals.py` queries (tenant **and** user in every WHERE, FOR UPDATE on
+  execute/cancel), `execute_proposal`/`cancel_proposal` (single transaction, idempotent, guides
+  scheduled after commit), the repository friend cap (D8) and slug identity (C12, the SQL mirrors
+  `server_slug`), and the ws.py/agent_runner.py edits. AC 1–8 are met. 030's tool is in the "Report deep-dive"
+  group and the temporary hand-written line is gone (D14 check).
+- **Accepted deviations:** no `schedule_guides` wrapper; the realm regex allows parentheses; the
+  `friend_limit` message has no number.
+- **Owner live checks (Under Review):** (a) the shared runner also serves greeting, guide and
+  guild-summary runs: check that the profile/"can change" lines don't leak into generated guide or
+  summary text (fallback: register the profile group for chat only); (b) "make <friend> a healer"
+  and "remove <friend>" produce a correct card once 031 is in.

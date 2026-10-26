@@ -2,7 +2,7 @@
 
 - **Feature:** 031 · **Branch:** `031-confirmation-card` (set `GIT_BRANCH_NAME=031-confirmation-card` for `/speckit-specify`; spec dir `specs/031-confirmation-card/`)
 - **Worktree:** `/home/rudolf/dev/wcl-worktrees/dev-b` (track B). Before you start, the scrum master resets it to the sprint tip.
-- **Base ref:** the `sprint-2026-10-26` tip after the 030 merge (the scrum master gives the hash at kickoff)
+- **Base ref:** the `sprint-2026-10-26` @ `1685bd5` (030 merged)
 - **Stories:** sc-207 (3) Confirm agent-initiated profile changes in chat and refresh the profile UI; sc-208 (1) Chat bubbles scale with screen width instead of a fixed size.
 - **Peer:** track A developer on 029 (`dev-a-029`). It owns the proposal service you call.
 - **Sprint files:** plan `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-26/plan.md` (section 031 and the overlap table), decisions `.../decisions.md` (D4, D6, D8–D13 binding), ownership `.../ownership.md`.
