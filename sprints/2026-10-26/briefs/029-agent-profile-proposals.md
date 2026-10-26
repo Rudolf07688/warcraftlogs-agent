@@ -2,7 +2,7 @@
 
 - **Feature:** 029 · **Branch:** `029-agent-profile-proposals` (set `GIT_BRANCH_NAME=029-agent-profile-proposals` for `/speckit-specify`; spec dir `specs/029-agent-profile-proposals/`)
 - **Worktree:** `/home/rudolf/dev/wcl-worktrees/dev-a` (track A). Before you start, the scrum master resets it to the sprint tip.
-- **Base ref:** `sprint-2026-10-26` `de66579` (027 + 028 merged)
+- **Base ref:** `sprint-2026-10-26` `1da8bca` (027 + 028 merged, plus the sprint artefacts)
 - **Stories:** sc-204 (2) Harness self-description in the agent's context; sc-205 (5) Agent tools to read and edit the user's profile (characters, friends, roles).
 - **Peer:** track B developer on 030 (`dev-b-030`).
 - **Sprint files:** plan `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-26/plan.md` (section 029 + the overlap table), decisions `.../decisions.md` (D4–D9 binding), ownership `.../ownership.md`.

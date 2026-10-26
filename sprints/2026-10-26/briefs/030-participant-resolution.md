@@ -2,7 +2,7 @@
 
 - **Feature:** 030 · **Branch:** `030-participant-resolution` (set `GIT_BRANCH_NAME=030-participant-resolution` for `/speckit-specify`; spec dir `specs/030-participant-resolution/`)
 - **Worktree:** `/home/rudolf/dev/wcl-worktrees/dev-b` (track B). Before you start, the scrum master resets it to the sprint tip.
-- **Base ref:** `sprint-2026-10-26` `de66579` (027 + 028 merged)
+- **Base ref:** `sprint-2026-10-26` `1da8bca` (027 + 028 merged, plus the sprint artefacts)
 - **Story:** sc-206 (3) Agent resolves run/raid participants with class and role for profile actions.
 - **Peer:** track A developer on 029 (`dev-a-029`).
 - **Sprint files:** plan `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-26/plan.md` (section 030 + the overlap table), decisions `.../decisions.md` (D5 and D9 binding), ownership `.../ownership.md`.
