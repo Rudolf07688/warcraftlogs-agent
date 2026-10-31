@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-10-31
+Updated: 2026-10-31 (pre-restart)
 
 ## Topic
 
@@ -22,6 +22,11 @@ record is in `meta/team-optimisation.md` (decisions D1–D13, proposals P1–P6,
   (`po`, `sm`, `dev-<n>`) a self-chosen name and a memory capped at 500 words, stored in
   `meta/team/` in the main checkout. Wired into all three agent files and `team-launch`.
 - **The owner declined raising `cleanupPeriodDays`** (D12).
+
+- **Owner grant (2026-10-31):** team-lead has autonomy. Act on my own judgment by default
+  (see `meta/team/lead.md`, owner preference 15).
+- **Session restart** done after aa4a951…2e1087b. If you're reading this after the
+  restart, everything above is committed. Pick up from the open threads below.
 
 ## Open threads
 
