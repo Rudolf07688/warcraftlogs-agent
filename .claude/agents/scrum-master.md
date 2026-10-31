@@ -51,6 +51,9 @@ Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, 
   - what the owner cares about
 - **What doesn't:** task status, or anything already in the code, specs, board,
   `CLAUDE.md` or `meta/`.
+- **Shared before personal:** before saving, check whether your agent file or a skill
+  already says it. If so, cut it from your memory. If you think every agent should know
+  it, post a `skill:<name>` notice on the board instead of keeping it to yourself.
 - **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
   memory. The hard cap is 500 words. When you're near it, cut the least useful line before
   you add one. Write in your own voice.

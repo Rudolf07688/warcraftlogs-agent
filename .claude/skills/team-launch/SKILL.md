@@ -74,7 +74,9 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
 ## 3. Wrap up
 
 1. **Commit team memory:** `meta/team/*.md` in the main checkout. Agents write there
-   directly from their worktrees. Note any memory changes in the team report.
+   directly from their worktrees. Note any memory changes in the team report, including
+   how many memory lines repeat the agent files or skills. Don't edit members' memories:
+   move a fact that several members share into the agent file or a skill instead.
 2. **Close the board:** stop all agents, then run
    `python3 .claude/team/board.py close --export meta/sprints/<date>/board.jsonl`.
 3. **Team-pattern report:** `meta/sprints/<date>/team-report.html`, in the same

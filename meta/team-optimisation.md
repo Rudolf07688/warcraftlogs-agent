@@ -456,3 +456,9 @@ through respawns as the same named member, with its own small, curated memory. I
   the ADK pruning mistake, and one expensive live turn on a large report. Added P7
   (scoped security review at hand-off) and P8 (split lead spend by activity). Lessons in
   the lead memory and team-launch.
+- **2026-11-01:** Shared knowledge vs member memories (owner's question). Decision: shared
+  facts go into the agent files and skills (done at the 2026-10-31c wrap-up); team-lead
+  does not edit member memories. Added a "shared before personal" line to the memory
+  rules in the three agent files: cut what an agent file or skill already says, and post
+  `skill:<name>` for what every agent should know. Measure at the next wrap-up: lines in
+  member memories that repeat the shared files (feeds open question 3).
