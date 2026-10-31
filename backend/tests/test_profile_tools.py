@@ -120,6 +120,45 @@ async def test_fails_closed_on_a_mismatch(me, conv, patched_db, tenant_id, other
     assert await _counts(patched_db) == (0, 0)
 
 
+async def test_raw_items_through_function_tool_become_skipped_rows(me, conv, patched_db, tenant_id):
+    # sc-241 AC 1: the real ADK argument path leaves items it can't convert as raw dicts; they
+    # become skipped rows with the right codes and the valid items are kept.
+    valid = {"action": "add", "target": "friend", "name": "Jaina", "realm": "Tarren Mill", "region": "eu"}
+    changes = [
+        {**valid, "name": "Thrall", "realm": None},
+        {**valid, "name": "Anduin", "region": ""},
+        {**valid, "name": "Varian", "action": "promote"},
+        {**valid, "name": "Tyrande", "played_role": "Healer"},
+        valid,
+    ]
+    result = await FunctionTool(propose_profile_changes).run_async(
+        args={"changes": changes}, tool_context=_ctx(str(tenant_id), str(conv))
+    )
+    assert result["status"] == "success"
+    proposal = ProfileProposalOut.model_validate(result["proposal"])
+    assert [i.validation.code for i in proposal.items] == ["invalid_realm", "invalid_region", "invalid_item", None, None]
+    assert proposal.items[3].played_role == "healer"
+    async with patched_db() as db:
+        assert len((await db.get(ProfileProposal, proposal.id)).items) == 5
+    assert await _counts(patched_db) == (0, 1)
+
+
+async def test_unexpected_failure_is_a_plain_tool_error(me, conv, patched_db, tenant_id, monkeypatch, caplog):
+    # sc-241 AC 2: no exception text reaches the model or the chat; the developers get the log.
+    from backend.app.services import profile_proposals
+
+    async def boom(*_):
+        raise RuntimeError("boom secret detail")
+
+    monkeypatch.setattr(profile_proposals, "create_proposal", boom)
+    result = await propose_profile_changes([_change()], _ctx(str(tenant_id), str(conv)))
+    assert result == {
+        "status": "error",
+        "error_message": "Couldn't prepare the profile changes. Tell the user to try again.",
+    }
+    assert "boom secret detail" in caplog.text
+
+
 # --- Declaration and registration -------------------------------------------------------
 
 
@@ -218,3 +257,39 @@ async def test_scripted_turn_proposes_and_writes_nothing(me, conv, patched_db, t
         stored = await db.get(ProfileProposal, proposal.id)
         assert stored.status == "pending" and stored.tenant_id == tenant_id
     assert await _counts(patched_db) == (0, 1)  # the profile itself is unchanged
+
+
+async def test_scripted_turn_continues_after_an_unexpected_tool_failure(me, conv, tenant_id, monkeypatch):
+    # sc-241 AC 2: the failure is a normal tool error, so the model gets it and the turn ends
+    # with its answer instead of an agent_error.
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from backend.app.services import profile_proposals
+    from wcl_agent.agent import build_agent
+
+    async def boom(*_):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(profile_proposals, "create_proposal", boom)
+    agent = build_agent("gemini-3.6-flash", extra_groups=(PROFILE_TOOLS,))
+    change = {"action": "add", "target": "friend", "name": "Jaina", "realm": "Tarren Mill", "region": "eu"}
+    agent.model = _ScriptedLlm(
+        model="scripted",
+        script=[_call("propose_profile_changes", {"changes": [change]}), _text("Sorry, that didn't work.")],
+    )
+    service = InMemorySessionService()
+    await service.create_session(app_name="t", user_id=str(tenant_id), session_id=str(conv))
+    runner = Runner(agent=agent, app_name="t", session_service=service)
+
+    responses, texts = [], []
+    async for event in runner.run_async(
+        user_id=str(tenant_id),
+        session_id=str(conv),
+        new_message=genai_types.Content(role="user", parts=[genai_types.Part(text="add Jaina")]),
+    ):
+        responses += [r.response for r in event.get_function_responses()]
+        texts += [p.text for p in (event.content.parts if event.content else []) if p.text]
+
+    assert responses == [{"status": "error", "error_message": "Couldn't prepare the profile changes. Tell the user to try again."}]
+    assert texts[-1] == "Sorry, that didn't work."
