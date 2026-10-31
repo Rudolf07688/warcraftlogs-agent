@@ -165,7 +165,8 @@ def test_adk_models_use_the_model_location(regional):
     assert claude.region == "global" and claude.max_retries == 0
 
     search_model = _build_web_search_tool("gemini-3.8-flash").agent.model
-    assert type(search_model).__name__ == "Gemini"  # plain, not a retrying one
+    # sc-184: retrying, following the turn's switch but never making one
+    assert isinstance(search_model, RetryingGemini) and search_model.may_switch is False
     assert search_model.client_kwargs == expected
 
 

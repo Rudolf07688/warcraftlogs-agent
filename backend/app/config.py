@@ -7,12 +7,13 @@ GOOGLE_* env vars / mounted credentials (FR-016) — not read here.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from functools import lru_cache
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from wcl_agent.llm import provider
@@ -66,6 +67,10 @@ class Settings(BaseSettings):
     login_failure_block_threshold: int = 5  # consecutive failures before delay kicks in
     login_block_max_delay_s: int = 30  # capped delay ceiling
     rate_limit_token_per_minute: int = 20  # per-source cap on public token endpoints
+    # Reverse proxies whose X-Forwarded-For is believed when keying those limits (sc-158):
+    # comma-separated IPs or CIDRs, e.g. "10.0.0.0/8,127.0.0.1". Empty trusts nothing, so
+    # the direct peer is the client.
+    trusted_proxies: str = ""
     # Canonical site URL used to build invite/reset links (never the inbound Host header)
     # and to validate WS/CSRF Origin. No trailing slash.
     site_url: str = "http://localhost:5173"
@@ -166,6 +171,7 @@ class Settings(BaseSettings):
     wcl_cache_ttl_char_reports: int = 300
     wcl_cache_ttl_report_summary: int = 86400
     wcl_cache_ttl_report_player: int = 86400
+    wcl_cache_ttl_report_participants: int = 86400
     wcl_cache_ttl_world_zones: int = 3600
     wcl_cache_unfinished_ttl: int = 120  # reports still being logged
     wcl_cache_jitter: float = 0.10  # TTL × U(1, 1 + jitter)
@@ -196,6 +202,12 @@ class Settings(BaseSettings):
     recent_raids_shown: int = 6
     recent_mplus_shown: int = 6
     recent_raids_refresh_timeout_s: int = 120
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _check_trusted_proxies(cls, value: str) -> str:
+        _parse_networks(value)  # a typo fails at startup, not at the first login
+        return value
 
     @model_validator(mode="after")
     def _resolve_roles(self) -> Settings:
@@ -263,6 +275,14 @@ class Settings(BaseSettings):
     @property
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        return _parse_networks(self.trusted_proxies)
+
+
+def _parse_networks(value: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    return [ipaddress.ip_network(p.strip(), strict=False) for p in value.split(",") if p.strip()]
 
 
 @lru_cache

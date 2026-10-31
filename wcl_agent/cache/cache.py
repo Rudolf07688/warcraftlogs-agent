@@ -61,6 +61,7 @@ class CacheFamily(StrEnum):
     CHAR_REPORTS = "char_reports"
     REPORT_SUMMARY = "report_summary"
     REPORT_PLAYER = "report_player"
+    REPORT_PARTICIPANTS = "report_participants"  # sc-224: who took part in a report/fight
     OAUTH_TOKEN = "oauth_token"
     WORLD_ZONES = "world_zones"
     # feature 015: guide-pipeline sources (not WCL data, but cached the same way)
@@ -101,6 +102,7 @@ FAMILIES: dict[CacheFamily, FamilyConfig] = {
     CacheFamily.CHAR_REPORTS: FamilyConfig(300, 0.60),
     CacheFamily.REPORT_SUMMARY: FamilyConfig(86400, 0.40),
     CacheFamily.REPORT_PLAYER: FamilyConfig(86400, 0.40),
+    CacheFamily.REPORT_PARTICIPANTS: FamilyConfig(86400, 0.40),
     CacheFamily.GAME_CLASSES: FamilyConfig(86400, 0.90, memo_s=3600),  # live class/spec roster
     CacheFamily.SPEC_DATASHEET: FamilyConfig(43200, 0.50),  # guide data sheets (research R6)
     CacheFamily.GUIDE_RESEARCH: FamilyConfig(21600, 0.50),  # filtered guide fact sheets
@@ -196,6 +198,10 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
             f"wcl:v1:report:{code.strip()}:player:{source_id}:table:"
             f"{data_type}:{fight_id or 0}:{ability_id or 0}:{hostility}"
         )
+
+    @staticmethod
+    def report_participants(code: str, fight_id: int) -> str:
+        return f"wcl:v1:report:{code.strip()}:participants:{fight_id or 0}"
 
     @staticmethod
     def spec_datasheet(content_type: str, class_name: str, spec: str, patch_or_season: str) -> str:

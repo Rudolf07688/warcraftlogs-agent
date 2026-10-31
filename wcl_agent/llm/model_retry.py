@@ -15,7 +15,9 @@ turn (the CLI, unit tests) everything degrades to "retry with the policy, notify
 
 Feature 021: when a chat turn's request stays rate limited after the retries, the wrappers
 switch it once to the same-class sibling model (``generate_with_fallback``); the chat
-socket sets the sibling on the turn's ``TurnStats``.
+socket sets the sibling on the turn's ``TurnStats``. sc-176: while that switch is still
+possible the turn's model gets only a short retry, and a model whose retries ran out is
+remembered for a few minutes, so the next turns start on the sibling straight away.
 """
 
 from __future__ import annotations
@@ -24,8 +26,9 @@ import asyncio
 import contextvars
 import logging
 import random
+import time
 from collections.abc import AsyncGenerator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from typing import Any
 
@@ -246,6 +249,36 @@ async def generate_with_retry(
             attempt += 1
 
 
+# sc-176: while a turn can still switch, its model gets one retry within a few seconds
+# rather than the full schedule (5 attempts, up to the 90 s budget) before the sibling.
+_PRIMARY_ATTEMPTS = 2
+_PRIMARY_BUDGET_S = 10.0
+# How long a model whose retries ran out is skipped in favour of its sibling.
+RATE_LIMIT_MEMORY_S = 300.0
+_limited_until: dict[str, float] = {}
+
+
+def _remember_limited(model: str | None) -> None:
+    if model:
+        _limited_until[model] = time.monotonic() + RATE_LIMIT_MEMORY_S
+
+
+def recently_limited(model: str | None) -> bool:
+    """Whether ``model`` ran out of rate-limit retries within ``RATE_LIMIT_MEMORY_S``."""
+    until = _limited_until.get(model or "")
+    if until is None:
+        return False
+    if until <= time.monotonic():
+        del _limited_until[model]
+        return False
+    return True
+
+
+def forget_rate_limits() -> None:
+    """Clear the memory (tests, or after an operator raises the quota)."""
+    _limited_until.clear()
+
+
 # Google's documented stand-in for a function-call thought signature from another model.
 _FOREIGN_SIGNATURE = b"skip_thought_signature_validator"
 
@@ -285,6 +318,8 @@ async def generate_with_fallback(
     inner: Callable[[], AsyncGenerator[Any, None]],
     llm_request: LlmRequest,
     policy: RetryPolicy,
+    *,
+    may_switch: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """``generate_with_retry``, then at most once per turn the same-class sibling (021).
 
@@ -294,27 +329,64 @@ async def generate_with_fallback(
     still rate limited and nothing was yielded (``ModelRateLimited``), the turn switches to
     ``stats.fallback_model``: one ``model_fallback`` record, then this request and every
     later one of the turn go to the sibling. A rate limit on the sibling propagates.
+
+    sc-176: while the switch is still open the turn's model gets a short retry
+    (``_PRIMARY_ATTEMPTS`` within ``_PRIMARY_BUDGET_S``); the sibling keeps ``policy``. A
+    model whose retries ran out is remembered (``recently_limited``), and a turn whose
+    model is remembered switches on its first request, unless the sibling is remembered too.
+
+    sc-184: ``may_switch=False`` (the web-search sub-agent, pinned to the turn's model)
+    follows a switch the turn already made but never makes one; its own conversation is
+    all on the sibling, so no signature guard is needed.
     """
     stats = current_turn.get()
     own = stats is not None and llm_request.model == stats.model
-    if own and stats.switched_to:
-        _route_to_sibling(llm_request, stats)
-    try:
+    if not may_switch:
+        if own and stats.switched_to:
+            llm_request.model = stats.switched_to
         async for response in generate_with_retry(inner, policy):
             yield response
         return
+    can_switch = own and bool(stats.fallback_model) and stats.switched_to is None
+    if can_switch and recently_limited(stats.model) and not recently_limited(stats.fallback_model):
+        _switch(llm_request, stats, "was rate-limited moments ago")
+    elif own and stats.switched_to:
+        _route_to_sibling(llm_request, stats)
+    else:
+        primary = (
+            replace(
+                policy,
+                attempts=min(policy.attempts, _PRIMARY_ATTEMPTS),
+                budget_s=min(policy.budget_s, _PRIMARY_BUDGET_S),
+            )
+            if can_switch
+            else policy
+        )
+        try:
+            async for response in generate_with_retry(inner, primary):
+                yield response
+            return
+        except ModelRateLimited:
+            if own:
+                _remember_limited(llm_request.model)
+            if not can_switch:
+                raise
+        _switch(llm_request, stats, "still rate-limited")
+    try:
+        async for response in generate_with_retry(inner, policy):
+            yield response
     except ModelRateLimited:
-        if not (own and stats.fallback_model and stats.switched_to is None):
-            raise
+        _remember_limited(llm_request.model)
+        raise
+
+
+def _switch(llm_request: LlmRequest, stats: TurnStats, why: str) -> None:
+    """Move the turn to its sibling: one ``model_fallback`` record, then route this request."""
     stats.switched_to = stats.fallback_model
     stats.switch_index = len(llm_request.contents)
-    logger.warning(
-        "model %s still rate-limited; switching this turn to %s", stats.model, stats.switched_to
-    )
+    logger.warning("model %s %s; switching this turn to %s", stats.model, why, stats.switched_to)
     stats.emit({"type": "model_fallback", "from_model": stats.model, "to_model": stats.switched_to})
     _route_to_sibling(llm_request, stats)
-    async for response in generate_with_retry(inner, policy):
-        yield response
 
 
 class RetryingGemini(Gemini):
@@ -328,6 +400,8 @@ class RetryingGemini(Gemini):
     client_kwargs: dict[str, Any] | None = Field(
         default_factory=adk_client_kwargs, exclude=True, repr=False
     )
+    # sc-184: False for a sub-agent's model: it follows the turn's switch, never makes one.
+    may_switch: bool = True
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -336,6 +410,7 @@ class RetryingGemini(Gemini):
             lambda: super(RetryingGemini, self).generate_content_async(llm_request, stream),
             llm_request,
             self.policy,
+            may_switch=self.may_switch,
         ):
             yield response
 
