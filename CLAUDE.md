@@ -5,6 +5,16 @@ For technologies, project structure, and other important context, read that plan
 and the project constitution at .specify/memory/constitution.md.
 <!-- SPECKIT END -->
 
+<!-- META START -->
+# Meta work (team / agent setup)
+
+Discussions about the agent team, its process or its tooling (not the WCL app) live in
+`meta/`. Read `meta/README.md` first, then `meta/CURRENT.md` (the current focus). Owner
+preferences for team work are in `meta/owner-preferences.md`. Write meta notes only under
+`meta/`; agent-only helpers go in `.claude/team/`. To run the agent team, use the
+`team-launch` skill.
+<!-- META END -->
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

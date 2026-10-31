@@ -1,0 +1,30 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            232   145466    44442639     312436     23
+Hook injection probe                          2      651       56895      22923      0
+Hook probe sub-agent                          2       83       38078      41586      0
+034 US3 frontend card guard                   9     8624      510585      74802      0
+Probe depth-2 sub-agent spawning              3      421       80780      43532      0
+Shortcut backlog sync for sprint             10     4743      770588     117060      0
+dev-a-032                                   168   164661    48872163     418074     12
+dev-a-033                                    81    58801    11653232     207597     10
+dev-b-034                                   116    97709    22776101     274143     10
+dev-b-035                                   164   140054    44955661     378348     16
+Depth-2 test child                            1       11       18791      19479      0
+probe-dev                                     3      941       90744      47870      1
+product-owner                                78    65458    14747903    1674625     13
+scrum-master                                179   105570    29659658     761658     76
+TOTAL {'calls': 1048, 'out': 793193, 'cr': 218673818, 'cc': 4394133, 'inp': 2628, 'sends': 161}
+main (team-lead) [('Bash', 68), ('SendMessage', 23), ('Write', 13), ('Agent', 10), ('TaskStop', 7), ('Read', 7)]
+Hook injection probe [('Bash', 1)]
+Hook probe sub-agent [('Bash', 1)]
+034 US3 frontend card guard [('Bash', 9)]
+Probe depth-2 sub-agent spawning [('Agent', 1), ('Monitor', 1)]
+Shortcut backlog sync for sprint [('mcp__shortcut__stories-search', 12), ('Bash', 2), ('mcp__shortcut__epics-search', 2), ('ToolSearch', 1), ('mcp__shortcut__workflows-list', 1), ('mcp__shortcut__iterations-get-active', 1)]
+dev-a-032 [('Bash', 128), ('Write', 14), ('SendMessage', 12), ('Skill', 7), ('ToolSearch', 3), ('Edit', 3)]
+dev-a-033 [('Bash', 62), ('SendMessage', 10), ('Read', 8), ('mcp__shortcut__stories-update', 6), ('mcp__gitnexus__impact', 5), ('Skill', 3)]
+dev-b-034 [('Bash', 81), ('mcp__gitnexus__impact', 12), ('SendMessage', 10), ('Write', 9), ('mcp__shortcut__stories-update', 6), ('Skill', 5)]
+dev-b-035 [('Bash', 118), ('SendMessage', 16), ('Write', 14), ('Edit', 8), ('Skill', 7), ('mcp__shortcut__stories-update', 4)]
+Depth-2 test child []
+probe-dev [('Bash', 2), ('SendMessage', 1)]
+product-owner [('Bash', 31), ('SendMessage', 13), ('mcp__shortcut__stories-update', 11), ('mcp__shortcut__stories-get-by-id', 8), ('mcp__shortcut__stories-create', 6), ('mcp__shortcut__stories-search', 4)]
+scrum-master [('Bash', 103), ('SendMessage', 76), ('Read', 3), ('Agent', 1), ('Edit', 1)]

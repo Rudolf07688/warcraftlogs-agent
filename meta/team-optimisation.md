@@ -298,3 +298,12 @@ before launch, the quiet watchdog role, and wrap-up.
   and D11 (rewrite and commit). Verified that a sub-agent can launch its own sub-agent
   (depth 2). Rewrote the three agent files, added the `team-launch` skill, and recorded the
   before/after table. Open questions are now about verification.
+- **2026-10-31:** Added the persistence system for meta knowledge:
+  - `meta/CURRENT.md` (working memory), re-injected by a SessionStart hook
+    (`.claude/team/meta_context.py`)
+  - a META block in `CLAUDE.md`
+  - `meta/owner-preferences.md` (canonical) and `meta/sessions.md` (the session ledger)
+  - archived per-sprint usage in `meta/sprints/<date>/usage.txt`, because transcripts are
+    deleted after 30 days
+
+  The layers are documented in `meta/README.md`.

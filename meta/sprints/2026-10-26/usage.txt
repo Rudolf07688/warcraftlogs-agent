@@ -1,0 +1,30 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            233    54928    40171878     232521     35
+QA security sweep                            32    22326     1924656      94952      0
+QA spec conformance sweep                    61    44876     9034281     228149      0
+S1 capability summary renderer               15    19599      900749     152647      0
+QA bug hunt sweep                            64    46851     5711210     150375      0
+Final Shortcut sync for sprint                9     4922      665801     115191      0
+dev-a-027                                    88   111312    16267697     262817     10
+dev-a-029                                   169   155864    46220502     388121     16
+dev-b-028                                   123   125800    27422690     331561      9
+dev-b-030                                    72    43987     8936504     358167     11
+dev-b-031                                   204   161956    56169944     796182     23
+QA performance sweep                         44    28022     2837746     114745      0
+product-owner                               137   125024    32787664    1901520     28
+scrum-master                                231   157796    50781094    1384431    118
+TOTAL {'calls': 1482, 'out': 1103263, 'cr': 299832416, 'cc': 6511379, 'inp': 3594, 'sends': 250}
+main (team-lead) [('SendMessage', 35), ('Bash', 25), ('TaskStop', 11), ('Agent', 7), ('Read', 2), ('ToolSearch', 2)]
+QA security sweep [('Bash', 31), ('Write', 1)]
+QA spec conformance sweep [('Bash', 60), ('Read', 2), ('Write', 1)]
+S1 capability summary renderer [('Bash', 13), ('bash', 1)]
+QA bug hunt sweep [('Bash', 64), ('Write', 1)]
+Final Shortcut sync for sprint [('mcp__shortcut__stories-search', 12), ('Bash', 2), ('mcp__shortcut__epics-search', 2), ('ToolSearch', 1), ('mcp__shortcut__workflows-list', 1), ('mcp__shortcut__iterations-get-active', 1)]
+dev-a-027 [('Bash', 67), ('SendMessage', 10), ('Read', 4), ('mcp__shortcut__stories-update', 2), ('mcp__gitnexus__context', 2), ('Write', 2)]
+dev-a-029 [('Bash', 116), ('Write', 20), ('SendMessage', 16), ('mcp__gitnexus__impact', 10), ('Edit', 6), ('mcp__shortcut__stories-update', 4)]
+dev-b-028 [('Bash', 88), ('Read', 11), ('SendMessage', 9), ('mcp__shadcn__search_items_in_registries', 6), ('Write', 3), ('ToolSearch', 2)]
+dev-b-030 [('Bash', 44), ('SendMessage', 11), ('mcp__gitnexus__impact', 5), ('Skill', 4), ('ToolSearch', 2), ('mcp__shortcut__stories-update', 2)]
+dev-b-031 [('Bash', 139), ('SendMessage', 23), ('Write', 14), ('mcp__gitnexus__impact', 12), ('Read', 7), ('Skill', 6)]
+QA performance sweep [('Bash', 43), ('Write', 1)]
+product-owner [('Bash', 59), ('mcp__shortcut__stories-update', 30), ('SendMessage', 28), ('mcp__shortcut__stories-create-comment', 20), ('mcp__shortcut__stories-get-by-id', 15), ('mcp__shortcut__stories-create', 15)]
+scrum-master [('Bash', 131), ('SendMessage', 118), ('ToolSearch', 1), ('Agent', 1)]
