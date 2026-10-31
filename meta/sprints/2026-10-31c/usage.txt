@@ -1,0 +1,24 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            131    73627    19674952     189652      3
+Ansel: feature 039 local-first data         142   187370    37863882     775792      1
+Shortcut sync for sprint 2026-10-31c         10     5839      802290      97956      0
+Shortcut sync after sprint                   10     3759      739204     102891      0
+QA security sweep                            12    22974      390863      53325      0
+QA spec conformance sweep                    50    48030     4723166     153701      0
+QA performance sweep                         27    30871     1389044      87007      0
+QA bug hunt sweep                            33    38793     2131491     104093      0
+Tomas: feature 040 small fixes              109    79069    16377943     467637      0
+product-owner                                10    18748     2177704      24119      1
+product-owner                                94    94977    19556215    1056761      4
+TOTAL {'calls': 628, 'out': 604057, 'cr': 105826754, 'cc': 3112934, 'inp': 1334, 'sends': 9}
+main (team-lead) [('Bash', 92), ('ToolSearch', 5), ('mcp__shortcut__stories-search', 4), ('Write', 3), ('TaskStop', 3), ('SendMessage', 3)]
+Ansel: feature 039 local-first data [('Bash', 120), ('Write', 12), ('mcp__shortcut__stories-update', 6), ('Edit', 6), ('Skill', 5), ('ToolSearch', 3)]
+Shortcut sync for sprint 2026-10-31c [('mcp__shortcut__stories-search', 13), ('mcp__shortcut__epics-search', 2), ('ToolSearch', 1), ('Bash', 1), ('mcp__shortcut__workflows-list', 1), ('mcp__shortcut__iterations-get-active', 1)]
+Shortcut sync after sprint [('mcp__shortcut__stories-search', 17), ('Bash', 2), ('mcp__shortcut__epics-search', 2), ('ToolSearch', 1), ('mcp__shortcut__workflows-list', 1), ('mcp__shortcut__iterations-get-active', 1)]
+QA security sweep [('Bash', 11), ('Write', 1)]
+QA spec conformance sweep [('Bash', 51), ('Write', 1)]
+QA performance sweep [('Bash', 25), ('Write', 1)]
+QA bug hunt sweep [('Bash', 33), ('Write', 1)]
+Tomas: feature 040 small fixes [('Bash', 105), ('mcp__shortcut__stories-update', 12), ('mcp__gitnexus__impact', 3), ('bash', 1), ('ToolSearch', 1)]
+product-owner [('mcp__shortcut__stories-create-comment', 11), ('Bash', 5), ('Agent', 1), ('Write', 1), ('SendMessage', 1)]
+product-owner [('Bash', 61), ('mcp__shortcut__stories-get-by-id', 14), ('mcp__shortcut__stories-update', 13), ('Write', 8), ('mcp__shortcut__stories-search', 7), ('mcp__shortcut__stories-create-comment', 7)]

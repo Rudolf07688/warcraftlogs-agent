@@ -34,7 +34,9 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
 3. **Board:**
    - `python3 .claude/team/board.py init sprint-<date>`
    - `post decision "<steer + clarified answers>" --as team-lead --key steer`
-4. **Launch the product owner** as a named teammate: `Agent`, `name: product-owner`,
+4. **Launch the product owner** as a named teammate. First check `ListAgents` for a
+   leftover agent with the same name from an earlier sprint and stop it (a stale one
+   replayed its old final report at launch once). Then: `Agent`, `name: product-owner`,
    `subagent_type: product-owner`. Use the same pattern, with seat `sm`, for a scrum master.
    Its brief contains:
    - **seat `po`.** The product owner's persistent name and memory come from
@@ -61,6 +63,9 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   minutes when something moved. Arm a `Monitor` on the board file filtered to
   `handoff|merge|escalation` with a 30-minute timeout, and re-arm on expiry; the expiry is
   the heartbeat. Don't relay idle notifications.
+- **Completion notices of developers come to you**, not to the product owner. Forward
+  each in one message (branch, head, tests, anything new) and tell the product owner to
+  merge.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on

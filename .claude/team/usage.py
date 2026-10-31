@@ -1,14 +1,17 @@
 """Per-agent token usage and messaging for one agent-team session.
 
-Usage: python3 .claude/team/usage.py ~/.claude/projects/<project>/<session-id>
+Usage: python3 .claude/team/usage.py ~/.claude/projects/<project>/<session-id> [--since 2026-10-31T21:20:00Z]
+--since counts only entries at or after that UTC time (one session can span several sprints).
 Reads <session-id>.jsonl (main session) and <session-id>/subagents/*.jsonl.
 """
 import json,sys,glob,os,collections
+SINCE=sys.argv[sys.argv.index('--since')+1] if '--since' in sys.argv else ''
 def stats(path):
     inp=cc=cr=out=calls=0; sends=0; sendchars=0; tools=collections.Counter(); seen=set()
     for line in open(path):
         try: d=json.loads(line)
         except: continue
+        if SINCE and (d.get('timestamp') or '') < SINCE: continue
         m=d.get('message') or {}
         if d.get('type')=='assistant' and isinstance(m,dict):
             mid=m.get('id')
@@ -26,6 +29,7 @@ sess=sys.argv[1].rstrip('/').removesuffix('.jsonl')
 rows=[]
 main=stats(sess+'.jsonl'); rows.append(('main (team-lead)',main))
 for f in sorted(glob.glob(sess+'/subagents/*.jsonl')):
+    if SINCE and os.path.getmtime(f) < __import__('datetime').datetime.fromisoformat(SINCE.replace('Z','+00:00')).timestamp(): continue
     meta=f.replace('.jsonl','.meta.json'); name=os.path.basename(f)
     try: md=json.load(open(meta)); name=md.get('name') or md.get('description') or name
     except: pass

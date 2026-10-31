@@ -444,6 +444,18 @@ Test at three layers:
 - task completes or fails predictably,
 - results preserve required structure.
 
+## Local learnings (warcraftlogs-agent)
+
+<!-- Maintained by team-lead (owner preference 18). Not from the upstream skill. -->
+
+- **Partial stream events.** With `StreamingMode.SSE`, events with `partial=True` carry
+  only fragments of a function call. On Anthropic they're `will_continue` calls with no
+  args, one per argument chunk. On Gemini progressive SSE, the final event repeats the
+  call. Act on `function_call` parts only from the non-partial event, and dedupe by call
+  id. Doing otherwise sent 23–79 `tool_start` frames per call (sc-289).
+- **Read the installed source, don't guess.** ADK moves fast. Check behaviour in
+  `.venv/lib/python3.*/site-packages/google/adk/` before relying on it.
+
 ## Common Gotchas
 
 ### 1. Blurring agent logic and network surface

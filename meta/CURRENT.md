@@ -5,33 +5,30 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-10-31 (end of sprint 2026-10-31b)
+Updated: 2026-11-01 (end of sprint 2026-10-31c)
 
 ## Topic
 
 The agent-team redesign: persistence and autonomy. Full record in
-`meta/team-optimisation.md` (decisions D1–D16, proposals P1–P6, baseline table, change log).
+`meta/team-optimisation.md` (decisions D1–D17, proposals P1–P6, baseline table, change log).
 
 ## Where we are
 
-- **Sprint 2026-10-31b finished:** 21/21 pts of hardening + QA debt (036, 037, 038 fixes) on
-  branch `sprint-2026-10-31b` (tip d15ecf7). Not merged to main yet; awaiting the owner's merge
-  answer. Cost per point 0.83 (from 1.39), coordination 29% (from 41%), zero escalations.
-  Team report: `meta/sprints/2026-10-31b/team-report.html`.
-- **Team members now exist:** Maren (po), Ansel (dev-1), Tomas (dev-2), each with a first
-  memory with "Autonomy lessons". Lead memory updated (crash recovery).
-- **D15:** the whole team has the autonomy grant (owner preference 16).
-- **D16:** team-lead owns `.env` and live testing (owner preference 17). Provider is now
-  `anthropic` with a key. First live pass done; found sc-289 (tool_start flood).
-- **Incidents:** machine crash mid-sprint (recovered, nothing lost); a VS Code setting
-  injected `.env` into shells (owner set it to false; restart the session to clear it).
+- **Sprint 2026-10-31c finished:** 19/19 pts, local-first data (039) and small fixes (040),
+  with a QA fix round split by author (041, 042). Branch `sprint-2026-10-31c` (tip 6bfaabe,
+  code 6dd57e7), not merged to main yet. Cost per point 0.92, 78 minutes, zero escalations.
+  Team report: `meta/sprints/2026-10-31c/team-report.html`.
+- **Live pass done** on 6dd57e7. The live DB is at 0018 (backup in
+  `.git/db-backups/pre-0018-2026-11-01.dump`). The app stack runs from the sprint worktree.
+  New bug sc-302 (large-report chart turn ends without an answer).
+- **New owner preferences:** 18 (team-lead owns `.claude/skills/`, D17) and 19 (small
+  progress updates during sprints). First skills pass done: pruned unused stacks, applied
+  the sprint's learnings.
 
 ## Open threads
 
-- Done: sprint-2026-10-31b merged and pushed (c614178); worktrees removed; app runs from main.
-- Owner decisions from Maren's report: accept the SEC-001 trade-off and sc-221 AC5 as partial.
-- Next sprint idea from the report: tier-S security fixes get one bypass attempt before
-  hand-off and at merge.
+- Owner: merge `sprint-2026-10-31c` into main? 9 stories Under Review in iteration 290.
+- After the merge: remove worktrees, restart the stack from main, re-index GitNexus.
 - Memory quality review after a few sprints (open question 3).
 
 ## How to resume

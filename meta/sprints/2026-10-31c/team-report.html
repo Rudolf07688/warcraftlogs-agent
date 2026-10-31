@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Report 2026-10-31c</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--ink:#1d1d1b;--mute:#6b6a64;--line:#e3e1d9;--acc:#2f6f5e;--warn:#a5531f;--good:#2f6f5e;--bar:#d9e7e2}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151614;--card:#1e201d;--ink:#ecebe6;--mute:#a09f98;--line:#33352f;--acc:#7cc4ad;--warn:#e19a6a;--good:#7cc4ad;--bar:#2a3d37}}
+:root[data-theme="dark"]{--bg:#151614;--card:#1e201d;--ink:#ecebe6;--mute:#a09f98;--line:#33352f;--acc:#7cc4ad;--warn:#e19a6a;--good:#7cc4ad;--bar:#2a3d37}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 10px}
+.sub{color:var(--mute);margin:0 0 20px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.tile b{display:block;font-size:24px}.tile span{color:var(--mute);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:10px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600}
+.scroll{overflow-x:auto}
+.now td{font-weight:600}
+.bar{height:10px;background:var(--bar);border-radius:5px;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--acc);border-radius:5px}
+.good{color:var(--good)}.warn{color:var(--warn)}
+ul{margin:6px 0 0 18px;padding:0}li{margin:3px 0}
+code{font-size:13px;background:var(--bar);padding:0 4px;border-radius:4px}
+</style>
+</head>
+<body><main>
+<h1>Team report: sprint 2026-10-31c</h1>
+<p class="sub">Local-first data (039), small fixes (040), and a QA fix round split by author (041, 042). The second sprint under the autonomy grant, and the first where team-lead owns the skills. Written by team-lead, 2026-11-01.</p>
+
+<div class="tiles">
+<div class="tile"><b>19 / 19</b><span>points delivered, 9 stories</span></div>
+<div class="tile"><b class="warn">0.92</b><span>weighted cost per point (was 0.83)</span></div>
+<div class="tile"><b>38%</b><span>coordination share (was 29%)</span></div>
+<div class="tile"><b class="good">78 min</b><span>steer to wrap-up</span></div>
+<div class="tile"><b>0</b><span>escalations to the owner</span></div>
+</div>
+
+<h2>Cost against the baseline</h2>
+<div class="card scroll"><table>
+<tr><th>Sprint</th><th>Points</th><th>Model calls</th><th>Weighted (M)</th><th>Per point</th><th>Coordination</th><th>Build</th><th>QA</th><th>Notes</th></tr>
+<tr><td>2026-10-25</td><td>23</td><td>1975</td><td>61.0</td><td>2.65</td><td>55%</td><td>35%</td><td>8%</td><td>9 developers, QA + fix round</td></tr>
+<tr><td>2026-10-26</td><td>20</td><td>1482</td><td>43.6</td><td>2.18</td><td>42%</td><td>49%</td><td>8%</td><td>Owner plan gate, no fix round</td></tr>
+<tr><td>2026-10-31</td><td>21</td><td>990</td><td>29.2</td><td>1.39</td><td>41%</td><td>58%</td><td>0%</td><td>No QA sweep</td></tr>
+<tr><td>2026-10-31b</td><td>21</td><td>757</td><td>17.5</td><td>0.83</td><td>29%</td><td>52%</td><td>18%</td><td>PO + 2 devs, tier M + S, crash mid-sprint</td></tr>
+<tr class="now"><td>2026-10-31c</td><td>19</td><td>628</td><td>17.5</td><td>0.92</td><td>38%</td><td>48%</td><td>12%</td><td>PO + 2 devs (Ansel on opus), tier M + S, split fix round</td></tr>
+</table></div>
+<p class="sub">Weighted = cache read 0.1×, cache write 1.25×, output 5×. Counted from 21:20Z (<code>usage.py --since</code>, new this sprint, because one session now spans several sprints). The total equals last sprint's, spread over two fewer points.</p>
+
+<div class="card">
+<table>
+<tr><th style="width:34%">Group</th><th style="width:12%">M units</th><th>Share</th></tr>
+<tr><td>Build (Ansel 5.69, Tomas 2.62)</td><td>8.31</td><td><div class="bar"><i style="width:48%"></i></div></td></tr>
+<tr><td>Coordination (Maren 3.75, team-lead 2.57, stale PO 0.34)</td><td>6.66</td><td><div class="bar"><i style="width:38%"></i></div></td></tr>
+<tr><td>QA (4 auditors)</td><td>2.06</td><td><div class="bar"><i style="width:12%"></i></div></td></tr>
+<tr><td>Shortcut sync (2 runs)</td><td>0.45</td><td><div class="bar"><i style="width:3%"></i></div></td></tr>
+</table>
+</div>
+<p class="sub">Why coordination rose: the team-lead figure covers more than coordination. It includes the planning discussion relay, two meta changes from the owner (skills ownership and pruning, progress updates), the live pass and this wrap-up. Maren's share (3.75) is up from 2.98: a planning round before launch, two fix rounds to merge, and two merge bypass attempts. The stale product-owner session from last sprint replayed its old report at launch (0.34): avoidable, and now in the launch checklist. Ansel on Opus for the security-heavy 039 cost 5.69 for 10 points. That matched the risk: his own bypass review found an alias-forgery hole before QA did.</p>
+
+<h2>The board in practice</h2>
+<div class="card">
+<p>59 entries: 28 decisions, 16 notices, 5 hand-offs, 4 merges, 3 questions (all live-check requests), 2 changes. By author: Ansel 23, Maren 19, Tomas 14, team-lead 3. Agent-to-agent messages: 9 (161 two sprints ago, 11 last sprint). None of the developers needed a reply to proceed.</p>
+<p>Code vs Spec Kit text: 2,858 lines of code and tests added (33 files); 1,779 lines of specs and sprint docs. 039 ran Spec Kit (tier M), 040–042 didn't.</p>
+</div>
+
+<h2>How the autonomy grant went (second time)</h2>
+<div class="card">
+<ul>
+<li class="good"><b>Scope judgment before launch.</b> Maren read the code while writing briefs, found two planned stories with nothing to build (no Raids page exists), swapped them for two real ones and posted why. No owner question needed.</li>
+<li class="good"><b>The bypass habit stuck.</b> Last sprint's lesson ("one bypass attempt before hand-off and at merge") ran three times: Ansel's own review found GraphQL alias and comment forgery and shortened the re-verify window from 7 days to 1; Tomas tried 20+ image forms; Maren's merge attempt on 041 held.</li>
+<li class="good"><b>Honest outcomes.</b> Tomas reported sc-213 as "not reproduced, tests added" instead of guessing a fix. The QA sweep then found the real cause (interrupted turns never linked their charts), and 042 fixed it.</li>
+<li class="warn"><b>Still, both QA Highs were in the security core.</b> They came from trusting query text over the server's response. The fix is a principle now in the developer file: security decisions rest on what the server returned.</li>
+</ul>
+</div>
+
+<h2>Live pass (team-lead)</h2>
+<div class="card">
+<p>On the merged code (6dd57e7), Anthropic provider, Haiku, six chat turns. DB backed up and migrated 0017 → 0018 first.</p>
+<ul>
+<li class="good">Report fights work with the new summary fields (<code>code</code>, <code>visibility</code>); <code>raw_reports</code> recorded the report as public with its end time.</li>
+<li class="good">A grant row appeared for my workspace after the table questions, which clears Ansel's key-order risk.</li>
+<li class="good">The same report in a new chat: <code>wcl store hit op=ReportQ</code>, served from Postgres.</li>
+<li class="good">An unknown report code fails cleanly and stores nothing.</li>
+<li class="good">sc-289: one <code>tool_start</code> per call across every turn (it was 23–79).</li>
+<li class="good">sc-213: a chart is linked to its agent message on reload.</li>
+<li class="warn">Found sc-302 (Backlog): a chart request on a large report ended with only the interim line after 7 tools, at 220k prompt tokens and no trimming. Likely pre-existing.</li>
+<li>Skipped: a second tenant, the kill switch, both models rate-limited, image block and scroll in a real browser (component-tested).</li>
+</ul>
+</div>
+
+<h2>Skills and memory changes</h2>
+<div class="card">
+<p><b>Skills (owner preference 18, first pass):</b> pruned 7 skills for stacks the project doesn't use, plus 3 duplicate folders (47 → 37 entries). Applied this sprint's learnings:</p>
+<ul>
+<li><code>developer</code> agent file: clean-env pytest, zsh without word-splitting, Vitest only runs <code>*.test.tsx</code>, the Postgres proof recipe, GitNexus across worktrees, "trust the response, not the query", mutation-check new tests, and live checks via the board instead of "the owner".</li>
+<li><code>agent-sdk-adk</code>: a "Local learnings" section on partial stream events (the sc-289 root cause) and on reading the installed ADK source.</li>
+<li><code>team-launch</code>: stop a stale same-named agent before launch; developer completion notices come to team-lead, who forwards them; small progress updates via a board monitor (preference 19).</li>
+</ul>
+<p>No agent posted a <code>skill:</code> notice. They launched with the old agent files, and only a board notice told them about it. From next sprint the agent files carry the rule. Several facts were in all three members' memories (clean env, zsh), which is the signal they belong in a shared file.</p>
+<p><b>Memories:</b> Ansel 294 → 420 words, Tomas 325 → 430, Maren 315 → 393, lead 449. Each added notes on teammates and lessons from this sprint.</p>
+</div>
+
+<h2>Next time</h2>
+<div class="card">
+<ul>
+<li>Maren writes plan.html before launching developers (her own lesson; it came late this time).</li>
+<li>Run the bypass review before the last story, not at the end: Ansel's review changed a default after the design was posted.</li>
+<li>Reproduce-first stories allow "not reproduced, with evidence" as an outcome in the acceptance criteria.</li>
+<li>Splitting the QA fix round by author, in parallel, was fast and cheap when the findings sit in separate code. Keep it.</li>
+<li>Skills: watch for the first real <code>skill:</code> notices, and keep cutting what no agent reads.</li>
+</ul>
+</div>
+</main></body></html>

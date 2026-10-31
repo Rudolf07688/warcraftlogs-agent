@@ -97,7 +97,16 @@ python3 .claude/team/board.py log --since <id>   # the raw history
 - Don't run `docker compose`, and don't start servers on default ports. Throwaway
   Postgres and Redis go on the per-developer ports your brief gives.
 - **Never read the owner's `.env`.** There are no live LLM or WCL calls: use fakes and
-  fixtures, and leave live checks to the owner.
+  fixtures. When tests can't settle something, post a `question` with key
+  `live-check:<feature>` and exact steps; team-lead runs the live pass at the end.
+- **Shell facts (learned the hard way):**
+  - Agent shells may carry the app's env vars. Run every suite in a clean env:
+    `env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q`.
+  - The shell is zsh, which doesn't word-split: wrap a repeated prefix in a function
+    (`B() { python3 .claude/team/board.py post "$@" --as <you>; }`), never a variable.
+  - Vitest only picks up `src/**/*.test.tsx`; a `.test.ts` file is silently skipped.
+  - Postgres-only tests are skipped under SQLite. Prove RLS or migration work on a
+    throwaway `postgres:17` on your brief's port (recipe: `specs/039-local-first-data/quickstart.md` §2).
 
 ## File ownership (hard rule)
 
@@ -123,6 +132,10 @@ python3 .claude/team/board.py log --since <id>   # the raw history
     `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`,
     then `detect-changes --scope all --repo .`. A `partial` or `truncated` result isn't
     clean, so re-run it.
+  - In a worktree, `impact --repo warcraftlogs-agent` can resolve to another checkout's
+    index: index your worktree and pass its absolute path as `--repo`. CRITICAL from
+    `detect-changes` is often a name collision (`__init__`, `_run`): check before you
+    report it.
 - **shadcn for UI.** Search the registry through the shadcn MCP and always pass
   `registries: ["@shadcn"]`. Add components with the command the MCP gives, from
   `<worktree>/frontend`, and run its audit checklist afterwards (constitution VII).
@@ -192,6 +205,10 @@ Constitution first:
 - the simplest design (III)
 - typed boundaries (IV)
 - async FastAPI (V)
+
+Security decisions about external data (WCL, model output) rest on what the server
+returned, never on the query or prompt text: aliases, directives and null propagation make
+text parsing lie. Prove a new test bites with a quick mutation of the code it guards.
 
 Match the surrounding code's style and comment density. No dead code, no secrets. When you
 rework something, fix the root cause rather than the symptom.

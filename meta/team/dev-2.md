@@ -20,3 +20,6 @@ Lessons (Tomas, dev-2):
 - Ansel (dev-1) posts thorough clarify decisions; a short board notice before touching a shared test file is enough.
 
 Autonomy: deciding and recording reasons on the board as I went cost nothing and kept me moving; suggestions outside the AC went to backlog notices. The QA round showed where autonomy needs more self-review, not more asking: before hand-off, check each new code path against the invariants of the code it sits next to (budgets, who may write shared state, every attribute that can carry a URL). Post plan and decision as one entry.
+- ADK stream events: partial=True events carry only call fragments (Anthropic: will_continue, no args; Gemini progressive SSE: a copy the final event repeats). Act on function_call parts from the non-partial event only. Read the installed ADK source (.venv/.../google/adk) instead of guessing.
+- Vitest here includes only src/**/*.test.tsx (a .test.ts is silently skipped). Stubbing ResizeObserver, Element.scrollTo and mocking use-stick-to-bottom/plotly is how jsdom component tests work. Story text can name the wrong cause (sc-213): trace end to end before fixing; "not reproduced + tests" is a valid, honest outcome.
+- Backend ws tests: reuse test_proposal_ws.py helpers (_quiet, _ctx_stream, _run, _FakeSocket) to drive _handle_turn over the SQLite DB.

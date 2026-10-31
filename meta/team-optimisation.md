@@ -50,6 +50,7 @@ as an autonomous unit that needs only a small owner input to steer it.
 | 2026-10-26 | 20 | 1482 | 250 (118) | 43.6 | **2.18** | **42%** | 49% | 8% | Two design docs and three builds; owner plan gate; QA sweep, no fix round |
 | 2026-10-31 | 21 | 990 | 160 (76) | 29.2 | **1.39** | **41%** | 58% | 0% | Fast-tracked halfway; no QA sweep |
 | 2026-10-31b | 21 | 757 | 11 (no SM) | 17.5 | **0.83** | **29%** | 52% | 18% | PO + 2 devs, tiers M + S, autonomy grant (D15); QA sweep + one fix round; machine crash mid-sprint |
+| 2026-10-31c | 19 | 628 | 9 (no SM) | 17.5 | **0.92** | **38%** | 48% | 12% | PO + 2 devs (Ansel on opus), tiers M + S; QA sweep + one split fix round; 78 min steer to wrap; lead share includes skills prune + live pass |
 
 **Caveats.**
 - The main-session transcripts include some non-sprint work. On 10-25 that was writing the
@@ -419,3 +420,9 @@ through respawns as the same named member, with its own small, curated memory. I
   than currently" (preference 19): two to four lines at milestones and about every 30
   minutes when something moved, driven by a board Monitor. Updated the lead memory and the
   team-launch watchdog step.
+- **2026-11-01:** Sprint 2026-10-31c closed: 19/19 pts of local-first data (039) and small
+  fixes (040), plus a split QA fix round (041, 042). Cost per point 0.92 (from 0.83), in
+  78 minutes from steer to wrap. Coordination rose to 38%, because the lead share includes
+  meta work (skills pruning, preferences 18 and 19) and the live pass. First skills pass
+  applied the sprint's learnings (developer shell facts, ADK partial events, team-launch
+  notice routing). Team report: `meta/sprints/2026-10-31c/team-report.html`.
