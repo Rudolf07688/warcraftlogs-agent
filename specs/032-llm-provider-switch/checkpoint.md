@@ -8,9 +8,7 @@
 
 - Spec signed off (D9). Plan, research, data model, contracts, quickstart and tasks written and
   committed on the branch (`0aaa025` spec, `8461e12` plan, then tasks/checkpoint).
-- **Waiting for**: OWNER GO (relayed by the scrum master), the file grant (list sent with the
-  plan), and the scrum master's call on the contract's open point (where 035's generation entry
-  point dispatches on the provider).
+- **Gates**: OWNER GO in (D10). Plan gate passed and files granted (scrum master, 2026-10-31). Contract open point decided (035 owns `wcl_agent/llm/generation.py`). **Waiting for**: the scrum master's tasks gate.
 - **No code written.** Implementation starts at `tasks.md` T001.
 - Baseline suite at `b963463` in this worktree: 1171 passed, 6 skipped, 1 deselected (83 s).
 
@@ -50,11 +48,17 @@ test file. Edits: `vertex.py`, `model_retry.py`, `agent.py`, `config.py`, `greet
 `test_vertex.py`, `.env.example`, `README.md`. Never: `CLAUDE.md`, `.specify/feature.json`
 (restore before each commit), `models.py`, `_load_models`, 035's and 034's files.
 
+## Scrum-master conditions (plan gate)
+
+- Forwarders stay thin (no logic); 033/035 delete them later.
+- A pin test for ADK's `_build_anthropic_kwargs` / `_anthropic_client` (T013).
+- A "vertex unchanged" regression test: unset and `vertex` give today's literal values for every
+  role, model list and discovery mode (T020).
+- 035 owns `wcl_agent/llm/generation.py`; don't create it; no dispatch in `provider.py`. The
+  contract was snapshotted by the scrum master: report any change to it.
+
 ## Open questions
 
-- Contract point for the SM: 035's provider-neutral entry point (a granted
-  `wcl_agent/llm/generation.py` that may call `active_provider()`, or a dispatch inside
-  `provider.py` after 032 merges).
 - drop_block behaviour is verified against docs and request shape only; the owner's live check
   confirms it.
 

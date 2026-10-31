@@ -101,22 +101,23 @@ def adk_client_kwargs() -> dict[str, Any]
 2. The client: `async_anthropic_client(max_retries=0)` (Claude) or `genai_client()` (Gemini).
    Retries go through `model_retry.generate_with_retry`.
 3. Which of the two to call is the one provider decision a text-generation entry point makes.
-   **[uncertain]** 035's provider-neutral entry point needs to dispatch on the provider once. The
-   proposal: 035's entry point lives in a module the scrum master grants as part of the provider
-   layer (for example `wcl_agent/llm/generation.py`) and calls `active_provider()` there, and only
-   there. The sprint-level grep check exempts `provider.py` and that one module. The alternative,
-   if the scrum master prefers: 035 adds the dispatch to `provider.py` by grant after 032 merges.
+   **Decided (scrum master, 2026-10-31):** 035 owns a new `wcl_agent/llm/generation.py`, counted
+   as part of the provider layer. It is the only module besides `provider.py` that may call
+   `active_provider()`; the sprint grep check exempts both. 032 neither creates it nor adds
+   dispatch to `provider.py`.
 4. Don't build the entry point in 032. Don't send `temperature`/`top_p`/`top_k` to current Claude
    models (`claude-api` skill: they accept only the defaults), and don't force `tool_choice`
    (`any`/`tool` is a 400 on Opus 5.5 and Sonnet 5.5; use `output_config.format` for structured
    output).
 
-## Transitional forwarders (to delete in 033/035)
+## Transitional forwarders (to delete)
 
 `wcl_agent/llm/vertex.py` keeps `genai_client()` and `anthropic_client(**kwargs)` as one-line
-forwarders to this module, for callers 032 doesn't own: `wcl_agent/llm/models.py` (033), and
-`backend/app/suggestions.py`, `services/report_synthesis.py` and
-`services/guide_pipeline/llm.py` (035). When those import from `provider`, delete the forwarders.
+forwarders to this module (no logic), for callers 032 doesn't own. **To delete:** 033 moves
+`wcl_agent/llm/models.py` to `provider` and deletes the `anthropic_client` forwarder; 035 moves
+`backend/app/suggestions.py`, `services/report_synthesis.py` and `services/guide_pipeline/llm.py`
+to `provider` and deletes the `genai_client` forwarder (`models.py` also uses `genai_client`, so
+the last of 033/035 to merge deletes it). The scrum master grants `vertex.py` for the deletions.
 `vertex.py` keeps `uses_vertex`, `model_location`, `project_id` and the catalog listing.
 
 ## Agent side (032 internal, for reference)
