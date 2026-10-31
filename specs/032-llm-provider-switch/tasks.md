@@ -63,9 +63,9 @@ wrapper; Claude turns work on both providers.
 
 **Independent Test**: sentinel key leak test; startup with `anthropic` and no key.
 
-- [ ] T015 [US2] In `backend/app/main.py` `_boot`, before the `models` step: log `LLM provider: %s` once; `error = credentials_error()`; if set, `logger.error(error)` and skip priming the greeting in the `greeting` step (comment why). `_load_models` stays untouched
-- [ ] T016 [US2] Write the secret and missing-key tests in `backend/tests/test_llm_provider_app.py`: (a) sentinel `ANTHROPIC_API_KEY`, a mock transport answering 401: run a chat turn through the WS test client (fake agent client), call `/api/models`, `/api/health`, the greeting endpoint; assert the sentinel is absent from `caplog` text, every WS frame, every response body and `str`/`repr`/traceback of the raised errors; (b) `anthropic` without key: `_boot` logs exactly one ERROR naming `ANTHROPIC_API_KEY`, `app.state.models_degraded` is true with Claude ids, the app answers `/api/health`, and a chat turn ends in an `agent_error` frame with the key-free message and the socket stays open
-- [ ] T017 [US2] Run the US2 tests and the full suite
+- [X] T015 [US2] In `backend/app/main.py` `_boot`, before the `models` step: log `LLM provider: %s` once; `error = credentials_error()`; if set, `logger.error(error)` and skip priming the greeting in the `greeting` step (comment why). `_load_models` stays untouched
+- [X] T016 [US2] Write the secret and missing-key tests in `backend/tests/test_llm_provider_app.py`: (a) sentinel `ANTHROPIC_API_KEY`, a mock transport answering 401: run a chat turn through the WS test client (fake agent client), call `/api/models`, `/api/health`, the greeting endpoint; assert the sentinel is absent from `caplog` text, every WS frame, every response body and `str`/`repr`/traceback of the raised errors; (b) `anthropic` without key: `_boot` logs exactly one ERROR naming `ANTHROPIC_API_KEY`, `app.state.models_degraded` is true with Claude ids, the app answers `/api/health`, and a chat turn ends in an `agent_error` frame with the key-free message and the socket stays open
+- [X] T017 [US2] Run the US2 tests and the full suite
 
 **Checkpoint**: AC 4 proven.
 
@@ -79,10 +79,10 @@ wrapper; Claude turns work on both providers.
 **Independent Test**: Settings under each provider; `_load_models` under `anthropic` probes only
 Claude ids in API form through the forwarder.
 
-- [ ] T018 [US3] In `backend/app/config.py`: role fields default `""`; add `wcl_suggest_model: str = ""`, `wcl_greeting_model: str = ""`; an after-validator resolving the six fields through `role_model`; `llm_provider` property; `gemini_models` / `anthropic_models` / `model_list` through `served_ids` (empty Claude list → `default_candidates()`); `model_discovery_mode` returns `static` with one info line when `not has_model_catalog()`; keep comments accurate (no Gemini defaults claimed)
-- [ ] T019 [US3] In `backend/app/greeting.py`: `GREETING_MODEL = settings.wcl_greeting_model` (import `settings`; comment: the greeting role, per provider)
-- [ ] T020 [US3] Add settings/discovery tests to `backend/tests/test_llm_provider_app.py`: a "vertex unchanged" regression test (scrum-master condition), parametrised over provider unset and `vertex`, asserting literal `b963463` values for every role field, `default_model`, `model_list`, `gemini_models`, `anthropic_models`, `candidate_models` and `model_discovery_mode` (default env and an owner-style env); under `anthropic` with the owner-style env (Gemini role ids, `WCL_MODELS` Gemini, `WCL_ANTHROPIC_MODELS=claude-sonnet-4@20250514`, `WCL_MODEL_DISCOVERY=catalog`): roles are Claude defaults with one warning per Gemini role, discovery mode `static`, `gemini_models == []`, `anthropic_models == ["claude-sonnet-4-20250514"]`; `_load_models` with a fake probe client (patched `provider.anthropic_client`) serves the probed Claude ids and never calls `vertex.list_publisher_models` or `project_id`
-- [ ] T021 [US3] Run the US3 tests and the full suite (watch `test_model_discovery.py`, `test_guides_and_boot.py`, `test_greeting.py`, `test_guide_pipeline_review.py`)
+- [X] T018 [US3] In `backend/app/config.py`: role fields default `""`; add `wcl_suggest_model: str = ""`, `wcl_greeting_model: str = ""`; an after-validator resolving the six fields through `role_model`; `llm_provider` property; `gemini_models` / `anthropic_models` / `model_list` through `served_ids` (empty Claude list → `default_candidates()`); `model_discovery_mode` returns `static` with one info line when `not has_model_catalog()`; keep comments accurate (no Gemini defaults claimed)
+- [X] T019 [US3] In `backend/app/greeting.py`: `GREETING_MODEL = settings.wcl_greeting_model` (import `settings`; comment: the greeting role, per provider)
+- [X] T020 [US3] Add settings/discovery tests to `backend/tests/test_llm_provider_app.py`: a "vertex unchanged" regression test (scrum-master condition), parametrised over provider unset and `vertex`, asserting literal `b963463` values for every role field, `default_model`, `model_list`, `gemini_models`, `anthropic_models`, `candidate_models` and `model_discovery_mode` (default env and an owner-style env); under `anthropic` with the owner-style env (Gemini role ids, `WCL_MODELS` Gemini, `WCL_ANTHROPIC_MODELS=claude-sonnet-4@20250514`, `WCL_MODEL_DISCOVERY=catalog`): roles are Claude defaults with one warning per Gemini role, discovery mode `static`, `gemini_models == []`, `anthropic_models == ["claude-sonnet-4-20250514"]`; `_load_models` with a fake probe client (patched `provider.anthropic_client`) serves the probed Claude ids and never calls `vertex.list_publisher_models` or `project_id`
+- [X] T021 [US3] Run the US3 tests and the full suite (watch `test_model_discovery.py`, `test_guides_and_boot.py`, `test_greeting.py`, `test_guide_pipeline_review.py`)
 
 **Checkpoint**: AC 1, 5, 7 proven.
 
@@ -94,9 +94,9 @@ Claude ids in API form through the forwarder.
 
 **Independent Test**: WS turn on a Gemini id under `anthropic`; the App test.
 
-- [ ] T022 [US4] In `backend/app/model_state.py`: `resolve_chat_model(app, model) -> str` (`to_provider_id`; served → itself, else default with one info line)
-- [ ] T023 [US4] In `backend/app/api/ws.py` `chat()`: replace the `is_valid_model` / `invalid_model` branch with `turn = turn.model_copy(update={"model": resolve_chat_model(ws.app, turn.model)})`; drop the now-unused `is_valid_model` import
-- [ ] T024 [P] [US4] Add WS tests to `backend/tests/test_llm_provider_app.py`: under `anthropic` a turn naming `gemini-3.6-flash` runs on the default (fake agent records the model) with no `invalid_model` frame; a Vertex-form `claude-sonnet-4@20250514` runs as `claude-sonnet-4-20250514` when served; `POST /api/conversations` with an unserved model still returns 400
+- [X] T022 [US4] In `backend/app/model_state.py`: `resolve_chat_model(app, model) -> str` (`to_provider_id`; served → itself, else default with one info line)
+- [X] T023 [US4] In `backend/app/api/ws.py` `chat()`: replace the `is_valid_model` / `invalid_model` branch with `turn = turn.model_copy(update={"model": resolve_chat_model(ws.app, turn.model)})`; drop the now-unused `is_valid_model` import
+- [X] T024 [P] [US4] Add WS tests to `backend/tests/test_llm_provider_app.py`: under `anthropic` a turn naming `gemini-3.6-flash` runs on the default (fake agent records the model) with no `invalid_model` frame; a Vertex-form `claude-sonnet-4@20250514` runs as `claude-sonnet-4-20250514` when served; `POST /api/conversations` with an unserved model still returns 400
 - [ ] T025 [P] [US4] Write `frontend/src/App.modelFallback.test.tsx` (mock `./api/restClient`, `./api/wsClient` `ChatSocket` capturing `send`, `./auth/useAuth`; render `App` in a `MemoryRouter`): (a) `/api/models` serves only Claude; sending a message sends `model: <default>`; (b) opening a conversation whose stored model is a Gemini id, then sending, sends the default. No change to `App.tsx`
 - [ ] T026 [US4] Run the backend suite, `npx vitest run` and `npm run build` in `frontend/`
 
