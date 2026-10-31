@@ -242,13 +242,14 @@ class Settings(BaseSettings):
             logger.warning("WCL_MODEL_DISCOVERY=%r is not catalog or static; using catalog", mode)
             mode = "catalog"
         if mode == "catalog" and not provider.has_model_catalog():
-            # Feature 032: the catalog is Vertex's Model Garden; 033 adds the Anthropic listing.
-            logger.info("model catalog needs Vertex; probing the static lists on %s", self.llm_provider)
+            logger.info("no model catalog for %s; probing the static lists", self.llm_provider)
             return "static"
         return mode  # type: ignore[return-value]
 
     @property
     def gemini_classes(self) -> list[ClassSetting]:
+        if self.llm_provider == "anthropic":
+            return []  # the Anthropic API serves no Gemini
         return parse_class_settings("google", self.wcl_gemini_classes)
 
     @property

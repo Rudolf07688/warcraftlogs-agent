@@ -168,6 +168,7 @@ class ModelsResponse(BaseModel):
     models: list[str]
     default: str
     degraded: bool = False
+    provider: Literal["vertex", "anthropic"] = "vertex"
 
 
 class ConversationCreate(BaseModel):

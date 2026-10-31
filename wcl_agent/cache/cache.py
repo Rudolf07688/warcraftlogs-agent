@@ -219,8 +219,8 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
         return "ext:hotfix:v1"
 
     @staticmethod
-    def model_catalog(project: str, location: str, sig: str) -> str:
-        return f"ext:models:v1:{project}:{location}:{sig}"
+    def model_catalog(provider: str, project: str, location: str, sig: str) -> str:
+        return f"ext:models:v2:{provider}:{project}:{location}:{sig}"
 
     @staticmethod
     def lock(key: str) -> str:

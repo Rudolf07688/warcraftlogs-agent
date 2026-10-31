@@ -164,6 +164,7 @@ export async function getModels(): Promise<{
   models: string[];
   default: string;
   degraded?: boolean;
+  provider?: "vertex" | "anthropic";
 }> {
   return send("GET", "/api/models");
 }

@@ -112,8 +112,8 @@ def credentials_error() -> str | None:
 
 
 def has_model_catalog() -> bool:
-    """Whether startup discovery can list a model catalog (Vertex's Model Garden only)."""
-    return active_provider() == "vertex"
+    """Whether startup discovery can list a model catalog (Model Garden, or the Models API)."""
+    return True
 
 
 # --- model ids ----------------------------------------------------------------------------

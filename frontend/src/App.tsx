@@ -40,6 +40,7 @@ import { clampSidebarWidth, getSidebarWidth, setSidebarWidth } from "./uiPrefs";
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
   const [modelsDegraded, setModelsDegraded] = useState(false);
+  const [modelsProvider, setModelsProvider] = useState<"vertex" | "anthropic" | undefined>();
   const [model, setModel] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [raids, setRaids] = useState<Raid[]>([]);
@@ -328,6 +329,7 @@ export default function App() {
         servedModelsRef.current = { models: r.models, default: r.default };
         setModels(r.models);
         setModelsDegraded(!!r.degraded);
+        setModelsProvider(r.provider);
         setModel((cur) => (cur && r.models.includes(cur) ? cur : r.default));
       })
       .catch(() => setError("Could not load models (is the backend up?)"));
@@ -585,6 +587,7 @@ export default function App() {
             onChange={setModel}
             disabled={streaming}
             degraded={modelsDegraded}
+            provider={modelsProvider}
           />
           {activeConversation && (
             // FR-004a: keyboard reachable, named, and its pressed state is exposed.

@@ -52,21 +52,14 @@ def project_id() -> str | None:
 
 
 # --- transitional forwarders (feature 032) ------------------------------------------------
-# The clients moved to ``provider``. These two stay for callers 032 doesn't own: 033 moves
-# models.py to ``provider`` and deletes ``anthropic_client``; 035 moves its call sites and
-# deletes ``genai_client``.
+# The clients moved to ``provider``. ``genai_client`` stays for callers 032 doesn't own;
+# 035 moves its call sites and deletes it.
 
 
 def genai_client() -> Any:
     from .provider import genai_client
 
     return genai_client()
-
-
-def anthropic_client(**kwargs: Any) -> Any:
-    from .provider import anthropic_client
-
-    return anthropic_client(**kwargs)
 
 
 # --- the Model Garden catalog -------------------------------------------------------------
