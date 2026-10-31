@@ -26,7 +26,7 @@ from wcl_agent.llm.models import (
     log_class_results,
     missing_fixed_models,
 )
-from wcl_agent.llm.provider import active_provider, credentials_error
+from wcl_agent.llm.provider import credentials_error
 from wcl_agent.llm.vertex import model_location, project_id
 from wcl_agent.client.wcl_client import aclose_clients
 
@@ -243,7 +243,7 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
 
         # Feature 032: say which provider serves the models, and say once, plainly, when it
         # can't (anthropic without a key). Discovery then serves the degraded list.
-        logger.info("LLM provider: %s", active_provider())
+        logger.info("LLM provider: %s", settings.llm_provider)
         llm_error = credentials_error()
         if llm_error:
             logger.error(llm_error)

@@ -97,8 +97,8 @@ Claude ids in API form through the forwarder.
 - [X] T022 [US4] In `backend/app/model_state.py`: `resolve_chat_model(app, model) -> str` (`to_provider_id`; served → itself, else default with one info line)
 - [X] T023 [US4] In `backend/app/api/ws.py` `chat()`: replace the `is_valid_model` / `invalid_model` branch with `turn = turn.model_copy(update={"model": resolve_chat_model(ws.app, turn.model)})`; drop the now-unused `is_valid_model` import
 - [X] T024 [P] [US4] Add WS tests to `backend/tests/test_llm_provider_app.py`: under `anthropic` a turn naming `gemini-3.6-flash` runs on the default (fake agent records the model) with no `invalid_model` frame; a Vertex-form `claude-sonnet-4@20250514` runs as `claude-sonnet-4-20250514` when served; `POST /api/conversations` with an unserved model still returns 400
-- [ ] T025 [P] [US4] Write `frontend/src/App.modelFallback.test.tsx` (mock `./api/restClient`, `./api/wsClient` `ChatSocket` capturing `send`, `./auth/useAuth`; render `App` in a `MemoryRouter`): (a) `/api/models` serves only Claude; sending a message sends `model: <default>`; (b) opening a conversation whose stored model is a Gemini id, then sending, sends the default. No change to `App.tsx`
-- [ ] T026 [US4] Run the backend suite, `npx vitest run` and `npm run build` in `frontend/`
+- [X] T025 [P] [US4] Write `frontend/src/App.modelFallback.test.tsx` (mock `./api/restClient`, `./api/wsClient` `ChatSocket` capturing `send`, `./auth/useAuth`; render `App` in a `MemoryRouter`): (a) `/api/models` serves only Claude; sending a message sends `model: <default>`; (b) opening a conversation whose stored model is a Gemini id, then sending, sends the default. No change to `App.tsx`
+- [X] T026 [US4] Run the backend suite, `npx vitest run` and `npm run build` in `frontend/`
 
 **Checkpoint**: AC 6 and the PO condition (D9) proven.
 
@@ -106,16 +106,16 @@ Claude ids in API form through the forwarder.
 
 ## Phase 7: User Story 5 - The owner can follow the switch from the docs (P3)
 
-- [ ] T027 [P] [US5] `.env.example`: a provider block above the Vertex block (`WCL_LLM_PROVIDER`, `ANTHROPIC_API_KEY=` marked secret, ADC not needed for LLM calls under `anthropic`, `GCP_ADC_FILE=/dev/null` hint); role variables with both providers' defaults incl. `WCL_SUGGEST_MODEL` and `WCL_GREETING_MODEL`; note that under `anthropic` Gemini ids are ignored and discovery is static until 033
-- [ ] T028 [P] [US5] `README.md`: a "Switching the LLM provider" section (the two lines, restart, role defaults table, missing-key behaviour, key handling via `env_file: .env`, ADC note, Claude on Vertex now works, what still runs on Gemini until 035)
+- [X] T027 [P] [US5] `.env.example`: a provider block above the Vertex block (`WCL_LLM_PROVIDER`, `ANTHROPIC_API_KEY=` marked secret, ADC not needed for LLM calls under `anthropic`, `GCP_ADC_FILE=/dev/null` hint); role variables with both providers' defaults incl. `WCL_SUGGEST_MODEL` and `WCL_GREETING_MODEL`; note that under `anthropic` Gemini ids are ignored and discovery is static until 033
+- [X] T028 [P] [US5] `README.md`: a "Switching the LLM provider" section (the two lines, restart, role defaults table, missing-key behaviour, key handling via `env_file: .env`, ADC note, Claude on Vertex now works, what still runs on Gemini until 035)
 
 ---
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T029 Grep check: no `AsyncAnthropicVertex(`/`AnthropicVertex(`/`AsyncAnthropic(`/`genai.Client(` outside `provider.py`; no call site compares `active_provider()` outside `provider.py`/`config.py` properties' delegation
-- [ ] T030 Full backend suite (no new failures vs 1171 passed), `npm run build` and `npx vitest run` in `frontend/`
-- [ ] T031 GitNexus: `analyze --index-only` then `detect-changes --scope all --repo .` (re-run on partial/truncated); ownership check (`git diff --name-only b963463...HEAD` + uncommitted ⊆ grant); restore `CLAUDE.md` and `.specify/feature.json`; commit
+- [X] T029 Grep check: no `AsyncAnthropicVertex(`/`AnthropicVertex(`/`AsyncAnthropic(`/`genai.Client(` outside `provider.py`; no call site compares `active_provider()` outside `provider.py`/`config.py` properties' delegation
+- [X] T030 Full backend suite (no new failures vs 1171 passed), `npm run build` and `npx vitest run` in `frontend/`
+- [X] T031 GitNexus: `analyze --index-only` then `detect-changes --scope all --repo .` (re-run on partial/truncated); ownership check (`git diff --name-only b963463...HEAD` + uncommitted ⊆ grant); restore `CLAUDE.md` and `.specify/feature.json`; commit
 - [ ] T032 Hand-off message to the scrum master (branch, base, commits, files, test results, risks incl. drop_block live check, AC verification map from quickstart.md, "Claude on Vertex works again")
 
 ---
