@@ -21,6 +21,7 @@ from google.genai import types
 
 from backend.app import agent_runner
 from backend.app.model_state import fallback_model_for
+from wcl_agent.llm import model_retry
 from wcl_agent.llm.model_retry import (
     ModelRateLimited,
     RetryingClaude,
@@ -302,6 +303,92 @@ async def test_no_sibling_fails_as_before(provider):
     assert client.calls == [model, model]
     assert all(r["type"] != "model_fallback" for r in records)
     assert stats.switched_to is None
+
+
+# --- sc-176: switch sooner, and remember the busy model across turns ----------------------
+
+FULL = RetryPolicy(attempts=5, initial_s=0.0, max_s=0.0, jitter_s=0.0)
+
+
+async def test_with_a_sibling_the_primary_gets_one_retry_only():
+    client = FakeGenai(busy={A})
+    llm = _gemini(A, client)
+    llm.policy = FULL
+    with _turn(A, B):
+        out = await _collect(llm, _request(A))
+    assert client.calls == [A, A, B]  # not five attempts on A first
+    assert _texts(out) == [f"from {B}"]
+
+
+async def test_without_a_sibling_the_full_schedule_still_runs():
+    client = FakeGenai(busy={A})
+    llm = _gemini(A, client)
+    llm.policy = FULL
+    with _turn(A, None):
+        with pytest.raises(ModelRateLimited):
+            await _collect(llm, _request(A))
+    assert client.calls == [A] * 5
+
+
+async def test_the_sibling_keeps_the_full_schedule():
+    client = FakeGenai(busy={A, B})
+    llm = _gemini(A, client)
+    llm.policy = FULL
+    with _turn(A, B):
+        with pytest.raises(ModelRateLimited):
+            await _collect(llm, _request(A))
+    assert client.calls == [A, A] + [B] * 5
+
+
+async def test_the_next_turn_starts_on_the_sibling():
+    client = FakeGenai(busy={A})
+    llm = _gemini(A, client)
+    with _turn(A, B):
+        await _collect(llm, _request(A))
+    client.calls.clear()
+    with _turn(A, B) as (stats, records):  # a new turn on the chosen model
+        out = await _collect(llm, _request(A))
+    assert client.calls == [B]  # no wait on A at all
+    assert _texts(out) == [f"from {B}"]
+    assert records == [{"type": "model_fallback", "from_model": A, "to_model": B}]
+    assert stats.model == A and stats.switched_to == B
+
+
+async def test_the_memory_is_short_lived():
+    client = FakeGenai(busy={A})
+    llm = _gemini(A, client)
+    with _turn(A, B):
+        await _collect(llm, _request(A))
+    assert model_retry.recently_limited(A)
+    assert model_retry.RATE_LIMIT_MEMORY_S <= 600  # minutes, not the rest of the day
+    model_retry._limited_until[A] = model_retry.time.monotonic() - 1  # the minutes passed
+    assert not model_retry.recently_limited(A)
+    client.busy, client.calls = set(), []
+    with _turn(A, B) as (stats, _records):
+        await _collect(llm, _request(A))
+    assert client.calls == [A] and stats.switched_to is None
+
+
+async def test_both_remembered_starts_on_the_chosen_model():
+    client = FakeGenai(busy={A, B})
+    llm = _gemini(A, client)
+    with _turn(A, B), pytest.raises(ModelRateLimited):
+        await _collect(llm, _request(A))
+    assert model_retry.recently_limited(A) and model_retry.recently_limited(B)
+    client.busy, client.calls = set(), []
+    with _turn(A, B) as (stats, _records):
+        await _collect(llm, _request(A))
+    assert client.calls == [A] and stats.switched_to is None
+
+
+async def test_other_models_and_turnless_calls_are_not_remembered():
+    other = "gemini-3.8-pro"
+    client = FakeGenai(busy={other, A})
+    with _turn(A, B), pytest.raises(ModelRateLimited):
+        await _collect(_gemini(other, client), _request(other))
+    with pytest.raises(ModelRateLimited):
+        await _collect(_gemini(A, client), _request(A))
+    assert not model_retry.recently_limited(other) and not model_retry.recently_limited(A)
 
 
 # --- guards ---------------------------------------------------------------------------------
