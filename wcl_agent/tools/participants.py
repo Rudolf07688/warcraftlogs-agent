@@ -3,22 +3,25 @@
 ``get_report_participants`` answers "who was in this run" with one compact row per real
 player (name, realm, region, class, spec, role), so the agent can resolve "the dungeon" to
 people and filter them ("except the shaman") before a profile action. It reuses the
-``playerDetails`` field through ``report_tools._report_fields``, so the single WCL client,
-its cache and raw-fetch persistence all apply; no new query and no new cache family.
+``playerDetails`` field through ``report_tools._report_fields``, so the single WCL client
+and raw-fetch persistence apply. The payload is cached in the ``report_participants``
+family (sc-224): 24 h for a finished report, briefly while it is still being logged.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from ..cache.cache import CacheFamily, get_or_load, keys
+from ..cache.cache_models import ReportParticipants
 from ..game.constants import normalize_class_name, role_for_spec
 from ..game.roster import roster_snapshot
 from .provenance import Provenance, with_envelope
-from .report_tools import _fight_ids, _report_fields
+from .report_tools import _fight_ids, _report_fields, _report_ttl
 
 _GROUPS = (("tanks", "tank"), ("healers", "healer"), ("dps", "dps"))
 _ROLE_ORDER = {"tank": 0, "healer": 1, "dps": 2}
-_FIELDS = "region { slug } playerDetails(fightIDs: $fightIDs)"
+_FIELDS = "endTime region { slug } playerDetails(fightIDs: $fightIDs)"
 
 
 def participants_from_player_details(details: Any, region: str | None) -> list[dict[str, Any]]:
@@ -81,19 +84,40 @@ async def get_report_participants(report_code: str, fight_id: int = 0) -> dict[s
         dict: {"status": "success", "participants": [...]} or an error.
     """
     try:
-        report = await _report_fields(
-            report_code, _FIELDS, ", $fightIDs: [Int]", {"fightIDs": _fight_ids(fight_id)}
-        )
+        cached = await _participants(report_code, fight_id)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
-    if report is None:
+    if cached is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
-    region = ((report.get("region") or {}).get("slug") or None)
-    rows = participants_from_player_details(report.get("playerDetails"), region)
+    region = cached.region
+    rows = participants_from_player_details(cached.player_details, region)
     if not rows:
         return {"status": "error", "error_message": f"No players found in report '{report_code}'."}
     return with_envelope(
         {"status": "success", "report_code": report_code, "fight_id": fight_id or None,
          "region": region, "participants": rows},
         Provenance(report_code=report_code, fight_id=fight_id or None),
+    )
+
+
+async def _participants(code: str, fight_id: int) -> ReportParticipants | None:
+    """The report's region and ``playerDetails``; ``endTime`` rides along to pick the TTL."""
+    end_time: dict[str, int | None] = {"ms": None}
+
+    async def load() -> ReportParticipants | None:
+        report = await _report_fields(
+            code, _FIELDS, ", $fightIDs: [Int]", {"fightIDs": _fight_ids(fight_id)}
+        )
+        if report is None:
+            return None
+        end_time["ms"] = report.get("endTime")
+        return ReportParticipants(
+            region=(report.get("region") or {}).get("slug") or None,
+            player_details=report.get("playerDetails"),
+        )
+
+    return await get_or_load(
+        CacheFamily.REPORT_PARTICIPANTS, keys.report_participants(code, fight_id),
+        ReportParticipants, load,
+        ttl=lambda _: _report_ttl(CacheFamily.REPORT_PARTICIPANTS, end_time["ms"]),
     )

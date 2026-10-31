@@ -88,6 +88,17 @@ class PlayerTable(BaseModel):
     data: Any = None
 
 
+class ReportParticipants(BaseModel):
+    """``report_participants``: a report's region and its ``playerDetails`` JSON scalar.
+
+    The payload, not the rows: rows take display names from the live class roster, so
+    they are rebuilt on every read.
+    """
+
+    region: str | None = None
+    player_details: Any = None
+
+
 class OAuthToken(BaseModel):
     """``oauth_token``: the WCL client-credentials bearer token."""
 

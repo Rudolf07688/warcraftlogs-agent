@@ -171,6 +171,7 @@ class Settings(BaseSettings):
     wcl_cache_ttl_char_reports: int = 300
     wcl_cache_ttl_report_summary: int = 86400
     wcl_cache_ttl_report_player: int = 86400
+    wcl_cache_ttl_report_participants: int = 86400
     wcl_cache_ttl_world_zones: int = 3600
     wcl_cache_unfinished_ttl: int = 120  # reports still being logged
     wcl_cache_jitter: float = 0.10  # TTL × U(1, 1 + jitter)
