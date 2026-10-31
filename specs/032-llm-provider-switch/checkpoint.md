@@ -8,8 +8,8 @@
 
 - Spec signed off (D9). Plan, research, data model, contracts, quickstart and tasks written and
   committed on the branch (`0aaa025` spec, `8461e12` plan, then tasks/checkpoint).
-- **Gates**: OWNER GO in (D10). Plan gate passed and files granted (scrum master, 2026-10-31). Contract open point decided (035 owns `wcl_agent/llm/generation.py`). **Waiting for**: the scrum master's tasks gate.
-- **No code written.** Implementation starts at `tasks.md` T001.
+- **Gates**: OWNER GO in (D10). Plan gate passed and files granted (scrum master, 2026-10-31). Contract open point decided (035 owns `wcl_agent/llm/generation.py`). Tasks gate passed.
+- **Implemented** (T001–T032, commits 8a6d4f0, 0c1db73, 281a0d3, 20ada77 and the hand-off commit). Handed off to the scrum master; waiting for review / PO acceptance. sc-249 stays In Progress.
 - Baseline suite at `b963463` in this worktree: 1171 passed, 6 skipped, 1 deselected (83 s).
 
 ## Decisions (binding)

@@ -116,7 +116,7 @@ Claude ids in API form through the forwarder.
 - [X] T029 Grep check: no `AsyncAnthropicVertex(`/`AnthropicVertex(`/`AsyncAnthropic(`/`genai.Client(` outside `provider.py`; no call site compares `active_provider()` outside `provider.py`/`config.py` properties' delegation
 - [X] T030 Full backend suite (no new failures vs 1171 passed), `npm run build` and `npx vitest run` in `frontend/`
 - [X] T031 GitNexus: `analyze --index-only` then `detect-changes --scope all --repo .` (re-run on partial/truncated); ownership check (`git diff --name-only b963463...HEAD` + uncommitted ⊆ grant); restore `CLAUDE.md` and `.specify/feature.json`; commit
-- [ ] T032 Hand-off message to the scrum master (branch, base, commits, files, test results, risks incl. drop_block live check, AC verification map from quickstart.md, "Claude on Vertex works again")
+- [X] T032 Hand-off message to the scrum master (branch, base, commits, files, test results, risks incl. drop_block live check, AC verification map from quickstart.md, "Claude on Vertex works again")
 
 ---
 
