@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { Streamdown, defaultRehypePlugins } from "streamdown";
 import type { Components } from "streamdown";
+import { visit } from "unist-util-visit";
 import { rehypeWordSpans } from "../lib/rehypeWordSpans";
 import { useSmoothText } from "../hooks/useSmoothText";
 
@@ -23,6 +24,8 @@ type PluginTuple = Extract<(typeof defaultRehypePlugins)[string], unknown[]>;
 // becomes a "[Image blocked: alt]" text span. (`data:` images were already dropped by
 // Streamdown's URL transform, and the app emits none.) Links keep the default (any
 // http/https), since they need a click.
+// QA 2026-10-31b: protocols are harden's safe set plus Streamdown's own placeholder for a
+// half-streamed link, so the check holds even if sanitize stops running first.
 const ORIGIN = window.location.origin;
 const [harden] = defaultRehypePlugins.harden as PluginTuple;
 const HARDEN: PluginTuple = [
@@ -31,15 +34,37 @@ const HARDEN: PluginTuple = [
     defaultOrigin: ORIGIN,
     allowedImagePrefixes: [ORIGIN],
     allowedLinkPrefixes: ["*"],
-    allowedProtocols: ["*"],
+    allowedProtocols: ["streamdown:"],
     blockedImageClass: "text-muted-foreground",
   },
 ];
 
+// QA BUG-001: harden only checks `img src`, but sanitize keeps `<picture><source srcset>`,
+// and the browser fetches a `<source>` before the (same-origin) `<img>`. Drop every
+// `<source>` and any `srcset`, after sanitize and harden, so only a checked `src` loads.
+type HastElement = { tagName: string; properties: Record<string, unknown> };
+type HastParent = { children: unknown[] };
+
+function rehypeNoSrcset() {
+  return (tree: unknown) => {
+    visit(tree as never, "element", (node: HastElement, index?: number, parent?: HastParent) => {
+      if (node.tagName === "source" && parent && index !== undefined) {
+        parent.children.splice(index, 1);
+        return index;
+      }
+      delete node.properties.srcSet;
+      return undefined;
+    });
+  };
+}
+
 // Streamdown's defaults (with our harden), plus our word-span plugin for the live reply
 // (passing rehypePlugins replaces the defaults). Finished messages skip the per-word spans:
 // the ink-in has already played, and a span per word is costly on long answers (PERF-010).
-const STATIC_REHYPE_PLUGINS = Object.values({ ...defaultRehypePlugins, harden: HARDEN });
+const STATIC_REHYPE_PLUGINS = [
+  ...Object.values({ ...defaultRehypePlugins, harden: HARDEN }),
+  rehypeNoSrcset,
+];
 const STREAMING_REHYPE_PLUGINS = [...STATIC_REHYPE_PLUGINS, rehypeWordSpans];
 
 // PERF-011: KaTeX loads on demand, the first time any reply contains math (US3).
