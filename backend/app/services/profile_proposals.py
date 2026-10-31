@@ -107,19 +107,24 @@ def _now() -> datetime:
 class _Entry:
     """One character of the profile as validation sees it (a working copy)."""
 
-    target: str  # "own" | "friend"
     character_id: uuid.UUID | None  # None for an add earlier in the same proposal
     raid_role: str | None
+
+
+_Key = tuple[tuple[str, str, str], str]  # (identity, target)
+_OTHER = {"own": "friend", "friend": "own"}
 
 
 def _identity_key(name: str, realm: str, region: str) -> tuple[str, str, str]:
     return name.strip().casefold(), server_slug(realm), region.strip().lower()
 
 
-def _profile(chars: Sequence[UserCharacter]) -> dict[tuple[str, str, str], _Entry]:
+def _profile(chars: Sequence[UserCharacter]) -> dict[_Key, _Entry]:
+    """The working copy, keyed by identity **and** target (sc-223): a legacy profile can hold
+    one character in both roles under two realm spellings, and both stay addressable."""
     return {
-        _identity_key(c.name, c.server, c.region): _Entry(
-            "own" if c.role == "self" else "friend", c.id, c.raid_role
+        (_identity_key(c.name, c.server, c.region), "own" if c.role == "self" else "friend"): _Entry(
+            c.id, c.raid_role
         )
         for c in chars
     }
@@ -194,7 +199,7 @@ def _skipped(index: int, raw: object, code: str) -> ProposalItemOut:
     )
 
 
-def _check(change: ProfileChangeIn, profile: dict, counts: dict, seen: set) -> tuple[str | None, _Entry | None]:
+def _check(change: ProfileChangeIn, profile: dict[_Key, _Entry], counts: dict, seen: set) -> tuple[str | None, _Entry | None]:
     """Validate one change against the working profile; returns (code, matched entry)."""
     try:
         CharacterIn(name=change.name, server=change.realm, region=change.region, raid_role=change.raid_role)
@@ -210,17 +215,17 @@ def _check(change: ProfileChangeIn, profile: dict, counts: dict, seen: set) -> t
     key = _identity_key(change.name, change.realm, change.region)
     if (key, change.target) in seen:
         return "duplicate_item", None
-    existing = profile.get(key)
+    existing = profile.get((key, change.target))
     if change.action == "add":
         if existing is not None:
-            if existing.target == change.target:
-                return ("duplicate_character" if change.target == "own" else "duplicate_friend"), None
+            return ("duplicate_character" if change.target == "own" else "duplicate_friend"), None
+        if (key, _OTHER[change.target]) in profile:
             return ("already_friend" if change.target == "own" else "already_own"), None
         code, limit = _LIMITS[change.target]
         if counts[change.target] >= limit:
             return code, None
         return None, None
-    if existing is None or existing.target != change.target:
+    if existing is None:
         return "not_found", None
     if change.action == "update" and existing.raid_role == change.raid_role:
         return "no_change", None
@@ -237,8 +242,8 @@ def _validate(
     """
     profile = _profile(chars)
     counts = {"own": 0, "friend": 0}
-    for entry in profile.values():
-        counts[entry.target] += 1
+    for _, target in profile:
+        counts[target] += 1
     seen: set = set()
     items: list[ProposalItemOut] = []
     for index, raw in enumerate(changes):
@@ -265,7 +270,7 @@ def _validate(
             key = _identity_key(change.name, change.realm, change.region)
             seen.add((key, change.target))
             if change.action == "add":
-                profile[key] = _Entry(change.target, None, change.raid_role)
+                profile[(key, change.target)] = _Entry(None, change.raid_role)
                 counts[change.target] += 1
             else:
                 item.character_id = existing.character_id
@@ -273,7 +278,7 @@ def _validate(
                     item.previous_raid_role = existing.raid_role
                     existing.raid_role = change.raid_role
                 else:
-                    del profile[key]
+                    del profile[(key, change.target)]
                     counts[change.target] -= 1
         items.append(item)
     return items

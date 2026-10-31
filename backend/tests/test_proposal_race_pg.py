@@ -127,3 +127,68 @@ async def test_a_failed_follow_up_rolls_the_whole_decision_back(me, proposal, mo
         await routes.approve(proposal.id, me)
     assert (await proposals.get_proposal(me, proposal.id)).status == "pending"
     assert await _state(me, proposal) == ([], [])  # no friend added, no line
+
+
+# --- sc-223: the friend cap holds under parallel adds -----------------------------------
+
+
+@pytest.fixture
+def slow_checks(monkeypatch):
+    """Widen the check-then-insert window so two unserialised adds would both pass."""
+    real = repo.find_character_identity
+
+    async def slow(*args, **kwargs):
+        found = await real(*args, **kwargs)
+        await asyncio.sleep(0.3)
+        return found
+
+    monkeypatch.setattr(repo, "find_character_identity", slow)
+
+
+async def _seed_friends(me, n: int) -> None:
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        db.add_all(
+            UserCharacter(tenant_id=me.tenant_id, role="friend", name=f"Pal{chr(97 + i % 26)}{chr(97 + i // 26)}",
+                          server="Tarren Mill", region="eu")
+            for i in range(n)
+        )
+
+
+async def _friend_count(me) -> int:
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        return await db.scalar(
+            sa.select(sa.func.count()).select_from(UserCharacter).where(
+                UserCharacter.tenant_id == me.tenant_id, UserCharacter.role == "friend"
+            )
+        )
+
+
+async def test_parallel_rest_adds_stop_at_the_cap(me, slow_checks):
+    await _seed_friends(me, repo.MAX_FRIENDS - 1)
+
+    async def add(name: str):
+        async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+            return await repo.add_character(
+                db, tenant_id=me.tenant_id, role="friend", name=name, server="Tarren Mill", region="eu"
+            )
+
+    results = await asyncio.gather(add("Kazrok"), add("Brightmane"), return_exceptions=True)
+    refused = [r for r in results if isinstance(r, repo.CharacterConflict)]
+    assert len(refused) == 1 and refused[0].code == "friend_limit"
+    assert await _friend_count(me) == repo.MAX_FRIENDS
+
+
+async def test_parallel_approvals_stop_at_the_cap(me, slow_checks):
+    await _seed_friends(me, repo.MAX_FRIENDS - 1)
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        conv = await repo.create_conversation(db, "gemini-3.6-flash", tenant_id=me.tenant_id)
+    made = [
+        await proposals.create_proposal(
+            me, conv.id, [ProfileChangeIn(action="add", target="friend", name=name, realm="Tarren Mill", region="eu")]
+        )
+        for name in ("Kazrok", "Brightmane")
+    ]
+    done = await asyncio.gather(*(proposals.execute_proposal(me, p.id) for p in made))
+    results = sorted((d.items[0].result.status, d.items[0].result.code) for d in done)
+    assert results == [("applied", None), ("failed", "friend_limit")]
+    assert await _friend_count(me) == repo.MAX_FRIENDS

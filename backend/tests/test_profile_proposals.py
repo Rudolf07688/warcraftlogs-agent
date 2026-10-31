@@ -370,6 +370,25 @@ async def test_update_and_remove_are_resolved_by_identity(me, conv, patched_db, 
     assert (remove.character_id, remove.raid_role) == (alt, None)
 
 
+async def test_legacy_spellings_in_both_roles_stay_two_entries(me, conv, patched_db, tenant_id, guide_calls):
+    # sc-223 BUG-008: rows saved before realms compared by slug can be one character in both
+    # roles ("Tarren Mill" own, "tarren-mill" friend). Each stays addressable by its target.
+    async with patched_db() as db:
+        db.add_all([
+            UserCharacter(tenant_id=tenant_id, role="self", name="Jaina", server="Tarren Mill", region="eu"),
+            UserCharacter(tenant_id=tenant_id, role="friend", name="Jaina", server="tarren-mill", region="eu",
+                          raid_role="healer"),
+        ])
+        await db.commit()
+    proposal = await proposals.create_proposal(
+        me, conv, [_change("remove", target="own", name="Jaina"), _change("update", name="Jaina", raid_role="dps")]
+    )
+    assert _codes(proposal) == [None, None]
+    applied = await proposals.execute_proposal(me, proposal.id)
+    assert [i.result.status for i in applied.items] == ["applied", "applied"]
+    assert await _chars(patched_db, tenant_id) == [("friend", "Jaina", "dps")]
+
+
 async def test_a_move_from_friends_to_own_validates(me, conv, patched_db, tenant_id, guide_calls):
     await _add(patched_db, tenant_id, "friend", "Thrall")
     proposal = await proposals.create_proposal(

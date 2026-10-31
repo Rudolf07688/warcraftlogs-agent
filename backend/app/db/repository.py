@@ -1028,6 +1028,19 @@ class CharacterConflict(Exception):
         self.code = code
 
 
+async def lock_profile(session: AsyncSession, *, tenant_id: uuid.UUID) -> None:
+    """Serialise this tenant's character adds until the transaction ends (sc-223).
+
+    Every add checks duplicates and the caps before it inserts, so two parallel adds could
+    both pass; this transaction-scoped advisory lock makes the second wait for the first.
+    Postgres only: SQLite (tests) runs one transaction at a time anyway.
+    """
+    if session.bind.dialect.name != "postgresql":
+        return
+    key = func.hashtextextended(f"profile:{tenant_id}", 0)
+    await session.execute(select(func.pg_advisory_xact_lock(key)))
+
+
 async def find_character_identity(
     session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
 ) -> UserCharacter | None:
@@ -1106,8 +1119,10 @@ async def add_character(
 
     Raises ``CharacterConflict`` when the identity is already saved in either role, or when
     the own-character or friend limit is reached. ``IntegrityError`` remains the backstop for a
-    same-role race on the DB unique constraint.
+    same-role race on the DB unique constraint. The tenant's profile is locked first, so the
+    checks and the insert can't interleave with another add (sc-223).
     """
+    await lock_profile(session, tenant_id=tenant_id)
     existing = await find_character_identity(
         session, tenant_id=tenant_id, name=name, server=server, region=region
     )
