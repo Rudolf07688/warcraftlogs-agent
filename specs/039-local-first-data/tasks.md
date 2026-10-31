@@ -50,9 +50,9 @@
 
 ## Phase 6: Polish
 
-- [ ] T022 Bypass attempt on the visibility rule; record what was tried and what stopped it
-- [ ] T023 Full suite (clean env) + PG suite + migration round trip; GitNexus detect-changes; ownership check
-- [ ] T024 Board: live-check:039 question, handoff; stories → Under Review
+- [X] T022 Bypass attempt on the visibility rule; record what was tried and what stopped it
+- [X] T023 Full suite (clean env) + PG suite + migration round trip; GitNexus detect-changes; ownership check
+- [X] T024 Board: live-check:039 question, handoff; stories → Under Review
 
 ## Dependencies
 
