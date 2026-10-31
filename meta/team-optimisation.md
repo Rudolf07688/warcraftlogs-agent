@@ -152,6 +152,11 @@ across 37 files.
   name, and the name survives respawns. Each one keeps a curated memory of about 500
   words, updated sparingly and only with knowledge that helps the team in the long run.
   Developers' own sub-agents stay ephemeral and unnamed. See P6.
+- **D14. Team-lead gets a `lead` seat: a memory without a persona.** It's a first-person,
+  500-word memory of how the lead runs the team, kept in git where the team can read it.
+  Team-lead has no name, because the owner already knows who it is. The reasoning: the
+  owner is the team's one continuous member, and the lead's lessons used to live only in
+  conversations until the owner corrected them.
 
 ## Proposals under discussion
 
@@ -303,6 +308,9 @@ through respawns as the same named member, with its own small, curated memory. I
     owner cares about.
   - Never task status, or anything already recorded elsewhere.
   - At the cap, cut the least useful line before adding one.
+- **The lead seat** (D14): `claim --seat lead` takes no name and stays `team-lead`. The
+  `team-launch` skill reads this memory first and updates it at most once per sprint. The
+  SessionStart hook also injects it during an active meta discussion.
 - **Board names:** `--as` is now the member's own name in lower case. The board hook
   learns each agent's name from its first post.
 
@@ -349,3 +357,8 @@ through respawns as the same named member, with its own small, curated memory. I
   persistent, self-named team members with a capped memory (D13). Built
   `.claude/team/member.py` and seats, wired an identity-and-memory section into the three
   agent files and `team-launch`, and added P6.
+- **2026-10-31:** The owner asked whether team-lead wants its own identity and memory, and
+  agreed with my answer (D14): a memory, but no persona. Added the `lead` seat to
+  `member.py` (and fixed `remember -` for stdin), seeded `meta/team/lead.md` with seven
+  lessons from sprint 2026-10-31 (273 words), and wired it into `team-launch` and the
+  SessionStart hook.

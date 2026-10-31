@@ -11,6 +11,11 @@ end.
 
 Steer: $ARGUMENTS
 
+## 0. Read your own memory first
+
+Run `python3 .claude/team/member.py me --seat lead`. That's your memory as lead: lessons
+from earlier sprints about how *you* run the team. Apply them to this launch.
+
 ## 1. Before launch
 
 1. **Clarify, if it's needed.** Ask the owner only questions whose answers change scope or
@@ -84,4 +89,9 @@ Steer: $ARGUMENTS
 
    On a yes: `git merge --no-ff`, check that the tree matches the sprint tip, remove the
    worktrees, and run `node .gitnexus/run.cjs analyze --index-only`.
-5. **Memory:** update the sprint status memory note.
+5. **Memory:**
+   - Update the sprint status memory note.
+   - At most once per sprint, update your lead memory (`member.py remember --seat lead -`),
+     and only with a lasting lesson about how you lead. It's capped at 500 words, so cut
+     before you add. Write it in the first person.
+   - Commit `meta/team/lead.md` along with the team's memories.

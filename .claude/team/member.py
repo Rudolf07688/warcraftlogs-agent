@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Persistent team members: a self-chosen name per seat, plus a small curated memory.
 
-Agent-facing. Seats are stable slots (po, sm, dev-1, dev-2, ...). Whoever is launched into
+The `lead` seat is team-lead (the main session): it has no persona name, only a memory.
+
+Agent-facing. Seats are stable slots (lead, po, sm, dev-1, dev-2, ...). Whoever is launched into
 a seat inherits its name and memory. Files live in the MAIN checkout's meta/team/, so
 every worktree reads and writes the same copy. team-lead commits them at wrap-up.
 
   member.py me --seat SEAT                       who you are + your memory (run this first)
-  member.py claim --seat SEAT --name NAME --role ROLE --about "one line"
-  member.py remember --seat SEAT [--file PATH|-]  REPLACE your memory (max 500 words)
+  member.py claim --seat SEAT --name NAME --role ROLE --about "one line"   (lead: no --name)
+  member.py remember --seat SEAT [-|PATH]         REPLACE your memory (max 500 words)
   member.py roster                               everyone on the team, one line each
 """
 import argparse
@@ -30,8 +32,8 @@ def team_dir():
 
 
 def seat_file(seat):
-    if not re.fullmatch(r"po|sm|dev-[0-9]+", seat):
-        sys.exit("member: seat must be po, sm or dev-<n>")
+    if not re.fullmatch(r"lead|po|sm|dev-[0-9]+", seat):
+        sys.exit("member: seat must be lead, po, sm or dev-<n>")
     return os.path.join(team_dir(), f"{seat}.md")
 
 
@@ -54,6 +56,10 @@ def words(text):
 
 def cmd_me(a):
     path = seat_file(a.seat)
+    if not os.path.exists(path) and a.seat == "lead":
+        print("member: the lead seat is unclaimed. Run\n  python3 .claude/team/member.py claim --seat lead "
+              "--role \"team lead (main session)\" --about \"<one line>\"")
+        return
     if not os.path.exists(path):
         taken = ", ".join(r["name"] for r in roster_rows()) or "none yet"
         print(f"member: seat {a.seat} is unclaimed. You are its first holder: pick a short, "
@@ -81,9 +87,11 @@ def cmd_claim(a):
     path = seat_file(a.seat)
     if os.path.exists(path):
         sys.exit(f"member: seat {a.seat} already belongs to {parse(path)[0]['name']}")
-    if not re.fullmatch(r"[A-Z][A-Za-z-]{1,19}", a.name):
+    if a.seat == "lead":
+        a.name = "team-lead"  # the lead keeps a memory, not a persona
+    elif not a.name or not re.fullmatch(r"[A-Z][A-Za-z-]{1,19}", a.name):
         sys.exit("member: name must be one capitalised word, 2-20 letters")
-    if any(r["name"].lower() == a.name.lower() for r in roster_rows()):
+    elif any(r["name"].lower() == a.name.lower() for r in roster_rows()):
         sys.exit(f"member: {a.name} is taken; pick another")
     write(path, {"name": a.name, "seat": a.seat, "role": a.role, "since": date.today().isoformat(),
                  "about": " ".join(a.about.split())}, "")
@@ -94,7 +102,8 @@ def cmd_remember(a):
     path = seat_file(a.seat)
     if not os.path.exists(path):
         sys.exit(f"member: claim seat {a.seat} first")
-    text = sys.stdin.read() if a.file in (None, "-") else open(a.file).read()
+    src = a.file_opt or a.file
+    text = sys.stdin.read() if src in (None, "-") else open(src).read()
     n = words(text)
     if n > WORD_CAP:
         sys.exit(f"member: {n} words is over the {WORD_CAP}-word cap. Nothing saved. "
@@ -121,12 +130,13 @@ def main():
     q.add_argument("--seat", required=True)
     q = s.add_parser("claim")
     q.add_argument("--seat", required=True)
-    q.add_argument("--name", required=True)
+    q.add_argument("--name")
     q.add_argument("--role", required=True)
     q.add_argument("--about", required=True)
     q = s.add_parser("remember")
     q.add_argument("--seat", required=True)
-    q.add_argument("--file")
+    q.add_argument("file", nargs="?", help='a file path, or "-" (default) for stdin')
+    q.add_argument("--file", dest="file_opt")
     s.add_parser("roster")
     a = p.parse_args()
     {"me": cmd_me, "claim": cmd_claim, "remember": cmd_remember, "roster": cmd_roster}[a.cmd](a)
