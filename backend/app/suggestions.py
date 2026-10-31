@@ -2,8 +2,9 @@
 
 A small, best-effort, non-streaming generation that proposes up to three short
 next questions a user might click. It runs after the turn is already `done`
-(PERF-005), on a fixed cheap model with thinking off and a short timeout, and it
-fails closed: any error or timeout yields no suggestions rather than breaking the turn.
+(PERF-005), on the fast-role model of the active provider with thinking off and a short
+timeout, and it fails closed: any error or timeout yields no suggestions rather than
+breaking the turn.
 
 The parsing is split out (`parse_followups`) so the cap/dedup/trivial rules are
 unit-testable without a model call.
@@ -13,30 +14,21 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
+
+from wcl_agent.llm.generation import generate_text
+from wcl_agent.llm.model_retry import RetryPolicy
+from wcl_agent.llm.provider import ModelRole
 
 MAX_SUGGESTIONS = 3
 _MAX_LEN = 160  # drop model runaway; display truncates further client-side.
 
-# A cheap, fast model for suggestions regardless of the chat model (they don't
-# need the premium one, and a thinking chat model would be slow). Overridable via env;
-# always a Gemini id (genai path).
-_SUGGEST_MODEL = os.getenv("WCL_SUGGEST_MODEL", "gemini-3.6-flash")
 # Upper bound on the whole suggestion call; past it the turn simply has no suggestions.
 SUGGEST_TIMEOUT_S = 4.0
 _MAX_OUTPUT_TOKENS = 256
-
-_client = None  # one google-genai client per process (PERF-005), created on first use
-
-
-def _get_client():
-    global _client
-    if _client is None:
-        from wcl_agent.llm.vertex import genai_client
-
-        _client = genai_client()
-    return _client
+# Feature 011 / FR-012: one attempt, no backoff — a rate-limited suggestion call must fail
+# fast and silently.
+_POLICY = RetryPolicy(attempts=1)
 
 _PROMPT = (
     "You suggest up to 3 short follow-up questions a user might ask next, based on "
@@ -97,30 +89,20 @@ def parse_followups(raw: str) -> list[str]:
 async def generate_followups(model: str | None, question: str, answer: str) -> list[str]:
     """Return up to 3 follow-up questions for this turn; [] on any failure or timeout.
 
-    Always uses the cheap suggest model (``model``, the chat model, is no longer reused —
-    PERF-005) through the async google-genai client, with thinking off. Never raises —
-    suggestions are a non-critical enhancement.
+    Always uses the fast-role model (``model``, the chat model, is no longer reused —
+    PERF-005), with thinking off. Never raises — suggestions are a non-critical enhancement.
     """
     answer = (answer or "").strip()
     if not answer or answer == "(no response)":
         return []
     prompt = _PROMPT.format(question=question, answer=answer)
     try:
-        from google.genai import types
-
-        # Feature 011 / FR-012: deliberately no retry_options and no backoff here — a
-        # rate-limited suggestion call must fail fast and silently.
-        resp = await asyncio.wait_for(
-            _get_client().aio.models.generate_content(
-                model=_SUGGEST_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=_MAX_OUTPUT_TOKENS,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
-                ),
+        raw = await asyncio.wait_for(
+            generate_text(
+                prompt, ModelRole.FAST, max_tokens=_MAX_OUTPUT_TOKENS, policy=_POLICY, thinking=False
             ),
             timeout=SUGGEST_TIMEOUT_S,
         )
-        return parse_followups(getattr(resp, "text", "") or "")
+        return parse_followups(raw)
     except Exception:  # noqa: BLE001 - best-effort (incl. TimeoutError); never break the turn
         return []
