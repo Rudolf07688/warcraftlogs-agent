@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.cache.normalize import server_slug
+from wcl_agent.game.roster import resolve_spec, roster_snapshot
 
 from ..db import repository as repo
 from ..db.models import ProfileProposal, UserCharacter
@@ -51,8 +52,12 @@ PROPOSAL_TTL = timedelta(minutes=30)  # C10; correctness doesn't depend on it (r
 # name rule is the prompt-injection guard (C14): a name with spaces, digits or punctuation
 # can't be applied, so it never reaches the profile or the next turn's preamble.
 _NAME = re.compile(r"[^\W\d_]{2,12}")
-# Letters, digits, spaces, apostrophes, hyphens and parentheses ("Aggra (Português)").
-_REALM = re.compile(r"[^\W_](?:[^\W_]|[ '()\-]){1,39}")
+# Realm form (sc-221): words of letters or digits joined by single spaces, hyphens or
+# apostrophes, optionally one "(Suffix)" ("Aggra (Português)"), at most _REALM_CHARS. The
+# longest real realm names are about 22 characters ("Culte de la Rive noire"), so a sentence
+# can't persist into later preambles through an approved realm.
+_REALM = re.compile(r"[^\W_]+(?:[ '\-][^\W_]+)*(?: \([^\W_]+\))?")
+_REALM_CHARS = 24
 _REGIONS = frozenset({"us", "eu", "kr", "tw", "cn"})
 _CLIP = 100  # CharacterIn's maximum; longer values are invalid anyway (bounds the stored row)
 
@@ -153,9 +158,29 @@ def _text(value: object) -> str:
     return value.strip()[:_CLIP] if isinstance(value, str) else ""
 
 
+def _class_spec(class_name: object, spec: object) -> tuple[str | None, str | None]:
+    """Class and spec as the roster names them, else None (sc-221): never the model's text.
+
+    A class the roster knows keeps its key when only the spec doesn't resolve.
+    """
+    class_text, spec_text = _text(class_name), _text(spec)
+    if not class_text:
+        return None, None
+    entry = resolve_spec(class_text, spec_text) if spec_text else None
+    if entry is not None:
+        return entry.class_name, entry.spec_display
+    roster = roster_snapshot()
+    for key in roster.classes():  # the class alone: match it with any one of its specs
+        entry = resolve_spec(class_text, roster.specs_for(key)[0])
+        if entry is not None:
+            return entry.class_name, None
+    return None, None
+
+
 def _skipped(index: int, raw: object, code: str) -> ProposalItemOut:
     """The card row of an item that couldn't be read; display only, never applied."""
     action, target = _field(raw, "action"), _field(raw, "target")
+    class_name, spec = _class_spec(_field(raw, "class_name"), _field(raw, "spec"))
     return ProposalItemOut(
         index=index,
         action=action if action in _ACTIONS else "add",
@@ -163,8 +188,8 @@ def _skipped(index: int, raw: object, code: str) -> ProposalItemOut:
         name=_text(_field(raw, "name")),
         realm=_text(_field(raw, "realm")),
         region=_text(_field(raw, "region")).lower(),
-        class_name=_text(_field(raw, "class_name")) or None,
-        spec=_text(_field(raw, "spec")) or None,
+        class_name=class_name,
+        spec=spec,
         validation=ProposalValidation(ok=False, code=code, message=_MESSAGES[code]),
     )
 
@@ -177,7 +202,8 @@ def _check(change: ProfileChangeIn, profile: dict, counts: dict, seen: set) -> t
         return "invalid_item", None
     if not _NAME.fullmatch(change.name.strip()):
         return "invalid_name", None
-    if not _REALM.fullmatch(change.realm.strip()):
+    realm = change.realm.strip()
+    if len(realm) > _REALM_CHARS or not _REALM.fullmatch(realm):
         return "invalid_realm", None
     if change.region.strip().lower() not in _REGIONS:
         return "invalid_region", None
@@ -221,6 +247,7 @@ def _validate(
             items.append(_skipped(index, raw, code))
             continue
         code, existing = _check(change, profile, counts, seen)
+        class_name, spec = _class_spec(change.class_name, change.spec)
         item = ProposalItemOut(
             index=index,
             action=change.action,
@@ -228,8 +255,8 @@ def _validate(
             name=change.name.strip()[:_CLIP],
             realm=change.realm.strip()[:_CLIP],
             region=change.region.strip().lower()[:_CLIP],
-            class_name=change.class_name,
-            spec=change.spec,
+            class_name=class_name,
+            spec=spec,
             raid_role=None if change.action == "remove" else change.raid_role,
             played_role=change.played_role,
             validation=ProposalValidation(ok=code is None, code=code, message=_MESSAGES.get(code)),

@@ -42,6 +42,10 @@ const LABELS: Record<string, string> = {
 
 const label = (code: string | null) => LABELS[code ?? ""] ?? "not applied";
 
+// sc-221: items refused for their identity may carry hostile text from a log, so their row
+// shows the reason only, never the name, realm or spec (as the server's follow-up line does).
+const IDENTITY_REFUSED = new Set(["invalid_name", "invalid_realm", "invalid_region", "invalid_item"]);
+
 // A 409 from approve/cancel is the server's state, shown without another request.
 const CONFLICT_STATUS: Record<string, ProposalStatus> = {
   proposal_expired: "expired",
@@ -99,7 +103,30 @@ function appliedTargets(p: ProfileProposal): ("friend" | "own")[] {
   return [...new Set(p.items.filter((it) => it.result?.status === "applied").map((it) => it.target))];
 }
 
+function RefusedRow({ item }: { item: ProposalItem }) {
+  return (
+    <Item role="listitem" variant="outline" size="sm" className="opacity-60">
+      <ItemMedia>
+        <ClassAvatar char={{ name: "?", class_name: null }} className="size-9" />
+      </ItemMedia>
+      <ItemContent className="min-w-0">
+        <ItemTitle className="flex-wrap">
+          Skipped entry
+          <span className="font-normal text-muted-foreground">
+            · {item.target === "friend" ? "Friends" : "Your characters"}
+          </span>
+        </ItemTitle>
+        {item.validation.message && <ItemDescription>{item.validation.message}</ItemDescription>}
+      </ItemContent>
+      <ItemActions>
+        <Badge variant="warning">{rowBadge(item).text}</Badge>
+      </ItemActions>
+    </Item>
+  );
+}
+
 function ItemRow({ item }: { item: ProposalItem }) {
+  if (!item.validation.ok && IDENTITY_REFUSED.has(item.validation.code ?? "")) return <RefusedRow item={item} />;
   const badge = rowBadge(item);
   const skipped = badge.variant === "warning";
   const spec = [item.spec, item.class_name && classDisplayName(item.class_name)].filter(Boolean).join(" ");
