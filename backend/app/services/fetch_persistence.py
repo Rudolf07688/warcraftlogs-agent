@@ -7,6 +7,12 @@ responses into ``raw_fetches``. The queue is bounded in items and bytes: when fu
 responses are dropped from storage (never from the caller) and counted in a throttled
 warning. A persistence error is logged, never raised. See contracts/fetch-sink.md.
 
+Feature 039: each queued item carries the tenant of the chat turn that fetched it, so a
+successful fetch grants its report codes to that tenant, and summary bodies record each
+report's visibility and end time. A :class:`ReportGone` (WCL answered ``report: null``) goes
+through the same FIFO queue and deletes the report's stored rows, then evicts its Redis keys
+(specs/039-local-first-data/contracts/raw-store.md W6/W7).
+
 Only the app's lifespan starts a writer. The CLI, eval scripts and tests leave the sink
 unset, so nothing is persisted there.
 """
@@ -15,29 +21,119 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import math
 import time
-from collections.abc import Awaitable, Callable
+import uuid
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from wcl_agent.cache.cache import evict_report
 from wcl_agent.client import wcl_client
-from wcl_agent.client.wcl_client import FetchedResponse
+from wcl_agent.client.queries import REPORT_SUMMARY, report_summaries_query
+from wcl_agent.client.wcl_client import FetchedResponse, ReportGone, exact_report_codes
 
 from ..db import session as db_session
-from ..repositories.raw_fetches import upsert_raw_fetch
+from ..repositories.raw_fetches import (
+    ReportStatus,
+    delete_report,
+    grant_codes,
+    record_report_status,
+    upsert_raw_fetch,
+)
+from ..tenancy.context import current_identity, set_scope
 
 logger = logging.getLogger(__name__)
 
 SHUTDOWN_GRACE_S = 5.0
 _WRITE_TIMEOUT_S = 10.0  # a hung database costs one item this long; the queue absorbs the rest
 _LOG_EVERY_S = 60.0
+_PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
 
 
-async def store_fetch(fetched: FetchedResponse) -> None:
-    """Upsert one response in its own transaction."""
+@dataclass(frozen=True)
+class PendingWrite:
+    """One queued item and the tenant whose chat turn fetched it (None outside a turn)."""
+
+    item: FetchedResponse | ReportGone
+    tenant_id: uuid.UUID | None = None
+
+    @property
+    def size(self) -> int:
+        return len(self.item.content) if isinstance(self.item, FetchedResponse) else 0
+
+
+def _is_summary(fetched: FetchedResponse, codes: list[str]) -> bool:
+    """Only our own summary queries may state a report's visibility: a hand-written query
+    could alias another field (``code: title``) to forge one (research R3)."""
+    return fetched.query in (REPORT_SUMMARY, report_summaries_query(len(codes)))
+
+
+async def _report_statuses(
+    fetched: FetchedResponse, codes: list[str]
+) -> tuple[list[ReportStatus], list[str]]:
+    """(statuses, private codes) from a summary body's ``reportData`` report objects."""
+    if len(fetched.content) > _PARSE_OFF_LOOP_BYTES:
+        body = await asyncio.to_thread(json.loads, fetched.content)
+    else:
+        body = json.loads(fetched.content)
+    reports = ((body.get("data") or {}).get("reportData")) or {}
+    statuses: list[ReportStatus] = []
+    private: list[str] = []
+    for report in reports.values():
+        code = report.get("code") if isinstance(report, dict) else None
+        if not isinstance(code, str) or code not in codes:
+            continue
+        visibility, end = report.get("visibility"), report.get("endTime")
+        if visibility == "private":
+            private.append(code)
+            continue
+        statuses.append(
+            ReportStatus(
+                code,
+                visibility if isinstance(visibility, str) else None,
+                end if isinstance(end, int) else None,
+                fetched.fetched_at,
+            )
+        )
+    return statuses, private
+
+
+async def _store_one(session: AsyncSession, pending: PendingWrite) -> list[str]:
+    """Write one item in the open transaction; returns the codes whose Redis keys must go."""
+    item = pending.item
+    if isinstance(item, ReportGone):
+        for code in item.codes:
+            await delete_report(session, code)
+        return list(item.codes)
+    await upsert_raw_fetch(session, item)
+    codes = exact_report_codes(item.query, item.variables) or []
+    gone: list[str] = []
+    if codes and _is_summary(item, codes) and b'"visibility"' in item.content:
+        statuses, gone = await _report_statuses(item, codes)
+        await record_report_status(session, statuses)
+        for code in gone:
+            await delete_report(session, code)
+    granted = [c for c in codes if c not in gone]
+    if pending.tenant_id is not None and granted:
+        # Grants are RLS'd per tenant; set_config(..., true) may be re-set inside a transaction.
+        await set_scope(session, tenant_id=pending.tenant_id)
+        await grant_codes(session, pending.tenant_id, granted, item.fetched_at)
+    return gone
+
+
+async def store_batch(batch: Sequence[PendingWrite]) -> None:
+    """Write queued items in one transaction, then evict the Redis keys of gone reports."""
+    gone: list[str] = []
     async with db_session.SessionLocal() as session:
-        await upsert_raw_fetch(session, fetched)
+        for pending in batch:
+            gone += await _store_one(session, pending)
         await session.commit()
+    for code in dict.fromkeys(gone):
+        await evict_report(code)
 
 
 class _Throttle:
@@ -62,14 +158,14 @@ class FetchWriter:
 
     def __init__(
         self,
-        store: Callable[[FetchedResponse], Awaitable[None]] = store_fetch,
+        store: Callable[[Sequence[PendingWrite]], Awaitable[None]] = store_batch,
         *,
         max_items: int,
         max_bytes: int,
     ):
         self._store = store
         self._max_bytes = max_bytes
-        self._queue: asyncio.Queue[FetchedResponse] = asyncio.Queue(maxsize=max(1, max_items))
+        self._queue: asyncio.Queue[PendingWrite] = asyncio.Queue(maxsize=max(1, max_items))
         self._bytes = 0  # body bytes queued or being written
         self._busy = False
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -84,41 +180,46 @@ class FetchWriter:
         self._task = self._loop.create_task(self._run(), name="fetch-persistence")
         wcl_client.set_fetch_sink(self.offer)
 
-    def offer(self, fetched: FetchedResponse) -> None:
-        """The client sink: O(1), never awaits. Fetches on another thread hop to our loop."""
+    def offer(self, item: FetchedResponse | ReportGone) -> None:
+        """The client sink: O(1), never awaits. Fetches on another thread hop to our loop.
+
+        The tenant is read here, in the fetching task's context (the chat turn's identity).
+        """
         loop = self._loop
         if loop is None:
             return
+        identity = current_identity.get()
+        pending = PendingWrite(item, identity.tenant_id if identity is not None else None)
         try:
             running = asyncio.get_running_loop()
         except RuntimeError:
             running = None
         if running is loop:
-            self._enqueue(fetched)
+            self._enqueue(pending)
         else:
-            loop.call_soon_threadsafe(self._enqueue, fetched)
+            loop.call_soon_threadsafe(self._enqueue, pending)
 
-    def _enqueue(self, fetched: FetchedResponse) -> None:
-        size = len(fetched.content)
+    def _enqueue(self, pending: PendingWrite) -> None:
+        size = pending.size
         if self._queue.full() or self._bytes + size > self._max_bytes:
             self.dropped += 1
             self._drops.hit()
             return
         self._bytes += size
-        self._queue.put_nowait(fetched)
+        self._queue.put_nowait(pending)
 
     async def _run(self) -> None:
         while True:
-            fetched = await self._queue.get()
+            pending = await self._queue.get()
             self._busy = True
             try:
                 async with asyncio.timeout(_WRITE_TIMEOUT_S):
-                    await self._store(fetched)
+                    await self._store([pending])
             except Exception as exc:  # noqa: BLE001 - never reaches a caller (FR-007)
                 self._failures.hit(exc)
             finally:
                 self._busy = False
-                self._bytes -= len(fetched.content)
+                self._bytes -= pending.size
                 self._queue.task_done()
 
     async def stop(self, grace_s: float = SHUTDOWN_GRACE_S) -> None:

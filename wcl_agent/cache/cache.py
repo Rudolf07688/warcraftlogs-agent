@@ -22,6 +22,7 @@ import functools
 import logging
 import os
 import random
+import re
 import threading
 import time
 import weakref
@@ -677,6 +678,32 @@ async def get_many_or_load(
             if results[i] is not None:
                 _memo_put(keys_[i], results[i], memo_s)  # type: ignore[arg-type]
     return results
+
+
+# --- Eviction (feature 039): a report WCL no longer serves leaves the shared cache ------
+
+_GLOB_SPECIAL = re.compile(r"([*?\[\]\\])")
+
+
+async def evict_report(code: str) -> int:
+    """Delete every cached ``wcl:v1:report:<code>:*`` entry; returns how many went.
+
+    Called when a refresh finds the report deleted or private. Fail-open like every lookup:
+    without a working Redis there is nothing shared to evict, so it returns 0.
+    """
+    if not cache_settings().active or not (code := code.strip()):
+        return 0
+    client = _client()
+    if client is None:
+        return 0
+    escaped = _GLOB_SPECIAL.sub(r"\\\1", code)  # a code is data, never a SCAN pattern
+    pattern = f"wcl:v1:report:{escaped}:*"
+    try:
+        found = [key async for key in client.scan_iter(match=pattern, count=500)]
+        return int(await client.delete(*found)) if found else 0
+    except RedisError as exc:
+        logger.warning("wcl cache: could not evict report keys: %s", exc)
+        return 0
 
 
 # --- Statistics (US3): per-family hit rates over a window of UTC days -------------------

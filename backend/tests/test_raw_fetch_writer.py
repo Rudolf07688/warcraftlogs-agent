@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from backend.app.db import session as db_session
 from backend.app.db.models import RawFetch
-from backend.app.services.fetch_persistence import FetchWriter, store_fetch
+from backend.app.services.fetch_persistence import FetchWriter, PendingWrite, store_batch
 from backend.tests.wcl_fakes import gql_response, mock_async_client
 from wcl_agent.client import wcl_client
 from wcl_agent.client.wcl_client import FetchedResponse
@@ -87,11 +87,11 @@ async def test_a_tool_fetch_is_written_through_to_the_table(patched_db, monkeypa
 
 async def test_cache_hits_are_not_stored_again(patched_db, fake_redis, monkeypatch):
     client, calls = report_client(monkeypatch)
-    stored: list[FetchedResponse] = []
+    stored: list[PendingWrite] = []
 
-    async def recording(fetched):
-        stored.append(fetched)
-        await store_fetch(fetched)
+    async def recording(batch):
+        stored.extend(batch)
+        await store_batch(batch)
 
     writer = FetchWriter(recording, max_items=10, max_bytes=1 << 20)
     writer.start()
@@ -126,7 +126,7 @@ async def test_db_down_the_fetch_still_succeeds_and_failures_are_logged_once(mon
 
 
 async def test_a_raising_store_never_reaches_the_caller(monkeypatch, caplog):
-    async def broken(fetched):
+    async def broken(batch):
         raise OSError("connection refused")
 
     client, _ = report_client(monkeypatch)
@@ -145,7 +145,7 @@ async def test_a_raising_store_never_reaches_the_caller(monkeypatch, caplog):
 async def test_a_full_queue_drops_new_responses_without_blocking_the_fetch(monkeypatch, caplog):
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def blocked(fetched):
+    async def blocked(batch):
         entered.set()
         await release.wait()
 
@@ -172,8 +172,8 @@ async def test_a_full_queue_drops_new_responses_without_blocking_the_fetch(monke
 async def test_a_response_beyond_the_byte_budget_is_dropped():
     stored: list[str] = []
 
-    async def recording(fetched):
-        stored.append(fetched.variables["code"])
+    async def recording(batch):
+        stored.extend(p.item.variables["code"] for p in batch)
 
     writer = FetchWriter(recording, max_items=10, max_bytes=300)
     writer.start()
@@ -189,9 +189,9 @@ async def test_a_response_beyond_the_byte_budget_is_dropped():
 async def test_stop_drains_the_queue_in_time():
     stored: list[str] = []
 
-    async def recording(fetched):
+    async def recording(batch):
         await asyncio.sleep(0.01)
-        stored.append(fetched.variables["code"])
+        stored.extend(p.item.variables["code"] for p in batch)
 
     writer = FetchWriter(recording, max_items=10, max_bytes=1 << 20)
     writer.start()
@@ -207,7 +207,7 @@ async def test_stop_drains_the_queue_in_time():
 
 
 async def test_stop_gives_up_after_the_grace_period_and_counts_the_rest(caplog):
-    async def stuck(fetched):
+    async def stuck(batch):
         await asyncio.Event().wait()
 
     writer = FetchWriter(stuck, max_items=10, max_bytes=1 << 20)
@@ -232,8 +232,8 @@ async def test_stop_gives_up_after_the_grace_period_and_counts_the_rest(caplog):
 async def test_an_offer_from_another_thread_is_delivered():
     stored: list[str] = []
 
-    async def recording(fetched):
-        stored.append(fetched.variables["code"])
+    async def recording(batch):
+        stored.extend(p.item.variables["code"] for p in batch)
 
     writer = FetchWriter(recording, max_items=10, max_bytes=1 << 20)
     writer.start()

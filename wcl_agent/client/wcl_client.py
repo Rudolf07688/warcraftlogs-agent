@@ -293,7 +293,9 @@ def operation_name(query: str) -> str | None:
     return match.group(1) if match else None
 
 
-_REPORT_CODE_RE = re.compile(r'report\(\s*code\s*:\s*(?:\$(\w+)|"([^"]*)")')
+# Commas are insignificant in GraphQL, like whitespace (feature 039: no spacing hides a code).
+_REPORT_CODE_RE = re.compile(r'\breport[\s,]*\([\s,]*code[\s,]*:[\s,]*(?:\$(\w+)|"([^"]*)")')
+_REPORT_FIELD_RE = re.compile(r"\breport[\s,]*\(")
 
 
 def report_codes(query: str, variables: dict[str, Any]) -> list[str]:
@@ -305,6 +307,26 @@ def report_codes(query: str, variables: dict[str, Any]) -> list[str]:
         if code and code not in codes:
             codes.append(code)
     return codes
+
+
+def exact_report_codes(query: str, variables: dict[str, Any]) -> list[str] | None:
+    """:func:`report_codes`, or None when the query may name a report the parser can't see.
+
+    That is a comment (``#``, which could fake or hide a ``report(code:``), a ``report(`` field
+    whose first argument isn't ``code`` with a plain string or variable, or an unresolved
+    code. The raw store's visibility rule trusts only this (feature 039): a hand-written query
+    (``run_wcl_graphql``) can't earn a grant or delete a report it doesn't really name.
+    """
+    if "#" in query:
+        return None
+    matches = _REPORT_CODE_RE.findall(query)
+    if len(matches) != len(_REPORT_FIELD_RE.findall(query)):
+        return None
+    for var, literal in matches:
+        value = variables.get(var) if var else literal
+        if not isinstance(value, str) or not value.strip():
+            return None
+    return report_codes(query, variables)
 
 
 # --- Fetch sink (feature 020): every successful WCL response, offered for persistence ---
@@ -321,7 +343,16 @@ class FetchedResponse:
     fetched_at: datetime
 
 
-FetchSink = Callable[[FetchedResponse], None]
+@dataclass(frozen=True)
+class ReportGone:
+    """Feature 039: WCL answered a single-report query with ``report: null`` — the report was
+    deleted, made private or never existed — so its stored copy must go."""
+
+    codes: tuple[str, ...]
+    seen_at: datetime
+
+
+FetchSink = Callable[[FetchedResponse | ReportGone], None]
 # Process-wide, like the token memo. Set by the backend app (fetch persistence); None
 # everywhere else (CLI, evals, tests), so a fetch then costs one ``is None`` check.
 _fetch_sink: FetchSink | None = None
@@ -332,15 +363,45 @@ def set_fetch_sink(sink: FetchSink | None) -> None:
     _fetch_sink = sink
 
 
-def _offer(key: str, query: str, variables: dict[str, Any], content: bytes) -> None:
-    """Hand a response to the sink. Must stay O(1); a broken sink never fails the fetch."""
+def _deliver(item: FetchedResponse | ReportGone) -> None:
+    """Hand an item to the sink. Must stay O(1); a broken sink never fails the fetch."""
     sink = _fetch_sink
     if sink is None:
         return
     try:
-        sink(FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc)))
+        sink(item)
     except Exception as exc:  # noqa: BLE001 - persistence is best effort (FR-007)
         logger.debug("wcl fetch sink failed: %s", exc)
+
+
+def _offer(key: str, query: str, variables: dict[str, Any], content: bytes) -> None:
+    if _fetch_sink is not None:
+        _deliver(FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc)))
+
+
+# A "gone" answer is tiny; bigger bodies are never scanned for it.
+_GONE_MAX_BYTES = 4096
+_NULL_REPORT_RE = re.compile(rb'"reportData"\s*:\s*\{\s*"report"\s*:\s*null\s*\}')
+
+
+def _gone_codes(
+    query: str, variables: dict[str, Any], content: bytes, payload: dict[str, Any] | None = None
+) -> list[str]:
+    """The report of a single-report query that WCL answered with ``reportData.report: null``,
+    else []. ``payload`` is the parsed body when the caller already has it (GraphQL errors).
+    Batch queries are skipped: their callers retry each code alone (load_report_summaries)."""
+    if _fetch_sink is None or len(content) > _GONE_MAX_BYTES:
+        return []
+    codes = exact_report_codes(query, variables)
+    if codes is None or len(codes) != 1 or len(_REPORT_FIELD_RE.findall(query)) != 1:
+        return []
+    if payload is None:
+        return codes if _NULL_REPORT_RE.search(content) else []
+    data = payload.get("data")
+    report_data = data.get("reportData") if isinstance(data, dict) else None
+    if isinstance(report_data, dict) and "report" in report_data and report_data["report"] is None:
+        return codes
+    return []
 
 
 async def _loads(content: bytes) -> dict[str, Any]:
@@ -501,8 +562,13 @@ class AsyncWCLClient:
         if b'"errors"' in content:
             payload = json.loads(content)
             if "errors" in payload:
+                if gone := _gone_codes(query, variables, content, payload):
+                    _deliver(ReportGone(tuple(gone), datetime.now(timezone.utc)))
                 raise RuntimeError(json.dumps(payload["errors"], indent=2))
-        _offer(key, query, variables, content)
+        if gone := _gone_codes(query, variables, content):
+            _deliver(ReportGone(tuple(gone), datetime.now(timezone.utc)))  # instead of storing it
+        else:
+            _offer(key, query, variables, content)
         return content
 
 

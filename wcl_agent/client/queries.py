@@ -135,9 +135,10 @@ def character_reports_query(n: int) -> str:
 
 
 # report_summary: fights, bosses, kills/wipes and roster of one report — the single source
-# for get_report_fights, get_report_metadata and the recent-raids details.
+# for get_report_fights, get_report_metadata and the recent-raids details. ``code`` and
+# ``visibility`` feed the raw store's visibility rule (feature 039); the model ignores them.
 REPORT_SUMMARY_FIELDS = (
-    "title startTime endTime zone { id name } guild { name } "
+    "code visibility title startTime endTime zone { id name } guild { name } "
     'masterData { actors(type: "Player") { id name subType } } '
     "fights { id name encounterID difficulty kill averageItemLevel size friendlyPlayers "
     "startTime keystoneLevel keystoneBonus keystoneTime }"

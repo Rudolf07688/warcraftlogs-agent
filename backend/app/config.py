@@ -192,6 +192,11 @@ class Settings(BaseSettings):
     wcl_fetch_persist_enabled: bool = True
     wcl_fetch_persist_queue_max: int = 500
     wcl_fetch_persist_queue_mb: int = 64
+    # feature 039: DB-first reads. A WCL query is answered from `raw_fetches` when the row is
+    # visible to the tenant (public report, or a code the tenant fetched itself) and fresh.
+    # "Public" and a tenant's grant count for this many days, then WCL is asked again.
+    wcl_store_reads_enabled: bool = True
+    raw_store_reverify_days: int = 7
 
     # feature 013: welcome-page recent raids. A refresh starts at most every
     # `refresh_min_s`; a `running` claim older than `stale_s` is reclaimable (crash/restart).
