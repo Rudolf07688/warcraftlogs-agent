@@ -76,6 +76,7 @@ export default function App() {
   const pendingEncountersRef = useRef<Encounter[]>([]); // bosses surfaced this turn
   const pendingArtifactsRef = useRef<ChartArtifact[]>([]); // charts produced this turn
   const pendingProposalsRef = useRef<ProfileProposal[]>([]); // proposals made this turn
+  const turnConvRef = useRef<string | null>(null); // sc-243: the chat the current turn belongs to
   const activeEncountersRef = useRef<Encounter[]>([]); // bosses shown by the live picker
   const selectedBossesRef = useRef<number[]>([]);
   const greetingReqId = useRef(0); // invalidates a late greeting if a turn/chat starts first
@@ -109,8 +110,12 @@ export default function App() {
 
   const handleFrame = useCallback(
     (f: Frame) => {
+      // sc-243: is the chat the current turn belongs to still the open one?
+      const turnIsOpen = () =>
+        turnConvRef.current !== null && turnConvRef.current === activeIdRef.current;
       switch (f.type) {
         case "meta":
+          turnConvRef.current = f.conversation_id;
           if (!activeIdRef.current) {
             activeIdRef.current = f.conversation_id;
             setActiveId(f.conversation_id);
@@ -221,7 +226,13 @@ export default function App() {
           const tools = streamCardsRef.current;
           const encounters = pendingEncountersRef.current;
           const artifacts = pendingArtifactsRef.current;
-          const proposals = pendingProposalsRef.current;
+          // sc-243: a proposal belongs to the chat that made it; if the user has moved to
+          // another chat meanwhile it is not shown there (it reappears when its chat reopens).
+          const proposals = turnIsOpen() ? pendingProposalsRef.current : [];
+          if (proposals.length) {
+            // A mid-turn reopen of this chat loaded the card as a loose one; drop that copy.
+            setLooseProposals((l) => l.filter((x) => !proposals.some((p) => p.id === x.id)));
+          }
           activeEncountersRef.current = encounters; // the live picker tracks this turn's bosses
           setMessages((m) => [
             ...m,
@@ -254,8 +265,11 @@ export default function App() {
         }
         case "error": {
           // Feature 031: a stored proposal is never invisible, even when its turn failed.
-          const orphans = pendingProposalsRef.current;
-          if (orphans.length) setLooseProposals((l) => [...l, ...orphans]);
+          // sc-243: only into the chat that made them, and not twice after a mid-turn reopen.
+          const orphans = turnIsOpen() ? pendingProposalsRef.current : [];
+          if (orphans.length) {
+            setLooseProposals((l) => [...l, ...orphans.filter((o) => !l.some((x) => x.id === o.id))]);
+          }
           pendingProposalsRef.current = [];
           setError(f.message);
           setStreaming(false);
@@ -406,6 +420,7 @@ export default function App() {
       const useModel = opts?.model ?? modelRef.current;
       const convId =
         opts && "conversationId" in opts ? opts.conversationId ?? null : activeIdRef.current;
+      turnConvRef.current = convId;
       setError(null);
       setMessages((m) => [...m, { role: "user", content: text }]);
       streamRef.current = "";

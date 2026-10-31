@@ -54,14 +54,14 @@ the Postgres run in quickstart.md §2.
 
 ### Tests
 
-- [ ] T009 [US2] In `backend/tests/test_proposal_routes.py` add `test_only_the_transitioning_call_saves_the_line` (SQLite): call `proposals.execute_proposal(identity, id, on_transition=spy)` twice → spy called once; same for `cancel_proposal`; and `test_a_failing_follow_up_rolls_the_decision_back` (hook raises → proposal still `pending`, profile unchanged, no line)
-- [ ] T010 [P] [US2] Create `backend/tests/test_proposal_race_pg.py` (skips unless `TEST_DATABASE_URL` starts with `postgresql`, like `test_rls.py`): point `backend.app.db.session.SessionLocal` at the Postgres sessionmaker; seed a tenant, user and conversation (as the app's provisioning helpers do) and a pending 2-item proposal; `asyncio.gather` two `routes.approve(proposal_id, identity)` calls → both return `ProposalDecisionOut`, exactly one `follow_up`, exactly one new agent message in the conversation, both friends added once; same for two `routes.cancel(...)` on a fresh proposal (one "Cancelled…" line); no guide tasks (monkeypatch `schedule_character_guide`); clean up seeded rows
+- [X] T009 [US2] In `backend/tests/test_proposal_routes.py` add `test_only_the_transitioning_call_saves_the_line` (SQLite): call `proposals.execute_proposal(identity, id, on_transition=spy)` twice → spy called once; same for `cancel_proposal`; and `test_a_failing_follow_up_rolls_the_decision_back` (hook raises → proposal still `pending`, profile unchanged, no line)
+- [X] T010 [P] [US2] Create `backend/tests/test_proposal_race_pg.py` (skips unless `TEST_DATABASE_URL` starts with `postgresql`, like `test_rls.py`): point `backend.app.db.session.SessionLocal` at the Postgres sessionmaker; seed a tenant, user and conversation (as the app's provisioning helpers do) and a pending 2-item proposal; `asyncio.gather` two `routes.approve(proposal_id, identity)` calls → both return `ProposalDecisionOut`, exactly one `follow_up`, exactly one new agent message in the conversation, both friends added once; same for two `routes.cancel(...)` on a fresh proposal (one "Cancelled…" line); no guide tasks (monkeypatch `schedule_character_guide`); a fresh user and tenant per test (throwaway database), plus a rollback test (failed follow-up → nothing applied)
 
 ### Implementation
 
-- [ ] T011 [US2] In `backend/app/services/profile_proposals.py` add `TransitionHook` and the keyword-only `on_transition` parameter to `execute_proposal` and `cancel_proposal`; await it inside the locked `tenant_scope` transaction, after status/results are set, only on `pending → applied` / `pending → cancelled` (contracts/internal-interfaces.md)
-- [ ] T012 [US2] In `backend/app/api/proposals.py` rewrite `_decide`: no pre-lock `get_proposal`; pass a hook that `repo.add_message(...)`s `follow_up_text(proposal)`, refreshes it and keeps the `MessageOut`; return it as `follow_up` (null when the hook didn't run); expired handling and error codes unchanged; update the module docstring line about "only the call that left pending"
-- [ ] T013 [US2] Run `uv run --extra test pytest -q backend/tests/test_proposal_routes.py backend/tests/test_profile_proposals.py`; then the Postgres run (quickstart.md §2, container `wcl-034-pg` on port 15434) and keep its output for the hand-off
+- [X] T011 [US2] In `backend/app/services/profile_proposals.py` add `TransitionHook` and the keyword-only `on_transition` parameter to `execute_proposal` and `cancel_proposal`; await it inside the locked `tenant_scope` transaction, after status/results are set, only on `pending → applied` / `pending → cancelled` (contracts/internal-interfaces.md)
+- [X] T012 [US2] In `backend/app/api/proposals.py` rewrite `_decide`: no pre-lock `get_proposal`; pass a hook that `repo.add_message(...)`s `follow_up_text(proposal)`, refreshes it and keeps the `MessageOut`; return it as `follow_up` (null when the hook didn't run); expired handling and error codes unchanged; update the module docstring line about "only the call that left pending"
+- [X] T013 [US2] Run `uv run --extra test pytest -q backend/tests/test_proposal_routes.py backend/tests/test_profile_proposals.py`; then the Postgres run (quickstart.md §2, container `wcl-034-pg` on port 15434) and keep its output for the hand-off
 
 **Checkpoint**: sc-242 done; Postgres overlap test passes (not skipped).
 
@@ -76,14 +76,14 @@ own status label and spell.
 
 ### Tests
 
-- [ ] T014 [P] [US3] Create `frontend/src/App.test.tsx`: mock `./api/wsClient` (`ChatSocket` captures the frame handler; `send` returns true), `./api/restClient` (`getModels`, `listConversations`, `getRaids`, `getConversation` per id, `getGreeting`), `./auth/useAuth`, `react-router-dom`'s `useNavigate`, and the children `Sidebar` (buttons to select chat A/B and New chat), `MessageList` (renders per-message proposal ids, loose proposal ids and `status`), `Composer`, `WelcomePanel`, `Ambient`, `ModelSelect`. Cases: (a) turn in A, switch to B, `done` → B shows no card; (b) same with `error` → no loose card in B; (c) New chat mid-turn → no card; (d) switch away and back to A mid-turn (getConversation returns the proposal with `message_seq: null`), then `done` → card once (attached, no loose duplicate); (e) no switch → attaches as before; (f) `tool_start` `propose_profile_changes` → status "Preparing profile changes"; (g) `spellFor("propose_profile_changes") !== DEFAULT_SPELL`
+- [X] T014 [P] [US3] Create `frontend/src/App.test.tsx`: mock `./api/wsClient` (`ChatSocket` captures the frame handler; `send` returns true), `./api/restClient` (`getModels`, `listConversations`, `getRaids`, `getConversation` per id, `getGreeting`), `./auth/useAuth`, `react-router-dom`'s `useNavigate`, and the children `Sidebar` (buttons to select chat A/B and New chat), `MessageList` (renders per-message proposal ids, loose proposal ids and `status`), `Composer`, `WelcomePanel`, `Ambient`, `ModelSelect`. Cases: (a) turn in A, switch to B, `done` → B shows no card; (b) same with `error` → no loose card in B; (c) New chat mid-turn → no card; (d) switch away and back to A mid-turn (getConversation returns the proposal with `message_seq: null`), then `done` → card once (attached, no loose duplicate); (e) no switch → attaches as before; (f) `tool_start` `propose_profile_changes` → status "Preparing profile changes"; (g) `spellFor("propose_profile_changes") !== DEFAULT_SPELL`
 
 ### Implementation
 
-- [ ] T015 [P] [US3] In `frontend/src/toolLabels.ts` add `propose_profile_changes: "Preparing profile changes"`
-- [ ] T016 [P] [US3] In `frontend/src/lib/spells.ts` add a `propose_profile_changes` entry (icon `GiScrollQuill`, hue `GOLD`, verb "Inscribing the changes", two flavor lines), in a "Profile" group comment
-- [ ] T017 [US3] In `frontend/src/App.tsx`: add `turnConvRef`; set it in `sendText` (the send's conversation id) and in the `meta` handler (`f.conversation_id`); in `done` attach `pendingProposalsRef` only when `turnConvRef.current === activeIdRef.current` and then drop loose cards with the same ids; in `error` add orphans as loose cards only under the same condition (deduplicated by id)
-- [ ] T018 [US3] Run `cd frontend && npm test && npm run build` (typecheck included); all green
+- [X] T015 [P] [US3] In `frontend/src/toolLabels.ts` add `propose_profile_changes: "Preparing profile changes"`
+- [X] T016 [P] [US3] In `frontend/src/lib/spells.ts` add a `propose_profile_changes` entry (icon `GiScrollQuill`, hue `GOLD`, verb "Inscribing the changes", two flavor lines), in a "Profile" group comment
+- [X] T017 [US3] In `frontend/src/App.tsx`: add `turnConvRef`; set it in `sendText` (the send's conversation id) and in the `meta` handler (`f.conversation_id`); in `done` attach `pendingProposalsRef` only when `turnConvRef.current === activeIdRef.current` and then drop loose cards with the same ids; in `error` add orphans as loose cards only under the same condition (deduplicated by id)
+- [X] T018 [US3] Run `cd frontend && npm test && npm run build` (typecheck included); all green
 
 **Checkpoint**: sc-243 done.
 
@@ -91,7 +91,7 @@ own status label and spell.
 
 ## Phase 5: Polish & hand-off
 
-- [ ] T019 Full suites: `uv run --extra test pytest -q` (no new failures vs T001) and `cd frontend && npm run build && npm test`
+- [X] T019 Full suites: `uv run --extra test pytest -q` (no new failures vs T001) and `cd frontend && npm run build && npm test`
 - [ ] T020 GitNexus: `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only` then `detect-changes --scope all --repo .` in the worktree (re-run if `partial`/`truncated`); check `git diff --name-only b963463...HEAD` + uncommitted lists only granted files; restore `CLAUDE.md` and `.specify/feature.json`; commit
 - [ ] T021 Hand-off to the scrum master: branch, base, commits, files, test output (incl. the pasted Postgres run), risks, AC mapping (plan AC 1 → T002, AC 2 → T003, AC 3 → T009/T010, AC 4/5 → T014, AC 6 → T019)
 
