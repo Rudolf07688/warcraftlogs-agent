@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from google.adk.agents import Agent
-from google.adk.models.google_llm import Gemini
 from google.adk.models.registry import LLMRegistry
 from google.adk.planners import BuiltInPlanner
 from google.adk.tools import google_search
@@ -61,7 +60,7 @@ from .tools.tools import (
     get_selected_encounter,
     get_spec_options,
 )
-from .llm.provider import ModelRole, adk_client_kwargs, role_model
+from .llm.provider import ModelRole, role_model
 
 # Tag-delimited sections per specs/009-grounded-coaching-prompt/contracts/prompt.md.
 # backend/tests/test_prompt_contract.py asserts the sections and key clauses; wording
@@ -424,7 +423,29 @@ def _is_anthropic(model: str) -> bool:
     return is_anthropic_model(model)
 
 
-def _build_web_search_tool(model: str) -> AgentTool:
+WEB_SEARCH_UNAVAILABLE = (
+    "Web search is unavailable right now. Answer from what you know and the Warcraft Logs "
+    "tools, and tell the player the web could not be checked."
+)
+
+
+class _WebSearchTool(AgentTool):
+    """The search sub-agent as a tool whose failure is a clean tool error (sc-184).
+
+    Errors inside a sub-agent reach the turn wrapped by ADK with the provider's own text,
+    and even a spent rate-limit budget would end the turn as an agent error. The answer
+    can do without the web, so the model gets a plain error result and carries on.
+    """
+
+    async def run_async(self, *, args, tool_context):  # type: ignore[override]
+        try:
+            return await super().run_async(args=args, tool_context=tool_context)
+        except Exception:  # noqa: BLE001 - provider errors of any kind; the turn goes on
+            logger.warning("web search failed; the turn continues without it", exc_info=True)
+            return {"status": "error", "error_message": WEB_SEARCH_UNAVAILABLE}
+
+
+def _build_web_search_tool(model: str, policy: RetryPolicy | None = None) -> AgentTool:
     """Wrap a grounding-only Gemini agent as a callable `web_search` tool.
 
     Native Google Search grounding is exposed via a sub-agent rather than adding
@@ -434,11 +455,14 @@ def _build_web_search_tool(model: str) -> AgentTool:
     original "web-search sub-agent as a tool" intent. ``propagate_grounding_metadata``
     surfaces the sub-agent's grounding signal to the parent event stream so the UI
     can show a "used web search" indicator (US3/FR-011).
+
+    sc-184: the sub-agent's model retries rate limits like the root and follows the turn's
+    switch to the sibling, but never makes one (its requests carry the turn's model id, so
+    a switch from here would misplace the root's signature guard).
     """
     search_agent = Agent(
         name=WEB_SEARCH_AGENT_NAME,
-        # A plain Gemini (its retries unchanged) pinned to the model location (feature 016).
-        model=Gemini(model=model, client_kwargs=adk_client_kwargs()),
+        model=RetryingGemini(model=model, policy=policy or RetryPolicy(), may_switch=False),
         description="Searches the web with Google Search and returns a concise, cited answer.",
         instruction=(
             "You are a web search assistant. Use Google Search to find current, "
@@ -447,7 +471,7 @@ def _build_web_search_tool(model: str) -> AgentTool:
         ),
         tools=[google_search],
     )
-    return AgentTool(agent=search_agent, propagate_grounding_metadata=True)
+    return _WebSearchTool(agent=search_agent, propagate_grounding_metadata=True)
 
 
 def _retrying_model(model: str, policy: RetryPolicy):
@@ -492,7 +516,7 @@ def build_agent(
     groups = [*TOOL_GROUPS, *extra_groups]
     web_search = not _is_anthropic(model)
     if web_search:
-        groups.append(ToolGroup("External knowledge", (_build_web_search_tool(model),)))
+        groups.append(ToolGroup("External knowledge", (_build_web_search_tool(model, policy),)))
     summary = render_capability_summary(groups, web_search=web_search)
     return Agent(
         name="wcl_agent",

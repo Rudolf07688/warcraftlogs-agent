@@ -318,6 +318,8 @@ async def generate_with_fallback(
     inner: Callable[[], AsyncGenerator[Any, None]],
     llm_request: LlmRequest,
     policy: RetryPolicy,
+    *,
+    may_switch: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """``generate_with_retry``, then at most once per turn the same-class sibling (021).
 
@@ -332,9 +334,19 @@ async def generate_with_fallback(
     (``_PRIMARY_ATTEMPTS`` within ``_PRIMARY_BUDGET_S``); the sibling keeps ``policy``. A
     model whose retries ran out is remembered (``recently_limited``), and a turn whose
     model is remembered switches on its first request, unless the sibling is remembered too.
+
+    sc-184: ``may_switch=False`` (the web-search sub-agent, pinned to the turn's model)
+    follows a switch the turn already made but never makes one; its own conversation is
+    all on the sibling, so no signature guard is needed.
     """
     stats = current_turn.get()
     own = stats is not None and llm_request.model == stats.model
+    if not may_switch:
+        if own and stats.switched_to:
+            llm_request.model = stats.switched_to
+        async for response in generate_with_retry(inner, policy):
+            yield response
+        return
     can_switch = own and bool(stats.fallback_model) and stats.switched_to is None
     if can_switch and recently_limited(stats.model) and not recently_limited(stats.fallback_model):
         _switch(llm_request, stats, "was rate-limited moments ago")
@@ -388,6 +400,8 @@ class RetryingGemini(Gemini):
     client_kwargs: dict[str, Any] | None = Field(
         default_factory=adk_client_kwargs, exclude=True, repr=False
     )
+    # sc-184: False for a sub-agent's model: it follows the turn's switch, never makes one.
+    may_switch: bool = True
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -396,6 +410,7 @@ class RetryingGemini(Gemini):
             lambda: super(RetryingGemini, self).generate_content_async(llm_request, stream),
             llm_request,
             self.policy,
+            may_switch=self.may_switch,
         ):
             yield response
 
