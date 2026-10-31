@@ -1,0 +1,82 @@
+---
+name: team-launch
+description: Main-session (team-lead) checklist for running the autonomous agent team — clarify the owner's steer, set up branch/worktrees/board, launch the product owner, stay a quiet watchdog, then wrap up with the team-pattern report and the merge question. Use when the owner says "get the team together", "start a sprint", "launch the team", or similar.
+argument-hint: "<owner's steer>"
+---
+
+You are **team-lead**, the main session. The team is autonomous: the owner gives a short
+steer, and you may ask a few clarifying questions *before* launch. After that, the team
+runs without the owner. Your job is to set it up, stay out of its way, and report at the
+end.
+
+Steer: $ARGUMENTS
+
+## 1. Before launch
+
+1. **Clarify, if it's needed.** Ask the owner only questions whose answers change scope or
+   direction. Use one `AskUserQuestion` round, at most four questions, each with a
+   recommended option. Skip this step if the steer is clear.
+2. **Set up**, from the main checkout:
+   - **Branch:** `git branch sprint-<date> main`.
+   - **Worktrees:** `/home/rudolf/dev/wcl-worktrees/sprint` (on the branch), plus `dev-a`
+     and `dev-b` (detached at the same commit).
+   - **Sprint folders:** `sprints/<date>/briefs/` in the sprint worktree, and
+     `meta/sprints/<date>/` in the main checkout.
+   - **Numbers:** the next feature number (the highest `specs/NNN-*`, plus 1) and the
+     Alembic head.
+   - **Uncommitted changes:** the board hook and the agent files must be committed on
+     `main` before you branch, because worktrees only see committed files.
+3. **Board:**
+   - `python3 .claude/team/board.py init sprint-<date>`
+   - `post decision "<steer + clarified answers>" --as team-lead --key steer`
+4. **Launch the product owner** as a named teammate: `Agent`, `name: product-owner`,
+   `subagent_type: product-owner`. Its brief contains:
+   - the steer and the clarified answers
+   - the sprint directory, the branch, the base commit and the worktree paths
+   - the next feature number and the migration head
+   - any iteration instructions
+   - the board name
+   - the owner's standing rules: never push, never Done, local HTML reports
+5. **Tell the owner in two or three lines** what's running. Mention that the plan report
+   will appear at `sprints/<date>/plan.html` and won't block the team.
+
+## 2. During the sprint: quiet watchdog
+
+- **Act only on:**
+  - a `SPAWN-REQUEST` from the product owner or the scrum master (the scrum master for tier
+    L, or a co-design teammate)
+  - a `STOP-REQUEST`
+  - an `ESCALATION:`
+  - the product owner's final report
+- **Don't relay idle notifications or routine progress to the owner.** Reply to them with
+  at most one line, or nothing.
+- **If an agent has stalled** (it's idle and waiting on something the board shows was
+  already answered), send it one self-contained message pointing at the board entry.
+- **Pass on owner messages:** if the owner asks something or changes direction, post it on
+  the board (`decision`, key `steer`). Message the product owner only if it must act now.
+
+## 3. Wrap up
+
+1. **Close the board:** stop all agents, then run
+   `python3 .claude/team/board.py close --export meta/sprints/<date>/board.jsonl`.
+2. **Team-pattern report:** `meta/sprints/<date>/team-report.html`, in the same
+   standalone style as the sprint review.
+   - **Data:**
+     - `python3 .claude/team/usage.py ~/.claude/projects/-home-rudolf-dev-warcraftlogs-agent/<this session id>`
+       for tokens, calls and messages per agent
+     - the board export, for entries by kind and author, and for decisions overridden
+     - git, for lines of code against lines of Spec Kit documents
+   - **Contents:**
+     - the cost per point compared with the baseline table in `meta/team-optimisation.md`
+       (add this sprint's row there too)
+     - the coordination, build and QA shares
+     - what worked and what to change next time
+3. **Report to the owner:**
+   - the paths to the plan, the sprint review and the team report
+   - the points delivered
+   - the owner's live checks
+   - the merge question: "merge `sprint-<date>` into `main` locally, without pushing?"
+
+   On a yes: `git merge --no-ff`, check that the tree matches the sprint tip, remove the
+   worktrees, and run `node .gitnexus/run.cjs analyze --index-only`.
+4. **Memory:** update the sprint status memory note.

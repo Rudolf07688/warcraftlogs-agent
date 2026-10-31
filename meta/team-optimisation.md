@@ -2,8 +2,9 @@
 
 - **Started:** 2026-10-31
 - **Updated last:** 2026-10-31
-- **Status:** discussion, partly implemented. The team board (P4) is built and wired into
-  the agent files. The rest of `.claude/agents/` is unchanged.
+- **Status:** implemented on 2026-10-31. The team board is live, the agent files are
+  rewritten around tiers, sub-agent developers and the board, and there's a team-lead
+  launch skill. Next: verify all of it on the next real sprint.
 - **Scope:** off-sprint and off-board. This covers the team setup in `.claude/agents/*.md`
   and how the main session runs the team. It isn't an app feature, so it gets no Spec Kit
   run and no Shortcut ticket.
@@ -138,6 +139,13 @@ across 37 files.
   see them.
 - **D8. Build the team board (P4), including the automatic hook.** Done on 2026-10-31;
   see the P4 section for what was built.
+- **D9. Adopt P5.** Developers are background sub-agents by default. A messaging teammate
+  is used only when a role expects more than about 3 live two-way exchanges.
+- **D10. The scrum master exists only in tier L.** In tiers S and M the product owner
+  absorbs its duties: launching developers, ticket hygiene across features, merging, and
+  the protected files.
+- **D11. Rewrite the agent files and add a launch checklist,** and commit what's built.
+  Done on 2026-10-31; see "What changed in the agent setup".
 
 ## Proposals under discussion
 
@@ -245,15 +253,32 @@ What each option costs, using the 10-31 numbers:
   developers who want to fan out; and that a coordinator's `SendMessage` to a sub-agent's
   id resumes it cleanly for rework.
 
+## What changed in the agent setup (2026-10-31)
+
+| Before | After |
+|---|---|
+| The main session spawned every named developer on a scrum master `SPAWN-REQUEST`, then stopped it on a `STOP-REQUEST` | The product owner (tiers S and M) or the scrum master (tier L) launches developers directly as background **sub-agents**. A hand-off comes back as the sub-agent's result. |
+| Every feature ran gated Spec Kit (spec sign-off, plan grant, tasks gate, ACKs) | **Tiers.** S: a short plan, then implement. M: a single Spec Kit pass, with the developer answering its own clarify questions on the board. L: gated Spec Kit under a scrum master. |
+| Decisions were relayed by message and logged by hand in `decisions.md` and `log.md` | Decisions, changes, grants, hand-offs and merges go on the **team board**, keyed so that the latest entry wins. The hook delivers them to every agent. |
+| File ownership lived in `ownership.md`, run by the scrum master | `owner:<path>` keys on the board. Footprints are set in the brief. |
+| The scrum master was always present and routed every message | The scrum master only exists in tier L. The product owner merges and keeps tickets tidy in S and M. |
+| An owner plan gate blocked implementation | The plan is written as `plan.html` and doesn't block (D1). |
+| Merges ran the suite on the feature branch | Merges rebase first and run the suite on the **rebased** result, a lesson from 035. |
+| Reports: plan, sprint review | Plan (`plan.html`), sprint review (`sprint-report.html`), and a team-pattern report from team-lead (`meta/sprints/<date>/team-report.html`) |
+
+**Files:** `.claude/agents/product-owner.md`, `scrum-master.md` and `developer.md` were
+rewritten. `.claude/skills/team-launch/SKILL.md` (new) is the main-session checklist for
+before launch, the quiet watchdog role, and wrap-up.
+
 ## Open questions
 
-1. Do you agree with the P5 threshold: developers as sub-agents by default, and messaging
-   teammates only above about 3 live two-way exchanges per run?
-2. With D6 and P5 together, the scrum master only appears in tier L. Should the product
-   owner absorb its remaining tier S and M duties (ticket hygiene across features, merging
-   to the sprint branch)?
-3. Once we're aligned: rewrite the three agent files around P1, P5 and the board, and give
-   the main session a launch checklist (board init, tier, reports)?
+1. **Verification on the next real sprint.**
+   - Does the board actually reduce messages? Measure it with `usage.py`, against a
+     coordination share of about 41%.
+   - Do sub-agent developers stay within their footprint without gates?
+   - Is the step-boundary board reading enough, or does the hook carry it all?
+2. **Tier boundaries:** are they in the right place? Review them after a sprint that
+   contains all three tiers.
 
 ## Change log
 
@@ -269,3 +294,7 @@ What each option costs, using the 10-31 numbers:
   `.claude/team/usage.py`. Built and verified the team board (P4) and wired it into the
   three agent files. Added P5, the sub-agent vs teammate threshold, and replaced the open
   questions.
+- **2026-10-31:** The owner agreed D9 (P5 threshold), D10 (the scrum master only in tier L)
+  and D11 (rewrite and commit). Verified that a sub-agent can launch its own sub-agent
+  (depth 2). Rewrote the three agent files, added the `team-launch` skill, and recorded the
+  before/after table. Open questions are now about verification.
