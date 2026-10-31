@@ -22,7 +22,6 @@ from backend.app.db import repository as repo
 from backend.app.db.models import ProfileProposal, UserCharacter
 from backend.app.schemas import ProfileChangeIn
 from backend.app.services import profile_proposals as proposals
-from backend.app.services import profile_service
 from backend.app.tenancy.context import RequestIdentity
 
 
@@ -160,7 +159,9 @@ async def conv(patched_db, tenant_id) -> uuid.UUID:
 @pytest.fixture
 def guide_calls(monkeypatch) -> list:
     calls: list = []
-    monkeypatch.setattr(proposals, "schedule_character_guide", lambda cid, tid: calls.append((cid, tid)))
+    monkeypatch.setattr(
+        proposals, "schedule_character_guides", lambda cids, tid: calls.extend((cid, tid) for cid in cids)
+    )
     return calls
 
 
@@ -428,18 +429,9 @@ async def test_create_needs_a_conversation_of_the_tenant(me, other_tenant_id, pa
 # --- Execution, tenancy, expiry, idempotency (AC 4, 5; C10, C11) --------------------------
 
 
-async def test_execute_goes_through_the_shared_profile_service(me, conv, patched_db, tenant_id, monkeypatch, guide_calls):
-    calls: list = []
-    real_add = profile_service.add_character
-
-    async def spy(db, identity, body, role):
-        calls.append((body.name, role))
-        return await real_add(db, identity, body, role)
-
-    monkeypatch.setattr(profile_service, "add_character", spy)
+async def test_execute_writes_the_row_a_rest_add_makes(me, conv, patched_db, tenant_id, guide_calls):
     proposal = await proposals.create_proposal(me, conv, [_change(name="Jaina", realm="Kel'Thuzad", region="EU")])
     applied = await proposals.execute_proposal(me, proposal.id)
-    assert calls == [("Jaina", "friend")]
     assert applied.status == "applied" and applied.applied_at is not None
     item = applied.items[0]
     assert item.result.status == "applied" and item.result.character_id == item.character_id
@@ -447,6 +439,20 @@ async def test_execute_goes_through_the_shared_profile_service(me, conv, patched
         row = await repo.get_character(db, item.character_id, tenant_id=tenant_id)
         # The same row a REST add makes: identity as given, region lower case, role inferred.
         assert (row.role, row.name, row.server, row.region, row.raid_role) == ("friend", "Jaina", "Kel'Thuzad", "eu", None)
+
+
+async def test_bulk_writes_report_rows_that_are_gone(patched_db, tenant_id, other_tenant_id):
+    # sc-225: an update or remove whose row went meanwhile (or is another tenant's) isn't applied.
+    mine = await _add(patched_db, tenant_id, "friend", "Garrosh")
+    theirs = await _add(patched_db, other_tenant_id, "friend", "Varok")
+    async with patched_db() as db:
+        changed = await repo.set_raid_roles(db, tenant_id=tenant_id, roles={mine: "tank", theirs: "tank", uuid.uuid4(): None})
+        gone = await repo.delete_characters(db, tenant_id=tenant_id, ids=[theirs, uuid.uuid4()])
+        await db.commit()
+    assert (changed, gone) == ({mine}, set())
+    async with patched_db() as db:
+        assert (await repo.get_character(db, mine, tenant_id=tenant_id)).raid_role == "tank"
+        assert (await repo.get_character(db, theirs, tenant_id=other_tenant_id)).raid_role is None
 
 
 async def test_another_tenant_or_user_gets_not_found(me, conv, other_tenant_id, tenant_id, patched_db):
@@ -516,15 +522,15 @@ async def test_per_item_results(me, conv, patched_db, tenant_id, guide_calls):
 async def test_guides_are_scheduled_once_per_add_after_commit(me, conv, patched_db, tenant_id, monkeypatch):
     seen: list = []
 
-    def check(char_id, tid):
-        # Called after the commit: the new row is visible from a fresh transaction.
-        async def visible():
+    def check(char_ids, tid):
+        # Called once, after the commit: the new rows are visible from a fresh transaction.
+        async def visible(char_id):
             async with patched_db() as db:
                 return await repo.get_character(db, char_id, tenant_id=tid)
 
-        seen.append((char_id, tid, visible()))
+        seen.extend((char_id, tid, visible(char_id)) for char_id in char_ids)
 
-    monkeypatch.setattr(proposals, "schedule_character_guide", check)
+    monkeypatch.setattr(proposals, "schedule_character_guides", check)
     await _add(patched_db, tenant_id, "friend", "Garrosh")
     proposal = await proposals.create_proposal(
         me, conv, [_change(name="Jaina"), _change("update", name="Garrosh", raid_role="tank"), _change(name="Thrall")]
@@ -534,6 +540,39 @@ async def test_guides_are_scheduled_once_per_add_after_commit(me, conv, patched_
     assert [(cid, tid) for cid, tid, _ in seen] == [(added[0], tenant_id), (added[1], tenant_id)]
     for _, _, pending in seen:
         assert await pending is not None
+
+
+async def _approve_statements(me, conv, patched_db, tenant_id, engine, n: int) -> int:
+    """Statements sent to the database by one approval of n adds, n role changes and n removes."""
+    names = [f"Pal{chr(97 + i)}" for i in range(2 * n)]
+    for name in names:
+        await _add(patched_db, tenant_id, "friend", name)
+    changes = [_change(name=f"New{chr(97 + i)}") for i in range(n)]
+    changes += [_change("update", name=name, raid_role="tank") for name in names[:n]]
+    changes += [_change("remove", name=name) for name in names[n:]]
+    proposal = await proposals.create_proposal(me, conv, changes)
+    statements: list[str] = []
+
+    def count(conn, cursor, statement, *args):
+        statements.append(statement)
+
+    sa.event.listen(engine.sync_engine, "before_cursor_execute", count)
+    try:
+        applied = await proposals.execute_proposal(me, proposal.id)
+    finally:
+        sa.event.remove(engine.sync_engine, "before_cursor_execute", count)
+    assert {i.result.status for i in applied.items} == {"applied"}
+    return len(statements)
+
+
+async def test_approve_round_trips_dont_grow_with_the_item_count(me, conv, patched_db, tenant_id, engine, guide_calls):
+    # sc-225 AC1: 3 items (one per action) and 30 items (ten per action) cost the same.
+    small = await _approve_statements(me, conv, patched_db, tenant_id, engine, 1)
+    async with patched_db() as db:
+        await db.execute(sa.delete(UserCharacter))
+        await db.commit()
+    large = await _approve_statements(me, conv, patched_db, tenant_id, engine, 10)
+    assert large == small  # 7 on SQLite (was 17 and 125 before sc-225)
 
 
 async def test_cancel(me, conv, patched_db, tenant_id, guide_calls):

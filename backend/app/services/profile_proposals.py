@@ -3,11 +3,13 @@
 Design C9–C14 and ``#proposal-service-api``
 (documentation/designs/self-aware-agent/capabilities-and-tools.html). The agent tool only
 *creates* a proposal; nothing on the profile changes until the user approves it, which runs
-:func:`execute_proposal` exactly once through the shared ``profile_service`` write path.
+:func:`execute_proposal` exactly once: re-validated under the tenant's profile lock, then
+written in bulk (sc-223, sc-225).
 
-Every function opens its own tenant-scoped transaction for the acting identity, so the
-transport (031's frame and REST routes) needs no session of its own, and every query is
-scoped to the tenant **and** the user: another tenant's or user's proposal is ``not_found``.
+Every function opens its own tenant-scoped transaction for the acting identity (the reads can
+join the caller's instead), so the transport (031's frame and REST routes) needs no session of
+its own, and every query is scoped to the tenant **and** the user: another tenant's or user's
+proposal is ``not_found``.
 """
 
 from __future__ import annotations
@@ -15,7 +17,8 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import get_args
@@ -39,8 +42,7 @@ from ..schemas import (
     ProposalValidation,
 )
 from ..tenancy.context import RequestIdentity, tenant_scope
-from . import profile_service
-from .guide import schedule_character_guide
+from .guide import schedule_character_guides
 
 logger = logging.getLogger(__name__)
 
@@ -296,8 +298,8 @@ def _change_of(item: ProposalItemOut) -> ProfileChangeIn:
 
 
 async def _load_profile(db, tenant_id: uuid.UUID) -> list[UserCharacter]:
-    own, friends, _guild = await repo.get_profile(db, tenant_id=tenant_id)
-    return [*own, *friends]
+    own = await repo.list_own_characters(db, tenant_id=tenant_id)
+    return [*own, *await repo.list_friend_characters(db, tenant_id=tenant_id)]
 
 
 # --- Reads ---------------------------------------------------------------------------
@@ -364,8 +366,21 @@ async def create_proposal(
     return out
 
 
-async def get_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) -> ProfileProposalOut:
-    async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as db:
+@asynccontextmanager
+async def _reading(identity: RequestIdentity, db: AsyncSession | None) -> AsyncIterator[AsyncSession]:
+    """The caller's transaction when it has one (already scoped to this identity), else a
+    short one of our own (sc-225: a reload or a proposal frame opens no extra transaction)."""
+    if db is not None:
+        yield db
+        return
+    async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as own:
+        yield own
+
+
+async def get_proposal(
+    identity: RequestIdentity, proposal_id: uuid.UUID, *, db: AsyncSession | None = None
+) -> ProfileProposalOut:
+    async with _reading(identity, db) as db:
         row = await rows.get_proposal_row(
             db, proposal_id, tenant_id=identity.tenant_id, user_id=identity.user_id
         )
@@ -375,10 +390,10 @@ async def get_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) -> Pro
 
 
 async def list_proposals(
-    identity: RequestIdentity, conversation_id: uuid.UUID
+    identity: RequestIdentity, conversation_id: uuid.UUID, *, db: AsyncSession | None = None
 ) -> list[ProfileProposalOut]:
     """Every proposal of that conversation for this user, oldest first, status computed."""
-    async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as db:
+    async with _reading(identity, db) as db:
         found = await rows.list_proposal_rows(
             db, tenant_id=identity.tenant_id, user_id=identity.user_id, conversation_id=conversation_id
         )
@@ -389,50 +404,54 @@ async def list_proposals(
 # --- Execute / cancel (C10, C11) ------------------------------------------------------
 
 
-async def _apply_item(db, identity: RequestIdentity, item: ProposalItemOut) -> uuid.UUID:
-    """Apply one re-validated item through the shared write path; returns the row's id."""
-    role = _ROLE[item.target]
-    if item.action == "add":
-        body = CharacterIn(name=item.name, server=item.realm, region=item.region, raid_role=item.raid_role)
-        return (await profile_service.add_character(db, identity, body, role)).id
-    if item.action == "update":
-        await profile_service.set_raid_role(db, identity, item.character_id, item.raid_role, role)
-    else:
-        await profile_service.remove_character(db, identity, item.character_id, role)
-    return item.character_id
-
-
 async def _apply(db, identity: RequestIdentity, items: list[ProposalItemOut]) -> list[uuid.UUID]:
-    """Apply every still-valid item, each in its own savepoint; record per-item results.
+    """Apply every still-valid item; record per-item results. Returns the added ids.
 
-    Re-validation uses the same validator against the profile as it is now (REST, another
-    tab or another proposal may have changed it), addressing update/remove by identity.
-    Returns the ids of the added characters.
+    The tenant's profile is locked first (sc-223), so re-validation against the profile as it
+    is now (REST, another tab or another proposal may have changed it) is final: nothing can
+    add in between. Update/remove are addressed by identity. The writes then go in bulk, one
+    delete, one update and one insert for the whole proposal (sc-225); an update or remove
+    whose row is gone meanwhile reports ``not_found``.
     """
+    tenant_id = identity.tenant_id
+    await repo.lock_profile(db, tenant_id=tenant_id)
     valid = [item for item in items if item.validation.ok]
-    rechecked = _validate([_change_of(item) for item in valid], await _load_profile(db, identity.tenant_id))
+    rechecked = _validate([_change_of(item) for item in valid], await _load_profile(db, tenant_id))
     for item in items:
         if not item.validation.ok:
             item.result = ProposalItemResult(status="skipped", code=item.validation.code)
-    added: list[uuid.UUID] = []
+    todo: dict[str, list[tuple[ProposalItemOut, ProposalItemOut]]] = {"remove": [], "update": [], "add": []}
     for item, now_item in zip(valid, rechecked):
-        if not now_item.validation.ok:
+        if now_item.validation.ok:
+            todo[item.action].append((item, now_item))
+        else:
             item.result = ProposalItemResult(status="failed", code=now_item.validation.code)
-            continue
-        try:
-            async with db.begin_nested():
-                char_id = await _apply_item(db, identity, now_item)
-        except repo.CharacterConflict as exc:
-            item.result = ProposalItemResult(status="failed", code=exc.code)
-            continue
-        except profile_service.CharacterNotFound:
-            item.result = ProposalItemResult(status="failed", code="not_found")
-            continue
-        item.result = ProposalItemResult(status="applied", character_id=char_id)
-        if item.action == "add":
-            item.character_id = char_id
-            added.append(char_id)
-    return added
+
+    gone = await repo.delete_characters(
+        db, tenant_id=tenant_id, ids=[now.character_id for _, now in todo["remove"]]
+    )
+    changed = await repo.set_raid_roles(
+        db, tenant_id=tenant_id, roles={now.character_id: now.raid_role for _, now in todo["update"]}
+    )
+    for item, now_item in todo["remove"] + todo["update"]:
+        done = now_item.character_id in (gone if item.action == "remove" else changed)
+        item.result = (
+            ProposalItemResult(status="applied", character_id=now_item.character_id)
+            if done
+            else ProposalItemResult(status="failed", code="not_found")
+        )
+    new = await repo.add_characters(
+        db,
+        tenant_id=tenant_id,
+        rows=[
+            dict(role=_ROLE[now.target], name=now.name, server=now.realm, region=now.region, raid_role=now.raid_role)
+            for _, now in todo["add"]
+        ],
+    )
+    for (item, _), char in zip(todo["add"], new):
+        item.character_id = char.id
+        item.result = ProposalItemResult(status="applied", character_id=char.id)
+    return [char.id for char in new]
 
 
 async def execute_proposal(
@@ -470,9 +489,8 @@ async def execute_proposal(
                 await on_transition(db, out)
     if added is None:
         raise ProposalError("proposal_expired")
-    # After the commit: the guide job reads the character in its own transaction.
-    for char_id in added:
-        schedule_character_guide(char_id, identity.tenant_id)
+    # After the commit: the guide jobs read the characters in their own transactions.
+    schedule_character_guides(added, identity.tenant_id)
     logger.info(
         "profile proposal %s applied: %s",
         out.id, ", ".join(f"{i.index}={i.result.status}" for i in out.items),

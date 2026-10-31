@@ -112,6 +112,32 @@ async def test_failed_generation_marks_spec_guide_failed(
         assert g is not None and g.status == "failed"  # retryable, never stuck
 
 
+async def test_an_approvals_guide_jobs_run_three_at_a_time(monkeypatch, tenant_id):
+    # sc-225 AC3: 10 added characters never have more than 3 guide jobs running at once,
+    # and one failing job doesn't stop the others.
+    running = {"now": 0, "most": 0}
+    finished: list = []
+
+    async def job(char_id, tid):
+        running["now"] += 1
+        running["most"] = max(running["most"], running["now"])
+        await asyncio.sleep(0.01)
+        running["now"] -= 1
+        if len(finished) == 0:
+            finished.append(None)
+            raise RuntimeError("WCL down")
+        finished.append(char_id)
+
+    monkeypatch.setattr(guide, "run_character_guide", job)
+    guide.schedule_character_guides([uuid.uuid4() for _ in range(10)], tenant_id)
+    for _ in range(100):
+        if len(finished) == 10:
+            break
+        await asyncio.sleep(0.01)
+    assert len(finished) == 10
+    assert running["most"] == guide.APPROVAL_GUIDE_CONCURRENCY == 3
+
+
 async def test_schedule_is_idempotent_while_in_flight(monkeypatch, tenant_id):
     calls = {"n": 0}
     release = asyncio.Event()

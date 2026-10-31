@@ -49,7 +49,7 @@ def _quiet(monkeypatch, stream) -> None:
     monkeypatch.setattr(ws_mod, "generate_followups", no_suggestions)
     monkeypatch.setattr(ws_mod, "set_refresh_actor", lambda *_: None)
     monkeypatch.setattr(ws_mod.conversation_titles, "schedule_title", lambda *a, **k: None)
-    monkeypatch.setattr(proposals, "schedule_character_guide", lambda *_: None)
+    monkeypatch.setattr(proposals, "schedule_character_guides", lambda *_: None)
 
 
 def _tool_end(name: str, result: dict) -> dict:
@@ -104,6 +104,26 @@ async def test_proposal_frame_is_the_stored_proposal_before_done(as_user, patche
     assert [(p["id"], p["message_seq"], p["status"]) for p in detail["proposals"]] == [
         (frame["id"], agent[0].seq, "pending")
     ]
+
+
+async def test_proposal_reads_open_no_transaction_of_their_own(as_user, monkeypatch):
+    # sc-225 AC2: the frame read joins the capture's transaction and the reload joins the
+    # request's, so the proposal service never opens its own for them.
+    def no_own_transaction(*args, **kwargs):
+        raise AssertionError("the proposal service opened its own transaction")
+
+    async def records(ctx):
+        result = await propose_profile_changes([_add("Kazrok")], ctx)
+        monkeypatch.setattr(proposals, "tenant_scope", no_own_transaction)
+        yield _tool_end("propose_profile_changes", result)
+        yield {"type": "token", "text": "ok"}
+
+    _quiet(monkeypatch, _ctx_stream(records))
+    sock = _FakeSocket()
+    conv_id = await _run(sock, as_user)
+    assert "proposal" in [f["type"] for f in sock.frames]
+    detail = (await as_user.client.get(f"/api/conversations/{conv_id}")).json()
+    assert [p["status"] for p in detail["proposals"]] == ["pending"]
 
 
 async def test_another_tenants_proposal_id_sends_no_frame(as_user, make_authed_client, patched_db, monkeypatch):

@@ -690,5 +690,30 @@ def schedule_character_guide(char_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
     spawn(run_character_guide(char_id, tenant_id), char_id)
 
 
+# sc-225: a 30-item approval would otherwise start 30 guide jobs (each a WCL lookup) at once.
+APPROVAL_GUIDE_CONCURRENCY = 3
+
+
+def schedule_character_guides(char_ids: list[uuid.UUID], tenant_id: uuid.UUID) -> None:
+    """The guide jobs for the characters one approval added: a single background task that
+    runs at most ``APPROVAL_GUIDE_CONCURRENCY`` of them at a time."""
+    if not char_ids:
+        return
+
+    async def run_all() -> None:
+        slots = asyncio.Semaphore(APPROVAL_GUIDE_CONCURRENCY)
+
+        async def one(char_id: uuid.UUID) -> None:
+            async with slots:
+                try:
+                    await run_character_guide(char_id, tenant_id)
+                except Exception:  # noqa: BLE001 - one character's failure doesn't stop the rest
+                    logger.exception("character guide failed for %s", char_id)
+
+        await asyncio.gather(*(one(char_id) for char_id in char_ids))
+
+    spawn(run_all(), ("character-guides", *char_ids))
+
+
 def schedule_guild_summary(guild_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
     spawn(run_guild_summary(guild_id, tenant_id), guild_id)

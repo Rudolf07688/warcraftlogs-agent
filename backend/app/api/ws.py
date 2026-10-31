@@ -134,7 +134,7 @@ async def _handle_tool_end(
 
     # Every capture is a no-op for a failed call, so only open a transaction on success.
     # The transaction commits on exit, so a later stream error can't lose what we pulled.
-    raid = artifact = spec = None
+    raid = artifact = spec = proposal = None
     raid_is_new = False
     if ok:
         async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
@@ -190,6 +190,8 @@ async def _handle_tool_end(
                 result=result,
                 conversation_id=conv_id,
             )
+            if name == "propose_profile_changes":
+                proposal = await _stored_proposal(session, result, identity)
     # Announce only newly tracked raids (PERF-013); re-references refresh on `done`.
     if raid is not None and raid_is_new:
         await _send(ws, RaidTrackedFrame(report_code=raid.report_code, label=raid.label))
@@ -210,23 +212,22 @@ async def _handle_tool_end(
     if encounters and isinstance(report_code, str):
         await _send(ws, EncountersFrame(report_code=report_code, encounters=encounters))
 
-    if name == "propose_profile_changes" and ok:
-        return await _send_proposal(ws, result, identity)
+    if proposal is not None:
+        await _send(ws, ProposalFrame(proposal=proposal))
+        return proposal.id
     return None
 
 
-async def _send_proposal(ws: WebSocket, result: dict, identity: RequestIdentity) -> uuid.UUID | None:
-    """Feature 031: send the stored proposal (not the tool result the model saw) for the
-    confirmation card. ``get_proposal`` reads it in its own short transaction and scopes it to
-    this user, so an id from another tenant sends nothing."""
+async def _stored_proposal(session, result: dict, identity: RequestIdentity):
+    """Feature 031: the stored proposal (not the tool result the model saw) for the
+    confirmation card, read in the capture's transaction (sc-225) and scoped to this user, so
+    an id from another tenant gives ``None`` and no frame."""
     try:
         proposal_id = uuid.UUID(str((result.get("proposal") or {})["id"]))
-        proposal = await profile_proposals.get_proposal(identity, proposal_id)
+        return await profile_proposals.get_proposal(identity, proposal_id, db=session)
     except (KeyError, TypeError, ValueError, profile_proposals.ProposalError) as exc:
         logger.warning("proposal frame skipped: %r", exc)
         return None
-    await _send(ws, ProposalFrame(proposal=proposal))
-    return proposal.id
 
 
 async def _persist_partial(conv_id, tokens: list[str], identity: RequestIdentity) -> None:
