@@ -5,9 +5,8 @@ discovered, not a transcript — which the existing ``render_report_pdf`` render
 PDF body (charts attached unchanged). One shared entry point serves both the
 conversation-level and per-message reports, differing only in the scoped input.
 
-Reuses the established off-event-loop, fail-closed one-shot ``google-genai`` pattern
-(see ``suggestions.py``): a plain, non-web-search model call run via
-``asyncio.to_thread`` and bounded by ``asyncio.wait_for``. The model is instructed to
+A plain, non-web-search call to the report-role model of the active provider (feature 035),
+awaited on the async client and bounded by ``asyncio.wait_for``. The model is instructed to
 emit a brief "no substantive findings" document when the content has none (FR-017), so
 a *successful* call is always non-empty; a genuinely empty return is treated by the
 caller as a synthesis failure (FR-018).
@@ -18,12 +17,16 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from ..config import settings
+from wcl_agent.llm.generation import generate_text
+from wcl_agent.llm.model_retry import RetryPolicy
+from wcl_agent.llm.provider import ModelRole
 
 logger = logging.getLogger(__name__)
 
-# Bound the synchronous download: synthesis must never hang a request (FR-019).
+# Bound the model call: synthesis must never hang a request (FR-019).
 _TIMEOUT_S = 60.0
+# One attempt, as before the shared retry loop; a rate limit fails the report cleanly.
+_POLICY = RetryPolicy(attempts=1)
 # Cap the output too (QA SEC-003). On thinking models this budget includes thinking
 # tokens, so it is generous; the renderer also caps the body at 60 k characters.
 _MAX_OUTPUT_TOKENS = 16_384
@@ -87,21 +90,6 @@ def _build_input(messages: list[dict], *, scope: str, question: str | None) -> s
     return text
 
 
-def _generate(model: str, prompt: str) -> str:
-    """Blocking one-shot genai call (run via ``to_thread``). Non-web-search."""
-    from google.genai import types
-
-    from wcl_agent.llm.vertex import genai_client
-
-    client = genai_client()
-    resp = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(max_output_tokens=_MAX_OUTPUT_TOKENS),
-    )
-    return (getattr(resp, "text", "") or "").strip()
-
-
 async def synthesize_findings(
     messages: list[dict],
     *,
@@ -117,7 +105,8 @@ async def synthesize_findings(
     """
     body = _build_input(messages, scope=scope, question=question)
     prompt = f"{_SYSTEM}\n\n--- ANALYSIS CONTENT ---\n{body}\n--- END ---\n"
-    return await asyncio.wait_for(
-        asyncio.to_thread(_generate, settings.wcl_report_model, prompt),
+    text = await asyncio.wait_for(
+        generate_text(prompt, ModelRole.REPORT, max_tokens=_MAX_OUTPUT_TOKENS, policy=_POLICY),
         timeout=_TIMEOUT_S,
     )
+    return text.strip()

@@ -22,6 +22,7 @@ from backend.app.schemas import ChatTurn
 from backend.app.services import background, conversation_titles
 from backend.app.services.conversation_titles import TITLE_MAX_LEN, clean_title
 from backend.app.tenancy.context import RequestIdentity
+from backend.tests.llm_fakes import llm, message, text  # noqa: F401 - fixture
 from wcl_agent.llm.model_retry import ModelRateLimited
 
 # conftest stubs scheduling for every other test; the hook tests here put it back.
@@ -353,22 +354,10 @@ async def test_closed_socket_is_swallowed_and_the_title_kept(patched_db, tenant_
 # --- The model call (FR-014) ---------------------------------------------------------
 
 
-def _fake_client(monkeypatch, responses):
-    """A genai client whose ``generate_content`` returns or raises each item in turn."""
-    seen = []
-
-    class _Models:
-        async def generate_content(self, *, model, contents, config):
-            seen.append(SimpleNamespace(model=model, contents=contents, config=config))
-            item = responses[len(seen) - 1]
-            if isinstance(item, BaseException):
-                raise item
-            return SimpleNamespace(text=item)
-
-    monkeypatch.setattr(
-        conversation_titles.suggestions, "_get_client", lambda: SimpleNamespace(aio=SimpleNamespace(models=_Models()))
-    )
-    return seen
+def _fake_client(llm, responses):
+    """The genai fake under ``vertex``, returning or raising each item in turn."""
+    llm.use("vertex")
+    return llm.genai(*(r if isinstance(r, BaseException) else SimpleNamespace(text=r) for r in responses)).calls
 
 
 def _rate_limited() -> genai_errors.APIError:
@@ -379,28 +368,40 @@ async def _no_sleep(_delay):
     return None
 
 
-async def test_generate_title_uses_the_cheap_model_and_cleans_the_reply(monkeypatch):
-    seen = _fake_client(monkeypatch, ['"**Wipes on the last boss.**"'])
+async def test_generate_title_uses_the_cheap_model_and_cleans_the_reply(llm):
+    seen = _fake_client(llm, ['"**Wipes on the last boss.**"'])
     title = await conversation_titles.generate_title("why do we wipe", "Because of the soak.")
     assert title == "Wipes on the last boss"
     [call] = seen
-    assert call.model == conversation_titles.suggestions._SUGGEST_MODEL
+    assert call.model == "gemini-3.6-flash"  # the vertex fast-role default, unchanged
     assert call.config.thinking_config.thinking_budget == 0
+    assert call.config.temperature == 0.2
     assert "why do we wipe" in call.contents and "Because of the soak." in call.contents
 
 
-async def test_generate_title_retries_one_rate_limit(monkeypatch):
+async def test_generate_title_retries_one_rate_limit(llm, monkeypatch):
     monkeypatch.setattr("wcl_agent.llm.model_retry.asyncio.sleep", _no_sleep)
-    seen = _fake_client(monkeypatch, [_rate_limited(), "Healer cooldown plan"])
+    seen = _fake_client(llm, [_rate_limited(), "Healer cooldown plan"])
     assert await conversation_titles.generate_title("q", "a") == "Healer cooldown plan"
     assert len(seen) == 2
 
 
-async def test_generate_title_gives_up_after_the_second_rate_limit(monkeypatch):
+async def test_generate_title_gives_up_after_the_second_rate_limit(llm, monkeypatch):
     monkeypatch.setattr("wcl_agent.llm.model_retry.asyncio.sleep", _no_sleep)
-    _fake_client(monkeypatch, [_rate_limited(), _rate_limited(), "never reached"])
+    _fake_client(llm, [_rate_limited(), _rate_limited(), "never reached"])
     with pytest.raises(ModelRateLimited):
         await conversation_titles.generate_title("q", "a")
+
+
+async def test_generate_title_on_the_anthropic_api(llm):
+    # Feature 035: the fast Claude model, without a temperature (Claude rejects one).
+    llm.use("anthropic")
+    api = llm.claude(message(text("Mythic+ route check")))
+    assert await conversation_titles.generate_title("q", "a") == "Mythic+ route check"
+    [body] = api.bodies
+    assert body["model"] == "claude-haiku-5-5"
+    assert body["max_tokens"] == 32
+    assert "temperature" not in body
 
 
 # --- The chat-turn hook and its frame (FR-015, FR-019) --------------------------------

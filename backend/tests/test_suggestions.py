@@ -7,11 +7,15 @@ needs no network.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
 from backend.app.schemas import SuggestionsFrame
 from backend.app.suggestions import generate_followups, parse_followups
+from backend.tests.llm_fakes import llm, message, text  # noqa: F401 - fixture
+from wcl_agent.llm import generation
 
 
 def test_parse_json_array_caps_at_three():
@@ -63,72 +67,53 @@ def test_suggestions_frame_valid():
 # --- feature 011 / FR-012: suggestions fail fast and silently on a rate limit --------------
 
 
-async def test_generate_followups_rate_limited_returns_empty_without_waiting(monkeypatch):
+async def test_generate_followups_rate_limited_returns_empty_without_waiting(llm, monkeypatch):
     from google.genai import errors as genai_errors
-
-    calls = {"n": 0}
-
-    class _Models:
-        async def generate_content(self, **kwargs):
-            calls["n"] += 1
-            raise genai_errors.APIError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}})
-
-    class _Aio:
-        models = _Models()
-
-    class _Client:
-        aio = _Aio()
 
     async def _no_sleep(*a, **k):  # any backoff here would delay the player's answer
         raise AssertionError("suggestions must not sleep/retry")
 
-    monkeypatch.setattr("backend.app.suggestions._client", _Client())
-    monkeypatch.setattr("backend.app.suggestions.asyncio.sleep", _no_sleep)
+    llm.use("vertex")
+    genai = llm.genai(genai_errors.APIError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}}))
+    monkeypatch.setattr("wcl_agent.llm.model_retry.asyncio.sleep", _no_sleep)
     assert await generate_followups("gemini-3.6-flash", "q", "a real answer") == []
-    assert calls["n"] == 1  # one attempt, no retry
+    assert len(genai.calls) == 1  # one attempt, no retry
 
 
 # --- PERF-005: fixed cheap model, thinking off, time-boxed --------------------------------
 
 
-async def test_generate_followups_uses_suggest_model_without_thinking(monkeypatch):
-    from backend.app import suggestions
-
-    seen = {}
-
-    class _Models:
-        async def generate_content(self, *, model, contents, config):
-            seen.update(model=model, config=config)
-
-            class R:
-                text = '["What about my healers?"]'
-
-            return R()
-
-    class _Client:
-        class aio:
-            models = _Models()
-
-    monkeypatch.setattr(suggestions, "_client", _Client())
+async def test_generate_followups_uses_suggest_model_without_thinking(llm):
+    llm.use("vertex")
+    genai = llm.genai(SimpleNamespace(text='["What about my healers?"]'))
     out = await generate_followups("gemini-3.1-pro-preview", "q", "a real answer")
     assert out == ["What about my healers?"]
-    assert seen["model"] == suggestions._SUGGEST_MODEL  # never the (slow) chat model
-    assert seen["config"].thinking_config.thinking_budget == 0
+    [call] = genai.calls
+    assert call.model == "gemini-3.6-flash"  # the fast role, never the (slow) chat model
+    assert call.config.thinking_config.thinking_budget == 0
 
 
-async def test_generate_followups_times_out_to_empty(monkeypatch):
+async def test_generate_followups_times_out_to_empty(llm, monkeypatch):
     import asyncio
 
     from backend.app import suggestions
 
-    class _Models:
-        async def generate_content(self, **kwargs):
-            await asyncio.sleep(10)
+    class _Hung:
+        aio = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kw: asyncio.sleep(10)))
 
-    class _Client:
-        class aio:
-            models = _Models()
-
-    monkeypatch.setattr(suggestions, "_client", _Client())
+    llm.use("vertex")
+    monkeypatch.setattr(generation, "_genai_client", lambda: _Hung())
     monkeypatch.setattr(suggestions, "SUGGEST_TIMEOUT_S", 0.05)
     assert await generate_followups("gemini-3.6-flash", "q", "a real answer") == []
+
+
+# --- feature 035: the fast Claude model under the Anthropic API ----------------------------
+
+
+async def test_generate_followups_on_the_anthropic_api(llm):
+    llm.use("anthropic")
+    api = llm.claude(message(text('["Who died first?"]')))
+    assert await generate_followups("claude-sonnet-5-5", "q", "a real answer") == ["Who died first?"]
+    [body] = api.bodies
+    assert body["model"] == "claude-haiku-5-5"
+    assert body["thinking"] == {"type": "disabled"}

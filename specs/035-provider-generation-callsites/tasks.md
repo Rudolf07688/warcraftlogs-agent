@@ -30,7 +30,7 @@ commit; never push.
 
 ## Phase 1: Setup
 
-- [ ] T001 Rebase `035-provider-generation-callsites` on `sprint-2026-10-31` after 032 merges; run
+- [X] T001 Rebase `035-provider-generation-callsites` on `sprint-2026-10-31` after 032 merges; run
   `uv run --extra test pytest -q` to record the green baseline; re-index the worktree
   (`node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --force`); confirm
   `provider.ModelRole`, `role_model`, `async_anthropic_client`, `genai_client`, `active_provider`
@@ -41,13 +41,14 @@ commit; never push.
 
 ## Phase 2: Foundational (blocks all stories)
 
-- [ ] T002 Create `wcl_agent/llm/generation.py` skeleton per `contracts/generation.md`: module
+- [X] T002 Create `wcl_agent/llm/generation.py` skeleton per `contracts/generation.md`: module
   docstring (part of the provider layer; only it and `provider.py` call `active_provider()`),
   `functools.cache`d `_claude_client()` → `provider.async_anthropic_client(max_retries=0)` and
   `_genai_client()` → `provider.genai_client()`, `ModelRefused`, `ServerToolDisabled`, the
   `Grounded` dataclass, and the private `_claude_text(response)` helper (join `text` blocks; raise
   `ModelRefused` on `stop_reason == "refusal"`).
-- [ ] T003 Create the shared fakes in `backend/tests/test_llm_generation.py`: a `scripted_claude`
+- [X] T003 Create the shared fakes in `backend/tests/llm_fakes.py` (granted 2026-10-31), used by
+  `backend/tests/test_llm_generation.py` and the other test files: a `scripted_claude`
   fixture (MockTransport answering each request with the next scripted Messages JSON or an error
   status, recording request bodies; installs a real `AsyncAnthropic` via
   `monkeypatch.setattr(generation, "_claude_client", ...)`), a `fake_genai` fixture (records
@@ -68,7 +69,7 @@ commit; never push.
 scripted Claude transport on `claude-haiku-5-5`; under `vertex`, from the genai fake on the Gemini
 fast model with thinking budget 0; nothing reaches the other client.
 
-- [ ] T004 [US1] Implement `generate_text` in `wcl_agent/llm/generation.py` (R2): model
+- [X] T004 [US1] Implement `generate_text` in `wcl_agent/llm/generation.py` (R2): model
   `provider.role_model(role)`; one call per attempt inside
   `model_retry.generate_with_retry(..., policy)`; Gemini `GenerateContentConfig(max_output_tokens,
   temperature, thinking_config=ThinkingConfig(thinking_budget=0) if not thinking)` (omit unset
@@ -76,29 +77,29 @@ fast model with thinking budget 0; nothing reaches the other client.
   messages=[{"role": "user", "content": prompt}])` plus, when `thinking=False`,
   `thinking={"type": "disabled"}` for `claude-haiku-*` ids else `output_config={"effort": "low"}`;
   never `temperature`.
-- [ ] T005 [US1] Tests for `generate_text` in `backend/tests/test_llm_generation.py`: role → model
+- [X] T005 [US1] Tests for `generate_text` in `backend/tests/test_llm_generation.py`: role → model
   per provider; Claude body has no `temperature` and the Haiku vs non-Haiku thinking-off shapes
   (clarify Q2, one test per branch); Gemini config fields; a 429 retried once under a 2-attempt
   policy and not retried under attempts=1; refusal raises `ModelRefused`; text blocks joined.
-- [ ] T006 [US1] Switch `backend/app/suggestions.py` to `generate_text(prompt, ModelRole.FAST,
+- [X] T006 [US1] Switch `backend/app/suggestions.py` to `generate_text(prompt, ModelRole.FAST,
   max_tokens=_MAX_OUTPUT_TOKENS, policy=RetryPolicy(attempts=1), thinking=False)` inside the
   existing `asyncio.wait_for(SUGGEST_TIMEOUT_S)`; remove `_SUGGEST_MODEL`, `_client`, `_get_client`
   and the `google.genai`/`os` imports; keep `parse_followups` and the fail-closed `except`; update
   the docstrings (fast role, either provider, FR-012 still holds).
-- [ ] T007 [US1] Switch `backend/app/services/conversation_titles.py` `generate_title` to
+- [X] T007 [US1] Switch `backend/app/services/conversation_titles.py` `generate_title` to
   `generate_text(prompt, ModelRole.FAST, max_tokens=_MAX_OUTPUT_TOKENS, policy=_POLICY,
   temperature=0.2, thinking=False)`; drop the `suggestions` import, the inner generator and the
   `google.genai` import; `retitle_conversation` unchanged.
-- [ ] T008 [US1] Move `backend/tests/test_suggestions.py` patches of `suggestions._client` /
+- [X] T008 [US1] Move `backend/tests/test_suggestions.py` patches of `suggestions._client` /
   `_SUGGEST_MODEL` to the `generation` seam (genai fake via `generation._genai_client`; model
   asserted as the FAST role model); keep every assertion (one attempt on 429 and no sleep; thinking
   budget 0; timeout → []); add one `anthropic` test (scripted Claude → parsed suggestions, model
   `claude-haiku-5-5`, genai fake untouched).
-- [ ] T009 [US1] Move `backend/tests/test_conversation_titles.py` `_fake_client` from
+- [X] T009 [US1] Move `backend/tests/test_conversation_titles.py` `_fake_client` from
   `suggestions._get_client` to the `generation` seam with the same assertions (cheap model,
   thinking budget 0, prompt content, one retry then `ModelRateLimited`); add one `anthropic` test
   (title from scripted Claude on the FAST model, body without `temperature`).
-- [ ] T010 [US1] Run `uv run --extra test pytest -q backend/tests/test_llm_generation.py
+- [X] T010 [US1] Run `uv run --extra test pytest -q backend/tests/test_llm_generation.py
   backend/tests/test_suggestions.py backend/tests/test_conversation_titles.py`; green.
 
 **Checkpoint**: US1 complete and green.
@@ -113,12 +114,12 @@ fast model with thinking budget 0; nothing reaches the other client.
 on `claude-sonnet-5-5` with `max_tokens=16384`; a hanging fake ends in `TimeoutError` within the
 bound; under `vertex`, the genai fake sees `max_output_tokens=16384` and no thread is used.
 
-- [ ] T011 [US2] Switch `backend/app/services/report_synthesis.py`: remove `_generate` and the
+- [X] T011 [US2] Switch `backend/app/services/report_synthesis.py`: remove `_generate` and the
   thread; `synthesize_findings` awaits `asyncio.wait_for(generate_text(prompt, ModelRole.REPORT,
   max_tokens=_MAX_OUTPUT_TOKENS, policy=_POLICY), _TIMEOUT_S)` with `_POLICY =
   RetryPolicy(attempts=1)` and returns the stripped text; drop the `settings` import if unused;
   update the module docstring (async client, either provider).
-- [ ] T012 [US2] Move `backend/tests/test_report_synthesis.py` from `rs._generate` to an async
+- [X] T012 [US2] Move `backend/tests/test_report_synthesis.py` from `rs._generate` to an async
   fake of `rs.generate_text` (happy path, empty → "", exception propagates, timeout with an
   `asyncio.sleep` fake, output cap asserted as `max_tokens == rs._MAX_OUTPUT_TOKENS` and role
   `REPORT`); add one `anthropic` test through the scripted transport; run the file plus
