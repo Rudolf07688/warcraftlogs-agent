@@ -8,8 +8,8 @@
 
 - Spec signed off (Clarifications Q1–Q5 encoded), plan + research R1–R8 + contracts/generation.md
   + data-model.md + quickstart.md + tasks.md (T001–T025) committed on the branch.
-- Ownership grant: requested with the exact file list (plan.md "Source Code"); check the ledger
-  `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-31/ownership.md` for status `granted`.
+- Ownership GRANTED (plan gate passed 2026-10-31) for the plan.md "Source Code" list; README.md
+  lines and the vertex.py forwarder deletion become effective after 032 merges.
 - **Implementation is blocked** until the scrum master sends "032 MERGED, rebase". Start at T001.
 
 ## Decisions (binding)
@@ -29,10 +29,13 @@
 - Never send `temperature` or forced `tool_choice` to Claude.
 - "not enabled" 400 → `ServerToolDisabled` → `GuideModelError` naming
   https://platform.claude.com/settings/capabilities.
-- 035 owns the sprint e2e test + grep check (`backend/tests/test_provider_e2e.py`).
+- 035 owns the sprint e2e test + grep check (`backend/tests/test_provider_e2e.py`); the
+  `active_provider()` rule exempts `provider.py`, `generation.py` and `backend/app/config.py`.
+- Hand-off must name the explicit "vertex Gemini request config unchanged" assertion for
+  `generate_structured` (CRITICAL mitigation).
 - `vertex.genai_client` forwarder: delete only if 033 merged first and `models.py` no longer uses it.
 
-## Files owned (pending grant)
+## Files owned (granted)
 
 See plan.md "Source Code". Not ours: `provider.py`, `config.py`, `main.py`, `model_retry.py`,
 `models.py`, `CLAUDE.md`, `.specify/feature.json` (restore both before each commit).

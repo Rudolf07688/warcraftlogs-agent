@@ -215,7 +215,10 @@ off and on; the "not enabled" 400 → `GuideModelError` naming the Console page;
   plus the grep check: outside `wcl_agent/llm/provider.py` and `wcl_agent/llm/generation.py`, no
   module in `backend/app/` or `wcl_agent/` imports `google.genai` client types or `anthropic`
   clients for model calls (ADK agent types and `model_retry`'s error classification excepted,
-  allow-list kept explicit in the test), and nothing outside those two calls `active_provider()`.
+  allow-list kept explicit in the test), and nothing outside those two and `backend/app/config.py`
+  (read-only `Settings.llm_provider`, scrum master 2026-10-31) calls `active_provider()`. Keep an
+  explicit "vertex Gemini request config unchanged" assertion for `generate_structured` (named in
+  the hand-off).
 - [ ] T023 README lines in 032's provider section of `README.md`: suggestions, titles, reports and
   guides follow `WCL_LLM_PROVIDER`; guides need web search (and web fetch) enabled at Anthropic
   Console → Settings → Capabilities (billed per search; a held run says so); URL context is not
