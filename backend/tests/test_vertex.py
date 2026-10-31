@@ -140,7 +140,7 @@ def test_client_factories_use_the_model_location(regional, monkeypatch):
     g = _capture(monkeypatch, genai, "Client")
     a = _capture(monkeypatch, anthropic, "AnthropicVertex")
     aa = _capture(monkeypatch, anthropic, "AsyncAnthropicVertex")
-    vertex.genai_client()  # feature 032: forwards to provider
+    provider.genai_client()
     provider.anthropic_client(max_retries=0)
     provider.async_anthropic_client(default_headers={"x": "y"})
     assert g == {"vertexai": True, "project": "proj-1", "location": "global"}
@@ -148,7 +148,7 @@ def test_client_factories_use_the_model_location(regional, monkeypatch):
     assert aa == {"project_id": "proj-1", "region": "global", "default_headers": {"x": "y"}}
 
     monkeypatch.setenv("WCL_MODEL_LOCATION", "eu")
-    vertex.genai_client()
+    provider.genai_client()
     assert g["location"] == "eu"
 
 
@@ -177,7 +177,7 @@ def test_api_key_setup_gets_plain_clients(monkeypatch):
 
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "FALSE")
     g = _capture(monkeypatch, genai, "Client")
-    vertex.genai_client()
+    provider.genai_client()
     assert g == {}
     assert provider.adk_client_kwargs() == {}
     assert not RetryingGemini(model="gemini-3.8-flash").client_kwargs
