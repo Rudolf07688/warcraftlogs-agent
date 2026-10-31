@@ -121,7 +121,8 @@ async def test_db_down_the_fetch_still_succeeds_and_failures_are_logged_once(mon
     await dead.dispose()
 
     failed = [m for m in warnings(caplog) if "write(s) failed" in m]
-    assert len(failed) == 1  # throttled: one warning for three failed writes
+    # Throttled: the first failure at once, the other two flushed on stop (sc-177), never lost.
+    assert [m.split(" write(s)")[0][-1] for m in failed] == ["1", "2"]
     assert writer.dropped == 0  # failures are not drops
 
 
@@ -241,3 +242,89 @@ async def test_an_offer_from_another_thread_is_delivered():
     await asyncio.sleep(0)  # let the hopped call run
     await writer.stop()
     assert stored == ["thread"]
+
+
+# --- feature 039 / sc-177: batches, error isolation, safe logs -------------------------
+
+
+async def test_queued_items_are_written_in_one_batch():
+    entered, release = asyncio.Event(), asyncio.Event()
+    batches: list[list[str]] = []
+
+    async def recording(batch):
+        batches.append([p.item.variables["code"] for p in batch])
+        entered.set()
+        await release.wait()
+
+    writer = FetchWriter(recording, max_items=50, max_bytes=1 << 20)
+    writer.start()
+    writer.offer(item("first"))
+    await entered.wait()  # the writer holds "first"; the rest queue up meanwhile
+    for code in ("A", "B", "C", "D"):
+        writer.offer(item(code))
+    release.set()
+    await writer.stop()
+    assert batches == [["first"], ["A", "B", "C", "D"]]
+
+
+async def test_one_bad_item_loses_only_itself(caplog):
+    stored: list[str] = []
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def picky(batch):
+        codes = [p.item.variables["code"] for p in batch]
+        if codes == ["hold"]:
+            entered.set()
+            await release.wait()
+            return
+        if "BAD" in codes:
+            raise ValueError("bad row")
+        stored.extend(codes)
+
+    writer = FetchWriter(picky, max_items=50, max_bytes=1 << 20)
+    writer.start()
+    writer.offer(item("hold"))
+    await entered.wait()
+    for code in ("A", "BAD", "C"):
+        writer.offer(item(code))
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        release.set()
+        await writer.stop()
+    assert stored == ["A", "C"]
+    assert any("1 write(s) failed" in m and "bad row" in m for m in warnings(caplog))
+
+
+async def test_a_database_error_is_logged_without_its_parameters(monkeypatch, caplog):
+    bare = create_async_engine("sqlite+aiosqlite://")  # no tables: the INSERT fails
+    monkeypatch.setattr(db_session, "SessionLocal", async_sessionmaker(bare, class_=AsyncSession))
+    writer = FetchWriter(max_items=10, max_bytes=1 << 20)
+    writer.start()
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        writer.offer(item("SeCrEtCoDe"))
+        await writer.stop()
+    await bare.dispose()
+    [failed] = [m for m in warnings(caplog) if "write(s) failed" in m]
+    assert "OperationalError" in failed
+    assert "SeCrEtCoDe" not in failed and "parameters" not in failed and "INSERT" not in failed
+
+
+async def test_pending_drop_counts_are_flushed_on_stop(caplog):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked(batch):
+        entered.set()
+        await release.wait()
+
+    writer = FetchWriter(blocked, max_items=1, max_bytes=1 << 20)
+    writer.start()
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        writer.offer(item("held"))
+        await entered.wait()
+        writer.offer(item("queued"))
+        for code in ("x", "y", "z"):
+            writer.offer(item(code))  # first drop logs at once, the other two wait for the interval
+        release.set()
+        await writer.stop()
+    drops = [m for m in warnings(caplog) if "queue full" in m]
+    assert drops == ["fetch persistence: queue full, dropped 1 response(s)",
+                     "fetch persistence: queue full, dropped 2 response(s)"]

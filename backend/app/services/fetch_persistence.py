@@ -5,7 +5,9 @@ The WCL client offers each successful response to a process-wide sink
 :meth:`FetchWriter.offer`, which only enqueues; one background task upserts the queued
 responses into ``raw_fetches``. The queue is bounded in items and bytes: when full, new
 responses are dropped from storage (never from the caller) and counted in a throttled
-warning. A persistence error is logged, never raised. See contracts/fetch-sink.md.
+warning. Up to :data:`BATCH_MAX` queued items are written per transaction (feature 039). A
+persistence error is logged (class and SQLSTATE only), never raised. See
+specs/020-fetch-persistence/contracts/fetch-sink.md and 039 contracts/raw-store.md.
 
 Feature 039: each queued item carries the tenant of the chat turn that fetched it, so a
 successful fetch grants its report codes to that tenant, and summary bodies record each
@@ -29,6 +31,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
+from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.cache.cache import evict_report
@@ -52,6 +55,7 @@ SHUTDOWN_GRACE_S = 5.0
 _WRITE_TIMEOUT_S = 10.0  # a hung database costs one item this long; the queue absorbs the rest
 _LOG_EVERY_S = 60.0
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
+BATCH_MAX = 20  # items per transaction (sc-177): one commit, bounded by the write timeout
 
 
 @dataclass(frozen=True)
@@ -136,21 +140,40 @@ async def store_batch(batch: Sequence[PendingWrite]) -> None:
         await evict_report(code)
 
 
+def _describe(exc: BaseException) -> str:
+    """A failure, safe to log: a database error's text and repr carry the statement's bound
+    parameters (query params, payload), so only its class and SQLSTATE are kept (sc-177)."""
+    if isinstance(exc, StatementError):
+        orig = exc.orig
+        state = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+        inner = type(orig).__name__ if orig is not None else "-"
+        return f"{type(exc).__name__}({inner}{f', sqlstate {state}' if state else ''})"
+    return repr(exc)
+
+
 class _Throttle:
     """Counts events; logs a warning at most once per interval with the count since the last."""
 
     def __init__(self, message: str):
         self._message = message  # first %d is the count
         self._pending = 0
+        self._args: tuple[object, ...] = ()
         self._last = -math.inf
 
     def hit(self, *args: object) -> None:
         self._pending += 1
+        self._args = args
         now = time.monotonic()
         if now - self._last >= _LOG_EVERY_S:
             logger.warning(self._message, self._pending, *args)
             self._pending = 0
             self._last = now
+
+    def flush(self) -> None:
+        """Log the count still waiting for its interval (on stop, so it is never lost)."""
+        if self._pending:
+            logger.warning(self._message, self._pending, *self._args)
+            self._pending = 0
 
 
 class FetchWriter:
@@ -167,12 +190,12 @@ class FetchWriter:
         self._max_bytes = max_bytes
         self._queue: asyncio.Queue[PendingWrite] = asyncio.Queue(maxsize=max(1, max_items))
         self._bytes = 0  # body bytes queued or being written
-        self._busy = False
+        self._busy = 0  # items being written
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task[None] | None = None
         self.dropped = 0
         self._drops = _Throttle("fetch persistence: queue full, dropped %d response(s)")
-        self._failures = _Throttle("fetch persistence: %d write(s) failed, last error: %r")
+        self._failures = _Throttle("fetch persistence: %d write(s) failed, last error: %s")
 
     def start(self) -> None:
         """Start the consumer on the running loop and install :meth:`offer` as the client sink."""
@@ -210,17 +233,39 @@ class FetchWriter:
 
     async def _run(self) -> None:
         while True:
-            pending = await self._queue.get()
-            self._busy = True
+            batch = [await self._queue.get()]
+            while len(batch) < BATCH_MAX and not self._queue.empty():
+                batch.append(self._queue.get_nowait())
+            self._busy = len(batch)
+            try:
+                await self._write(batch)
+            finally:
+                self._busy = 0
+                for pending in batch:
+                    self._bytes -= pending.size
+                    self._queue.task_done()
+
+    async def _write(self, batch: list[PendingWrite]) -> None:
+        """One transaction for the batch; on an error (not a hung database) each item alone,
+        so one bad item loses only itself. Nothing ever reaches a caller (FR-007)."""
+        try:
+            async with asyncio.timeout(_WRITE_TIMEOUT_S):
+                await self._store(batch)
+            return
+        except TimeoutError as exc:
+            for _ in batch:
+                self._failures.hit(_describe(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            if len(batch) == 1:
+                self._failures.hit(_describe(exc))
+                return
+        for pending in batch:
             try:
                 async with asyncio.timeout(_WRITE_TIMEOUT_S):
                     await self._store([pending])
-            except Exception as exc:  # noqa: BLE001 - never reaches a caller (FR-007)
-                self._failures.hit(exc)
-            finally:
-                self._busy = False
-                self._bytes -= pending.size
-                self._queue.task_done()
+            except Exception as exc:  # noqa: BLE001
+                self._failures.hit(_describe(exc))
 
     async def stop(self, grace_s: float = SHUTDOWN_GRACE_S) -> None:
         """Stop accepting, give queued writes ``grace_s`` to finish, then drop the rest."""
@@ -233,7 +278,7 @@ class FetchWriter:
         try:
             await asyncio.wait_for(self._queue.join(), grace_s)
         except TimeoutError:
-            left = self._queue.qsize() + int(self._busy)
+            left = self._queue.qsize() + self._busy
             self.dropped += left
             logger.warning(
                 "fetch persistence: stopped after %.1fs, dropped %d unwritten response(s)", grace_s, left
@@ -241,3 +286,5 @@ class FetchWriter:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+        self._drops.flush()
+        self._failures.flush()

@@ -33,10 +33,10 @@
 **Goal**: unchanged payloads aren't rewritten, batched commits, edge cases safe, monitoring.
 **Independent test**: `backend/tests/test_raw_fetch_writer.py`, `backend/tests/test_raw_fetch_store.py`.
 
-- [ ] T014 [US2] `write_fetch`: hash (sans `_cost`), SELECT stored hash, same → `fetched_at` only, else upsert with hash; op name `[:120]`; `report_code` None when > 32; NUL escape strip — `backend/app/repositories/raw_fetches.py`
-- [ ] T015 [US2] Consumer batches ≤ 20 items per transaction, per-item retry on non-timeout errors; `_Throttle.flush()` on stop; failure logs = class + SQLSTATE — `backend/app/services/fetch_persistence.py`
-- [ ] T016 [US2] Tests: unchanged vs changed payload; batch of N = 1 commit (counting sessions); one bad item loses only itself; long code/op name and `\u0000` stored (SQLite + PG); throttle flushed on stop; DB error log has no params — `backend/tests/test_raw_fetch_store.py`, `backend/tests/test_raw_fetch_writer.py`, `backend/tests/test_raw_store_pg.py`
-- [ ] T017 [US2] Monitoring query + retention rule in `documentation/architecture/backend-data-infra.html` (and quickstart §3); commit US2
+- [X] T014 [US2] `write_fetch`: hash (sans `_cost`), SELECT stored hash, same → `fetched_at` only, else upsert with hash; op name `[:120]`; `report_code` None when > 32; NUL escape strip — `backend/app/repositories/raw_fetches.py`
+- [X] T015 [US2] Consumer batches ≤ 20 items per transaction, per-item retry on non-timeout errors; `_Throttle.flush()` on stop; failure logs = class + SQLSTATE — `backend/app/services/fetch_persistence.py`
+- [X] T016 [US2] Tests: unchanged vs changed payload; batch of N = 1 commit (counting sessions); one bad item loses only itself; long code/op name and `\u0000` stored (SQLite + PG); throttle flushed on stop; DB error log has no params — `backend/tests/test_raw_fetch_store.py`, `backend/tests/test_raw_fetch_writer.py`, `backend/tests/test_raw_store_pg.py`
+- [X] T017 [US2] Monitoring query + retention rule in `documentation/architecture/backend-data-infra.html` (and quickstart §3); commit US2
 
 ## Phase 5: US3 sc-129 DB-first reads (P3)
 

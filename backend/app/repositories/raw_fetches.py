@@ -12,23 +12,30 @@ reads and later search work can't bypass it (specs/039-local-first-data/data-mod
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import re
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import Text, cast, delete, func, literal, select, text
+from sqlalchemy import Text, cast, delete, func, literal, select, text, update
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from wcl_agent.client.wcl_client import FetchedResponse, operation_name, report_codes
+from wcl_agent.client.wcl_client import _COST_RE, FetchedResponse, operation_name, report_codes
 
 from ..db.models import RawFetch, RawFetchGrant, RawReport
 from ..db.repository import _insert
 
-_UPDATED = ("operation_name", "params", "report_code", "report_codes", "fetched_at", "payload")
+_UPDATED = ("operation_name", "params", "report_code", "report_codes", "fetched_at", "payload", "payload_hash")
 MAX_CODE = 32  # raw_reports.code / raw_fetch_grants.report_code; longer codes are never visible
+MAX_OPERATION = 120  # raw_fetches.operation_name
+_OFF_LOOP_BYTES = 256_000  # hashing / scanning bigger bodies runs in a thread
+# A JSON escape sequence: an escaped backslash (kept) or \u0000, which JSONB rejects (dropped).
+_ESCAPE_RE = re.compile(rb"\\(\\|u0000)")
 
 
 @dataclass(frozen=True)
@@ -57,17 +64,49 @@ def _payload(dialect: str, body: str) -> ColumnElement:
     return func.json_remove(raw, "$.data._cost")
 
 
+def _prepare(content: bytes) -> tuple[str, bytes]:
+    """(hash, storable body). The hash ignores ``data._cost``, which changes every request;
+    the body loses ``\\u0000`` escapes (Postgres JSONB rejects them, sc-177)."""
+    digest = hashlib.sha256(_COST_RE.sub(b"", content, count=1)).hexdigest()
+    if b"\\u0000" in content:
+        content = _ESCAPE_RE.sub(lambda m: m.group(0) if m.group(1) == b"\\" else b"", content)
+    return digest, content
+
+
 async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> None:
-    """Store one fetch; a row with the same ``query_key`` is replaced only by a newer fetch."""
+    """Store one fetch; a row with the same ``query_key`` is replaced only by a newer fetch.
+
+    An unchanged body (same hash) only moves ``fetched_at`` forward: the payload is neither
+    sent nor rewritten (sc-177). Overlong labels never fail the insert: the operation name is
+    truncated, and a code over :data:`MAX_CODE` leaves ``report_code`` empty (it stays in
+    ``report_codes``, so deletion still finds it).
+    """
+    if len(fetched.content) > _OFF_LOOP_BYTES:
+        digest, body = await asyncio.to_thread(_prepare, fetched.content)
+    else:
+        digest, body = _prepare(fetched.content)
+    stored = await session.scalar(
+        select(RawFetch.payload_hash).where(RawFetch.query_key == fetched.query_key)
+    )
+    if stored == digest:
+        await session.execute(
+            update(RawFetch)
+            .where(RawFetch.query_key == fetched.query_key, RawFetch.fetched_at < fetched.fetched_at)
+            .values(fetched_at=fetched.fetched_at)
+        )
+        return
     codes = report_codes(fetched.query, fetched.variables)
+    single = codes[0] if len(codes) == 1 and len(codes[0]) <= MAX_CODE else None
+    op = operation_name(fetched.query)
     stmt = _insert(session, RawFetch).values(
         query_key=fetched.query_key,
-        operation_name=operation_name(fetched.query),
+        operation_name=op[:MAX_OPERATION] if op else None,
         params=fetched.variables,
-        report_code=codes[0] if len(codes) == 1 else None,
+        report_code=single,
         report_codes=codes,
         fetched_at=fetched.fetched_at,
-        payload=_payload(session.bind.dialect.name, fetched.content.decode()),
+        payload=_payload(session.bind.dialect.name, body.decode()),
+        payload_hash=digest,
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["query_key"],

@@ -118,3 +118,21 @@ async def test_gone_deletes_every_row_naming_the_code_via_the_gin_operator(pg, t
         left = set(await db.scalars(sa.text(
             "SELECT query_key FROM raw_fetches WHERE report_codes ? :g OR report_codes ? :k"), {"g": gone, "k": kept}))
     assert left == {items[2].query_key}
+
+
+async def test_nul_escapes_overlong_labels_and_unchanged_payloads_on_postgres(pg):
+    """JSONB rejects \\u0000 and varchar(32/120) rejects longer values: none may fail (sc-177)."""
+    long_code = code() * 3  # 48 chars
+    query = f"query {'Op' * 80}($code: String!) {{ reportData {{ report(code: $code) {{ t }} }} }}"
+    first = fetched(query, {"code": long_code}, {"s": "a\u0000b"}, NOW - timedelta(hours=1))
+    await store_batch([PendingWrite(first)])
+    again = FetchedResponse(first.query_key, first.query, first.variables,
+                            first.content.replace(b'"pointsSpentThisHour": 1', b'"pointsSpentThisHour": 5'), NOW)
+    await store_batch([PendingWrite(again)])
+    async with pg() as db:
+        row = (await db.execute(sa.text(
+            "SELECT operation_name, report_code, payload, fetched_at FROM raw_fetches "
+            "WHERE query_key = :k"), {"k": first.query_key})).one()
+    assert len(row.operation_name) == 120 and row.report_code is None
+    assert row.payload == {"data": {"s": "ab"}}
+    assert row.fetched_at == NOW  # unchanged payload: only fetched_at moved
