@@ -92,8 +92,8 @@ own status label and spell.
 ## Phase 5: Polish & hand-off
 
 - [X] T019 Full suites: `uv run --extra test pytest -q` (no new failures vs T001) and `cd frontend && npm run build && npm test`
-- [ ] T020 GitNexus: `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only` then `detect-changes --scope all --repo .` in the worktree (re-run if `partial`/`truncated`); check `git diff --name-only b963463...HEAD` + uncommitted lists only granted files; restore `CLAUDE.md` and `.specify/feature.json`; commit
-- [ ] T021 Hand-off to the scrum master: branch, base, commits, files, test output (incl. the pasted Postgres run), risks, AC mapping (plan AC 1 → T002, AC 2 → T003, AC 3 → T009/T010, AC 4/5 → T014, AC 6 → T019)
+- [X] T020 GitNexus: `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only` then `detect-changes --scope all --repo .` in the worktree (re-run if `partial`/`truncated`); check `git diff --name-only b963463...HEAD` + uncommitted lists only granted files; restore `CLAUDE.md` and `.specify/feature.json`; commit
+- [X] T021 Hand-off to the scrum master: branch, base, commits, files, test output (incl. the pasted Postgres run), risks, AC mapping (plan AC 1 → T002, AC 2 → T003, AC 3 → T009/T010, AC 4/5 → T014, AC 6 → T019)
 
 ## Dependencies & order
 
