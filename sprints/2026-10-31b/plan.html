@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-10-31b Plan</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px;align-content:start}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:grid;gap:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
+.checks .no{font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted)}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint plan · non-blocking</div>
+  <h1>Sprint 2026-10-31b: hardening and QA debt</h1>
+  <div class="meta">
+    <span>Branch <b class="mono">sprint-2026-10-31b</b> from <b class="mono">7989d61</b></span>
+    <span>Iteration <b>Sprint 2026-10-31b (266)</b>, 2026-10-31 to 2026-11-07</span>
+    <span>PO <b>Maren</b> · devs <b>Ansel</b>, <b>Tomas</b></span>
+  </div>
+</header>
+
+<section>
+  <div class="kpis">
+    <div class="kpi"><span class="eyebrow">Planned</span><span class="v">21 <small>pts</small></span><span class="s">11 stories, target 19–23</span></div>
+    <div class="kpi"><span class="eyebrow">Features</span><span class="v">2</span><span class="s">036 tier M · 037 tier S</span></div>
+    <div class="kpi"><span class="eyebrow">Security-labelled</span><span class="v">6 <small>/ 11</small></span><span class="s">sc-221 High first</span></div>
+    <div class="kpi"><span class="eyebrow">Team</span><span class="v">3</span><span class="s">PO + 2 devs, no SM</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Goals</h2>
+  <div class="grid2">
+    <div class="card"><h3>1. Hardening and QA debt</h3><p>Close the open <code>qa-deferred</code> and <code>security</code> findings that carry real risk today. Start with sc-221, which stops a crafted Warcraft Logs report from steering Barnaby into proposing profile changes the user didn't ask for. Nothing outside hardening.</p></div>
+    <div class="card"><h3>2. Learn to use the autonomy grant</h3><p>Every agent decides within its role and posts each decision on the team board with its reason. It escalates only irreversible actions, scope beyond the steer, or pushing. Each brief passes the grant on, and the sprint review reports how it went.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>What the user gets</h2>
+  <div class="flow">
+    <span>Report titles in the preamble are fenced or dropped</span><i>→</i>
+    <span>Proposals only on the user's own request</span><i>→</i>
+    <span>The card shows bounded, clean text</span><i>→</i>
+    <span>Approving is race-safe and cheap, and RLS is per user</span>
+  </div>
+  <div class="flow">
+    <span>No remote images leak from model output</span><i>·</i>
+    <span>Clean conversation titles</span><i>·</i>
+    <span>Login limits work per client behind a proxy</span><i>·</i>
+    <span>Faster switch to the sibling model on 429s, and no raw provider errors</span>
+  </div>
+</section>
+
+<section>
+  <h2>Features</h2>
+  <div class="grid2">
+    <div class="card">
+      <div class="eyebrow">036 · tier M · opus/high · Ansel (dev-1)</div>
+      <h3>Profile write-path hardening</h3>
+      <div class="tbl"><table>
+        <tr><th>Story</th><th>Pts</th><th>Acceptance (short)</th></tr>
+        <tr><td>sc-221 QA SEC-001/002/003 injected log text</td><td><span class="pts p3">3</span></td><td>No unmarked report titles in the preamble; an instruction rule that proposals need the user's own request; class and spec bounded; invalid items shown by reason only; a realm-form rule</td></tr>
+        <tr><td>sc-222 QA SEC-004/005 identity reset and user RLS</td><td><span class="pts p2">2</span></td><td>The contextvar resets in <code>finally</code>; <code>spawn</code> runs in a fresh context; migration 0017 adds a user-level policy; a Postgres RLS test</td></tr>
+        <tr><td>sc-223 QA SEC-007/BUG-008 cap race and realm duplicates</td><td><span class="pts p2">2</span></td><td>Concurrent adds can't exceed the cap; legacy spellings don't collapse</td></tr>
+        <tr><td>sc-225 QA PERF-003/005/006 approve round trips</td><td><span class="pts p2">2</span></td><td>A bounded number of round trips; reads share one transaction; guide fan-out is bounded</td></tr>
+        <tr><td>sc-244 QA SPEC-006..010 stale docs</td><td><span class="pts p1">1</span></td><td>The architecture docs and contracts describe the proposal frame, the tools, the table and the routes</td></tr>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">037 · tier S per ticket · opus/medium · Tomas (dev-2)</div>
+      <h3>Small independent hardening</h3>
+      <div class="tbl"><table>
+        <tr><th>Story</th><th>Pts</th><th>Acceptance (short)</th></tr>
+        <tr><td>sc-157 QA SEC-003 remote images</td><td><span class="pts p2">2</span></td><td>No request to a remote image host from model markdown</td></tr>
+        <tr><td>sc-179 QA BUG-003/SEC-002 title cleaning</td><td><span class="pts p2">2</span></td><td>Fences and lead-ins skipped, C# kept, Cc/Cf stripped, the prompt treats chat text as data</td></tr>
+        <tr><td>sc-158 QA SEC-004 rate limit behind a proxy</td><td><span class="pts p2">2</span></td><td>XFF read only from trusted proxies; trusts nothing by default</td></tr>
+        <tr><td>sc-224 QA PERF-002 participants cache</td><td><span class="pts p1">1</span></td><td>A <code>report_participants</code> cache family with a 24 h TTL</td></tr>
+        <tr><td>sc-176 QA PERF-001 sibling sooner on 429</td><td><span class="pts p2">2</span></td><td>A short primary retry, and a 5-minute memory of 429s</td></tr>
+        <tr><td>sc-184 QA BUG-LEAD-021 web search after fallback</td><td><span class="pts p2">2</span></td><td>No raw provider error reaches the user; a regression test</td></tr>
+      </table></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Order and dependencies</h2>
+  <div class="card">
+    <ul>
+      <li>036 and 037 run in parallel. Their file footprints don't overlap (board #8): <code>agent.py</code> belongs to 037, and <code>ws.py</code> and migrations belong to 036.</li>
+      <li>Inside 036 the order is 221 → 222 → 223 → 225 → 244. The docs come last so they describe the final RLS policy.</li>
+      <li>Merging: each branch is rebased on the sprint tip, and I run the full suite and the frontend build and tests on the rebased result. Then GitNexus detect-changes, then <code>--no-ff</code>.</li>
+      <li>Wrap-up: a QA sweep scoped to the sprint diff, fixes for critical findings only, QA triage onto the board without duplicates, shortcut-sync, and the sprint review.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>Key decisions</h2>
+  <div class="tbl"><table>
+    <tr><th>Decision</th><th>Reason</th></tr>
+    <tr><td>Two features with two developers, and no scrum master</td><td>There are two independent file clusters, and each one's internal dependencies stay with a single developer. Last sprints spent 40–55% on coordination.</td></tr>
+    <tr><td>036 is tier M, not L, despite migration + security</td><td>Tier L exists to arbitrate shared files, and here one developer owns them all. In exchange, the Postgres RLS test is required.</td></tr>
+    <tr><td>037 is tier S, not M, despite the security labels</td><td>There are six unrelated tickets of 2 pts or less, each with a stated fix, and Spec Kit would be pure ceremony. In exchange, each fix gets a regression test and the QA sweep covers security.</td></tr>
+    <tr><td>sc-178 deferred, though it is High</td><td>Nothing reads <code>raw_fetches</code> yet, so there is no exposure today. The right guard depends on the reader's design (sc-129).</td></tr>
+    <tr><td>sc-177 and sc-185 deferred</td><td>Each needs its own migration. Parallel migrations aren't worth it this sprint, and sc-185 also needs CI that doesn't exist.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Risks and what I'd drop first</h2>
+  <div class="grid2">
+    <div class="card"><h3>Risks</h3><ul>
+      <li><code>background.spawn</code> now runs in a fresh context. GitNexus rates it CRITICAL, with 16 flows. Every ContextVar was checked, and the full suite runs at merge.</li>
+      <li>The advisory locks and RLS can only be proven on Postgres: a throwaway container, never the owner's DB.</li>
+      <li>The realm-form rule can't rule out very short prose without a realm list, so that part goes to the backlog.</li>
+      <li>The machine crashed at 20:13Z and every agent died. They were resumed, with git and the board intact.</li>
+    </ul></div>
+    <div class="callout warn"><b>Drop order if time runs out</b><ol><li>sc-244 docs (1)</li><li>sc-225 perf (2)</li><li>sc-184 web-search fallback (2)</li></ol></div>
+  </div>
+</section>
+
+<footer>Written by Maren (PO), 2026-10-31. Board <code>sprint-2026-10-31b</code> entries #2–#8 hold the canonical decisions. The owner reads this plan; it doesn't need approval.</footer>
+</div>
+</body>
+</html>
