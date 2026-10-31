@@ -14,6 +14,7 @@ import logging
 import uuid
 
 from .agent_runner import stream_response
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,9 @@ GREETING_KICKOFF = "Greetings, Barnaby!"
 
 # The greeting is model-agnostic (just a warm hello), so it's always generated with a
 # single fixed, fast model — primed once at startup — rather than per chat model. This
-# keeps it a cache hit regardless of which model the user has selected.
-GREETING_MODEL = "gemini-3.5-flash-lite"
+# keeps it a cache hit regardless of which model the user has selected. Feature 032: the
+# greeting role (WCL_GREETING_MODEL, else the active provider's default).
+GREETING_MODEL = settings.wcl_greeting_model
 
 # PERF-015: one greeting session per process run, so the durable session store doesn't
 # accumulate another kickoff + reply on the same session at every restart.

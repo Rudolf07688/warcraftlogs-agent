@@ -25,7 +25,7 @@ from ..auth.dependencies import authenticate_session
 from ..config import settings
 from ..db import repository as repo
 from ..repositories import profile_proposals as proposal_rows
-from ..model_state import fallback_model_for, is_valid_model
+from ..model_state import fallback_model_for, resolve_chat_model
 from ..scratch import TurnScratch
 from ..tenancy.context import RequestIdentity, apply_tenant_scope, current_identity, tenant_scope
 from ..schemas import (
@@ -485,9 +485,9 @@ async def chat(ws: WebSocket) -> None:
             except ValidationError:
                 await _send(sock, ErrorFrame(code="empty_message", message="Invalid or empty message."))
                 continue
-            if not is_valid_model(ws.app, turn.model):
-                await _send(sock, ErrorFrame(code="invalid_model", message=f"Unknown model '{turn.model}'."))
-                continue
+            # Feature 032 (D4): an unserved model (say, after a provider switch) continues on
+            # the default instead of failing the turn.
+            turn = turn.model_copy(update={"model": resolve_chat_model(ws.app, turn.model)})
             await _start_turn(
                 sock, turn, identity, fallback_model=fallback_model_for(ws.app, turn.model)
             )

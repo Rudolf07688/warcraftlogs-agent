@@ -36,7 +36,7 @@ from google.genai import types as genai_types
 from pydantic import Field
 
 from .context_trim import trim_old_tool_results, user_turn_indices
-from .vertex import adk_client_kwargs, async_anthropic_client
+from .provider import adk_client_kwargs, async_anthropic_client
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +340,9 @@ class RetryingGemini(Gemini):
             yield response
 
 
+# Lets a request set ``thinking.block_binding`` (Claude API and Vertex alike).
+THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01"
+
 try:  # the Anthropic provider is optional at runtime
     from google.adk.models.anthropic_llm import Claude as _Claude
 except Exception:  # noqa: BLE001 - missing optional dependency
@@ -348,21 +351,37 @@ except Exception:  # noqa: BLE001 - missing optional dependency
 if _Claude is not None:
 
     class RetryingClaude(_Claude):
-        """ADK ``Claude`` (Anthropic on Vertex) with the shared retry loop.
+        """ADK ``Claude`` with the shared retry loop, on the active provider (feature 032).
 
-        Builds its own client at the model location (feature 016): ADK's would read
-        GOOGLE_CLOUD_LOCATION. A preset ``client`` is still honoured, as in ADK. The
-        Anthropic SDK's built-in retries are off so the waits never nest.
+        Its client comes from the provider layer: the Anthropic API under ``anthropic``, Vertex
+        at the model location under ``vertex`` (feature 016: ADK's own would read
+        GOOGLE_CLOUD_LOCATION). A preset ``client`` is still honoured, as in ADK. The Anthropic
+        SDK's built-in retries are off so the waits never nest.
         """
 
         policy: RetryPolicy = RetryPolicy()
 
         @cached_property
         def _anthropic_client(self):  # type: ignore[override]
-            from google.adk.utils._google_client_headers import get_tracking_headers
+            return (self.client or async_anthropic_client()).with_options(max_retries=0)
 
-            client = self.client or async_anthropic_client(default_headers=get_tracking_headers())
-            return client.with_options(max_retries=0)
+        def _build_anthropic_kwargs(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            """ADK's request, plus ``drop_block`` for thinking blocks the history no longer matches.
+
+            A replayed thinking block is valid only while everything before it is unchanged, and
+            every request edits that history (old tool results stubbed, the per-turn preamble,
+            the instruction's timestamp). Without this the API rejects such requests with a 400
+            for newer accounts; with it, it drops the stale blocks and answers (feature 032).
+            """
+            request = super()._build_anthropic_kwargs(*args, **kwargs)
+            thinking = request.get("thinking")
+            if isinstance(thinking, dict) and thinking.get("type") == "adaptive":
+                request["thinking"] = {
+                    **thinking,
+                    "block_binding": {"prefix_mismatch_behavior": "drop_block"},
+                }
+                request["extra_headers"] = {"anthropic-beta": THINKING_BINDING_BETA}
+            return request
 
         async def generate_content_async(
             self, llm_request: LlmRequest, stream: bool = False
@@ -382,7 +401,7 @@ else:  # pragma: no cover - only without the anthropic extra
 
 
 def is_anthropic_model(model: str | None) -> bool:
-    """Anthropic-on-Vertex (Claude) ids vs Gemini ids — one definition for the package."""
+    """Claude ids (on either provider) vs Gemini ids — one definition for the package."""
     return "claude" in (model or "").lower()
 
 

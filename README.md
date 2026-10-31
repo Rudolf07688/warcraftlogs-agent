@@ -54,6 +54,9 @@ Agent: On Heroic Ula'tek this season, across 500 logged Hunter parses ...
 
 > Prefer an AI Studio API key instead of Vertex? Set
 > `GOOGLE_GENAI_USE_VERTEXAI=FALSE` and `GOOGLE_API_KEY=...` in `.env`.
+>
+> Prefer Claude on your own Anthropic API key? See
+> [Switching the LLM provider](#switching-the-llm-provider-feature-032).
 
 ## Run
 
@@ -510,9 +513,59 @@ catalog (those are never changed automatically).
   uses the static lists.
 - **Where models run**: every model call (chat, web search, guides, reports, greeting,
   suggestions, probes) uses `WCL_MODEL_LOCATION` (default `global`); clients are built
-  only in `wcl_agent/llm/vertex.py`. `europe-west1` serves only Gemini 2.5 and no Claude,
+  only in `wcl_agent/llm/provider.py` (feature 032). `europe-west1` serves only Gemini 2.5 and no Claude,
   and the `eu` multi-region lacks the Pro preview, so `GOOGLE_CLOUD_LOCATION` (default
   `europe-west1`) is left to everything else. `WCL_ANTHROPIC_REGION` is gone.
+
+## Switching the LLM provider (feature 032)
+
+One setting picks who serves the models: Vertex AI (the default: Gemini, and Claude through
+Model Garden) or the Anthropic API (Claude with your own key). To switch, set two lines in
+`.env` and restart the backend (`01_start_app.sh`, or `docker compose up -d backend`):
+
+```bash
+WCL_LLM_PROVIDER=anthropic          # vertex (default) | anthropic
+ANTHROPIC_API_KEY=sk-ant-...        # from console.anthropic.com; a secret, never commit it
+```
+
+To switch back, set `WCL_LLM_PROVIDER=vertex` or delete the line, and restart. An unknown
+value logs a warning and runs as `vertex`. The startup log says `LLM provider: …`.
+
+- **Model roles**: each fixed use of a model has a default per provider, so nothing else
+  in `.env` needs editing. A role variable you set still wins, but only if the active
+  provider serves it: a Gemini id left over under `anthropic` is ignored with one warning.
+
+  | Role | Variable | `vertex` default | `anthropic` default |
+  |---|---|---|---|
+  | Chat default | `WCL_DEFAULT_MODEL` | `gemini-3.6-flash` | `claude-sonnet-5-5` |
+  | Findings reports | `WCL_REPORT_MODEL` | `gemini-3.6-flash` | `claude-sonnet-5-5` |
+  | Guide author | `WCL_GUIDE_MODEL` | `gemini-3.7-flash` | `claude-sonnet-5-5` |
+  | Guide reviewer | `WCL_GUIDE_REVIEW_MODEL` | `gemini-3.1-pro-preview` | `claude-opus-5-5` |
+  | Suggestions, titles | `WCL_SUGGEST_MODEL` | `gemini-3.6-flash` | `claude-haiku-5-5` |
+  | Greeting | `WCL_GREETING_MODEL` | `gemini-3.5-flash-lite` | `claude-haiku-5-5` |
+
+- **Model ids**: dated Claude ids differ between the two (`claude-sonnet-4-20250514` on the
+  API, `claude-sonnet-4@20250514` on Vertex); either form works in `.env` and is read in the
+  active provider's form. Current ids (`claude-sonnet-5-5`) are the same on both.
+- **Which models are offered**: under `anthropic` the picker offers only Claude. Until
+  Anthropic model discovery lands, startup probes `WCL_ANTHROPIC_MODELS` (or, if empty, the
+  Claude role defaults above) through the Anthropic API instead of listing Vertex's catalog.
+- **Old chats**: a chat created on a model the active provider doesn't serve continues on
+  the default model. Nothing is migrated.
+- **The key**: it reaches the container through the existing `env_file: .env`, is passed
+  straight to the Anthropic client and never appears in logs, error messages or API
+  responses. Without it, the backend still starts, logs one error saying the key is
+  missing, and serves the degraded model list; chat turns then fail with that message.
+- **Google credentials**: under `anthropic` the chat agent, the greeting and model discovery
+  don't need Application Default Credentials. Warcraft Logs and Blizzard calls never did.
+  Without an ADC file on the host, set `GCP_ADC_FILE=/dev/null` in `.env` so compose
+  mounts an empty file instead of creating a directory at the gcloud default path.
+  Until follow-up suggestions, chat titles, PDF findings reports and class guides move to the
+  provider layer (feature 035), they still call Gemini on Vertex and fail closed without ADC.
+- **Claude on Vertex works again**: Claude agent turns failed on both providers (ADK rejected
+  the agent's thinking settings). Claude now runs with adaptive thinking, and each request
+  asks the API to drop thinking blocks that the app's per-request context edits invalidate,
+  instead of failing the turn.
 
 ## Feature 010 — shared UI components (shadcn/ui)
 

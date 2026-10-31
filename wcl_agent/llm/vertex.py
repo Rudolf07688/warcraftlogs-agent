@@ -1,10 +1,11 @@
-"""Where models run, and what Vertex's Model Garden lists (feature 016).
+"""Where models run on Vertex, and what Vertex's Model Garden lists (feature 016).
 
-This is the only module that knows the model location. Every client that calls a model
-(chat, web search, guides, reports, greeting, suggestions, discovery probes) is built here
-or takes ``model_location()`` from here, so ``GOOGLE_CLOUD_LOCATION`` is free to name a
-regional location for everything else. ``europe-west1`` serves only Gemini 2.5 and no
-Claude; ``global`` serves every current model (checked live 2026-10-18).
+This is the only module that knows the model location. Every Vertex client that calls a model
+(chat, web search, guides, reports, greeting, suggestions, discovery probes) takes
+``model_location()`` from here, so ``GOOGLE_CLOUD_LOCATION`` is free to name a regional location
+for everything else. ``europe-west1`` serves only Gemini 2.5 and no Claude; ``global`` serves
+every current model (checked live 2026-10-18). The clients themselves are built by ``provider``
+(feature 032).
 
 The catalog listing uses the REST ``v1beta1`` endpoint because only it returns each
 model's ``launchStage``. All calls here are blocking; discovery runs them in threads.
@@ -14,11 +15,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
-
-if TYPE_CHECKING:
-    from anthropic import AnthropicVertex, AsyncAnthropicVertex
-    from google import genai
+from typing import Any, Literal
 
 Publisher = Literal["google", "anthropic"]
 
@@ -54,32 +51,22 @@ def project_id() -> str | None:
         return None
 
 
-# --- model clients ------------------------------------------------------------------------
+# --- transitional forwarders (feature 032) ------------------------------------------------
+# The clients moved to ``provider``. These two stay for callers 032 doesn't own: 033 moves
+# models.py to ``provider`` and deletes ``anthropic_client``; 035 moves its call sites and
+# deletes ``genai_client``.
 
 
-def adk_client_kwargs() -> dict[str, Any]:
-    """``client_kwargs`` for an ADK ``Gemini``: Vertex at the model location, or none."""
-    return {"vertexai": True, "location": model_location()} if uses_vertex() else {}
+def genai_client() -> Any:
+    from .provider import genai_client
+
+    return genai_client()
 
 
-def genai_client() -> genai.Client:
-    from google import genai
+def anthropic_client(**kwargs: Any) -> Any:
+    from .provider import anthropic_client
 
-    if not uses_vertex():
-        return genai.Client()  # API-key setup: GOOGLE_API_KEY from the environment
-    return genai.Client(vertexai=True, project=project_id(), location=model_location())
-
-
-def anthropic_client(**kwargs: Any) -> AnthropicVertex:
-    from anthropic import AnthropicVertex
-
-    return AnthropicVertex(project_id=project_id(), region=model_location(), **kwargs)
-
-
-def async_anthropic_client(**kwargs: Any) -> AsyncAnthropicVertex:
-    from anthropic import AsyncAnthropicVertex
-
-    return AsyncAnthropicVertex(project_id=project_id(), region=model_location(), **kwargs)
+    return anthropic_client(**kwargs)
 
 
 # --- the Model Garden catalog -------------------------------------------------------------
