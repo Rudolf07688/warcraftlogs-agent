@@ -308,7 +308,9 @@ async def collect_evidence_basic(
         fetchable=", ".join(fetchable_domains()),
         reports=claims_to_verify,
     )
-    grounded = await llm.generate_grounded(settings.wcl_guide_model, collect, url_context=True)
+    grounded = await llm.generate_grounded(
+        settings.wcl_guide_model, collect, fetch_domains=fetchable_domains()
+    )
     sources = await resolve_source_urls(list(grounded.sources))
     listing = "\n".join(
         f"[{n}] {s.get('title') or ''} — {s['uri']}" for n, s in enumerate(sources, start=1)

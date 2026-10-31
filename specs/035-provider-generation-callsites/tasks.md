@@ -137,17 +137,17 @@ bound; under `vertex`, the genai fake sees `max_output_tokens=16384` and no thre
 validated model; two misfits → `GuideModelError`; under `vertex` the genai config still carries
 `response_mime_type="application/json"`, `response_schema=schema`, `temperature`.
 
-- [ ] T013 [US3] Implement `generate_json` in `wcl_agent/llm/generation.py` (R3): Gemini
+- [X] T013 [US3] Implement `generate_json` in `wcl_agent/llm/generation.py` (R3): Gemini
   `GenerateContentConfig(temperature, response_mime_type="application/json",
   response_schema=schema)`; Claude `output_config={"format": {"type": "json_schema", "schema":
   anthropic.transform_schema(schema)}}`, `max_tokens=16_000`; both under `generate_with_retry`;
   returns the raw text.
-- [ ] T014 [US3] Change `backend/app/services/guide_pipeline/llm.py` `generate_structured` to call
+- [X] T014 [US3] Change `backend/app/services/guide_pipeline/llm.py` `generate_structured` to call
   `generation.generate_json(model, prompt, schema, policy=_policy(), temperature=temperature)`;
   keep the 2-iteration validation loop, the error wrapping and `GuideModelError`; remove `_client`,
   `_get_client` and `_generate` once `generate_grounded` (T018) no longer needs them; update the
   module docstring (provider-neutral via `generation`).
-- [ ] T015 [US3] Tests in `backend/tests/test_guide_pipeline_llm.py` (new): both providers ×
+- [X] T015 [US3] Tests in `backend/tests/test_guide_pipeline_llm.py` (new): both providers ×
   (valid first reply; misfit then valid → 2 calls; two misfits → `GuideModelError`; SDK error →
   `GuideModelError`); Claude body has `output_config.format.type == "json_schema"`, no
   `temperature`, no `tool_choice`; Gemini config unchanged; under `anthropic` with no overrides
@@ -168,7 +168,7 @@ text and de-duplicated sources; `allowed_domains` equals `fetchable_domains()` w
 off and on; the "not enabled" 400 → `GuideModelError` naming the Console page; error blocks only
 → `GuideModelError`.
 
-- [ ] T016 [US4] Implement `generate_grounded` in `wcl_agent/llm/generation.py` (R4–R6): Gemini
+- [X] T016 [US4] Implement `generate_grounded` in `wcl_agent/llm/generation.py` (R4–R6): Gemini
   path = today's `google_search` (+ `url_context` iff `fetch_domains`) with automatic function
   calling disabled and `temperature=0.2`, sources via the moved `grounding_sources`; Claude path =
   tools per `active_provider()` (`anthropic`: `web_search_20260209` max_uses 10 +
@@ -178,19 +178,19 @@ off and on; the "not enabled" 400 → `GuideModelError` naming the Console page;
   then fetch results, de-duplicated by URL) and `search_errors`; an `anthropic.BadRequestError`
   whose message says web search/fetch "is not enabled" → `ServerToolDisabled` naming
   https://platform.claude.com/settings/capabilities.
-- [ ] T017 [US4] Change `backend/app/services/guide_pipeline/research.py`
+- [X] T017 [US4] Change `backend/app/services/guide_pipeline/research.py`
   `collect_evidence_basic` to call `llm.generate_grounded(settings.wcl_guide_model, collect,
   fetch_domains=fetchable_domains())`.
-- [ ] T018 [US4] Change `backend/app/services/guide_pipeline/llm.py` `generate_grounded(model,
+- [X] T018 [US4] Change `backend/app/services/guide_pipeline/llm.py` `generate_grounded(model,
   prompt, *, fetch_domains)` to call `generation.generate_grounded(..., policy=_policy())`, wrap
   errors in `GuideModelError` as today, raise `GuideModelError("web search failed: <codes>")` when
   `search_errors` and no sources (clarify Q4), raise on empty text as today, return
   `GroundedText(text, sources)`; delete the local `grounding_sources` and the now-unused client
   helpers; no `google.genai` import left in the module.
-- [ ] T019 [US4] Update the fake signatures `*, url_context` → `*, fetch_domains` in
+- [X] T019 [US4] Update the fake signatures `*, url_context` → `*, fetch_domains` in
   `backend/tests/test_guide_pipeline_run.py` and `backend/tests/test_guide_reports.py` (signature
   and the recorded tuple only).
-- [ ] T020 [US4] Grounded tests in `backend/tests/test_guide_pipeline_llm.py`: Claude search +
+- [X] T020 [US4] Grounded tests in `backend/tests/test_guide_pipeline_llm.py`: Claude search +
   fetch blocks + a duplicate URL → sources in order without duplicates; one `pause_turn` then
   `end_turn` → 2 requests, second carries the paused assistant content unchanged, text from both;
   `allowed_domains` with `WCL_GUIDE_RESEARCH_FETCH_ENABLED` off (official only) and on, via
@@ -199,7 +199,7 @@ off and on; the "not enabled" 400 → `GuideModelError` naming the Console page;
   `GuideModelError` with the Console URL; only error blocks → `GuideModelError`; no searches or
   empty successful search → continues; Gemini path unchanged (tools, config, sources from
   grounding metadata).
-- [ ] T021 [US4] Run `uv run --extra test pytest -q backend/tests/test_guide_pipeline_llm.py
+- [X] T021 [US4] Run `uv run --extra test pytest -q backend/tests/test_guide_pipeline_llm.py
   backend/tests/test_guide_pipeline_research.py backend/tests/test_guide_pipeline_run.py
   backend/tests/test_guide_reports.py backend/tests/test_guide.py`; green.
 
@@ -220,7 +220,7 @@ off and on; the "not enabled" 400 → `GuideModelError` naming the Console page;
   (read-only `Settings.llm_provider`, scrum master 2026-10-31) calls `active_provider()`. Keep an
   explicit "vertex Gemini request config unchanged" assertion for `generate_structured` (named in
   the hand-off).
-- [ ] T023 README lines in 032's provider section of `README.md`: suggestions, titles, reports and
+- [X] T023 README lines in 032's provider section of `README.md`: suggestions, titles, reports and
   guides follow `WCL_LLM_PROVIDER`; guides need web search (and web fetch) enabled at Anthropic
   Console → Settings → Capabilities (billed per search; a held run says so); URL context is not
   available for Claude on Vertex.

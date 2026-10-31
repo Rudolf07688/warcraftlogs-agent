@@ -560,8 +560,19 @@ value logs a warning and runs as `vertex`. The startup log says `LLM provider: â
   don't need Application Default Credentials. Warcraft Logs and Blizzard calls never did.
   Without an ADC file on the host, set `GCP_ADC_FILE=/dev/null` in `.env` so compose
   mounts an empty file instead of creating a directory at the gcloud default path.
-  Until follow-up suggestions, chat titles, PDF findings reports and class guides move to the
-  provider layer (feature 035), they still call Gemini on Vertex and fail closed without ADC.
+- **Suggestions, titles, reports and guides** (feature 035) run on the active provider too,
+  with the role models above: follow-up suggestions and chat titles on the fast model, PDF
+  findings reports on the report model, class guides on the author and reviewer models. They
+  fail closed as before (no suggestions, the first-message title stays, a clean error instead
+  of a half-written PDF, a held guide run).
+- **Web search for guides**: under `anthropic`, guide research uses Anthropic's server-side
+  web search, and web fetch for the pages the fetch rules allow (official Blizzard sites
+  always, guide sites only with `WCL_GUIDE_RESEARCH_FETCH_ENABLED=true`). An organisation
+  admin must have web search and web fetch turned on in the Anthropic Console under
+  **Settings â†’ Capabilities** (<https://platform.claude.com/settings/capabilities>); searches
+  are billed per use, at most 10 searches and 5 fetches per research call. If they are off,
+  the guide run is held with a message saying so. Claude on Vertex gets basic web search only;
+  web fetch (Gemini's "URL context") is not available there.
 - **Claude on Vertex works again**: Claude agent turns failed on both providers (ADK rejected
   the agent's thinking settings). Claude now runs with adaptive thinking, and each request
   asks the API to drop thinking blocks that the app's per-request context edits invalidate,

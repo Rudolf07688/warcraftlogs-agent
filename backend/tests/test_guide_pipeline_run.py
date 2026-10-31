@@ -107,8 +107,8 @@ def fakes(monkeypatch, session_factory):
     async def fake_briefing(class_name, spec, content_type):
         return BRIEFING.model_copy(update={"content_type": content_type})
 
-    async def fake_grounded(model, prompt, *, url_context):
-        calls["grounded"].append((model, prompt, url_context))
+    async def fake_grounded(model, prompt, *, fetch_domains):
+        calls["grounded"].append((model, prompt, fetch_domains))
         return GroundedText("notes", [{"title": "icy-veins.com", "uri": "https://www.icy-veins.com/x"}])
 
     async def fake_structured(model, prompt, schema, *, temperature=0.2):

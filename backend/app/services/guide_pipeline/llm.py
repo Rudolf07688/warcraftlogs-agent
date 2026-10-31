@@ -1,34 +1,27 @@
 """Model calls for the pipeline: structured output and search-grounded text, with retry.
 
-Plain ``google.genai`` calls (research R3): the pipeline needs typed output and, for
-research only, the built-in search tools — not an agent loop. Every call goes through the
-shared rate-limit retry loop (feature 011) via a one-item async generator.
+Plain one-shot calls (research R3): the pipeline needs typed output and, for research only,
+the built-in search tools — not an agent loop. ``wcl_agent.llm.generation`` runs them on the
+active provider (Gemini, or Claude with web search and web fetch, feature 035) under the shared
+rate-limit retry loop; this module owns validation and turns every failure into
+``GuideModelError``.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from wcl_agent.llm.model_retry import RetryPolicy, generate_with_retry
+from wcl_agent.llm import generation
+from wcl_agent.llm.model_retry import RetryPolicy
 
 from ...config import settings
 
 logger = logging.getLogger(__name__)
-
-_client = None  # one google-genai client per process, created on first use
-
-
-def _get_client():
-    global _client
-    if _client is None:
-        from wcl_agent.llm.vertex import genai_client
-
-        _client = genai_client()
-    return _client
 
 
 class GuideModelError(Exception):
@@ -52,19 +45,6 @@ def _policy() -> RetryPolicy:
     )
 
 
-async def _generate(model: str, prompt: str, config: Any) -> Any:
-    """One ``generate_content`` call under the shared rate-limit retry loop."""
-
-    async def once():
-        yield await _get_client().aio.models.generate_content(
-            model=model, contents=prompt, config=config
-        )
-
-    async for response in generate_with_retry(once, _policy()):
-        return response
-    raise GuideModelError("model returned no response")
-
-
 async def generate_structured(
     model: str,
     prompt: str,
@@ -77,64 +57,33 @@ async def generate_structured(
 
     One retry on output that does not validate; then ``GuideModelError``.
     """
-    from google.genai import types
-
-    config = types.GenerateContentConfig(
-        temperature=temperature,
-        response_mime_type="application/json",
-        response_schema=schema,
-    )
     last_error: Exception | None = None
     for _ in range(2):
         try:
-            response = await _generate(model, prompt, config)
-        except GuideModelError:
-            raise
+            raw = await generation.generate_json(
+                model, prompt, schema, policy=_policy(), temperature=temperature
+            )
         except Exception as exc:  # noqa: BLE001 - surfaced as a pipeline model error
             raise GuideModelError(f"{type(exc).__name__}: {exc}") from exc
         try:
-            return schema.model_validate_json(response.text or "")
+            return schema.model_validate_json(raw)
         except (ValidationError, ValueError) as exc:
             last_error = exc
             logger.warning("structured output from %s did not validate: %s", model, exc)
     raise GuideModelError(f"invalid structured output: {last_error}")
 
 
-def grounding_sources(response: Any) -> list[dict]:
-    """``{title, uri}`` for every web chunk in the response's grounding metadata."""
-    sources: list[dict] = []
-    seen: set[str] = set()
-    for candidate in getattr(response, "candidates", None) or []:
-        gm = getattr(candidate, "grounding_metadata", None)
-        for chunk in getattr(gm, "grounding_chunks", None) or []:
-            web = getattr(chunk, "web", None)
-            uri = getattr(web, "uri", None) if web is not None else None
-            if uri and uri not in seen:
-                seen.add(uri)
-                sources.append({"title": getattr(web, "title", None), "uri": uri})
-    return sources
-
-
-async def generate_grounded(model: str, prompt: str, *, url_context: bool) -> GroundedText:
-    """A research call with Google Search (and, when allowed, URL context) built in."""
-    from google.genai import types
-
-    tools = [types.Tool(google_search=types.GoogleSearch())]
-    if url_context:
-        tools.append(types.Tool(url_context=types.UrlContext()))
-    config = types.GenerateContentConfig(
-        temperature=0.2,
-        tools=tools,
-        # Built-in tools run server-side; there are no local functions to call back.
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-    )
+async def generate_grounded(model: str, prompt: str, *, fetch_domains: Sequence[str]) -> GroundedText:
+    """A research call with web search built in; ``fetch_domains`` are the only pages the model
+    may open (empty: none). Claude searches that all failed hold the run (clarify Q4)."""
     try:
-        response = await _generate(model, prompt, config)
-    except GuideModelError:
-        raise
+        grounded = await generation.generate_grounded(
+            model, prompt, fetch_domains=fetch_domains, policy=_policy()
+        )
     except Exception as exc:  # noqa: BLE001 - surfaced as a pipeline model error
         raise GuideModelError(f"{type(exc).__name__}: {exc}") from exc
-    text = (response.text or "").strip()
-    if not text:
+    if grounded.search_errors and not grounded.sources:
+        raise GuideModelError(f"web search failed: {', '.join(grounded.search_errors)}")
+    if not grounded.text:
         raise GuideModelError("grounded call returned no text")
-    return GroundedText(text, grounding_sources(response))
+    return GroundedText(grounded.text, grounded.sources)
