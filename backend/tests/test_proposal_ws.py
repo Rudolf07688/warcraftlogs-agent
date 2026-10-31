@@ -15,7 +15,7 @@ from backend.app.api import ws as ws_mod
 from backend.app.db import repository as repo
 from backend.app.schemas import ChatTurn, ProfileChangeIn
 from backend.app.services import profile_proposals as proposals
-from backend.app.tenancy.context import RequestIdentity
+from backend.app.tenancy.context import RequestIdentity, current_identity
 from backend.tests import wcl_fakes
 from backend.tests.test_participants_tool import mplus
 from wcl_agent.tools.participants import get_report_participants
@@ -152,6 +152,29 @@ async def test_a_failed_turn_leaves_the_proposal_unlinked(as_user, monkeypatch):
     await task
     detail = (await as_user.client.get(f"/api/conversations/{conv_id}")).json()
     assert [p["message_seq"] for p in detail["proposals"]] == [None]
+
+
+async def test_the_identity_lives_only_for_the_turn(as_user, monkeypatch):
+    # sc-222: the tool sees the turn's identity; once the turn ends (answer or error) it's gone,
+    # so a task the socket starts later can't act as this user.
+    seen: list = []
+
+    def scripted(fail: bool):
+        async def records(ctx):
+            seen.append(current_identity.get())
+            yield {"type": "token", "text": "ok"}
+            if fail:
+                raise RuntimeError("model fell over")
+
+        return records
+
+    for fail in (False, True):
+        _quiet(monkeypatch, _ctx_stream(scripted(fail)))
+        sock = _FakeSocket()
+        await _run(sock, as_user)
+        assert current_identity.get() is None
+        assert ("error" in [f["type"] for f in sock.frames]) is fail
+    assert [s.user_id for s in seen] == [as_user.user_id, as_user.user_id]
 
 
 async def test_dungeon_except_the_shaman_end_to_end(as_user, monkeypatch):

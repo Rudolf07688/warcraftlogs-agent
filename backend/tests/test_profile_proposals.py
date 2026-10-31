@@ -57,6 +57,19 @@ def test_migration_0016_upgrades_and_downgrades():
         assert "profile_proposals" not in sa.inspect(conn).get_table_names()
 
 
+def test_migration_0017_chains_on_0016_and_is_postgres_only():
+    # sc-222: the user-level policy itself is proven on Postgres (test_proposal_rls_pg.py).
+    path = Path(__file__).resolve().parents[1] / "migrations" / "versions" / "0017_proposal_user_rls.py"
+    spec = importlib.util.spec_from_file_location("migration_0017", path)
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    assert (mig.revision, mig.down_revision) == ("0017_proposal_user_rls", "0016_profile_proposals")
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):
+        mig.upgrade()  # a no-op off Postgres
+        mig.downgrade()
+
+
 # --- One write path: friend cap (D8) and realm-slug duplicates (C12) over REST ----
 
 

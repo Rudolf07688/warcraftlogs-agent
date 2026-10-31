@@ -4,11 +4,15 @@
 key that is already running in this process so a rapid repeat doesn't start two tasks for
 one entry. Cross-instance coordination, where needed, is the caller's job (e.g. the recent
 raids refresh claim in the database).
+
+Each task runs in a fresh, empty context (sc-222): it never inherits the caller's context
+variables, such as the chat turn's acting identity (``tenancy.context.current_identity``).
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from collections.abc import Coroutine, Hashable
 from typing import Any
 
@@ -31,7 +35,7 @@ def spawn(coro: Coroutine[Any, Any, Any], key: Hashable) -> None:
         coro.close()
         return
     _inflight.add(key)
-    task = loop.create_task(coro)
+    task = loop.create_task(coro, context=contextvars.Context())
     _bg_tasks.add(task)
 
     def _done(t: asyncio.Task) -> None:

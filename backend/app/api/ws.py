@@ -286,7 +286,6 @@ async def _handle_turn(
         # WCL data is public and cached for every tenant alike (feature 014 supersedes
         # FR-019); only the forced-refresh limit is per user, for this turn (US4).
         set_refresh_actor(str(identity.user_id))
-        current_identity.set(identity)  # backend agent tools act as this user (029, C7)
         preamble = await _build_turn_preamble(session, tenant_id, turn.content)
 
     # Stream the agent response, accumulating tokens into the final content.
@@ -296,6 +295,9 @@ async def _handle_turn(
     proposal_ids: list[uuid.UUID] = []  # feature 031: proposals sent this turn
     switched = False  # feature 021: the turn moved to the sibling model
     scratch = TurnScratch(str(conv_id))
+    # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
+    # is reset when the stream ends, so later tasks on this socket never see the identity.
+    identity_token = current_identity.set(identity)
     try:
         async for record in stream_response(
             turn.model,
@@ -350,6 +352,7 @@ async def _handle_turn(
             pass
         return None
     finally:
+        current_identity.reset(identity_token)
         scratch.cleanup()
 
     final_text = "".join(tokens) or "(no response)"
