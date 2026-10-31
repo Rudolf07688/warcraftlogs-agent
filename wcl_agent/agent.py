@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
@@ -367,11 +366,11 @@ def build_instruction(ctx=None, *, capabilities: str = "") -> str:
     return _INSTRUCTION_BODY.replace(_CAPABILITIES_TOKEN, capabilities).replace(_TIME_TOKEN, now)
 
 
-# Single source of truth for the default model id: the same WCL_DEFAULT_MODEL env
-# that backend config reads, so the CLI/root_agent fallback can't drift from the
-# backend's runtime default (US4 / F2). The backend always passes an explicit,
+# Single source of truth for the default model id: the chat role (WCL_DEFAULT_MODEL, else the
+# active provider's default) that backend config resolves too, so the CLI/root_agent fallback
+# can't drift from the backend's runtime default (US4 / F2, feature 032). The backend always passes an explicit,
 # startup-validated model from app.state; this constant is only a last resort.
-DEFAULT_MODEL = os.getenv("WCL_DEFAULT_MODEL", "gemini-3.6-flash")
+DEFAULT_MODEL = role_model(ModelRole.CHAT)
 
 # Name of the grounding sub-agent; also the tool name the model calls and the
 # signal the backend uses to surface a "used web search" indicator (US3).
@@ -421,7 +420,7 @@ TOOLS = [tool for group in TOOL_GROUPS for tool in group.tools]
 
 
 def _is_anthropic(model: str) -> bool:
-    """Anthropic-on-Vertex ids (Claude) vs Gemini ids (single definition in model_retry)."""
+    """Claude ids (either provider) vs Gemini ids (single definition in model_retry)."""
     return is_anthropic_model(model)
 
 
@@ -473,7 +472,7 @@ def build_agent(
     """Build the WCL analyst agent for a given model id (DRY factory).
 
     Gemini models get web grounding (via the `web_search` sub-agent tool);
-    Anthropic-on-Vertex (and any non-grounding) models run with the WCL tools only
+    Claude (and any non-grounding) models run with the WCL tools only
     and degrade gracefully without web access (US3/FR-012).
 
     ``retry`` (feature 011) is the rate-limit retry + round-cap policy; ``None`` means
@@ -506,8 +505,12 @@ def build_agent(
         # Native thinking planner — fits Gemini 3.x thinking models (unlike the
         # ReAct text planner, which fights them). Reasoning is returned as separate
         # `thought` parts that the backend filters out of the streamed answer.
+        # ADK's Anthropic adapter rejects a config without a budget; -1 is adaptive thinking,
+        # the only mode current Claude models take (feature 032).
         planner=BuiltInPlanner(
-            thinking_config=genai_types.ThinkingConfig(include_thoughts=True)
+            thinking_config=genai_types.ThinkingConfig(
+                include_thoughts=True, thinking_budget=-1 if _is_anthropic(model) else None
+            )
         ),
     )
 
