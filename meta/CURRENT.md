@@ -30,6 +30,9 @@ record is in `meta/team-optimisation.md` (decisions D1–D13, proposals P1–P6,
 
 ## Open threads
 
+- **Next sprint goal (owner, 2026-10-31):** besides the product work, the team learns to
+  operate with its new autonomy. main is clean and pushed @ 6a10b8f; the owner skipped the
+  032–035 live checks on purpose.
 - Only `lead` is claimed. The product owner and developers pick their names on the next
   team launch.
 - **Done (D14):** team-lead now has the `lead` seat, a memory without a persona:
