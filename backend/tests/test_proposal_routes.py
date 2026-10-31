@@ -155,14 +155,43 @@ async def test_approval_goes_through_the_shared_service(as_user, proposal, monke
     calls = []
     real = proposals.execute_proposal
 
-    async def spy(identity, proposal_id):
+    async def spy(identity, proposal_id, **kw):
         calls.append(proposal_id)
-        return await real(identity, proposal_id)
+        return await real(identity, proposal_id, **kw)
 
     monkeypatch.setattr(proposals, "execute_proposal", spy)
     r = await as_user.client.post(f"/api/profile/proposals/{proposal.id}/approve")
     assert r.status_code == 200
     assert calls == [proposal.id]
+
+
+@pytest.mark.parametrize("decide", ["execute_proposal", "cancel_proposal"])
+async def test_only_the_transitioning_call_runs_the_hook(as_user, proposal, decide):
+    # sc-242: the call that moves the proposal out of pending (under its row lock) is the only
+    # one that saves the follow-up line; a repeat finds it decided and saves nothing.
+    seen = []
+
+    async def hook(session, decided):
+        seen.append(decided.status)
+
+    for _ in range(2):
+        await getattr(proposals, decide)(_identity(as_user), proposal.id, on_transition=hook)
+    assert seen == ["applied" if decide == "execute_proposal" else "cancelled"]
+
+
+@pytest.mark.parametrize("action", ["approve", "cancel"])
+async def test_a_failed_follow_up_rolls_the_decision_back(as_user, patched_db, conv, proposal, monkeypatch, action):
+    # sc-242: the decision and its line are saved together or not at all.
+    async def broken(*_, **__):
+        raise RuntimeError("insert failed")
+
+    monkeypatch.setattr(routes.repo, "add_message", broken)
+    with pytest.raises(RuntimeError):
+        await getattr(routes, action)(proposal.id, _identity(as_user))
+    assert (await proposals.get_proposal(_identity(as_user), proposal.id)).status == "pending"
+    assert await _agent_lines(patched_db, conv, as_user.tenant_id) == []
+    # The applied items roll back too on Postgres (test_proposal_race_pg.py); pysqlite's
+    # savepoints don't undo released savepoints on an outer rollback, so not checked here.
 
 
 # --- The follow-up line (design #followup) ----------------------------------------------

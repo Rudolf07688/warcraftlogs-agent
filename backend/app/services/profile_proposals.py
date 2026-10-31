@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from typing import get_args
 
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.cache.normalize import server_slug
 
@@ -74,6 +75,10 @@ _MESSAGES = {
     "no_change": "Already has that raid role.",
     "invalid_item": "Not a valid character entry.",
 }
+
+
+# Runs inside the decision's transaction, under the proposal's row lock (sc-242).
+TransitionHook = Callable[[AsyncSession, ProfileProposalOut], Awaitable[None]]
 
 
 class ProposalError(Exception):
@@ -398,11 +403,14 @@ async def _apply(db, identity: RequestIdentity, items: list[ProposalItemOut]) ->
     return added
 
 
-async def execute_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) -> ProfileProposalOut:
+async def execute_proposal(
+    identity: RequestIdentity, proposal_id: uuid.UUID, *, on_transition: TransitionHook | None = None
+) -> ProfileProposalOut:
     """Apply the valid items of a pending proposal, exactly once (C11).
 
     One transaction: the row lock, every item and the final status. An applied proposal
     comes back unchanged and nothing is written, so a double click or a second tab is safe.
+    ``on_transition`` runs in that transaction only when this call applied it (sc-242).
     """
     async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as db:
         row = await rows.get_proposal_row(
@@ -426,6 +434,8 @@ async def execute_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) ->
             row.status = "applied"
             row.applied_at = now
             out = _to_out(row, now)
+            if on_transition is not None:
+                await on_transition(db, out)
     if added is None:
         raise ProposalError("proposal_expired")
     # After the commit: the guide job reads the character in its own transaction.
@@ -438,8 +448,13 @@ async def execute_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) ->
     return out
 
 
-async def cancel_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) -> ProfileProposalOut:
-    """pending → cancelled. Cancelling twice is a no-op; an expired proposal stays expired."""
+async def cancel_proposal(
+    identity: RequestIdentity, proposal_id: uuid.UUID, *, on_transition: TransitionHook | None = None
+) -> ProfileProposalOut:
+    """pending → cancelled. Cancelling twice is a no-op; an expired proposal stays expired.
+
+    ``on_transition`` runs in the same transaction only when this call cancelled it (sc-242).
+    """
     async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as db:
         row = await rows.get_proposal_row(
             db, proposal_id, tenant_id=identity.tenant_id, user_id=identity.user_id, for_update=True
@@ -451,4 +466,7 @@ async def cancel_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) -> 
         if status == "applied":
             raise ProposalError("proposal_applied")
         row.status = "cancelled" if status == "pending" else status
-        return _to_out(row, now)
+        out = _to_out(row, now)
+        if status == "pending" and on_transition is not None:
+            await on_transition(db, out)
+        return out
