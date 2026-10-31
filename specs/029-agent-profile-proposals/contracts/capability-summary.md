@@ -46,7 +46,7 @@ independent lookups, issue those tool calls together in parallel rather than one
 - <tool name>: <first paragraph of its description, ≤ 160 chars per line>
 ...
 [No web search in this session: say current-patch verification was not possible.]   # web_search=False
-[You can change: …own characters and friends, including raid roles, only by proposing…]  # a group has a note
+[You can change: …own characters and friends, including raid roles, only by proposing…; only when the user's own message asks (sc-221)]  # a group has a note
 [In the app (the user does these themselves): the Profile page (…), … the model picker.]  # a group has a note
 You cannot: …                                                                          # always; wording per profile group
 ```
@@ -55,7 +55,8 @@ You cannot: …                                                                 
 
 1. Adding a tool to a group adds its line; removing it removes the line; no prose changes.
 2. For the backend's largest set (Gemini + web_search + profile group) the summary is ≤ 4,000
-   characters, and every line is ≤ 160.
+   characters, and every tool line is ≤ 160 (the fixed can-change, app-facts and cannot lines
+   are longer and aren't budgeted per line).
 3. Every registered tool has a docstring (non-empty description).
 4. The fixed `<TOOLS>` section of `_INSTRUCTION_BODY` contains no registered tool name (it is
    just the token). The rendered instruction contains every registered tool name.

@@ -280,6 +280,7 @@ footer code{font-size:12.5px}
       <tr><td><code>api/conversations.py</code></td><td><code>/api/conversations</code></td><td>Chat list, open, pin, rename, delete</td></tr>
       <tr><td><code>api/reports.py</code></td><td><code>/api/conversations</code></td><td>PDF downloads (see <a href="#reports">reports</a>)</td></tr>
       <tr><td><code>api/profile.py</code></td><td><code>/api/profile</code></td><td>Own characters, friends, guild</td></tr>
+      <tr><td><code>api/proposals.py</code></td><td><code>/api/profile/proposals</code></td><td><code>POST /{id}/approve</code> and <code>POST /{id}/cancel</code> for the agent's profile change proposals (the confirmation card); each saves one follow-up line in the same transaction</td></tr>
       <tr><td><code>api/guides.py</code></td><td><code>/api/guides</code></td><td>Class/spec guide library</td></tr>
       <tr><td><code>api/raids.py</code></td><td><code>/api/raids</code></td><td>Tracked raids</td></tr>
       <tr><td><code>api/recent_raids.py</code></td><td><code>/api/recent-raids</code></td><td>Welcome-page recent raids and Mythic+ runs</td></tr>
@@ -287,7 +288,7 @@ footer code{font-size:12.5px}
       <tr><td><code>api/ws.py</code></td><td><code>/ws/chat</code></td><td>Streaming chat turns (covered on <a href="agent-frontend.html">Agent &amp; frontend</a>)</td></tr>
     </tbody>
   </table></div>
-  <p class="muted">Paths in the table are relative to <code>backend/app/</code>. There are 43 HTTP and WebSocket route handlers in total. Health is <code>GET /health</code> and <code>GET /api/health</code> in <code>main.py</code>.</p>
+  <p class="muted">Paths in the table are relative to <code>backend/app/</code>. There are 47 HTTP and WebSocket route handlers in total. Health is <code>GET /health</code> and <code>GET /api/health</code> in <code>main.py</code>.</p>
 
   <h3>Why</h3>
   <p class="why">FastAPI with asyncio is a constitution rule: all endpoints are <code>async def</code>, and request-path I/O is non-blocking. "A single async framework keeps I/O-bound work (the dominant cost in this app — external API calls) efficient and the backend consistent." The owner also asked for it in the first feature.<cite>.specify/memory/constitution.md Principle V · specs/001-streaming-chat-frontend/spec.md (Input)</cite></p>
@@ -310,7 +311,7 @@ footer code{font-size:12.5px}
     <li><b>Sessions</b> (<code>backend/app/auth/sessions.py</code>, <code>backend/app/auth/tokens.py</code>): a random opaque token in a <code>__Host-</code> cookie (Secure, HttpOnly, SameSite=Lax). Only its sha256 digest is stored, in <code>auth_sessions</code>. Sessions have an idle and an absolute expiry, and <code>last_seen_at</code> writes are throttled.</li>
     <li><b>CSRF</b> (<code>backend/app/auth/csrf.py</code>): every unsafe request needs an <code>X-CSRF-Token</code> header, computed as HMAC(<code>SECRET_KEY</code>, session id), plus an <code>Origin</code>/<code>Referer</code> check against <code>SITE_URL</code>. The WebSocket handshake checks the same cookie and Origin before accepting.</li>
     <li><b>Request identity</b> (<code>backend/app/auth/dependencies.py</code>, <code>backend/app/tenancy/context.py</code>): <code>require_session</code> builds a frozen <code>RequestIdentity</code> from the session only. <code>get_tenant_db</code> opens a transaction and sets <code>app.tenant_id</code> and <code>app.user_id</code> transaction-locally with <code>set_config(…, true)</code>. Every tenant-owned repository function also takes a keyword-only <code>tenant_id</code>.</li>
-    <li><b>Row-level security.</b> Policy <code>tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid</code> is enabled and forced on 14 tenant-owned tables. The list is in <a href="#data">Data</a>. <code>spec_guides</code>, <code>guide_inaccuracy_reports</code> and <code>raw_fetches</code> are global by design. ADK's own session tables are isolated by ADK <code>user_id</code> = tenant id, not by RLS.</li>
+    <li><b>Row-level security.</b> Policy <code>tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid</code> is enabled and forced on 15 tenant-owned tables. The list is in <a href="#data">Data</a>. <code>profile_proposals</code> also checks the user: <code>… AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid</code> (migration 0017, sc-222), so one user of a tenant can't read or change another's proposals. <code>spec_guides</code>, <code>guide_inaccuracy_reports</code> and <code>raw_fetches</code> are global by design. ADK's own session tables are isolated by ADK <code>user_id</code> = tenant id, not by RLS.</li>
     <li><b>Login rate limit</b> (<code>backend/app/auth/rate_limit.py</code>): an in-process limiter behind a <code>RateLimiter</code> protocol. Progressive delay starts after 5 consecutive failures and is capped at 30 s. It is never a permanent lockout. Counts are kept per account (<code>users.failed_login_count</code>, <code>users.login_blocked_until</code>) and per source in memory. Public token endpoints get fixed-window caps.</li>
     <li><b>Audit and redaction.</b> <code>auth_audit_events</code> is append-only. <code>backend/app/auth/redaction.py</code> strips values of password, token, cookie and csrf keys from logs.</li>
   </ul>
@@ -336,14 +337,15 @@ footer code{font-size:12.5px}
   <ul>
     <li><code>backend/app/db/session.py</code>: one async engine (<code>create_async_engine</code>, <code>pool_pre_ping</code>). The pool defaults to 10 connections + 20 overflow with a 10 s timeout (<code>DB_POOL_*</code>). ADK's <code>DatabaseSessionService</code> shares the pool.</li>
     <li><code>backend/app/db/models.py</code>: the ORM. JSON columns become JSONB on Postgres, and UUIDs use the generic <code>Uuid</code> type, so the same models also run on SQLite in tests.</li>
-    <li><code>backend/migrations/</code> (<code>env.py</code>, <code>versions/0001…0015</code>) with <code>backend/alembic.ini</code>. Alembic connects as the owner role. ADK creates its own session tables with <code>prepare_tables()</code>, outside Alembic.</li>
+    <li><code>backend/migrations/</code> (<code>env.py</code>, <code>versions/0001…0017</code>) with <code>backend/alembic.ini</code>. Alembic connects as the owner role. ADK creates its own session tables with <code>prepare_tables()</code>, outside Alembic.</li>
   </ul>
   <div class="tablewrap"><table>
     <thead><tr><th>Area</th><th>Tables (from <code>backend/app/db/models.py</code>)</th><th>Scope</th></tr></thead>
     <tbody>
       <tr><td>Identity &amp; auth</td><td><code>users</code>, <code>tenants</code>, <code>tenant_memberships</code>, <code>invitations</code>, <code>auth_sessions</code>, <code>password_reset_tokens</code>, <code>auth_audit_events</code></td><td>Global auth tables</td></tr>
       <tr><td>Chat</td><td><code>conversations</code>, <code>messages</code>, <code>artifacts</code> (agent chart specs), <code>captured_graphs</code> (WCL graph JSON for PDFs)</td><td>Tenant + RLS</td></tr>
-      <tr><td>Profile</td><td><code>user_characters</code> (role <code>self</code>, up to 10, or <code>friend</code>), <code>guild_profile</code></td><td>Tenant + RLS</td></tr>
+      <tr><td>Profile</td><td><code>user_characters</code> (role <code>self</code>, up to 10, or <code>friend</code>, up to 50 new adds: decision D8), <code>guild_profile</code>. Character adds take a per-tenant advisory lock (<code>repo.lock_profile</code>, sc-223), so parallel adds can't pass the caps</td><td>Tenant + RLS</td></tr>
+      <tr><td>Agent proposals</td><td><code>profile_proposals</code> (a change set the agent proposed: status, expiry, items as JSON, <code>message_seq</code> of its answer; applied only on approval)</td><td>Tenant + user + RLS</td></tr>
       <tr><td>Raids &amp; activity</td><td><code>tracked_raids</code>, <code>recent_raids</code>, <code>recent_raid_characters</code>, <code>recent_raid_refresh</code> (per-tenant refresh claim), <code>recent_mplus_runs</code>, <code>recent_mplus_run_characters</code></td><td>Tenant + RLS</td></tr>
       <tr><td>Agent memory</td><td><code>known_players</code>, <code>known_encounters</code></td><td>Tenant + RLS</td></tr>
       <tr><td>Guides</td><td><code>spec_guides</code> (one row per class, spec and content type: published version and latest run), <code>guide_inaccuracy_reports</code></td><td>Global, no RLS</td></tr>
@@ -359,6 +361,8 @@ footer code{font-size:12.5px}
       <tr><td><code>0003_tenant_columns</code></td><td>Phased <code>tenant_id</code> on 7 tables: nullable, backfill to founder, NOT NULL, indexes</td></tr>
       <tr><td><code>0004_rls</code></td><td>Enable and force RLS, add policies, create the runtime role and its grants</td></tr>
       <tr><td><code>0005_known_entities</code> … <code>0015_rescan_mplus_runs</code></td><td>Known players and encounters, raid role, spec guides and their provenance and content types, recent raids, conversation pin and title, <code>raw_fetches</code>, recent M+ runs, and a data-only M+ re-scan</td></tr>
+      <tr><td><code>0016_profile_proposals</code></td><td>The <code>profile_proposals</code> table with tenant RLS (feature 029)</td></tr>
+      <tr><td><code>0017_proposal_user_rls</code></td><td>Replaces that policy with tenant <b>and</b> user (feature 036)</td></tr>
     </tbody>
   </table></div>
 
