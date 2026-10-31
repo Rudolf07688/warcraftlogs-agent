@@ -297,6 +297,28 @@ What each option costs, using the 10-31 numbers:
   developers who want to fan out; and that a coordinator's `SendMessage` to a sub-agent's
   id resumes it cleanly for rework.
 
+### P7. Scoped security review at hand-off for security-core work (experiment, 2026-11-01)
+
+- **Evidence:** in both autonomy sprints, the two QA Highs sat in security-core code
+  (2026-10-31b: the srcset bypass and the retry wait; 2026-10-31c: trusting query text over
+  the WCL response). The authors' bypass attempts each found real holes, but missed the
+  class QA found. Each time the fix needed a second developer launch, with the context
+  rebuilt from scratch.
+- **Proposal:** when a brief marks a feature security-core (tenant visibility, auth, RLS,
+  rendering untrusted output), the product owner runs `qa-security` scoped to that
+  feature's diff at hand-off, while the developer is still live. The developer fixes it in
+  the same run. The end-of-sprint sweep stays as the gate.
+- **Measure:** Highs still found by the end sweep, and the cost of the rework round
+  compared with the scoped review (about 0.2 M units).
+
+### P8. Report team-lead spend by activity (2026-11-01)
+
+The main-session figure mixes sprint coordination, owner meta work and the live pass. In
+2026-10-31c that pushed coordination from 29% to 38%, although the team itself
+coordinated less (9 messages). Team-lead posts `phase:<meta|live|wrap>` notices on the
+board, and `usage.py` splits the main session at those timestamps. The baseline then
+compares team coordination only.
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -426,3 +448,11 @@ through respawns as the same named member, with its own small, curated memory. I
   meta work (skills pruning, preferences 18 and 19) and the live pass. First skills pass
   applied the sprint's learnings (developer shell facts, ADK partial events, team-launch
   notice routing). Team report: `meta/sprints/2026-10-31c/team-report.html`.
+- **2026-11-01:** Retrospective on 2026-10-31c with the owner ("a bit more difficult than
+  the previous one"). The work was harder (a security-core data layer plus a migration),
+  and the session carried three owner meta changes mid-sprint. Friction came mostly from
+  team-lead: a stale same-named PO replayed its old report, developer completion notices
+  routed to team-lead again (structural, not only after a resume), a monitor quoting bug,
+  the ADK pruning mistake, and one expensive live turn on a large report. Added P7
+  (scoped security review at hand-off) and P8 (split lead spend by activity). Lessons in
+  the lead memory and team-launch.
