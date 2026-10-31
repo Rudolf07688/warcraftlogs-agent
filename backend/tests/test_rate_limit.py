@@ -72,8 +72,19 @@ def _request(peer: str | None, *forwarded: str) -> Request:
         ("10.0.0.0/8", "10.0.0.2", ("1.2.3.4, 198.51.100.1",), "198.51.100.1"),
         # A chain of trusted proxies, split over two header lines.
         ("10.0.0.0/8,127.0.0.1", "127.0.0.1", ("198.51.100.1, 10.0.0.5", "10.0.0.7"), "198.51.100.1"),
-        # Only trusted hops: the outermost one.
-        ("10.0.0.0/8", "10.0.0.2", ("10.0.0.5",), "10.0.0.5"),
+        # Only trusted hops: the peer, never a client-written entry (QA SEC-002).
+        ("10.0.0.0/8", "10.0.0.2", ("10.0.0.5",), "10.0.0.2"),
+        ("10.0.0.0/8", "10.0.0.2", ("10.9.9.9, 10.0.0.5",), "10.0.0.2"),
+        # Ports on hops (QA BUG-003).
+        ("10.0.0.0/8", "10.0.0.2", ("198.51.100.1:41234",), "198.51.100.1"),
+        ("10.0.0.0/8", "10.0.0.2", ("[2001:db8::7]:443",), "2001:db8::7"),
+        ("10.0.0.0/8", "10.0.0.2", ("[2001:db8::7]",), "2001:db8::7"),
+        ("10.0.0.0/8", "10.0.0.2", ("198.51.100.1, 10.0.0.5:8080",), "198.51.100.1"),
+        # IPv4-mapped peer and hops count as IPv4.
+        ("172.18.0.3", "::ffff:172.18.0.3", ("198.51.100.1",), "198.51.100.1"),
+        ("10.0.0.0/8", "10.0.0.2", ("::ffff:198.51.100.1",), "198.51.100.1"),
+        ("10.0.0.0/8", "10.0.0.2", ("198.51.100.1, ::ffff:10.0.0.5",), "198.51.100.1"),
+        ("", "::ffff:203.0.113.9", (), "203.0.113.9"),
         # Garbage where the client should be: keep the peer key.
         ("10.0.0.0/8", "10.0.0.2", ("not-an-ip",), "10.0.0.2"),
         ("::1", "::1", ("2001:db8::7",), "2001:db8::7"),
@@ -115,3 +126,18 @@ async def test_login_ignores_spoofed_forwarded_for_from_an_untrusted_peer(client
     # A fresh fake address per attempt doesn't escape the throttle.
     spoofed = [f"198.51.100.{i}" for i in range(10, 18)]
     assert 429 in await _login_statuses(client, "spoofer@example.com", spoofed)
+
+
+async def test_admin_invitations_key_on_the_forwarded_client(as_admin, monkeypatch):
+    # QA SPEC-003: the admin invite limiter uses the same per-client key as the others.
+    from backend.app.api import admin_users
+
+    keys: list[str] = []
+    monkeypatch.setattr(admin_users.token_limiter, "allow_request", lambda key: keys.append(key) or True)
+    monkeypatch.setattr(settings, "trusted_proxies", "127.0.0.1")  # the test transport's peer
+    await as_admin.client.post(
+        "/api/admin/invitations",
+        json={"email": "fwd@example.com", "role": "member"},
+        headers={"x-forwarded-for": "198.51.100.7"},
+    )
+    assert keys == ["admin-invite:198.51.100.7"]

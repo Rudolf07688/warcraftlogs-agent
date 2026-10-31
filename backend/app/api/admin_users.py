@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import sessions as session_svc
 from ..auth.dependencies import require_csrf, require_platform_admin
-from ..auth.rate_limit import token_limiter
+from ..auth.rate_limit import client_source, token_limiter
 from ..db.models import Invitation
 from ..db.session import get_session
 from ..repositories import audit
@@ -71,8 +71,7 @@ async def create_invitation(
     _csrf: RequestIdentity = Depends(require_csrf),
     db: AsyncSession = Depends(get_session),
 ) -> InvitationOut:
-    host = request.client.host if request.client else "unknown"
-    if not token_limiter.allow_request(f"admin-invite:{host}"):
+    if not token_limiter.allow_request(f"admin-invite:{client_source(request)}"):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={"code": "rate_limited", "message": "Too many invitations. Slow down."},
