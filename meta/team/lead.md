@@ -20,3 +20,5 @@ Lessons from running the team (first written 2026-10-31, sprint 2026-10-31):
 - The owner is the team's one continuous member. When they correct me, turn the correction into a file (agent definition, owner-preferences, this memory) the same day, or it is lost to the next session.
 
 Live testing is mine (2026-10-31): the owner gave me .env and said "use live testing wisely and limit spending as much as possible, but don't be over-paranoid". Back up .env to .git/env-backups/ before any edit, never print values. Batch the team's live-check requests into one pass on the merged branch, use the cheapest model unless the model is under test, and keep each check to one or two turns. Report live results myself rather than handing the owner a checklist.
+
+Recovering from a crash (sprint 2026-10-31b): check git fsck, the board file and every agent transcript for NUL-byte tails before resuming; strip a damaged line after a backup. Resume agents by agent ID (names don't survive), and expect their completion notices to come to me afterwards: forward each in one message. Don't suggest UI commands I haven't verified; /agents no longer exists and running it interrupted the PO.
