@@ -89,7 +89,12 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
 
    On a yes: `git merge --no-ff`, check that the tree matches the sprint tip, remove the
    worktrees, and run `node .gitnexus/run.cjs analyze --index-only`.
-5. **Memory:**
+5. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,
+   apply the sprint's `skill:<name>` board notices and any lesson of your own that every agent
+   doing that task should know. Rewrite or cut rather than append. In tool-generated skills
+   (`speckit-*`, `gitnexus-*`), put changes in a marked "Local learnings" section. List the
+   skill changes in the team report and commit them with the memories.
+6. **Memory:**
    - Update the sprint status memory note.
    - At most once per sprint, update your lead memory (`member.py remember --seat lead -`),
      and only with a lasting lesson about how you lead. It's capped at 500 words, so cut

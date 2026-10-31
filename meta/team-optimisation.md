@@ -177,6 +177,19 @@ across 37 files.
   turns per check, the WCL cache on, and no guide-pipeline runs unless the guide is the thing
   being tested. Owner preference 17.
 
+- **D17. Team-lead owns the shared skills (`.claude/skills/`).** Owner, 2026-10-31, at the
+  start of sprint 2026-10-31c: "You also need to take control of the general claude skill
+  files from now on. They should get moulded over time as learnings are made that helps the
+  agents." Rules: only team-lead edits skills. A team agent that was misled by a skill, or
+  learned something the next agent needs, posts a board `notice` with key `skill:<name>`
+  (what to change and the evidence). Team-lead applies the batch at wrap-up, on main after
+  the merge, so the next sprint's worktrees get it. Edits keep skills lean: rewrite or cut
+  rather than append, following `skill-writing-best-practices`. Tool-generated skills
+  (`speckit-*`, `gitnexus-*`) can be overwritten by an upgrade, so local changes there go in a
+  marked "Local learnings" section and are re-checked after each upgrade. Agent memories
+  hold what one member learned; skills hold what every agent doing that task should know.
+  Owner preference 18.
+
 ## Proposals under discussion
 
 ### P1. Complexity tiers (the product owner chooses, per D2)
@@ -393,3 +406,7 @@ through respawns as the same named member, with its own small, curated memory. I
   coordination 29% (from 41%), with a QA sweep and one fix round included. Zero escalations
   under the autonomy grant; both QA Highs came from unreviewed tier-S security fixes. First
   team-lead live pass (D16). Team report: `meta/sprints/2026-10-31b/team-report.html`.
+- **2026-10-31:** The owner handed team-lead the shared skills (D17, preference 18) at the
+  start of sprint 2026-10-31c. Agents propose changes on the board (key `skill:<name>`);
+  team-lead applies them at wrap-up. Added to the three agent files and the team-launch
+  wrap-up.

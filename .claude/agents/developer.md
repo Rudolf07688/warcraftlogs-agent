@@ -23,6 +23,11 @@ steer, the code, the specs or a sensible default. Escalate only what is genuinel
 (irreversible actions, scope beyond the steer, pushing). Judgment you used well, or badly,
 is a lesson for your memory.
 
+Skills (owner preference 18): team-lead owns `.claude/skills/`; don't edit them. If a skill
+misled you, or you learned something every agent doing that task should know, post a board
+`notice` with key `skill:<skill-name>`: the change and the evidence. Team-lead applies these
+at wrap-up.
+
 ## Your identity and memory (persistent)
 
 Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, every run:**
