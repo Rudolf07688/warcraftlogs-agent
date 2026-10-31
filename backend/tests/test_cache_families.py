@@ -14,7 +14,7 @@ import pytest
 
 from backend.tests.wcl_fakes import install
 from wcl_agent.game import patch
-from wcl_agent.tools import report_tools
+from wcl_agent.tools import participants, report_tools
 from wcl_agent.cache.cache import keys, set_refresh_actor
 
 HOUR_MS = 3_600_000
@@ -65,6 +65,13 @@ def responder(query: str, variables: dict[str, Any]) -> dict[str, Any]:
         return {"data": {"characterData": {"character": {"name": "Rudolf", field: {"bestPerformanceAverage": 90}}}}}
     if "query ReportSummary" in query:
         return summary(variables["code"], ended_hours_ago=0.5 if variables["code"] == "LIVE" else 20)
+    if "playerDetails" in query:
+        ended = 0.5 if variables["code"] == "LIVE" else 20
+        player = {"name": "Rudolf", "server": "Area 52", "type": "Mage", "specs": [{"spec": "Frost", "count": 1}]}
+        return {"data": {"reportData": {"report": {
+            "endTime": NOW_MS - int(ended * HOUR_MS), "region": {"slug": "eu"},
+            "playerDetails": {"data": {"playerDetails": {"dps": [player]}}},
+        }}}}
     if "table(" in query:
         return {"data": {"reportData": {"report": {"endTime": NOW_MS - 20 * HOUR_MS, "table": {"data": [1]}}}}}
     raise AssertionError(f"unexpected query: {query[:60]}")
@@ -220,3 +227,16 @@ async def test_refresh_is_allowed_when_redis_is_down(monkeypatch):
     monkeypatch.setenv("REDIS_URL", "redis://nowhere:6379/0")
     monkeypatch.setattr(cache, "_make_redis", lambda url: DeadRedis())
     assert await cache.try_claim_refresh("user-a", 7) is True
+
+
+async def test_report_participants_are_cached_per_fight(wcl, fake_redis):
+    # sc-224: "who was in that run" follow-ups reuse the first lookup.
+    for _ in range(2):
+        out = await participants.get_report_participants("ABC", 7)
+        assert out["status"] == "success" and [r["name"] for r in out["participants"]] == ["Rudolf"]
+    assert wcl.count("playerDetails") == 1
+    await participants.get_report_participants("ABC")  # another fight scope: its own entry
+    assert wcl.count("playerDetails") == 2
+    assert await fake_redis.ttl(keys.report_participants("ABC", 7)) > 86400 - 5
+    await participants.get_report_participants("LIVE", 7)
+    assert 0 < await fake_redis.ttl(keys.report_participants("LIVE", 7)) <= 132

@@ -11,10 +11,16 @@ from an unknown account (the caller returns the same generic error either way).
 
 from __future__ import annotations
 
+import ipaddress
+import logging
 import time
 from typing import Protocol
 
+from starlette.requests import Request
+
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimiter(Protocol):
@@ -77,6 +83,77 @@ class InProcessRateLimiter:
         count += 1
         self._windows[key] = (start, count)
         return count <= self._per_minute
+
+
+def client_source(request: Request) -> str:
+    """The client address the per-source limits key on (sc-158).
+
+    The direct peer, unless it is a configured trusted proxy (``TRUSTED_PROXIES``); then
+    the nearest ``X-Forwarded-For`` hop that isn't one. That is the address our own proxy
+    saw, whereas the leftmost entries are whatever the client sent. With no trusted
+    proxies, forwarded headers are ignored. Hops may carry a port (``1.2.3.4:5678``,
+    ``[2001:db8::1]:443``), and IPv4-mapped addresses count as IPv4 (QA BUG-003). A chain
+    of trusted hops only keys on the peer, never on a client-written entry (QA SEC-002).
+    """
+    peer = request.client.host if request.client else "unknown"
+    peer_addr = _address(peer)
+    if peer_addr is None:
+        return peer
+    trusted = settings.trusted_proxy_networks
+    if not _trusted(peer_addr, trusted):
+        return str(peer_addr)
+    hops = [
+        hop.strip()
+        for header in request.headers.getlist("x-forwarded-for")
+        for hop in header.split(",")
+        if hop.strip()
+    ]
+    for hop in reversed(hops):
+        addr = _address(hop)
+        if addr is None:
+            # A trusted proxy writes a real address; anything else keeps the safe peer key.
+            _warn_unparsable(hop)
+            return str(peer_addr)
+        if not _trusted(addr, trusted):
+            return str(addr)
+    return str(peer_addr)
+
+
+def _address(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """``host`` as an IP address, without a port; an IPv4-mapped IPv6 becomes IPv4."""
+    host = host.strip()
+    if host.startswith("["):  # [v6] or [v6]:port
+        host = host[1 : host.find("]")] if "]" in host else ""
+    elif host.count(":") == 1:  # v4:port (a bare v6 has several colons)
+        host = host.split(":", 1)[0]
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        return addr.ipv4_mapped
+    return addr
+
+
+def _trusted(
+    addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network],
+) -> bool:
+    return any(addr in net for net in networks)
+
+
+_warned_unparsable = False
+
+
+def _warn_unparsable(hop: str) -> None:
+    """Once per process: a trusted proxy sent a hop we can't read, so clients share its key."""
+    global _warned_unparsable
+    if not _warned_unparsable:
+        _warned_unparsable = True
+        logger.warning(
+            "X-Forwarded-For hop %r from a trusted proxy is not an IP address; "
+            "rate limits fall back to the proxy's address", hop[:64]
+        )
 
 
 # Process-wide default instances. The login limiter keys on account+source; the token

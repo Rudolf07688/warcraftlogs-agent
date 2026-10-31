@@ -36,7 +36,7 @@ def _add(name: str, **kw) -> ProfileChangeIn:
 @pytest.fixture(autouse=True)
 def no_guide_tasks(monkeypatch):
     # An applied add starts a background guide task that would hit WCL / the model.
-    monkeypatch.setattr(proposals, "schedule_character_guide", lambda *_: None)
+    monkeypatch.setattr(proposals, "schedule_character_guides", lambda *_: None)
 
 
 @pytest.fixture

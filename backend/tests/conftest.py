@@ -64,6 +64,17 @@ def _no_guide_background_scans(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_rate_limit_memory():
+    """sc-176: the process-wide memory of rate-limited models must not carry a switch from
+    one test into the next."""
+    from wcl_agent.llm.model_retry import forget_rate_limits
+
+    forget_rate_limits()
+    yield
+    forget_rate_limits()
+
+
+@pytest.fixture(autouse=True)
 def _no_title_generation(monkeypatch):
     """Feature 019: a chat turn schedules a background title job after ``done``; no test
     starts one (no model call, no extra frame, no task outliving the test) unless it

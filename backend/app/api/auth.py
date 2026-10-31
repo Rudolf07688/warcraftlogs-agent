@@ -17,7 +17,7 @@ from ..auth import sessions as session_svc
 from ..auth import tokens
 from ..auth.dependencies import require_session
 from ..auth.passwords import PasswordPolicyError
-from ..auth.rate_limit import token_limiter
+from ..auth.rate_limit import client_source, token_limiter
 from ..config import settings
 from ..db.models import User
 from ..db.session import get_session
@@ -63,8 +63,7 @@ async def build_me_out(
 
 
 def _source_key(request: Request, prefix: str) -> str:
-    host = request.client.host if request.client else "unknown"
-    return f"{prefix}:{host}"
+    return f"{prefix}:{client_source(request)}"
 
 
 @router.post("/accept-invitation", response_model=MeOut)
@@ -111,13 +110,12 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_session),
 ) -> MeOut:
-    host = request.client.host if request.client else "unknown"
     try:
         result = await auth_service.login(
             db,
             email=body.email,
             password=body.password,
-            source=host,
+            source=client_source(request),
             user_agent=request.headers.get("user-agent"),
         )
     except auth_service.RateLimited as exc:

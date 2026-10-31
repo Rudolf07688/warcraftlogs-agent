@@ -3,11 +3,13 @@
 Design C9–C14 and ``#proposal-service-api``
 (documentation/designs/self-aware-agent/capabilities-and-tools.html). The agent tool only
 *creates* a proposal; nothing on the profile changes until the user approves it, which runs
-:func:`execute_proposal` exactly once through the shared ``profile_service`` write path.
+:func:`execute_proposal` exactly once: re-validated under the tenant's profile lock, then
+written in bulk (sc-223, sc-225).
 
-Every function opens its own tenant-scoped transaction for the acting identity, so the
-transport (031's frame and REST routes) needs no session of its own, and every query is
-scoped to the tenant **and** the user: another tenant's or user's proposal is ``not_found``.
+Every function opens its own tenant-scoped transaction for the acting identity (the reads can
+join the caller's instead), so the transport (031's frame and REST routes) needs no session of
+its own, and every query is scoped to the tenant **and** the user: another tenant's or user's
+proposal is ``not_found``.
 """
 
 from __future__ import annotations
@@ -15,7 +17,8 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import get_args
@@ -24,6 +27,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.cache.normalize import server_slug
+from wcl_agent.game.roster import resolve_spec, roster_snapshot
 
 from ..db import repository as repo
 from ..db.models import ProfileProposal, UserCharacter
@@ -38,8 +42,7 @@ from ..schemas import (
     ProposalValidation,
 )
 from ..tenancy.context import RequestIdentity, tenant_scope
-from . import profile_service
-from .guide import schedule_character_guide
+from .guide import schedule_character_guides
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +54,12 @@ PROPOSAL_TTL = timedelta(minutes=30)  # C10; correctness doesn't depend on it (r
 # name rule is the prompt-injection guard (C14): a name with spaces, digits or punctuation
 # can't be applied, so it never reaches the profile or the next turn's preamble.
 _NAME = re.compile(r"[^\W\d_]{2,12}")
-# Letters, digits, spaces, apostrophes, hyphens and parentheses ("Aggra (Português)").
-_REALM = re.compile(r"[^\W_](?:[^\W_]|[ '()\-]){1,39}")
+# Realm form (sc-221): words of letters or digits joined by single spaces, hyphens or
+# apostrophes, optionally one "(Suffix)" ("Aggra (Português)"), at most _REALM_CHARS. The
+# longest real realm names are about 22 characters ("Culte de la Rive noire"), so a sentence
+# can't persist into later preambles through an approved realm.
+_REALM = re.compile(r"[^\W_]+(?:[ '\-][^\W_]+)*(?: \([^\W_]+\))?")
+_REALM_CHARS = 24
 _REGIONS = frozenset({"us", "eu", "kr", "tw", "cn"})
 _CLIP = 100  # CharacterIn's maximum; longer values are invalid anyway (bounds the stored row)
 
@@ -102,19 +109,24 @@ def _now() -> datetime:
 class _Entry:
     """One character of the profile as validation sees it (a working copy)."""
 
-    target: str  # "own" | "friend"
     character_id: uuid.UUID | None  # None for an add earlier in the same proposal
     raid_role: str | None
+
+
+_Key = tuple[tuple[str, str, str], str]  # (identity, target)
+_OTHER = {"own": "friend", "friend": "own"}
 
 
 def _identity_key(name: str, realm: str, region: str) -> tuple[str, str, str]:
     return name.strip().casefold(), server_slug(realm), region.strip().lower()
 
 
-def _profile(chars: Sequence[UserCharacter]) -> dict[tuple[str, str, str], _Entry]:
+def _profile(chars: Sequence[UserCharacter]) -> dict[_Key, _Entry]:
+    """The working copy, keyed by identity **and** target (sc-223): a legacy profile can hold
+    one character in both roles under two realm spellings, and both stay addressable."""
     return {
-        _identity_key(c.name, c.server, c.region): _Entry(
-            "own" if c.role == "self" else "friend", c.id, c.raid_role
+        (_identity_key(c.name, c.server, c.region), "own" if c.role == "self" else "friend"): _Entry(
+            c.id, c.raid_role
         )
         for c in chars
     }
@@ -153,9 +165,29 @@ def _text(value: object) -> str:
     return value.strip()[:_CLIP] if isinstance(value, str) else ""
 
 
+def _class_spec(class_name: object, spec: object) -> tuple[str | None, str | None]:
+    """Class and spec as the roster names them, else None (sc-221): never the model's text.
+
+    A class the roster knows keeps its key when only the spec doesn't resolve.
+    """
+    class_text, spec_text = _text(class_name), _text(spec)
+    if not class_text:
+        return None, None
+    entry = resolve_spec(class_text, spec_text) if spec_text else None
+    if entry is not None:
+        return entry.class_name, entry.spec_display
+    roster = roster_snapshot()
+    for key in roster.classes():  # the class alone: match it with any one of its specs
+        entry = resolve_spec(class_text, roster.specs_for(key)[0])
+        if entry is not None:
+            return entry.class_name, None
+    return None, None
+
+
 def _skipped(index: int, raw: object, code: str) -> ProposalItemOut:
     """The card row of an item that couldn't be read; display only, never applied."""
     action, target = _field(raw, "action"), _field(raw, "target")
+    class_name, spec = _class_spec(_field(raw, "class_name"), _field(raw, "spec"))
     return ProposalItemOut(
         index=index,
         action=action if action in _ACTIONS else "add",
@@ -163,13 +195,13 @@ def _skipped(index: int, raw: object, code: str) -> ProposalItemOut:
         name=_text(_field(raw, "name")),
         realm=_text(_field(raw, "realm")),
         region=_text(_field(raw, "region")).lower(),
-        class_name=_text(_field(raw, "class_name")) or None,
-        spec=_text(_field(raw, "spec")) or None,
+        class_name=class_name,
+        spec=spec,
         validation=ProposalValidation(ok=False, code=code, message=_MESSAGES[code]),
     )
 
 
-def _check(change: ProfileChangeIn, profile: dict, counts: dict, seen: set) -> tuple[str | None, _Entry | None]:
+def _check(change: ProfileChangeIn, profile: dict[_Key, _Entry], counts: dict, seen: set) -> tuple[str | None, _Entry | None]:
     """Validate one change against the working profile; returns (code, matched entry)."""
     try:
         CharacterIn(name=change.name, server=change.realm, region=change.region, raid_role=change.raid_role)
@@ -177,24 +209,25 @@ def _check(change: ProfileChangeIn, profile: dict, counts: dict, seen: set) -> t
         return "invalid_item", None
     if not _NAME.fullmatch(change.name.strip()):
         return "invalid_name", None
-    if not _REALM.fullmatch(change.realm.strip()):
+    realm = change.realm.strip()
+    if len(realm) > _REALM_CHARS or not _REALM.fullmatch(realm):
         return "invalid_realm", None
     if change.region.strip().lower() not in _REGIONS:
         return "invalid_region", None
     key = _identity_key(change.name, change.realm, change.region)
     if (key, change.target) in seen:
         return "duplicate_item", None
-    existing = profile.get(key)
+    existing = profile.get((key, change.target))
     if change.action == "add":
         if existing is not None:
-            if existing.target == change.target:
-                return ("duplicate_character" if change.target == "own" else "duplicate_friend"), None
+            return ("duplicate_character" if change.target == "own" else "duplicate_friend"), None
+        if (key, _OTHER[change.target]) in profile:
             return ("already_friend" if change.target == "own" else "already_own"), None
         code, limit = _LIMITS[change.target]
         if counts[change.target] >= limit:
             return code, None
         return None, None
-    if existing is None or existing.target != change.target:
+    if existing is None:
         return "not_found", None
     if change.action == "update" and existing.raid_role == change.raid_role:
         return "no_change", None
@@ -211,8 +244,8 @@ def _validate(
     """
     profile = _profile(chars)
     counts = {"own": 0, "friend": 0}
-    for entry in profile.values():
-        counts[entry.target] += 1
+    for _, target in profile:
+        counts[target] += 1
     seen: set = set()
     items: list[ProposalItemOut] = []
     for index, raw in enumerate(changes):
@@ -221,6 +254,7 @@ def _validate(
             items.append(_skipped(index, raw, code))
             continue
         code, existing = _check(change, profile, counts, seen)
+        class_name, spec = _class_spec(change.class_name, change.spec)
         item = ProposalItemOut(
             index=index,
             action=change.action,
@@ -228,8 +262,8 @@ def _validate(
             name=change.name.strip()[:_CLIP],
             realm=change.realm.strip()[:_CLIP],
             region=change.region.strip().lower()[:_CLIP],
-            class_name=change.class_name,
-            spec=change.spec,
+            class_name=class_name,
+            spec=spec,
             raid_role=None if change.action == "remove" else change.raid_role,
             played_role=change.played_role,
             validation=ProposalValidation(ok=code is None, code=code, message=_MESSAGES.get(code)),
@@ -238,7 +272,7 @@ def _validate(
             key = _identity_key(change.name, change.realm, change.region)
             seen.add((key, change.target))
             if change.action == "add":
-                profile[key] = _Entry(change.target, None, change.raid_role)
+                profile[(key, change.target)] = _Entry(None, change.raid_role)
                 counts[change.target] += 1
             else:
                 item.character_id = existing.character_id
@@ -246,7 +280,7 @@ def _validate(
                     item.previous_raid_role = existing.raid_role
                     existing.raid_role = change.raid_role
                 else:
-                    del profile[key]
+                    del profile[(key, change.target)]
                     counts[change.target] -= 1
         items.append(item)
     return items
@@ -264,8 +298,8 @@ def _change_of(item: ProposalItemOut) -> ProfileChangeIn:
 
 
 async def _load_profile(db, tenant_id: uuid.UUID) -> list[UserCharacter]:
-    own, friends, _guild = await repo.get_profile(db, tenant_id=tenant_id)
-    return [*own, *friends]
+    own = await repo.list_own_characters(db, tenant_id=tenant_id)
+    return [*own, *await repo.list_friend_characters(db, tenant_id=tenant_id)]
 
 
 # --- Reads ---------------------------------------------------------------------------
@@ -332,8 +366,21 @@ async def create_proposal(
     return out
 
 
-async def get_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) -> ProfileProposalOut:
-    async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as db:
+@asynccontextmanager
+async def _reading(identity: RequestIdentity, db: AsyncSession | None) -> AsyncIterator[AsyncSession]:
+    """The caller's transaction when it has one (already scoped to this identity), else a
+    short one of our own (sc-225: a reload or a proposal frame opens no extra transaction)."""
+    if db is not None:
+        yield db
+        return
+    async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as own:
+        yield own
+
+
+async def get_proposal(
+    identity: RequestIdentity, proposal_id: uuid.UUID, *, db: AsyncSession | None = None
+) -> ProfileProposalOut:
+    async with _reading(identity, db) as db:
         row = await rows.get_proposal_row(
             db, proposal_id, tenant_id=identity.tenant_id, user_id=identity.user_id
         )
@@ -343,10 +390,10 @@ async def get_proposal(identity: RequestIdentity, proposal_id: uuid.UUID) -> Pro
 
 
 async def list_proposals(
-    identity: RequestIdentity, conversation_id: uuid.UUID
+    identity: RequestIdentity, conversation_id: uuid.UUID, *, db: AsyncSession | None = None
 ) -> list[ProfileProposalOut]:
     """Every proposal of that conversation for this user, oldest first, status computed."""
-    async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as db:
+    async with _reading(identity, db) as db:
         found = await rows.list_proposal_rows(
             db, tenant_id=identity.tenant_id, user_id=identity.user_id, conversation_id=conversation_id
         )
@@ -357,50 +404,54 @@ async def list_proposals(
 # --- Execute / cancel (C10, C11) ------------------------------------------------------
 
 
-async def _apply_item(db, identity: RequestIdentity, item: ProposalItemOut) -> uuid.UUID:
-    """Apply one re-validated item through the shared write path; returns the row's id."""
-    role = _ROLE[item.target]
-    if item.action == "add":
-        body = CharacterIn(name=item.name, server=item.realm, region=item.region, raid_role=item.raid_role)
-        return (await profile_service.add_character(db, identity, body, role)).id
-    if item.action == "update":
-        await profile_service.set_raid_role(db, identity, item.character_id, item.raid_role, role)
-    else:
-        await profile_service.remove_character(db, identity, item.character_id, role)
-    return item.character_id
-
-
 async def _apply(db, identity: RequestIdentity, items: list[ProposalItemOut]) -> list[uuid.UUID]:
-    """Apply every still-valid item, each in its own savepoint; record per-item results.
+    """Apply every still-valid item; record per-item results. Returns the added ids.
 
-    Re-validation uses the same validator against the profile as it is now (REST, another
-    tab or another proposal may have changed it), addressing update/remove by identity.
-    Returns the ids of the added characters.
+    The tenant's profile is locked first (sc-223), so re-validation against the profile as it
+    is now (REST, another tab or another proposal may have changed it) is final: nothing can
+    add in between. Update/remove are addressed by identity. The writes then go in bulk, one
+    delete, one update and one insert for the whole proposal (sc-225); an update or remove
+    whose row is gone meanwhile reports ``not_found``.
     """
+    tenant_id = identity.tenant_id
+    await repo.lock_profile(db, tenant_id=tenant_id)
     valid = [item for item in items if item.validation.ok]
-    rechecked = _validate([_change_of(item) for item in valid], await _load_profile(db, identity.tenant_id))
+    rechecked = _validate([_change_of(item) for item in valid], await _load_profile(db, tenant_id))
     for item in items:
         if not item.validation.ok:
             item.result = ProposalItemResult(status="skipped", code=item.validation.code)
-    added: list[uuid.UUID] = []
+    todo: dict[str, list[tuple[ProposalItemOut, ProposalItemOut]]] = {"remove": [], "update": [], "add": []}
     for item, now_item in zip(valid, rechecked):
-        if not now_item.validation.ok:
+        if now_item.validation.ok:
+            todo[item.action].append((item, now_item))
+        else:
             item.result = ProposalItemResult(status="failed", code=now_item.validation.code)
-            continue
-        try:
-            async with db.begin_nested():
-                char_id = await _apply_item(db, identity, now_item)
-        except repo.CharacterConflict as exc:
-            item.result = ProposalItemResult(status="failed", code=exc.code)
-            continue
-        except profile_service.CharacterNotFound:
-            item.result = ProposalItemResult(status="failed", code="not_found")
-            continue
-        item.result = ProposalItemResult(status="applied", character_id=char_id)
-        if item.action == "add":
-            item.character_id = char_id
-            added.append(char_id)
-    return added
+
+    gone = await repo.delete_characters(
+        db, tenant_id=tenant_id, ids=[now.character_id for _, now in todo["remove"]]
+    )
+    changed = await repo.set_raid_roles(
+        db, tenant_id=tenant_id, roles={now.character_id: now.raid_role for _, now in todo["update"]}
+    )
+    for item, now_item in todo["remove"] + todo["update"]:
+        done = now_item.character_id in (gone if item.action == "remove" else changed)
+        item.result = (
+            ProposalItemResult(status="applied", character_id=now_item.character_id)
+            if done
+            else ProposalItemResult(status="failed", code="not_found")
+        )
+    new = await repo.add_characters(
+        db,
+        tenant_id=tenant_id,
+        rows=[
+            dict(role=_ROLE[now.target], name=now.name, server=now.realm, region=now.region, raid_role=now.raid_role)
+            for _, now in todo["add"]
+        ],
+    )
+    for (item, _), char in zip(todo["add"], new):
+        item.character_id = char.id
+        item.result = ProposalItemResult(status="applied", character_id=char.id)
+    return [char.id for char in new]
 
 
 async def execute_proposal(
@@ -438,9 +489,8 @@ async def execute_proposal(
                 await on_transition(db, out)
     if added is None:
         raise ProposalError("proposal_expired")
-    # After the commit: the guide job reads the character in its own transaction.
-    for char_id in added:
-        schedule_character_guide(char_id, identity.tenant_id)
+    # After the commit: the guide jobs read the characters in their own transactions.
+    schedule_character_guides(added, identity.tenant_id)
     logger.info(
         "profile proposal %s applied: %s",
         out.id, ", ".join(f"{i.index}={i.result.status}" for i in out.items),
