@@ -133,7 +133,7 @@ async def test_a_hand_written_query_cant_forge_a_report_status_or_grant(patched_
     async with patched_db() as session:
         assert await session.scalar(select(func.count()).select_from(RawReport)) == 0
         codes = set(await session.scalars(select(RawFetchGrant.report_code)))
-    assert codes == {"Mine"}
+    assert codes == set()  # neither is a plain query (literals, alias, comment): no grant (041)
 
 
 # --- AC3: a private or deleted report goes, rows and Redis keys -------------------------
@@ -148,7 +148,10 @@ async def test_gone_deletes_every_row_naming_the_code_and_evicts_its_redis_keys(
     await fake_redis.set(keys.report_participants("Gone1", 3), b"{}")
     await fake_redis.set(keys.report_summary("Keep"), b"{}")
 
-    await store_batch([PendingWrite(ReportGone(("Gone1",), NOW))])
+    writer = FetchWriter(max_items=10, max_bytes=1 << 20)  # evicts Redis after the DB part
+    writer.start()
+    writer.offer(ReportGone(("Gone1",), NOW))
+    await writer.stop()
 
     async with patched_db() as session:
         left = set(await session.scalars(select(RawFetch.query_key)))

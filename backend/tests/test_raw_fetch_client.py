@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from backend.tests.wcl_fakes import gql_response, mock_async_client
+from wcl_agent.client.queries import REPORT_SUMMARY
 from wcl_agent.client import wcl_client
 from wcl_agent.client.wcl_client import (
     FetchedResponse,
@@ -160,17 +161,18 @@ def test_exact_report_codes_refuses_anything_it_cant_fully_parse(query, variable
 
 async def test_a_null_report_offers_report_gone_instead_of_the_response(offered):
     client = mock_async_client(lambda request: gql_response({"data": {"_cost": COST, "reportData": {"report": None}}}))
-    assert await client.query(REPORT_Q, {"code": "Del1"}) == {"data": {"reportData": {"report": None}}}
+    assert await client.query(REPORT_SUMMARY, {"code": "Del1"}) == {"data": {"reportData": {"report": None}}}
     await client.aclose()
     assert len(offered) == 1 and isinstance(offered[0], ReportGone)
     assert offered[0].codes == ("Del1",)
 
 
 async def test_a_null_report_with_errors_offers_report_gone_and_still_raises(offered):
-    body = {"data": {"reportData": {"report": None}}, "errors": [{"message": "This report does not exist."}]}
+    body = {"data": {"reportData": {"report": None}},
+            "errors": [{"message": "This report does not exist.", "path": ["reportData", "report"]}]}
     client = mock_async_client(lambda request: gql_response(body))
     with pytest.raises(RuntimeError):
-        await client.query(REPORT_Q, {"code": "Priv1"})
+        await client.query(REPORT_SUMMARY, {"code": "Priv1"})
     await client.aclose()
     assert [type(o) for o in offered] == [ReportGone] and offered[0].codes == ("Priv1",)
 
