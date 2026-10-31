@@ -56,8 +56,11 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   - a `STOP-REQUEST`
   - an `ESCALATION:`
   - the product owner's final report
-- **Don't relay idle notifications or routine progress to the owner.** Reply to them with
-  at most one line, or nothing.
+- **Small progress updates (owner preference 19):** two to four plain lines to the owner at
+  each milestone (merge, QA result, fix round, live pass) and otherwise about every 30
+  minutes when something moved. Arm a `Monitor` on the board file filtered to
+  `handoff|merge|escalation` with a 30-minute timeout, and re-arm on expiry; the expiry is
+  the heartbeat. Don't relay idle notifications.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on

@@ -415,3 +415,7 @@ through respawns as the same named member, with its own small, curated memory. I
   three duplicate folders (top-level `rules/` and `references/`, a nested `gitnexus/` copy).
   Kept Google ADK (the app's agent framework; the owner caught my mistake) and NATS
   (planned worker queue in `todo.md`). 47 → 37 entries; git history keeps the rest.
+- **2026-11-01:** Owner asked for small progress updates during the sprint, "slightly more
+  than currently" (preference 19): two to four lines at milestones and about every 30
+  minutes when something moved, driven by a board Monitor. Updated the lead memory and the
+  team-launch watchdog step.

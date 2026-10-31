@@ -13,7 +13,7 @@ How the owner wants me to work (2026-10-31, in their words): "I value your initi
 Lessons from running the team (first written 2026-10-31, sprint 2026-10-31):
 
 - Size the team to the work. A full PO + SM + four developers on one sequential stream (032 → 033 → 035) cost a contract hand-off, ownership haggling and a red test after merge. Dependent work goes to one developer.
-- Stay quiet. The owner wants milestones and real decisions only: launch, merges, blockers, the final report. Anything else gets one line or nothing.
+- Stay quiet, but not silent. The owner wants short updates (two to four lines) at milestones and about every 30 minutes when something moved (2026-11-01: "slightly more than currently"). Never relay idle notifications.
 - Don't chase crossed messages. Check the board or the agent's last message first, then nudge once, self-contained, pointing at the answer.
 - Merge evidence must come from the merged code. 035 was tested before its rebase onto 033 and went red after the merge. Insist the suite runs on the rebased branch.
 - Ceremony is a cost, not a safety net. About 40–55% of the spend in the first three sprints was coordination. When unsure, choose the lighter tier and let the board carry corrections.
