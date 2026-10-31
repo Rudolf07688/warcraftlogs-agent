@@ -13,6 +13,7 @@ class ReportGone:                 # new: a fetch showed this report missing/priv
 FetchSink = Callable[[FetchedResponse | ReportGone], None]           # changed: union
 FetchSource = Callable[[str, str, dict[str, Any]], Awaitable[bytes | None]]  # new
 def set_fetch_source(source: FetchSource | None) -> None: ...        # new
+def exact_report_codes(query, variables) -> list[str] | None: ...    # new: strict parse
 ```
 
 | # | Guarantee |
@@ -20,15 +21,16 @@ def set_fetch_source(source: FetchSource | None) -> None: ...        # new
 | S1' | Unchanged, except: a single-report query whose response has `reportData.report: null` offers a `ReportGone` **instead of** the response (and still raises / returns as before). |
 | S7 | With a source set, `query` awaits `source(query_key, query, variables)` in the **caller's** context before single-flight. Bytes → returned through `_loads` (no network, no sink offer). None or any exception → the normal network path. |
 | S8 | No source set (CLI, evals, tests): one `is None` check, behaviour unchanged. |
+| S9 | `exact_report_codes` is None for any `#`, any `report(` field it can't parse, or an unresolved/blank code. Grants, gone detection and store reads use only it. Report status comes only from `REPORT_SUMMARY` / `report_summaries_query` texts. |
 
 ## Backend
 
 ```python
 # repositories/raw_fetches.py — the ONLY module that reads raw_fetches
-async def read_visible_fetch(session, query_key: str, *, tenant_id: UUID | None, now: datetime,
-                             reverify: timedelta, fresh: Callable[[datetime, dict[str, ReportStatus]], bool]
+async def read_visible_fetch(session, query_key: str, *, tenant_id: UUID | None, since: datetime,
+                             fresh: Callable[[datetime, list[ReportStatus | None]], bool]
                              ) -> str | None
-async def write_fetch(session, fetched: FetchedResponse) -> None      # hash compare + upsert
+async def upsert_raw_fetch(session, fetched: FetchedResponse) -> None  # hash compare + upsert
 async def grant_codes(session, tenant_id: UUID, codes: Sequence[str], at: datetime) -> None
 async def record_report_status(session, statuses: Sequence[ReportStatus]) -> None
 async def delete_report(session, code: str) -> int

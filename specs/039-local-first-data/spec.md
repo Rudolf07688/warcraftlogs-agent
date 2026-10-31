@@ -19,7 +19,7 @@ Self-answered (developer autonomy); each is a board decision `clarify:039-<topic
 - Q: What counts as a code the workspace already references? → A: a code the workspace itself
   fetched successfully from Warcraft Logs in a signed-in turn (a recorded reference); fetches
   without a signed-in identity record none.
-- Q: How long do "public" and a reference count? → A: 7 days (`RAW_STORE_REVERIFY_DAYS`), then
+- Q: How long do "public" and a reference count? → A: 1 day (`RAW_STORE_REVERIFY_DAYS`; 7 at first, cut after the bypass review), then
   Warcraft Logs is asked again.
 - Q: Is the reference record itself tenant-protected? → A: yes, row-level security per
   workspace; references are not deleted when a report is gone (harmless, the rows are gone).
@@ -142,7 +142,7 @@ refetched. With a hidden row: refetched. With the store failing: refetched, no e
 - **FR-002**: A workspace references a code when that workspace has itself successfully fetched
   data for that code from Warcraft Logs.
 - **FR-003**: Public status and references MUST be re-confirmed with Warcraft Logs at least every
-  `RAW_STORE_REVERIFY_DAYS` days (default 7); older ones do not count.
+  `RAW_STORE_REVERIFY_DAYS` days (default 1); older ones do not count.
 - **FR-004**: Rows naming no report (rankings, characters, world data) are public Warcraft Logs
   data reachable only by their exact query; this slice never serves them from the store (the
   shared cache's family TTLs keep governing them).

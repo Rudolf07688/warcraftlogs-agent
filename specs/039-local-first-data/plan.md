@@ -10,7 +10,7 @@ Make the global `raw_fetches` store safe to read (sc-178), cheap to write (sc-17
 read it before calling Warcraft Logs (sc-129). Visibility: a stored row is served to a tenant
 only when every report it names is **public** (seen from WCL, per-report status table) or
 **granted** to that tenant (the tenant fetched the code from WCL itself), both confirmed in
-the last 7 days. Exactly one repository function reads the table. A WCL response that shows a
+the last day (`RAW_STORE_REVERIFY_DAYS`, 1). Exactly one repository function reads the table. A WCL response that shows a
 single report missing/private deletes every row naming it and evicts its Redis report keys.
 Reads hook into the WCL client like the existing fetch sink: a backend-installed **fetch
 source** is consulted in `AsyncWCLClient.query` (per caller, before single-flight), so the
@@ -92,5 +92,5 @@ brief allows.
 |---|---|---|
 | `raw_reports` table | "public" and "finished" are per report, not per row; summary rows carry them | Deriving from tenant tables or each payload: no visibility there, and most report rows have no end time |
 | `raw_fetch_grants` table (RLS) | the owner's "codes the tenant already references", WCL-verified | UNION over tracked/recent raids/messages: misses chat-only codes, couples to 4 RLS tables and free text |
-| 7-day re-verify window | without it a store-served report never meets a refresh, so delete-on-private never fires | indefinite grants: the owner's revocation rule would be dead code for hot reports |
+| 1-day re-verify window | without it a store-served report never meets a refresh, so delete-on-private never fires | indefinite grants: the owner's revocation rule would be dead code for hot reports |
 | `wcl_store_reads_enabled` switch | the new read path sits on every WCL call; the owner can turn it off without losing writes | none needed beyond an env flag |

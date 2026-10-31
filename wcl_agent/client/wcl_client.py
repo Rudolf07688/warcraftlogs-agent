@@ -7,7 +7,8 @@ and HTTP pools are never shared across loops. Every query goes through
 API-cost logging and the lane limiter (contracts/wcl-async-client.md G1-G9). Result caching
 moved out in feature 014: callers use the typed key families in :mod:`wcl_agent.cache.cache`.
 Every successful network call is also offered to the fetch sink (feature 020), which the
-backend app sets to persist raw responses; the package itself stays DB-free.
+backend app sets to persist raw responses, and a fetch source (feature 039) may answer a query
+from that store first; the package itself stays DB-free.
 
 Lanes (PERF-211): background work (guides, the patch lookup, recent raids) runs inside
 :func:`background_lane` and may hold at most ``WCL_BACKGROUND_CONCURRENCY`` of the
@@ -26,7 +27,7 @@ import re
 import time
 import weakref
 from collections import deque
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -363,6 +364,26 @@ def set_fetch_sink(sink: FetchSink | None) -> None:
     _fetch_sink = sink
 
 
+# Feature 039 (DB-first reads): ``source(query_key, query, variables)`` returns a stored body
+# the caller may be served, or None. Set by the backend app; None in the CLI, evals and tests.
+FetchSource = Callable[[str, str, dict[str, Any]], Awaitable[bytes | None]]
+_fetch_source: FetchSource | None = None
+
+
+def set_fetch_source(source: FetchSource | None) -> None:
+    global _fetch_source
+    _fetch_source = source
+
+
+async def _stored(source: FetchSource, key: str, query: str, variables: dict[str, Any]) -> bytes | None:
+    """The source's answer; any failure is a miss, so a broken store never fails a query."""
+    try:
+        return await source(key, query, variables)
+    except Exception as exc:  # noqa: BLE001 - the store is an optimisation (FR-015)
+        logger.debug("wcl fetch source failed: %s", exc)
+        return None
+
+
 def _deliver(item: FetchedResponse | ReportGone) -> None:
     """Hand an item to the sink. Must stay O(1); a broken sink never fails the fetch."""
     sink = _fetch_sink
@@ -442,9 +463,16 @@ class AsyncWCLClient:
         Results are not cached here (feature 014): callers that want caching go through
         ``cache.get_or_load`` with a typed key family. Identical concurrent queries still
         share one request (single-flight).
+
+        Feature 039: with a fetch source set, the stored copy is asked first, in the caller's
+        own context (its tenant), before joining any shared request. A stored answer makes no
+        network call and is not offered to the sink again.
         """
         variables = variables or {}
         key = _flight_key(query, variables)
+        source = _fetch_source
+        if source is not None and (stored := await _stored(source, key, query, variables)) is not None:
+            return await _loads(stored)
         while True:
             flight = self._flights.get(key)
             if flight is None:

@@ -29,7 +29,7 @@ from wcl_agent.llm.models import (
 from wcl_agent.llm import provider
 from wcl_agent.llm.provider import credentials_error
 from wcl_agent.llm.vertex import model_location, project_id
-from wcl_agent.client.wcl_client import aclose_clients
+from wcl_agent.client.wcl_client import aclose_clients, set_fetch_source
 
 from .agent_runner import set_session_service
 from .api import (
@@ -92,6 +92,7 @@ _install_log_redaction()  # after: the redaction filter attaches to the handler 
 from .db.session import engine
 from .greeting import GREETING_MODEL, get_greeting
 from .services.fetch_persistence import FetchWriter
+from .services.raw_fetch_reads import read_stored_fetch
 from .services.guide import load_brief_record, maybe_scan_stale_guides, touch_guide_wanted
 from .startup import ReadinessGate, StartupTracker
 
@@ -303,6 +304,8 @@ async def lifespan(app: FastAPI):
             max_bytes=settings.wcl_fetch_persist_queue_mb * 1024 * 1024,
         )
         fetch_writer.start()
+        if settings.wcl_store_reads_enabled:
+            set_fetch_source(read_stored_fetch)  # feature 039: Redis → store → WCL
     app.state.fetch_writer = fetch_writer
     boot_task = asyncio.create_task(_boot(app, tracker))
     app.state.boot_task = boot_task
@@ -314,6 +317,7 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(asyncio.CancelledError):
             await boot_task
     if fetch_writer is not None:
+        set_fetch_source(None)
         await fetch_writer.stop()  # bounded drain while the DB engine is still open (FR-011)
     with contextlib.suppress(Exception):
         await aclose_clients()  # WCL HTTP pools (feature 013)

@@ -48,7 +48,8 @@ class ReportStatus:
     checked_at: datetime
 
 
-Freshness = Callable[[datetime, dict[str, ReportStatus]], bool]
+# fresh(fetched_at, the status of each code the row names, None where WCL showed us none)
+Freshness = Callable[[datetime, list[ReportStatus | None]], bool]
 
 
 def _aware(at: datetime) -> datetime:
@@ -196,7 +197,7 @@ async def read_visible_fetch(
 
     Served only when every report the row names (codes up to :data:`MAX_CODE`) is public or
     granted to ``tenant_id``, each confirmed at or after ``since``, and ``fresh(fetched_at,
-    statuses)`` holds. A row naming no report is public WCL data, reachable only by its exact
+    statuses)`` holds (one status per code, in order). A row naming no report is public WCL data, reachable only by its exact
     key; whether it is fresh is the caller's rule. ``tenant_id`` None sees public reports
     only. On Postgres the caller's transaction carries the tenant scope (grants are RLS'd).
     """
@@ -232,6 +233,6 @@ async def read_visible_fetch(
             public = status is not None and status.visibility == "public" and status.checked_at >= since
             if not public and code not in granted:
                 return None
-    if not fresh(_aware(row.fetched_at), statuses):
+    if not fresh(_aware(row.fetched_at), [statuses.get(c) for c in codes]):
         return None
     return await session.scalar(select(cast(RawFetch.payload, Text)).where(RawFetch.query_key == query_key))

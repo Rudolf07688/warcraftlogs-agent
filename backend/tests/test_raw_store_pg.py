@@ -136,3 +136,29 @@ async def test_nul_escapes_overlong_labels_and_unchanged_payloads_on_postgres(pg
     assert len(row.operation_name) == 120 and row.report_code is None
     assert row.payload == {"data": {"s": "ab"}}
     assert row.fetched_at == NOW  # unchanged payload: only fetched_at moved
+
+
+async def test_db_first_read_as_the_runtime_role(pg, tenants):
+    """sc-129 on Postgres: the read service scopes its own transaction to the turn's tenant."""
+    from backend.app.services.raw_fetch_reads import read_stored_fetch
+    from backend.app.tenancy.context import RequestIdentity, current_identity
+
+    a, b = tenants
+    c = code()
+    ended = int((NOW - timedelta(days=2)).timestamp() * 1000)
+    row = fetched(TABLE_Q, {"code": c}, {"reportData": {"report": {"table": 1}}})
+    await store_batch([
+        PendingWrite(fetched(REPORT_SUMMARY, {"code": c},
+                             {"reportData": {"report": {"code": c, "visibility": "unlisted", "endTime": ended}}})),
+        PendingWrite(row, a),
+    ])
+
+    async def as_tenant(tenant):
+        token = current_identity.set(RequestIdentity(uuid.uuid4(), tenant, "member", False, uuid.uuid4()))
+        try:
+            return await read_stored_fetch(row.query_key, row.query, row.variables)
+        finally:
+            current_identity.reset(token)
+
+    assert json.loads(await as_tenant(a)) == {"data": {"reportData": {"report": {"table": 1}}}}
+    assert await as_tenant(b) is None

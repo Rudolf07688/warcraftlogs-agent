@@ -31,8 +31,9 @@
 
 ## R4. Re-verify window (clarify:039-reverify)
 
-- **Decision**: public status and grants count for `RAW_STORE_REVERIFY_DAYS` (7). After that the
-  read misses, WCL is asked again and re-grants or reports the code gone.
+- **Decision**: public status and grants count for `RAW_STORE_REVERIFY_DAYS` (7 at first, **1**
+  after the bypass review, R9). After that the read misses, WCL is asked again and re-grants or
+  reports the code gone.
 
 ## R5. Read hook placement
 
@@ -81,6 +82,11 @@
 ## R9. Redis relation
 
 - Redis already serves report data by code to every tenant (keys hold no tenant). The store
-  adds no wider exposure: a store hit requires the stricter grant/public rule, and the only
-  Redis change is evicting a gone report's keys. Making Redis itself tenant-aware is out of
-  scope (backlog).
+  adds no wider *audience*: a store hit requires the stricter grant/public rule, and the only
+  Redis change is evicting a gone report's keys.
+- **Found in the bypass review**: a store hit back-fills the shared Redis entry, so a granted
+  tenant's hit re-warms an entry other tenants (who know the code) read. Today a revoked report
+  leaves Redis within its TTL (24 h) of the last WCL fetch; with the store, within the re-verify
+  window plus that TTL. Hence the 1-day default (worst case ~48 h, vs ~24 h today), bounded and
+  tunable. Closing it fully needs store hits that don't back-fill shared Redis, or tenant-aware
+  Redis: backlog, not this slice (no Redis redesign).
