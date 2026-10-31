@@ -20,11 +20,14 @@ Throwaway container on the feature's port 15434 (never `docker compose`, never 5
 ```bash
 docker run -d --rm --name wcl-034-pg -e POSTGRES_USER=wcl -e POSTGRES_PASSWORD=wcl \
   -e POSTGRES_DB=wcl -p 15434:5432 postgres:17
-# migrations as the owner create the runtime role (0004_rls, APP_DB_USER/APP_DB_PASSWORD):
+# init_db migrates as the owner (0004_rls creates the runtime role from APP_DB_USER/
+# APP_DB_PASSWORD) and creates the founder that 0003 needs; plain `alembic upgrade head`
+# stops at 0003 on an empty database.
 APP_DB_USER=wcl_app APP_DB_PASSWORD=wcl_app \
+BOOTSTRAP_ADMIN_EMAIL=founder@example.com BOOTSTRAP_ADMIN_PASSWORD=throwaway-founder-pass \
 DATABASE_OWNER_URL=postgresql+asyncpg://wcl:wcl@localhost:15434/wcl \
 DATABASE_URL=postgresql+asyncpg://wcl_app:wcl_app@localhost:15434/wcl \
-  uv run alembic -c backend/alembic.ini upgrade head
+  uv run python -m backend.cli.init_db
 TEST_DATABASE_URL=postgresql+asyncpg://wcl_app:wcl_app@localhost:15434/wcl \
   uv run --extra test pytest -v backend/tests/test_proposal_race_pg.py
 docker stop wcl-034-pg
