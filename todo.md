@@ -78,7 +78,7 @@ Medium findings still open:
 - PERF-001: the app waits for model discovery before serving anything. `sc-156`
 - SEC-003: remote images in model output can leak data. `sc-157`
 - SEC-004: the login rate limit is shared by all users behind the proxy. `sc-158`
-- SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty. `sc-159`
+- ~~SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty. `sc-159`~~
 
 ---
 # Done 
