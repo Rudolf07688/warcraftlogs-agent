@@ -383,6 +383,17 @@ def test_haiku_falls_back_and_sonnet_has_no_quota(catalog, caplog):
 # --- US3: never empty ----------------------------------------------------------------------
 
 
+def test_an_empty_listing_is_a_listing_failure(monkeypatch, caplog):
+    """sc-159: a catalog with no models falls back to the static lists, with one warning."""
+    monkeypatch.setattr(vertex, "list_publisher_models", lambda publisher: [])
+    monkeypatch.setattr(models_mod, "_make_gemini_client", lambda: object())
+    monkeypatch.setattr(models_mod, "_probe_gemini", lambda client, mid: True)
+    with caplog.at_level(logging.WARNING, logger="wcl_agent.llm.models"):
+        result = discover(gemini_ids=["gemini-a"], configured_default="gemini-a")
+    assert result.source == "fallback" and result.models == ["gemini-a"] and not result.degraded
+    assert sum("model catalog unavailable" in r.getMessage() for r in caplog.records) == 1
+
+
 @pytest.mark.parametrize("failing", ["google", "anthropic"])
 def test_listing_failure_probes_the_static_lists(monkeypatch, caplog, failing):
     def list_models(publisher):
@@ -459,7 +470,8 @@ def test_model_catalog_family(monkeypatch):
     assert family_ttl(CacheFamily.MODEL_CATALOG) == 21600
     monkeypatch.setenv("WCL_CACHE_TTL_MODEL_CATALOG", "60")
     assert family_ttl(CacheFamily.MODEL_CATALOG) == 60
-    assert keys.model_catalog("proj", "global", "sig") == "ext:models:v1:proj:global:sig"
+    assert keys.model_catalog("vertex", "proj", "global", "sig") == "ext:models:v2:vertex:proj:global:sig"
+    assert keys.model_catalog("anthropic", "-", "-", "sig") == "ext:models:v2:anthropic:-:-:sig"
 
 
 def test_classes_signature_tracks_every_setting(monkeypatch):
@@ -540,7 +552,7 @@ async def test_boot_miss_stores_and_hit_skips_discovery(boot, fake_redis):
     first, cached = await boot()
     assert cached is False and len(boot.calls) == 1
     assert boot.calls[0]["mode"] == "catalog" and boot.calls[0]["gemini_classes"]
-    key = keys.model_catalog("proj", "global", classes_signature(main.settings.gemini_classes,
+    key = keys.model_catalog("vertex", "proj", "global", classes_signature(main.settings.gemini_classes,
                                                                   main.settings.anthropic_classes))
     assert 21600 <= await fake_redis.ttl(key) <= 21600 * 1.1
     second, cached = await boot()
@@ -596,7 +608,7 @@ async def test_boot_default_follows_the_current_setting(boot, fake_redis, monkey
 
 async def test_boot_rediscovers_a_tampered_cache_entry(boot, fake_redis, caplog):
     """QA SEC-002: ids outside discovery's shape are never served from the cache."""
-    key = keys.model_catalog("proj", "global", classes_signature(main.settings.gemini_classes,
+    key = keys.model_catalog("vertex", "proj", "global", classes_signature(main.settings.gemini_classes,
                                                                   main.settings.anthropic_classes))
     evil = "projects/attacker/locations/global/endpoints/1"
     await fake_redis.set(key, catalog_result(models=[evil], default=evil, classes=[]).model_dump_json())

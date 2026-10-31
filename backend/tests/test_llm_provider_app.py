@@ -143,7 +143,7 @@ def test_anthropic_settings_with_the_owners_vertex_env(env, use_provider, caplog
         "gemini_models": [],
         "anthropic_models": ["claude-sonnet-4-20250514"],
         "candidate_models": ["claude-sonnet-4-20250514"],
-        "model_discovery_mode": "static",
+        "model_discovery_mode": "catalog",
     }
     warned = sorted(r.getMessage().split("=")[0] for r in caplog.records)
     assert warned == ["WCL_DEFAULT_MODEL", "WCL_GUIDE_MODEL", "WCL_REPORT_MODEL"]
@@ -161,6 +161,7 @@ class _FakeProbeClient:
     def __init__(self) -> None:
         self.probed: list[str] = []
         self.messages = self
+        self.models = SimpleNamespace(list=lambda **kwargs: [SimpleNamespace(id="claude-sonnet-4-20250514")])
 
     def create(self, **kwargs):
         self.probed.append(kwargs["model"])
@@ -185,7 +186,7 @@ async def test_startup_discovery_probes_claude_through_the_provider(env, use_pro
 
     assert client.probed == ["claude-sonnet-4-20250514"]
     assert app.state.models == ["claude-sonnet-4-20250514"] and not app.state.models_degraded
-    assert catalog.source == "static" and cached is False
+    assert catalog.source == "catalog" and cached is False
 
 
 # --- no key: one error, degraded models, no crash (AC 4) ----------------------------------------

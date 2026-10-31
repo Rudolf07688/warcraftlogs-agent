@@ -8,9 +8,12 @@ interface Props {
   onChange: (model: string) => void;
   disabled?: boolean;
   degraded?: boolean;
+  provider?: "vertex" | "anthropic";
 }
 
-function ModelSelectImpl({ models, value, onChange, disabled, degraded }: Props) {
+const PROVIDER_LABEL = { vertex: "Vertex AI", anthropic: "Anthropic API" } as const;
+
+function ModelSelectImpl({ models, value, onChange, disabled, degraded, provider }: Props) {
   return (
     <span className="ml-auto inline-flex items-center gap-1.5">
       <NativeSelect
@@ -27,6 +30,11 @@ function ModelSelectImpl({ models, value, onChange, disabled, degraded }: Props)
           </NativeSelectOption>
         ))}
       </NativeSelect>
+      {provider && (
+        <StatusBadge tone="neutral" title="The LLM provider serving these models.">
+          {PROVIDER_LABEL[provider]}
+        </StatusBadge>
+      )}
       {degraded && (
         <StatusBadge
           tone="warn"

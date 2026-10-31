@@ -90,11 +90,11 @@ def test_default_candidates(use_provider):
     assert provider.default_candidates() == ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]
 
 
-def test_model_catalog_only_on_vertex(use_provider):
+def test_model_catalog_on_both_providers(use_provider):
     use_provider("vertex")
     assert provider.has_model_catalog()
     use_provider("anthropic")
-    assert not provider.has_model_catalog()
+    assert provider.has_model_catalog()
 
 
 # --- roles (AC 7) ---------------------------------------------------------------------------

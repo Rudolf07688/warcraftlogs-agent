@@ -141,7 +141,7 @@ def test_client_factories_use_the_model_location(regional, monkeypatch):
     a = _capture(monkeypatch, anthropic, "AnthropicVertex")
     aa = _capture(monkeypatch, anthropic, "AsyncAnthropicVertex")
     vertex.genai_client()  # feature 032: forwards to provider
-    vertex.anthropic_client(max_retries=0)  # forwards to provider
+    provider.anthropic_client(max_retries=0)
     provider.async_anthropic_client(default_headers={"x": "y"})
     assert g == {"vertexai": True, "project": "proj-1", "location": "global"}
     assert a == {"project_id": "proj-1", "region": "global", "max_retries": 0}

@@ -26,6 +26,7 @@ from wcl_agent.llm.models import (
     log_class_results,
     missing_fixed_models,
 )
+from wcl_agent.llm import provider
 from wcl_agent.llm.provider import credentials_error
 from wcl_agent.llm.vertex import model_location, project_id
 from wcl_agent.client.wcl_client import aclose_clients
@@ -142,10 +143,14 @@ async def _load_models(app: FastAPI) -> tuple[ModelCatalog, bool]:
         )
 
     if mode == "catalog":
-        project = await asyncio.to_thread(project_id)
+        active = provider.active_provider()
+        # The Anthropic API has no project or location; the provider is in the key so one
+        # provider's catalog is never served under the other.
+        project = await asyncio.to_thread(project_id) if active == "vertex" else None
         key = keys.model_catalog(
+            active,
             project or "-",
-            model_location(),
+            model_location() if active == "vertex" else "-",
             classes_signature(gemini_classes, anthropic_classes),
         )
         catalog = await get_or_load(
@@ -164,6 +169,9 @@ async def _load_models(app: FastAPI) -> tuple[ModelCatalog, bool]:
             catalog = catalog.model_copy(update={"default": default})
     else:
         catalog = await load()
+    logger.info(
+        "model discovery: %d models from %s (%s)", len(catalog.models), catalog.source, provider.active_provider()
+    )
     if not loaded:
         log_class_results(catalog.classes)  # every boot explains its picks (SC-006)
     fixed = {
