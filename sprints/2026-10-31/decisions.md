@@ -129,3 +129,14 @@ review. **Owner GO (2026-10-31, via team-lead): "go". D0–D3 are accepted as re
   model defaults stand.
 - **Effect:** Implementation may proceed after each feature's Spec Kit gates (scrum-master
   sign-off). There are no more owner gates; the team runs autonomously to delivery.
+
+## D11 — 2026-10-31: 035 — a guide research step whose searches all failed
+- **Question:** On the Anthropic path, what happens when web search ran but every search
+  errored and none returned results?
+- **Answer:** The step raises `GuideModelError` and the run is held, as today's held runs
+  are. No uncited guide is written. Gemini keeps today's behaviour. (Accepted from the 035
+  spec sign-off, along with the scrum master's technical calls: routing by model family,
+  thinking off or low effort for the tiny-cap calls, unchanged retry counts, and web fetch
+  limited to `research.fetchable_domains()`.)
+- **Why:** sc-253 promises that guides stay grounded and cited (AC4/AC5). A held run is
+  visible and can be retried; a silently uncited guide is not.

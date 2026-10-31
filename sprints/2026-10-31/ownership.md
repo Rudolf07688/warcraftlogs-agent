@@ -28,7 +28,7 @@ Feature numbers start at **032**.
 
 | Path or glob | Owner | Feature | Status | Since |
 |---|---|---|---|---|
-| `specs/032-llm-provider-switch/**` | dev-a-032 | 032 | granted | 2026-10-31 |
+| `specs/032-llm-provider-switch/**` | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
 | `specs/034-epic203-qa-fixes/**` | dev-b-034 | 034 | released (merged 6e5cef7) | 2026-10-31 |
 | `backend/app/schemas.py` (`ProfileChangeIn` class only; 033 later `ModelsResponse`) | dev-b-034 | 034 | released (merged 6e5cef7) | 2026-10-31 |
 | `backend/app/services/profile_proposals.py` | dev-b-034 | 034 | released (merged 6e5cef7) | 2026-10-31 |
@@ -40,15 +40,21 @@ Feature numbers start at **032**.
 | `backend/tests/test_proposal_race_pg.py` (new), `frontend/src/App.test.tsx` (new) | dev-b-034 | 034 | released (merged 6e5cef7) | 2026-10-31 |
 | ~~`backend/app/db/repository.py`~~ | — | 034 | released (not needed) | 2026-10-31 |
 | `frontend/src/App.tsx`, `toolLabels.ts`, `lib/spells.ts`, `App.test.tsx` (within dev-b-034's grant) | dev-b-034/sub-1 (sonnet/high, T014–T018) | 034 | released (merged 6e5cef7) | 2026-10-31 |
-| `wcl_agent/llm/provider.py` (new) | dev-a-032 | 032 | granted | 2026-10-31 |
-| `wcl_agent/llm/vertex.py` (builders move out; forwarders) | dev-a-032 (033/035 delete forwarder use after merge) | 032 | granted | 2026-10-31 |
-| `wcl_agent/llm/model_retry.py` (`RetryingClaude` only) | dev-a-032 (then 033) | 032 | granted | 2026-10-31 |
-| `wcl_agent/agent.py` | dev-a-032 | 032 | granted | 2026-10-31 |
-| `backend/app/config.py` | dev-a-032 (then 033) | 032 | granted | 2026-10-31 |
-| `backend/app/greeting.py` | dev-a-032 | 032 | granted | 2026-10-31 |
-| `backend/app/main.py` (`_boot` only; `_load_models` is 033's) | dev-a-032 | 032 | granted | 2026-10-31 |
-| `backend/app/model_state.py` | dev-a-032 | 032 | granted | 2026-10-31 |
-| `backend/app/api/ws.py` (`chat()` invalid_model branch only) | dev-a-032 | 032 | granted | 2026-10-31 |
-| `backend/tests/test_llm_provider.py`, `test_llm_provider_agent.py`, `test_llm_provider_app.py` (new), `backend/tests/test_vertex.py` | dev-a-032 | 032 | granted | 2026-10-31 |
-| `frontend/src/App.modelFallback.test.tsx` (new) | dev-a-032 | 032 | granted | 2026-10-31 |
-| `.env.example`, `README.md` (provider section) | dev-a-032 (then 033/035 lines) | 032 | granted | 2026-10-31 |
+| `wcl_agent/llm/provider.py` (new) | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `wcl_agent/llm/vertex.py` (builders move out; forwarders) | dev-a-032 (033/035 delete forwarder use after merge) | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `wcl_agent/llm/model_retry.py` (`RetryingClaude` only) | dev-a-032 (then 033) | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `wcl_agent/agent.py` | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `backend/app/config.py` | dev-a-032 (then 033) | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `backend/app/greeting.py` | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `backend/app/main.py` (`_boot` only; `_load_models` is 033's) | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `backend/app/model_state.py` | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `backend/app/api/ws.py` (`chat()` invalid_model branch only) | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `backend/tests/test_llm_provider.py`, `test_llm_provider_agent.py`, `test_llm_provider_app.py` (new), `backend/tests/test_vertex.py` | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `frontend/src/App.modelFallback.test.tsx` (new) | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `.env.example`, `README.md` (provider section) | dev-a-032 (then 033/035 lines) | 032 | released (merged e78e4a1) | 2026-10-31 |
+| `specs/035-provider-generation-callsites/**` | dev-b-035 | 035 | granted | 2026-10-31 |
+| `wcl_agent/llm/generation.py` (new) | dev-b-035 | 035 | granted | 2026-10-31 |
+| `backend/app/suggestions.py`, `services/conversation_titles.py`, `services/report_synthesis.py`, `services/guide_pipeline/llm.py`, `services/guide_pipeline/research.py` (one line) | dev-b-035 | 035 | granted | 2026-10-31 |
+| `backend/tests/test_llm_generation.py`, `test_guide_pipeline_llm.py`, `test_provider_e2e.py` (new); `test_suggestions.py`, `test_conversation_titles.py`, `test_report_synthesis.py`, `test_guide_pipeline_run.py`, `test_guide_reports.py` | dev-b-035 | 035 | granted | 2026-10-31 |
+| `README.md` (035 lines in the provider section) | dev-b-035 | 035 | granted — effective after 032 merges; 033 sequenced after 035 or by SM grant | 2026-10-31 |
+| `wcl_agent/llm/vertex.py` (genai_client forwarder deletion only, iff 033 merged first) | dev-b-035 | 035 | granted — effective after 032 merges | 2026-10-31 |

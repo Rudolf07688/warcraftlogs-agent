@@ -2,7 +2,7 @@
 
 - **Feature:** 033 · **Branch:** `033-anthropic-discovery-label` (set `GIT_BRANCH_NAME=033-anthropic-discovery-label` for `/speckit-specify`; spec dir `specs/033-anthropic-discovery-label/`)
 - **Worktree:** `/home/rudolf/dev/wcl-worktrees/dev-a` (track A). The scrum master resets it to the sprint tip (032 merged) before you start.
-- **Base ref:** `sprint-2026-10-31` @ `<tip after 032 merge>`
+- **Base ref:** `sprint-2026-10-31` @ `e78e4a1` (032 + 034 merged)
 - **Stories:** sc-250 (3) model discovery, catalog and 429 sibling fallback on the Anthropic API; sc-251 (1) model picker shows which LLM provider is live; sc-159 (1, `qa-deferred`) QA SPEC-002/004: startup log line and empty-catalog handling. Move them to **In Progress** when you start.
 - **Peer:** track B developer (`dev-b-034` or `dev-b-035`; the scrum master tells you).
 - **Sprint files:** plan `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-31/plan.md` (section 033, overlap table), decisions `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-31/decisions.md` (D1–D5, D9, D10), ownership `/home/rudolf/dev/wcl-worktrees/sprint/sprints/2026-10-31/ownership.md`.
