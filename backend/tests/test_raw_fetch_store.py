@@ -99,3 +99,60 @@ async def test_different_variables_are_different_rows(session):
     await upsert_raw_fetch(session, fetched(REPORT_SUMMARY, {"code": "TWO"}, {}))
     await session.commit()
     assert await session.scalar(select(func.count()).select_from(RawFetch)) == 2
+
+
+# --- feature 039 / sc-177: write amplification and edge cases ------------------------
+
+
+def count_inserts(session) -> list[str]:
+    """Record every raw_fetches INSERT the session's engine runs."""
+    from sqlalchemy import event
+
+    seen: list[str] = []
+    engine = session.bind.sync_engine if hasattr(session.bind, "sync_engine") else session.bind
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("INSERT INTO RAW_FETCHES"):
+            seen.append(statement)
+
+    return seen
+
+
+async def test_an_unchanged_payload_only_moves_fetched_at(session):
+    first = fetched(REPORT_SUMMARY, {"code": "SAME"}, {"v": 1}, T0)
+    later = FetchedResponse(  # same data, a different _cost (it changes every request)
+        first.query_key, first.query, first.variables,
+        first.content.replace(b'"pointsSpentThisHour": 1', b'"pointsSpentThisHour": 9'),
+        T0 + timedelta(hours=3),
+    )
+    await upsert_raw_fetch(session, first)
+    inserts = count_inserts(session)
+    await upsert_raw_fetch(session, later)
+    await session.commit()
+
+    assert inserts == []  # the payload was neither sent nor rewritten
+    [row] = await rows(session)
+    assert row.fetched_at.replace(tzinfo=UTC) == T0 + timedelta(hours=3)
+    assert row.payload == {"data": {"v": 1}}
+
+
+async def test_a_changed_payload_replaces_the_row_and_its_hash(session):
+    await upsert_raw_fetch(session, fetched(REPORT_SUMMARY, {"code": "CHG"}, {"v": 1}, T0))
+    [before] = await rows(session)
+    old_hash = before.payload_hash
+    await upsert_raw_fetch(session, fetched(REPORT_SUMMARY, {"code": "CHG"}, {"v": 2}, T0 + timedelta(minutes=1)))
+    await session.commit()
+    [row] = await rows(session)
+    assert row.payload == {"data": {"v": 2}} and row.payload_hash not in (None, old_hash)
+
+
+async def test_overlong_labels_and_nul_escapes_never_fail_the_insert(session):
+    long_code = "C" * 40
+    query = f"query {'Op' * 80}($code: String!) {{ reportData {{ report(code: $code) {{ t }} }} }}"
+    await upsert_raw_fetch(session, fetched(query, {"code": long_code}, {"s": "a\u0000b", "k": "\\u0000"}))
+    await session.commit()
+    [row] = await rows(session)
+    assert len(row.operation_name) == 120
+    assert row.report_code is None and row.report_codes == [long_code]
+    assert row.payload == {"data": {"s": "ab", "k": "\\u0000"}}  # an escaped backslash is kept
