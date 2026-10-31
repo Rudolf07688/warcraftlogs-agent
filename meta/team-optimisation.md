@@ -49,6 +49,7 @@ as an autonomous unit that needs only a small owner input to steer it.
 | 2026-10-25 | 23 | 1975 | 275 (140) | 61.0 | **2.65** | **55%** | 35% | 8% | First team sprint, 9 developers including one restart (dev-b-019 → v2), QA sweep plus a fix round with re-checks |
 | 2026-10-26 | 20 | 1482 | 250 (118) | 43.6 | **2.18** | **42%** | 49% | 8% | Two design docs and three builds; owner plan gate; QA sweep, no fix round |
 | 2026-10-31 | 21 | 990 | 160 (76) | 29.2 | **1.39** | **41%** | 58% | 0% | Fast-tracked halfway; no QA sweep |
+| 2026-10-31b | 21 | 757 | 11 (no SM) | 17.5 | **0.83** | **29%** | 52% | 18% | PO + 2 devs, tiers M + S, autonomy grant (D15); QA sweep + one fix round; machine crash mid-sprint |
 
 **Caveats.**
 - The main-session transcripts include some non-sprint work. On 10-25 that was writing the
@@ -388,3 +389,7 @@ through respawns as the same named member, with its own small, curated memory. I
   team can concentrate on learning to work autonomously.
 - **2026-10-31:** The owner handed team-lead control of `.env` and live testing (D16,
   preference 17), mid-sprint 2026-10-31b. Posted on the board so the team can request checks.
+- **2026-10-31:** Sprint 2026-10-31b closed: 21/21 pts, cost per point 0.83 (from 1.39),
+  coordination 29% (from 41%), with a QA sweep and one fix round included. Zero escalations
+  under the autonomy grant; both QA Highs came from unreviewed tier-S security fixes. First
+  team-lead live pass (D16). Team report: `meta/sprints/2026-10-31b/team-report.html`.

@@ -1,0 +1,26 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            120    56990    15885999     164995      6
+Dev-2: feature 037 hardening                 31    12171     2476647      74283      0
+Shortcut sync after sprint                   10     3759      739204     102891      0
+Summarise QA backlog tickets                  6     9661      368546     109314      0
+QA bug hunt sweep                            67    51709     6501891     153721      0
+QA security sweep                            49    31518     3546156     113284      0
+Dev-1: feature 036 hardening                 29    16778     3229442     163598      0
+Dev-2: feature 037 hardening                125    88446    20467298     626342      0
+Dev-1: feature 036 hardening                154   115137    35266763     585629      0
+QA spec conformance sweep                    66    42281     6049526     153803      0
+QA performance sweep                         23    21323     1284604      81704      0
+product-owner                                77    79810    10938496    1015775      5
+TOTAL {'calls': 757, 'out': 529583, 'cr': 106754572, 'cc': 3345339, 'inp': 1602, 'sends': 11}
+main (team-lead) [('Bash', 86), ('mcp__shortcut__stories-update', 9), ('SendMessage', 6), ('ToolSearch', 5), ('TaskStop', 3), ('mcp__shortcut__stories-search', 2)]
+Dev-2: feature 037 hardening [('Bash', 28), ('mcp__shortcut__stories-get-by-id', 6), ('mcp__shortcut__stories-update', 6), ('ToolSearch', 1), ('Edit', 1)]
+Shortcut sync after sprint [('mcp__shortcut__stories-search', 17), ('Bash', 2), ('mcp__shortcut__epics-search', 2), ('ToolSearch', 1), ('mcp__shortcut__workflows-list', 1), ('mcp__shortcut__iterations-get-active', 1)]
+Summarise QA backlog tickets [('mcp__shortcut__stories-get-by-id', 21), ('Bash', 4), ('ToolSearch', 1), ('mcp__shortcut__stories-search', 1)]
+QA bug hunt sweep [('Bash', 65), ('Read', 1), ('Write', 1)]
+QA security sweep [('Bash', 48), ('Write', 1)]
+Dev-1: feature 036 hardening [('Bash', 27), ('mcp__shortcut__stories-get-by-id', 5), ('Read', 1), ('ToolSearch', 1), ('mcp__shortcut__stories-update', 1)]
+Dev-2: feature 037 hardening [('Bash', 120), ('mcp__shortcut__stories-update', 7), ('mcp__shortcut__stories-get-by-id', 4), ('Edit', 3), ('ToolSearch', 1), ('Write', 1)]
+Dev-1: feature 036 hardening [('Bash', 136), ('Write', 9), ('mcp__shortcut__stories-update', 9), ('mcp__shortcut__stories-get-by-id', 5), ('Skill', 4), ('ToolSearch', 2)]
+QA spec conformance sweep [('Bash', 66), ('Write', 1)]
+QA performance sweep [('Bash', 23), ('Write', 1)]
+product-owner [('Bash', 48), ('mcp__shortcut__stories-update', 22), ('mcp__shortcut__stories-create', 11), ('mcp__shortcut__stories-create-comment', 11), ('Agent', 10), ('Write', 9)]
