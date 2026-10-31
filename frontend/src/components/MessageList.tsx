@@ -1,6 +1,6 @@
-import { memo, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Message, ProfileProposal, SpellCardState } from "../types";
-import { StickToBottom } from "use-stick-to-bottom";
+import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 import { FollowUps } from "./FollowUps";
 import { StreamMarkdown } from "./StreamMarkdown";
 import { SpellCard } from "./SpellCard";
@@ -94,6 +94,42 @@ function LiveMessage({ status, streamCards }: { status: string; streamCards: Spe
   );
 }
 
+// sc-140: when a streamed answer completes, bring the top of the question that produced it
+// to the top of the view, so the reader starts at the beginning. The rule: only when the
+// reader was following the stream (never scrolled away from the bottom lock while it ran),
+// and only on the streaming -> done transition with an agent reply last. Reopening a chat,
+// follow-up suggestions, a failed turn (a user message is still last) and a reader who
+// scrolled away all leave the view alone.
+function ScrollToQuestion({ streaming, answered }: { streaming: boolean; answered: boolean }) {
+  const { scrollRef, stopScroll, escapedFromLock } = useStickToBottomContext();
+  const following = useRef(true);
+  const wasStreaming = useRef(streaming);
+
+  useEffect(() => {
+    if (streaming) following.current = !escapedFromLock;
+  }, [streaming, escapedFromLock]);
+
+  useEffect(() => {
+    const finished = wasStreaming.current && !streaming;
+    wasStreaming.current = streaming;
+    const view = scrollRef.current;
+    if (!finished || !answered || !following.current || !view) return;
+    const questions = view.querySelectorAll<HTMLElement>(".message.user");
+    const question = questions[questions.length - 1];
+    if (!question) return;
+    // Release the stick-to-bottom lock, or it would snap straight back to the bottom.
+    stopScroll();
+    const top = question.getBoundingClientRect().top - view.getBoundingClientRect().top;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    view.scrollTo({
+      top: Math.max(view.scrollTop + top - 8, 0),
+      behavior: reduced ? "auto" : "smooth",
+    });
+  }, [streaming, answered, scrollRef, stopScroll]);
+
+  return null;
+}
+
 function MessageListImpl({
   messages,
   streaming,
@@ -112,6 +148,10 @@ function MessageListImpl({
     <StickToBottom className="message-list" resize="smooth" initial="smooth">
       {({ isAtBottom, scrollToBottom }) => (
         <>
+          <ScrollToQuestion
+            streaming={streaming}
+            answered={messages[messages.length - 1]?.role === "agent"}
+          />
           <StickToBottom.Content className="message-list-content">
             {messages.map((m, i) => {
               const isLast = i === messages.length - 1;

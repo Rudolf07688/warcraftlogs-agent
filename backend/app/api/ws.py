@@ -290,9 +290,6 @@ async def _handle_turn(
         await apply_tenant_scope(session, identity)  # re-scope after commit
         await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_msg.seq))
 
-        # WCL data is public and cached for every tenant alike (feature 014 supersedes
-        # FR-019); only the forced-refresh limit is per user, for this turn (US4).
-        set_refresh_actor(str(identity.user_id))
         preamble = await _build_turn_preamble(session, tenant_id, turn.content)
 
     # Stream the agent response, accumulating tokens into the final content.
@@ -305,6 +302,10 @@ async def _handle_turn(
     # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)
+    # WCL data is public and cached for every tenant alike (feature 014 supersedes FR-019);
+    # only the forced-refresh limit is per user, for this turn (US4). Cleared with the
+    # identity (sc-276), so the follow-up suggestions task never acts as this turn's user.
+    set_refresh_actor(str(identity.user_id))
     try:
         async for record in stream_response(
             turn.model,
@@ -362,6 +363,7 @@ async def _handle_turn(
         return None
     finally:
         current_identity.reset(identity_token)
+        set_refresh_actor(None)
         scratch.cleanup()
 
     final_text = "".join(tokens) or "(no response)"

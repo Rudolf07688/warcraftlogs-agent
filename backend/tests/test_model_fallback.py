@@ -381,6 +381,95 @@ async def test_both_remembered_starts_on_the_chosen_model():
     assert client.calls == [A] and stats.switched_to is None
 
 
+# --- sc-268: one wait budget per turn when both models are remembered as limited ----------
+
+# Real waits (3 s, 6 s, 12 s, 24 s), but sleep is faked and only records them.
+WAITING = RetryPolicy(attempts=5, initial_s=3.0, max_s=30.0, jitter_s=0.0, budget_s=90.0)
+
+
+@pytest.fixture
+def sleeps(monkeypatch) -> list[float]:
+    recorded: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        recorded.append(seconds)
+
+    monkeypatch.setattr(model_retry.asyncio, "sleep", fake_sleep)
+    return recorded
+
+
+async def _turn_on_a(client, *, remembered=()):
+    for model in remembered:
+        model_retry._limited_until[model] = model_retry.time.monotonic() + 60
+    llm = _gemini(A, client)
+    llm.policy = WAITING
+    with _turn(A, B) as (stats, records):
+        try:
+            await _collect(llm, _request(A))
+            error = None
+        except ModelRateLimited as exc:
+            error = exc
+    return stats, records, error
+
+
+async def test_both_remembered_share_one_wait_budget(sleeps):
+    client = FakeGenai(busy={A, B})
+    stats, records, error = await _turn_on_a(client, remembered=(A, B))
+    assert isinstance(error, ModelRateLimited)
+    # probe on A (one retry), then B with what is left of the shared budget: not B's 3+6+12+24 s
+    assert client.calls == [A, A, B, B]
+    assert sleeps == [3.0, 3.0]
+    assert sum(sleeps) <= model_retry._BOTH_LIMITED_BUDGET_S
+    assert stats.waited_s == sum(sleeps)
+    # the user still gets the "both busy" outcome: the turn switched once, then gave up
+    assert [r["type"] for r in records].count("model_fallback") == 1
+    assert stats.switched_to == B
+
+
+async def test_a_probe_that_spends_the_budget_leaves_the_sibling_one_try(sleeps, monkeypatch):
+    monkeypatch.setattr(model_retry, "_PRIMARY_BUDGET_S", 9.0)
+    client = FakeGenai(busy={A, B})
+    for model in (A, B):
+        model_retry._limited_until[model] = model_retry.time.monotonic() + 60
+    llm = _gemini(A, client)
+    llm.policy = RetryPolicy(attempts=5, initial_s=9.0, max_s=30.0, jitter_s=0.0, budget_s=90.0)
+    with _turn(A, B), pytest.raises(ModelRateLimited):
+        await _collect(llm, _request(A))
+    assert client.calls == [A, A, B]  # the probe waits 9 s of the 10 s; B's next wait won't fit
+    assert sleeps == [9.0]
+
+
+async def test_both_remembered_but_the_sibling_recovered_answers(sleeps):
+    client = FakeGenai(busy={A})
+    stats, _records, error = await _turn_on_a(client, remembered=(A, B))
+    assert error is None and client.calls == [A, A, B]
+    assert stats.switched_to == B
+
+
+async def test_only_the_primary_remembered_switches_at_once_unchanged(sleeps):
+    client = FakeGenai(busy={A, B})
+    _stats, _records, error = await _turn_on_a(client, remembered=(A,))
+    assert isinstance(error, ModelRateLimited)
+    assert client.calls == [B] * 5  # straight to B, B's full schedule
+    assert sleeps == [3.0, 6.0, 12.0, 24.0]
+
+
+async def test_none_remembered_keeps_the_probe_and_the_full_sibling_schedule(sleeps):
+    client = FakeGenai(busy={A, B})
+    _stats, _records, error = await _turn_on_a(client)
+    assert isinstance(error, ModelRateLimited)
+    assert client.calls == [A, A] + [B] * 5
+    assert sleeps == [3.0, 3.0, 6.0, 12.0, 24.0]
+
+
+async def test_only_the_sibling_remembered_is_unchanged(sleeps):
+    client = FakeGenai(busy={A, B})
+    _stats, _records, error = await _turn_on_a(client, remembered=(B,))
+    assert isinstance(error, ModelRateLimited)
+    assert client.calls == [A, A] + [B] * 5
+    assert sleeps == [3.0, 3.0, 6.0, 12.0, 24.0]
+
+
 @pytest.mark.parametrize(
     ("retry_enabled", "fallback"), [(False, None), (False, B), (True, None)]
 )
