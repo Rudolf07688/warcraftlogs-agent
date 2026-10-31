@@ -28,7 +28,7 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Open threads
 
-- Owner: merge `sprint-2026-10-31b` to main? Then push (owner asks explicitly).
+- Done: sprint-2026-10-31b merged and pushed (c614178); worktrees removed; app runs from main.
 - Owner decisions from Maren's report: accept the SEC-001 trade-off and sc-221 AC5 as partial.
 - Next sprint idea from the report: tier-S security fixes get one bypass attempt before
   hand-off and at merge.
