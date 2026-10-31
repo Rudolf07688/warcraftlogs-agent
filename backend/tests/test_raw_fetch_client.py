@@ -8,8 +8,15 @@ import httpx
 import pytest
 
 from backend.tests.wcl_fakes import gql_response, mock_async_client
+from wcl_agent.client.queries import REPORT_SUMMARY
 from wcl_agent.client import wcl_client
-from wcl_agent.client.wcl_client import FetchedResponse, operation_name, report_codes
+from wcl_agent.client.wcl_client import (
+    FetchedResponse,
+    ReportGone,
+    exact_report_codes,
+    operation_name,
+    report_codes,
+)
 
 REPORT_Q = "query ReportQ($code: String!) { reportData { report(code: $code) { title } } }"
 COST = {"limitPerHour": 3600, "pointsSpentThisHour": 12, "pointsResetIn": 900}
@@ -127,3 +134,62 @@ def test_report_codes_skips_unresolved_and_empty_values():
 def test_report_codes_none_for_non_report_queries():
     query = "query CharRef($name: String!, $server: String!, $region: String!) { characterData { character(name: $name) { id } } }"
     assert report_codes(query, {"name": "x", "server": "y", "region": "eu"}) == []
+
+
+def test_report_codes_sees_through_whitespace_and_commas():
+    query = '{ reportData { report ,( code , : "W1") { t } } }'
+    assert report_codes(query, {}) == ["W1"]
+
+
+# --- feature 039: exact codes and "report gone" -------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("query", "variables", "expected"),
+    [
+        (REPORT_Q, {"code": "AbC"}, ["AbC"]),
+        ("{ worldData { zones { id } } }", {}, []),
+        ('# report(code: "V")\n{ reportData { report (code: "A") { t } } }', {}, None),  # comment
+        ('{ reportData { report(allowUnlisted: true, code: "A") { t } } }', {}, None),  # unparsed
+        (REPORT_Q, {}, None),  # unresolved variable
+        (REPORT_Q, {"code": " "}, None),
+    ],
+)
+def test_exact_report_codes_refuses_anything_it_cant_fully_parse(query, variables, expected):
+    assert exact_report_codes(query, variables) == expected
+
+
+async def test_a_null_report_offers_report_gone_instead_of_the_response(offered):
+    client = mock_async_client(lambda request: gql_response({"data": {"_cost": COST, "reportData": {"report": None}}}))
+    assert await client.query(REPORT_SUMMARY, {"code": "Del1"}) == {"data": {"reportData": {"report": None}}}
+    await client.aclose()
+    assert len(offered) == 1 and isinstance(offered[0], ReportGone)
+    assert offered[0].codes == ("Del1",)
+
+
+async def test_a_null_report_with_errors_offers_report_gone_and_still_raises(offered):
+    body = {"data": {"reportData": {"report": None}},
+            "errors": [{"message": "This report does not exist.", "path": ["reportData", "report"]}]}
+    client = mock_async_client(lambda request: gql_response(body))
+    with pytest.raises(RuntimeError):
+        await client.query(REPORT_SUMMARY, {"code": "Priv1"})
+    await client.aclose()
+    assert [type(o) for o in offered] == [ReportGone] and offered[0].codes == ("Priv1",)
+
+
+async def test_batches_validation_errors_and_unparsed_queries_are_never_gone(offered):
+    batch = "query B($c0: String!, $c1: String!) { reportData { r0: report(code: $c0) { t } r1: report(code: $c1) { t } } }"
+    responses = iter(
+        [
+            gql_response({"data": {"reportData": {"r0": None, "r1": None}}}),
+            gql_response({"errors": [{"message": "Cannot query field"}]}),  # no data at all
+            gql_response({"data": {"reportData": {"report": None}}}),
+        ]
+    )
+    client = mock_async_client(lambda request: next(responses))
+    await client.query(batch, {"c0": "A", "c1": "B"})
+    with pytest.raises(RuntimeError):
+        await client.query(REPORT_Q, {"code": "Bad"})
+    await client.query('# report(code: "Victim")\n{ reportData { report (code: "Nope") { t } } }', {})
+    await client.aclose()
+    assert not any(isinstance(o, ReportGone) for o in offered)

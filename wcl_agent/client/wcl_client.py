@@ -7,7 +7,8 @@ and HTTP pools are never shared across loops. Every query goes through
 API-cost logging and the lane limiter (contracts/wcl-async-client.md G1-G9). Result caching
 moved out in feature 014: callers use the typed key families in :mod:`wcl_agent.cache.cache`.
 Every successful network call is also offered to the fetch sink (feature 020), which the
-backend app sets to persist raw responses; the package itself stays DB-free.
+backend app sets to persist raw responses, and a fetch source (feature 039) may answer a query
+from that store first; the package itself stays DB-free.
 
 Lanes (PERF-211): background work (guides, the patch lookup, recent raids) runs inside
 :func:`background_lane` and may hold at most ``WCL_BACKGROUND_CONCURRENCY`` of the
@@ -26,7 +27,7 @@ import re
 import time
 import weakref
 from collections import deque
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ import httpx
 
 from ..cache.cache import CacheFamily, _env_int, aclose_redis, get_or_load, keys
 from ..cache.cache_models import OAuthToken
+from .queries import REPORT_SUMMARY
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +295,9 @@ def operation_name(query: str) -> str | None:
     return match.group(1) if match else None
 
 
-_REPORT_CODE_RE = re.compile(r'report\(\s*code\s*:\s*(?:\$(\w+)|"([^"]*)")')
+# Commas are insignificant in GraphQL, like whitespace (feature 039: no spacing hides a code).
+_REPORT_CODE_RE = re.compile(r'\breport[\s,]*\([\s,]*code[\s,]*:[\s,]*(?:\$(\w+)|"([^"]*)")')
+_REPORT_FIELD_RE = re.compile(r"\breport[\s,]*\(")
 
 
 def report_codes(query: str, variables: dict[str, Any]) -> list[str]:
@@ -305,6 +309,71 @@ def report_codes(query: str, variables: dict[str, Any]) -> list[str]:
         if code and code not in codes:
             codes.append(code)
     return codes
+
+
+def exact_report_codes(query: str, variables: dict[str, Any]) -> list[str] | None:
+    """:func:`report_codes`, or None when the query may name a report the parser can't see.
+
+    That is a comment (``#``, which could fake or hide a ``report(code:``), a ``report(`` field
+    whose first argument isn't ``code`` with a plain string or variable, or an unresolved
+    code. The raw store's visibility rule trusts only this (feature 039): a hand-written query
+    (``run_wcl_graphql``) can't earn a grant or delete a report it doesn't really name.
+    """
+    if "#" in query:
+        return None
+    matches = _REPORT_CODE_RE.findall(query)
+    if len(matches) != len(_REPORT_FIELD_RE.findall(query)):
+        return None
+    for var, literal in matches:
+        value = variables.get(var) if var else literal
+        # A padded code ("ABC ") is sent to WCL as is, so it isn't the trimmed code (041 BUG-003).
+        if not isinstance(value, str) or not value.strip() or value != value.strip():
+            return None
+    return report_codes(query, variables)
+
+
+def _outside_parens(query: str) -> str:
+    """The query with every parenthesised part (arguments, variable declarations) removed."""
+    out, depth = [], 0
+    for ch in query:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+# Anything that could make the response's ``reportData.report`` key mean another field, hide a
+# field from execution, or hide text from the parser: aliases (``:`` outside arguments),
+# directives, string literals, fragments and comments.
+_UNPLAIN = ("#", "@", '"', "...", "fragment")
+_REPORT_TOKEN_RE = re.compile(r"\breport\b")
+# A body whose first field is ``reportData.report`` holding an object (``_cost`` comes first).
+_REPORT_OBJECT_RE = re.compile(
+    rb'\A\s*\{\s*"data"\s*:\s*\{\s*(?:"_cost"\s*:\s*\{[^{}]*\}\s*,\s*)?'
+    rb'"reportData"\s*:\s*\{\s*"report"\s*:\s*\{'
+)
+
+
+def returned_report_code(query: str, variables: dict[str, Any], content: bytes) -> str | None:
+    """The code of the one report a *plain* query asked for, when WCL returned it (041 fix 2).
+
+    Plain: exactly one ``report`` field, its code a padding-free variable, and nothing that
+    could alias, skip or hide a field (:data:`_UNPLAIN`, ``:`` outside arguments). Only then can
+    the response key ``reportData.report`` be that field, so a non-null object there proves
+    WCL served the report. Everything else returns None and earns no grant.
+    """
+    if any(token in query for token in _UNPLAIN) or ":" in _outside_parens(query):
+        return None
+    if len(_REPORT_TOKEN_RE.findall(query)) != 1:
+        return None
+    matches = _REPORT_CODE_RE.findall(query)
+    codes = exact_report_codes(query, variables)
+    if len(matches) != 1 or not matches[0][0] or not codes:
+        return None
+    return codes[0] if _REPORT_OBJECT_RE.match(content[:2048]) else None
 
 
 # --- Fetch sink (feature 020): every successful WCL response, offered for persistence ---
@@ -321,7 +390,16 @@ class FetchedResponse:
     fetched_at: datetime
 
 
-FetchSink = Callable[[FetchedResponse], None]
+@dataclass(frozen=True)
+class ReportGone:
+    """Feature 039: WCL answered a single-report query with ``report: null`` — the report was
+    deleted, made private or never existed — so its stored copy must go."""
+
+    codes: tuple[str, ...]
+    seen_at: datetime
+
+
+FetchSink = Callable[[FetchedResponse | ReportGone], None]
 # Process-wide, like the token memo. Set by the backend app (fetch persistence); None
 # everywhere else (CLI, evals, tests), so a fetch then costs one ``is None`` check.
 _fetch_sink: FetchSink | None = None
@@ -332,15 +410,85 @@ def set_fetch_sink(sink: FetchSink | None) -> None:
     _fetch_sink = sink
 
 
-def _offer(key: str, query: str, variables: dict[str, Any], content: bytes) -> None:
-    """Hand a response to the sink. Must stay O(1); a broken sink never fails the fetch."""
+# Feature 039 (DB-first reads): ``source(query_key, query, variables)`` returns a stored body
+# the caller may be served, or None. Set by the backend app; None in the CLI, evals and tests.
+FetchSource = Callable[[str, str, dict[str, Any]], Awaitable[bytes | None]]
+_fetch_source: FetchSource | None = None
+
+
+def set_fetch_source(source: FetchSource | None) -> None:
+    global _fetch_source
+    _fetch_source = source
+
+
+async def _stored(source: FetchSource, key: str, query: str, variables: dict[str, Any]) -> bytes | None:
+    """The source's answer; any failure is a miss, so a broken store never fails a query."""
+    try:
+        return await source(key, query, variables)
+    except Exception as exc:  # noqa: BLE001 - the store is an optimisation (FR-015)
+        logger.debug("wcl fetch source failed: %s", exc)
+        return None
+
+
+def _deliver(item: FetchedResponse | ReportGone) -> None:
+    """Hand an item to the sink. Must stay O(1); a broken sink never fails the fetch."""
     sink = _fetch_sink
     if sink is None:
         return
     try:
-        sink(FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc)))
+        sink(item)
     except Exception as exc:  # noqa: BLE001 - persistence is best effort (FR-007)
         logger.debug("wcl fetch sink failed: %s", exc)
+
+
+def _offer(key: str, query: str, variables: dict[str, Any], content: bytes) -> None:
+    if _fetch_sink is not None:
+        _deliver(FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc)))
+
+
+# A "gone" answer is tiny; bigger bodies are never parsed for it.
+_GONE_MAX_BYTES = 4096
+# WCL's wording for a report that is missing or not ours to see (041 fix 1).
+_GONE_MESSAGE_RE = re.compile(r"not exist|no such|not found|permission|private", re.IGNORECASE)
+
+
+def _is_gone_error(error: object) -> bool:
+    """An error about the report itself (not a field below it) saying it is missing/private."""
+    return (
+        isinstance(error, dict)
+        and error.get("path") == ["reportData", "report"]
+        and isinstance(error.get("message"), str)
+        and _GONE_MESSAGE_RE.search(error["message"]) is not None
+    )
+
+
+def _gone_codes(
+    query: str, variables: dict[str, Any], content: bytes, payload: dict[str, Any] | None = None
+) -> list[str]:
+    """The report of our own :data:`REPORT_SUMMARY` that WCL answered ``reportData.report:
+    null``, else []. With ``errors`` (``payload`` is then the parsed body) every error must be
+    about the report itself and read as not-found/permission: a null that propagated up from a
+    failing subfield, or a transient error, deletes nothing (041 fix 1, decision
+    scope:041:gone-rule). Hand-written and other queries never delete: their text could alias,
+    pad or hide what they really ask for."""
+    if _fetch_sink is None or query != REPORT_SUMMARY or len(content) > _GONE_MAX_BYTES:
+        return []
+    codes = exact_report_codes(query, variables)
+    if not codes or len(codes) != 1:
+        return []
+    if payload is None:
+        try:
+            payload = json.loads(content)
+        except ValueError:
+            return []
+    data = payload.get("data") if isinstance(payload, dict) else None
+    report_data = data.get("reportData") if isinstance(data, dict) else None
+    if not (isinstance(report_data, dict) and "report" in report_data and report_data["report"] is None):
+        return []
+    errors = payload.get("errors") or []
+    if not isinstance(errors, list) or not all(_is_gone_error(e) for e in errors):
+        return []
+    return codes
 
 
 async def _loads(content: bytes) -> dict[str, Any]:
@@ -381,9 +529,16 @@ class AsyncWCLClient:
         Results are not cached here (feature 014): callers that want caching go through
         ``cache.get_or_load`` with a typed key family. Identical concurrent queries still
         share one request (single-flight).
+
+        Feature 039: with a fetch source set, the stored copy is asked first, in the caller's
+        own context (its tenant), before joining any shared request. A stored answer makes no
+        network call and is not offered to the sink again.
         """
         variables = variables or {}
         key = _flight_key(query, variables)
+        source = _fetch_source
+        if source is not None and (stored := await _stored(source, key, query, variables)) is not None:
+            return await _loads(stored)
         while True:
             flight = self._flights.get(key)
             if flight is None:
@@ -501,8 +656,13 @@ class AsyncWCLClient:
         if b'"errors"' in content:
             payload = json.loads(content)
             if "errors" in payload:
+                if gone := _gone_codes(query, variables, content, payload):
+                    _deliver(ReportGone(tuple(gone), datetime.now(timezone.utc)))
                 raise RuntimeError(json.dumps(payload["errors"], indent=2))
-        _offer(key, query, variables, content)
+        if gone := _gone_codes(query, variables, content):
+            _deliver(ReportGone(tuple(gone), datetime.now(timezone.utc)))  # instead of storing it
+        else:
+            _offer(key, query, variables, content)
         return content
 
 

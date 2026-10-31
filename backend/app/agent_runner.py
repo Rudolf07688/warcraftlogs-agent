@@ -257,7 +257,8 @@ async def _run_turn(
     """Run one turn and yield stream records.
 
     Yields dicts of these shapes (the WS layer filters/forwards them):
-    - `{"type": "tool_start", "name", "args"}` — a tool call began.
+    - `{"type": "tool_start", "name", "args"}` — a tool call began (once per call, with its
+      complete args: sent when the model's final event for the call arrives).
     - `{"type": "tool_end", "name", "ok", "args", "result", "result_path"?}` — a
       tool returned; `ok` reflects `result["status"] == "success"`, `args` is the
       originating call's arguments (correlated by id), `result` is the raw tool
@@ -286,6 +287,9 @@ async def _run_turn(
     pending_args: dict[str, dict] = {}
     # US6: monotonic start time per call id, to report each tool call's elapsed ms.
     pending_started: dict[str, float] = {}
+    # sc-289: call ids already announced, so a repeated function_call part cannot start a
+    # second card.
+    started_ids: set[str] = set()
 
     async for event in runner.run_async(
         user_id=user_id,
@@ -312,9 +316,16 @@ async def _run_turn(
         for part in event.content.parts:
             call = getattr(part, "function_call", None)
             if call:
-                args = _to_plain(getattr(call, "args", None))
+                # sc-289: partial events only carry fragments of a call (Anthropic: one per
+                # argument chunk, no complete args; Gemini: a copy the aggregated final event
+                # repeats). The final event always carries every call with its complete args
+                # and id, so the card starts there, exactly once.
                 call_id = getattr(call, "id", None)
+                if getattr(event, "partial", False) or (call_id and call_id in started_ids):
+                    continue
+                args = _to_plain(getattr(call, "args", None))
                 if call_id:
+                    started_ids.add(call_id)
                     pending_args[call_id] = args
                     pending_started[call_id] = time.monotonic()
                 # Fallback grounding signal: the model invoked the web_search tool

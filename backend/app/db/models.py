@@ -772,6 +772,41 @@ class RawFetch(Base):
     report_codes: Mapped[list] = mapped_column(_JSON, nullable=False, server_default=text("'[]'"))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     payload: Mapped[dict] = mapped_column(_JSON, nullable=False)
+    # sha256 of the body without ``data._cost`` (feature 039): an unchanged refetch only
+    # moves ``fetched_at``. NULL for rows written before migration 0018.
+    payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class RawReport(Base):
+    """What Warcraft Logs last showed us about one report (feature 039).
+
+    GLOBAL, no RLS, like ``raw_fetches``. Written from report summary bodies; ``visibility``
+    "public" makes the report's stored rows shareable with every tenant, and ``end_time_ms``
+    decides whether they are final (specs/039-local-first-data/data-model.md).
+    """
+
+    __tablename__ = "raw_reports"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    visibility: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    end_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RawFetchGrant(Base):
+    """A tenant fetched this report code from Warcraft Logs itself (feature 039).
+
+    Tenant-scoped (RLS ``tenant_isolation``, migration 0018): the stored rows naming the code
+    may be served to this tenant while ``granted_at`` is recent.
+    """
+
+    __tablename__ = "raw_fetch_grants"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    report_code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class RecentMplusRun(Base):

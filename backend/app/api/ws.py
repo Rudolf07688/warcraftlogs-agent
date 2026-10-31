@@ -236,17 +236,30 @@ async def _stored_proposal(session, result: dict, identity: RequestIdentity):
         return None
 
 
-async def _persist_partial(conv_id, tokens: list[str], identity: RequestIdentity) -> None:
+async def _persist_partial(
+    conv_id, tokens: list[str], identity: RequestIdentity, user_seq: int
+) -> None:
     """Persist whatever streamed so far as a `partial` agent message (US2/FR-009).
 
-    Never presents a partial answer as complete; no silent loss on interruption.
+    Never presents a partial answer as complete; no silent loss on interruption. The turn's
+    charts are linked to that message, so they come back under it on reload. With nothing
+    streamed there is no message to show them under, so they anchor to the turn's user
+    message (``user_seq``): they stay out of later answers, and were never shown live either
+    (the chat shows a turn's charts only when its answer completes).
     """
     text = "".join(tokens)
-    if not text:
-        return
     async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as session:
-        await repo.add_message(
-            session, conv_id, "agent", text, status="partial", tenant_id=identity.tenant_id
+        seq = user_seq
+        if text:
+            msg = await repo.add_message(
+                session, conv_id, "agent", text, status="partial", tenant_id=identity.tenant_id
+            )
+            seq = msg.seq
+        # Every way a turn ends links its charts and graphs (sc-213, SPEC-002): the repo call
+        # takes all of a chat's unlinked ones, so one left behind would show up under a later
+        # answer.
+        await repo.assign_message_seq_to_turn_captures(
+            session, conv_id, seq, tenant_id=identity.tenant_id
         )
 
 
@@ -288,11 +301,9 @@ async def _handle_turn(
         )
         await session.commit()
         await apply_tenant_scope(session, identity)  # re-scope after commit
-        await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_msg.seq))
+        user_seq = user_msg.seq
+        await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_seq))
 
-        # WCL data is public and cached for every tenant alike (feature 014 supersedes
-        # FR-019); only the forced-refresh limit is per user, for this turn (US4).
-        set_refresh_actor(str(identity.user_id))
         preamble = await _build_turn_preamble(session, tenant_id, turn.content)
 
     # Stream the agent response, accumulating tokens into the final content.
@@ -305,6 +316,10 @@ async def _handle_turn(
     # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)
+    # WCL data is public and cached for every tenant alike (feature 014 supersedes FR-019);
+    # only the forced-refresh limit is per user, for this turn (US4). Cleared with the
+    # identity (sc-276), so the follow-up suggestions task never acts as this turn's user.
+    set_refresh_actor(str(identity.user_id))
     try:
         async for record in stream_response(
             turn.model,
@@ -337,13 +352,18 @@ async def _handle_turn(
                 await _send(ws, ModelFallbackFrame(**record))
     except WebSocketDisconnect:
         # Client vanished mid-reply: keep what we have, can't send anything.
-        await _persist_partial(conv_id, tokens, identity)
+        await _persist_partial(conv_id, tokens, identity, user_seq)
         raise
     except ModelRateLimited as exc:
         # Feature 011 / FR-004, FR-005: the retry budget is spent. Plain-language error,
         # no provider wording, and no partial reply persisted (the user message stays,
-        # so the player can simply resend).
+        # so the player can simply resend). Charts made before it ran out anchor to that
+        # user message (sc-213).
         logger.warning("turn failed on model rate limit: %s", exc)
+        async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
+            await repo.assign_message_seq_to_turn_captures(
+                session, conv_id, user_seq, tenant_id=tenant_id
+            )
         label = class_label(turn.model) if switched else None
         message = BOTH_RATE_LIMITED_MESSAGE.format(label=label) if label else RATE_LIMITED_MESSAGE
         try:
@@ -354,7 +374,7 @@ async def _handle_turn(
     except Exception:  # noqa: BLE001 - surface failure to the client
         ref = uuid.uuid4().hex[:8]
         logger.exception("turn failed (ref %s)", ref)
-        await _persist_partial(conv_id, tokens, identity)
+        await _persist_partial(conv_id, tokens, identity, user_seq)
         try:
             await _send(ws, ErrorFrame(code="agent_error", message=AGENT_ERROR_MESSAGE.format(ref=ref)))
         except Exception:  # noqa: BLE001 - socket may already be gone
@@ -362,6 +382,7 @@ async def _handle_turn(
         return None
     finally:
         current_identity.reset(identity_token)
+        set_refresh_actor(None)
         scratch.cleanup()
 
     final_text = "".join(tokens) or "(no response)"

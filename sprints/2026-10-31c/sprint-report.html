@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-10-31c Review</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px;align-content:start}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:grid;gap:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
+.checks .no{font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted)}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Sprint review · WCL Agent App · local report</div>
+  <h1>Sprint 2026-10-31c: local-first data</h1>
+  <div class="meta">
+    <span>Branch <b class="mono">sprint-2026-10-31c</b></span>
+    <span>Base <b class="mono">a5b84de</b></span>
+    <span>Code tip <b class="mono">6dd57e7</b></span>
+    <span>Iteration <b>Sprint 2026-10-31c</b> (Shortcut 290)</span>
+    <span>Not merged to <b class="mono">main</b> · not pushed</span>
+  </div>
+  <p>Barnaby now answers a repeat question about a finished raid from Postgres instead of calling Warcraft Logs again. That works in any chat, and Redis is still checked first. Stored data is shared only for public reports or for reports your workspace has fetched itself. A report that WCL says is private or deleted loses its stored copy. The store no longer rewrites unchanged payloads, and it writes in batches. In parallel, one tool call now starts one spell card, not 23. A turn fails fast when both models are rate-limited, model output can't load any image, and the chat scrolls back to your question when the answer finishes. The QA sweep found two High issues in the new store, both fixed in the one rework round.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">19<small> / 19 pts</small></span><span class="s">9 stories, 2 features + 2 QA fix rounds</span></div>
+  <div class="kpi"><span class="eyebrow">Backend tests</span><span class="v">1472<small> pass</small></span><span class="s">from 1388; 19 skipped (Postgres-only)</span></div>
+  <div class="kpi"><span class="eyebrow">Postgres</span><span class="v">83<small> pass</small></span><span class="s">RLS, grants, raw store; 0018 down/up OK</span></div>
+  <div class="kpi"><span class="eyebrow">Frontend</span><span class="v">65<small> / 65</small></span><span class="s">about 26 new; build green</span></div>
+  <div class="kpi"><span class="eyebrow">QA sweep</span><span class="v">0<small> crit</small> · 2<small> high</small></span><span class="s">both fixed; 4 tickets deferred</span></div>
+  <div class="kpi"><span class="eyebrow">Escalations</span><span class="v">0</span><span class="s">0 blockers, 0 owner questions</span></div>
+</div>
+
+<nav class="tabs" aria-label="Report sections">
+  <div class="tablist" role="tablist">
+    <button class="tab" role="tab" id="tab-overview" aria-controls="p-overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" id="tab-039" aria-controls="p-039" aria-selected="false" tabindex="-1">039 local-first data <span class="count">10 pts</span></button>
+    <button class="tab" role="tab" id="tab-040" aria-controls="p-040" aria-selected="false" tabindex="-1">040 small fixes <span class="count">9 pts</span></button>
+    <button class="tab" role="tab" id="tab-qa" aria-controls="p-qa" aria-selected="false" tabindex="-1">QA triage <span class="count">24</span></button>
+    <button class="tab" role="tab" id="tab-live" aria-controls="p-live" aria-selected="false" tabindex="-1">Live checks <span class="count">10</span></button>
+    <button class="tab" role="tab" id="tab-decisions" aria-controls="p-decisions" aria-selected="false" tabindex="-1">Decisions &amp; risks</button>
+    <button class="tab" role="tab" id="tab-autonomy" aria-controls="p-autonomy" aria-selected="false" tabindex="-1">Autonomy</button>
+  </div>
+</nav>
+
+<!-- ============================ OVERVIEW ============================ -->
+<div role="tabpanel" id="p-overview" aria-labelledby="tab-overview" tabindex="0">
+<h2 class="panel-title">Overview</h2>
+<section>
+  <h2>Delivered against planned</h2>
+  <div class="tbl"><table>
+    <tr><th>Feature</th><th>Developer</th><th>Tier · model</th><th>Planned</th><th>Delivered</th><th>Merge</th></tr>
+    <tr><td>039 local-first data (epic 103)</td><td>Ansel (dev-1)</td><td>M · opus/high</td><td class="num">10</td><td class="num">10</td><td class="mono">a99d15b</td></tr>
+    <tr><td>040 small fixes</td><td>Tomas (dev-2)</td><td>S · sonnet/high</td><td class="num">9</td><td class="num">9</td><td class="mono">98a9695</td></tr>
+    <tr><td>042 QA fixes for 040 (rework, no new points)</td><td>Tomas (dev-2)</td><td>S</td><td class="num">—</td><td class="num">2 findings</td><td class="mono">b289f66</td></tr>
+    <tr><td>041 QA fixes for 039 (rework, no new points)</td><td>Ansel (dev-1)</td><td>S</td><td class="num">—</td><td class="num">3 root causes</td><td class="mono">6dd57e7</td></tr>
+  </table></div>
+  <p class="small muted">All 9 stories are <b>Under Review</b> in iteration 290; nothing moved to Done. The sprint added 48 files (+4223/−111) over 19 commits. It also adds migration <code>0018_raw_store_visibility</code>. sc-141 and sc-143 were planned but taken out before launch: the code has no Raids page or dropdown, and the analyze-in-new-chat button already exists. sc-140 and sc-276 replaced them (board #4).</p>
+</section>
+<section>
+  <h2>How a report question flows now</h2>
+  <div class="flow"><span>Tool asks WCL for report data</span><i>→</i><span>Redis hit?</span><i>→ no →</i><span>Postgres store: every code public or granted to you, and fresh?</span><i>→ no →</i><span>Warcraft Logs</span><i>→</i><span>stored, grant recorded, Redis filled</span></div>
+  <p class="small muted">Finished reports are kept for good, and live data is reused only within the 120 s live window. Any store error, or a store slower than 3 s, falls back to WCL. <code>WCL_STORE_READS_ENABLED=false</code> turns reads off and keeps writes on.</p>
+</section>
+<section>
+  <h2>Timeline (UTC)</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">21:58</span> Steer posted (board #1). Iteration 290, scope, tiers, models and footprints decided (#3–#10). Two developers launched.</div>
+    <div class="tl"><span class="t">22:11</span> Ansel posts the design note (<code>design:039</code>) before writing code.</div>
+    <div class="tl ok"><span class="t">22:15</span> Tomas hands off 040.</div>
+    <div class="tl warn"><span class="t">22:23–22:35</span> Ansel's own bypass review finds an alias/comment forgery class and the Redis back-fill lag. He fixes the first (#29) and shortens the re-verify window from 7 days to 1 (#32).</div>
+    <div class="tl ok"><span class="t">22:38–22:49</span> 039 handed off and merged (#38). 040 rebased and merged (#39). Plan report written and PO bypass attempts made (#40).</div>
+    <div class="tl warn"><span class="t">23:00</span> QA sweep: 2 High, 12 Medium. One fix round, split by author (#41).</div>
+    <div class="tl ok"><span class="t">23:09–23:13</span> 042 and 041 merged (#52, #55). Second bypass attempt held (#56). Triage, tickets and board sync done.</div>
+  </div>
+</section>
+</div>
+
+<!-- ============================ 039 ============================ -->
+<div role="tabpanel" id="p-039" aria-labelledby="tab-039" tabindex="0" hidden>
+<h2 class="panel-title">039 local-first data</h2>
+<section>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What changed</th><th>AC</th></tr>
+    <tr><td>sc-178 QA SEC-001: guard raw_fetches against cross-tenant exposure</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td>New <code>raw_reports</code> (visibility and end time, recorded only from our own summary queries) and <code>raw_fetch_grants</code> (per tenant, under RLS). <code>read_visible_fetch</code> is the one read: every code a row names must be public or granted, each confirmed within 1 day. A private or deleted report loses its rows and Redis keys.</td><td><span class="tag t-ok">met</span> after the 041 fixes</td></tr>
+    <tr><td>sc-177 QA PERF-002/003, SEC-003: store growth and writer edge cases</td><td><span class="pts p3">3</span></td><td><span class="tag t-acc">Under Review</span></td><td>A payload hash skips identical rewrites, and the writer commits in batches. Labels are clipped, NUL is escaped, throttle counts are flushed on stop, and error logs carry no params. The monitoring query is in quickstart §3. No age-based purge.</td><td><span class="tag t-ok">met</span></td></tr>
+    <tr><td>sc-129 DB-first reads with freshness rules</td><td><span class="pts p5">5</span></td><td><span class="tag t-acc">Under Review</span></td><td>A fetch source in the WCL client, checked per caller before single-flight. A finished report is served with no WCL call, and a store hit back-fills Redis. It fails open (3 s) and has a kill switch. Non-report data is never served from the store.</td><td><span class="tag t-ok">met</span> (ACs written in the design)</td></tr>
+  </table></div>
+  <div class="grid2">
+    <div class="card"><h3>041 QA fixes (one round)</h3><ul>
+      <li><b>Gone detection:</b> only our own <code>REPORT_SUMMARY</code> answered <code>report: null</code> can delete, and only when any error sits at the report path and reads not-found or permission. Subfield errors, aliases, padded codes and hand-written queries never delete.</li>
+      <li><b>Grants come from the response:</b> a grant needs the report to come back non-null, from a summary query or a plain single-report query.</li>
+      <li><b>Writer:</b> a batch that times out is retried item by item. Batches are capped at 20 items and 8 MB, and Redis eviction runs outside the timed part.</li>
+    </ul></div>
+    <div class="callout warn"><b>Known residual (sc-296):</b> a store hit refills the shared Redis entry. A report made private can stay readable to anyone holding its code for up to the 1-day re-verify window plus the Redis TTL, about 48 h, against about 24 h before. A table-only flow notices that a report went private only at the re-check.</div>
+  </div>
+</section>
+</div>
+
+<!-- ============================ 040 ============================ -->
+<div role="tabpanel" id="p-040" aria-labelledby="tab-040" tabindex="0" hidden>
+<h2 class="panel-title">040 small fixes</h2>
+<section>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What changed</th><th>AC</th></tr>
+    <tr><td>sc-289 dozens of tool_start frames per call</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td>Partial events no longer start a card. The start comes from the final event, which has complete args, and a started-id set stops repeats. Vertex sent duplicates too, and the frontend didn't dedupe.</td><td><span class="tag t-ok">met</span></td></tr>
+    <tr><td>sc-213 charts gone after reopening a chat</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td>040 couldn't reproduce it and added tests only. The QA sweep then found the real cause: turns that error, hit a 429 or disconnect (a reload mid-answer) never linked their charts, so a later answer claimed them. 042 links them on every way a turn can end.</td><td><span class="tag t-warn">met in code</span> live check decides</td></tr>
+    <tr><td>sc-268 one wait budget when both models are limited</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td><code>_BOTH_LIMITED_BUDGET_S = 10</code> shared across the primary probe and the sibling. Nothing changes when only one model or none is limited.</td><td><span class="tag t-ok">met</span> PERF-009 follow-up sc-297</td></tr>
+    <tr><td>sc-272 same-origin images fire authenticated GETs</td><td><span class="pts p1">1</span></td><td><span class="tag t-acc">Under Review</span></td><td>No images at all: <code>allowedImagePrefixes: []</code>, and every <code>img</code> and <code>source</code> is dropped after harden. More than 20 bypass forms tested by Tomas, more by Maren.</td><td><span class="tag t-ok">met</span></td></tr>
+    <tr><td>sc-276 reset the refresh-actor contextvar</td><td><span class="pts p1">1</span></td><td><span class="tag t-acc">Under Review</span></td><td>Cleared in the turn's <code>finally</code>, and set just before the <code>try</code>.</td><td><span class="tag t-ok">met</span></td></tr>
+    <tr><td>sc-140 scroll to the question when the answer completes</td><td><span class="pts p1">1</span></td><td><span class="tag t-acc">Under Review</span></td><td>Scrolls the question to the top when the answer finishes, but only if the reader was following. 042 re-engages the stick-to-bottom lock on the next turn (BUG-006).</td><td><span class="tag t-ok">met</span></td></tr>
+  </table></div>
+</section>
+</div>
+
+<!-- ============================ QA ============================ -->
+<div role="tabpanel" id="p-qa" aria-labelledby="tab-qa" tabindex="0" hidden>
+<h2 class="panel-title">QA triage</h2>
+<section>
+  <p>The sweep ran all four auditors over <code>a5b84de..5550997</code>. It found 0 Critical, 2 High, 12 Medium and 10 Low, which come down to five root causes. Reports are in <code>qa-reports/2026-10-31c/</code> in the sprint worktree (gitignored). The full triage is in <code>sprints/2026-10-31c/qa-triage.md</code>.</p>
+  <h3>Fixed in the rework round</h3>
+  <div class="tbl"><table>
+    <tr><th>Root cause</th><th>Findings</th><th>Fix</th></tr>
+    <tr><td>Gone detection deletes reports that still exist</td><td><span class="tag t-bad">High</span> BUG-001, plus BUG-002/003/007, SEC-002, SPEC-003</td><td class="mono">041</td></tr>
+    <tr><td>Grants follow the query text, not the response</td><td><span class="tag t-bad">High</span> SEC-001, plus SPEC-001, BUG-005</td><td class="mono">041</td></tr>
+    <tr><td>Writer batch timeout drops a whole batch</td><td><span class="tag t-warn">Medium</span> BUG-004, PERF-003, SPEC-004, SEC-003, PERF-008</td><td class="mono">041</td></tr>
+    <tr><td>Interrupted turns never link their charts</td><td><span class="tag t-warn">Medium</span> SPEC-002 (sc-213)</td><td class="mono">042</td></tr>
+    <tr><td>Scroll-to-question releases the bottom lock</td><td><span class="tag t-warn">Medium</span> BUG-006 (sc-140)</td><td class="mono">042</td></tr>
+  </table></div>
+  <h3>Deferred to Backlog (labelled <code>qa-deferred</code>; no duplicates, nothing archived)</h3>
+  <div class="tbl"><table>
+    <tr><th>Ticket</th><th>Findings</th><th>Pts</th></tr>
+    <tr><td>sc-295 (new)</td><td>PERF-001/002/004/005/006/007: the store probe and writer cost; no breaker; no hit/miss counters</td><td><span class="pts p3">3</span></td></tr>
+    <tr><td>sc-296 (new)</td><td>Redis back-fill revocation lag (Ansel's own finding) and two unconfirmed gone-vs-write races</td><td><span class="pts p2">2</span></td></tr>
+    <tr><td>sc-297 (new)</td><td>PERF-009: the both-limited budget counts only sleep time</td><td><span class="pts p1">1</span></td></tr>
+    <tr><td>sc-301 (new)</td><td>Tomas's note: proposals from an interrupted turn are never linked (same class as SPEC-002)</td><td><span class="pts p1">1</span></td></tr>
+    <tr><td>sc-275</td><td>Breadcrumb added: SPEC-005, docs and <code>.env.example</code> silent on store reads</td><td>—</td></tr>
+    <tr><td>sc-270, sc-132</td><td>Breadcrumbs added: the set_config pair at a new site; the counters as the first step of hit-rate tracking</td><td>—</td></tr>
+  </table></div>
+</section>
+</div>
+
+<!-- ============================ LIVE ============================ -->
+<div role="tabpanel" id="p-live" aria-labelledby="tab-live" tabindex="0" hidden>
+<h2 class="panel-title">Live checks</h2>
+<section>
+  <p>Team-lead runs these in one pass on <code>sprint-2026-10-31c</code> at 6dd57e7 (provider anthropic). Run <code>alembic upgrade</code> to 0018 first. For checks 2 and 3, use a report nobody asked about in the last day, or delete its <code>wcl:v1:report:&lt;code&gt;:summary:*</code> Redis key: summaries cached before the deploy don't record the end time.</p>
+  <ol class="checks">
+    <li><span class="no">1</span><div>Ask "what fights are in &lt;code&gt;?". It must succeed, because the summary query now also asks for <code>code</code> and <code>visibility</code>, and a WCL schema surprise would show up as an error here. <div class="ref">sc-178 · live-check:039 (1)</div></div></li>
+    <li><span class="no">2</span><div>Ask a damage-table question about a finished raid, then ask the same in a new chat on the same account. The second time, the log shows <code>wcl store hit</code> and no new <code>wcl_cost</code> line. <div class="ref">sc-129 · (2)</div></div></li>
+    <li><span class="no">3</span><div>As a user in another tenant, ask about the same unlisted code. The first ask is not a store hit (a <code>wcl_cost</code> line); the second is. <div class="ref">sc-178 · (3)</div></div></li>
+    <li><span class="no">4</span><div>Run <code>SELECT count(*) FROM raw_reports</code> and the per-tenant <code>raw_fetch_grants</code> count, plus the monitoring query in <code>specs/039-local-first-data/quickstart.md</code> §3. <div class="ref">sc-177 · (4)</div></div></li>
+    <li><span class="no">5</span><div>Ask about a bogus code. You see no new error and no <code>raw_fetches</code> rows for it. <div class="ref">sc-178 · (5)</div></div></li>
+    <li><span class="no">6</span><div>Set <code>WCL_STORE_READS_ENABLED=false</code>: no <code>wcl store hit</code> lines appear, and writes continue. <div class="ref">sc-129 · (6)</div></div></li>
+    <li><span class="no">7</span><div>One <code>propose_profile_changes</code> call sends exactly one <code>tool_start</code> frame (it was 23), and a two-tool turn sends two. Check on Vertex too, if available. <div class="ref">sc-289 · live-check:040 (1)</div></div></li>
+    <li><span class="no">8</span><div>Make a chart, reopen the chat, then reload the page: the chart is there. Also reload in the middle of an answer that draws a chart: after the reload the chart sits under that partial answer and doesn't move to the next one. <div class="ref">sc-213, 042</div></div></li>
+    <li><span class="no">9</span><div>Have the model emit <code>![](/api/...)</code>. The Network tab shows no request, and "[Image blocked: …]" appears. <div class="ref">sc-272 · (4)</div></div></li>
+    <li><span class="no">10</span><div>Let a long answer finish while you follow it: the view jumps to the top of your question. Scroll up during the stream: no jump. Reopen an old chat: no jump. Send a follow-up: the new answer is followed. The both-busy message within about 10–16 s is optional; it needs real 429s on both models. <div class="ref">sc-140, sc-268, 042</div></div></li>
+  </ol>
+</section>
+</div>
+
+<!-- ============================ DECISIONS ============================ -->
+<div role="tabpanel" id="p-decisions" aria-labelledby="tab-decisions" tabindex="0" hidden>
+<h2 class="panel-title">Decisions and risks</h2>
+<section>
+  <div class="tbl"><table>
+    <tr><th>Decision (board #)</th><th>Who</th><th>Reason</th></tr>
+    <tr><td>sc-141 and sc-143 out; sc-140 and sc-276 in (#4)</td><td>Maren</td><td>The code has no Raids page or dropdown, and the analyze-in-new-chat button already exists. Both tickets are commented and left in Backlog for the owner to rewrite epic 106 or close.</td></tr>
+    <tr><td>039 at tier M with a design note, not L (#5)</td><td>Maren (owner-approved)</td><td>A single stream with no shared files. Bypass attempts at hand-off and at merge replaced the SM gates.</td></tr>
+    <tr><td>"References" = a grant written when the tenant's own turn fetched the code (#17)</td><td>Ansel</td><td>Every path that references a code goes through a WCL fetch, so the grant is checked by WCL itself. A union over four RLS tables would have been fragile.</td></tr>
+    <tr><td>Re-verify window cut from 7 days to 1 (#32)</td><td>Ansel</td><td>His own bypass review: store hits refill the shared Redis. This bounds the revocation lag at about 48 h.</td></tr>
+    <tr><td>Strict code parser; status only from our summary texts (#29)</td><td>Ansel</td><td>Closes the aliased-field and comment forgeries he found against his first draft.</td></tr>
+    <tr><td>tool_start from the final event only (#14)</td><td>Tomas</td><td>The card has complete args and the id. The trade-off is that it appears when the call is fully written.</td></tr>
+    <tr><td>sc-213 reported as not reproduced, not patched blindly (#15)</td><td>Tomas</td><td>Honest. The QA sweep then found the real path, and 042 fixed it.</td></tr>
+    <tr><td>No images at all in model markdown (sc-272)</td><td>Tomas</td><td>The app emits none, and holding "no images" is cheaper than arguing about a prefix.</td></tr>
+    <tr><td>QA fixes split by author, two in parallel (#41)</td><td>Maren</td><td>The crucial findings sat in two disjoint codebases, and each author had the context. This deviates from "one fix developer"; both rounds finished in about 10 minutes.</td></tr>
+    <tr><td>Gone deletion only from our own summary query (#46)</td><td>Ansel</td><td>A wrongly deleted report means a global purge, while a missed deletion is bounded at 1 day. Fail closed.</td></tr>
+  </table></div>
+  <div class="grid2">
+    <div class="card"><h3>Risks</h3><ul>
+      <li>The WCL client's <code>_fetch</code>/<code>query</code> and <code>_run_turn</code> are hubs, and GitNexus rates the sprint CRITICAL (48 files). The changes are additive or narrow and covered by fake-stream and fallback tests. The kill switch can turn store reads off.</li>
+      <li>The summary query now asks for <code>code</code> and <code>visibility</code>, which hasn't been checked against live WCL. Live check 1 covers it.</li>
+      <li>The store adds 6–9 DB round trips to each Redis miss, and a hung DB costs 3 s per call (sc-295).</li>
+      <li>The revocation lag of about 48 h (sc-296).</li>
+      <li>The branch carries migration 0018. A merge to main needs <code>alembic upgrade</code>.</li>
+    </ul></div>
+    <div class="callout"><b>What I'd do next</b><p>Finish epic 103's value loop: sc-295 (a fast store probe plus hit/miss counters), then sc-132 (hit-rate tracking), to measure whether the store actually answers most repeat questions. After that, sc-130 (normalised tables), sc-131 (agent tools over stored data) and sc-296. Epic 106 needs the owner to rewrite it around a real Raids page.</p></div>
+  </div>
+</section>
+</div>
+
+<!-- ============================ AUTONOMY ============================ -->
+<div role="tabpanel" id="p-autonomy" aria-labelledby="tab-autonomy" tabindex="0" hidden>
+<h2 class="panel-title">How the team used its autonomy</h2>
+<section>
+  <div class="kpis">
+    <div class="kpi"><span class="eyebrow">Board entries</span><span class="v">56</span><span class="s">decisions with reasons, hand-offs, merges</span></div>
+    <div class="kpi"><span class="eyebrow">Self-answered clarifies</span><span class="v">3+</span><span class="s">Ansel: references, re-verify window, design</span></div>
+    <div class="kpi"><span class="eyebrow">Questions to the owner</span><span class="v">0</span><span class="s">0 escalations, 0 blockers</span></div>
+    <div class="kpi"><span class="eyebrow">Rework rounds</span><span class="v">1</span><span class="s">split by author, in parallel</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Went well</h3><ul>
+      <li><b>Self-review caught real issues before QA.</b> Ansel's own bypass attempt found the alias and comment forgery class and the Redis lag, and he fixed or bounded both before hand-off.</li>
+      <li><b>Honest "not reproduced".</b> Tomas didn't invent a fix for sc-213. The QA auditor later found the real cause in a path no one had looked at.</li>
+      <li><b>Reading the code before the ticket.</b> Checking the code while writing briefs showed two planned stories had nothing to build. Swapping them out saved 3 pts of wasted work.</li>
+      <li><b>Bypass at hand-off and at merge,</b> last sprint's lesson, was applied. My merge attempt passed the leads it couldn't settle to the sweep, and the sweep confirmed one (the gone-detection High).</li>
+    </ul></div>
+    <div class="card"><h3>Went badly, and the lesson</h3><ul>
+      <li><b>Both Highs were in the security core of 039,</b> despite the design note and two bypass attempts. Both trusted the query text where they should have trusted the response. <i>Lesson:</i> for a security rule over external data, the brief should say "derive trust from what the server returned, never from what was asked".</li>
+      <li><b>The plan report was late.</b> I launched the developers first and wrote <code>plan.html</code> about 40 minutes later. It's non-blocking, but the owner couldn't read it while the sprint was starting. <i>Lesson:</i> write the short plan before launch. It costs minutes.</li>
+      <li><b>sc-213's AC1 was set up to fail:</b> "root cause named" for a bug the story itself had misdiagnosed. A reproduce-first story should allow "not reproduced, here's the evidence" as an outcome.</li>
+    </ul></div>
+  </div>
+  <div class="callout ok"><b>Net:</b> 19/19 points, no owner questions, and both High findings fixed within the one rework round. The team's own checks caught three issues before QA, and QA caught two more in the same trust boundary.</div>
+</section>
+</div>
+
+<footer>Written by Maren (PO), 2026-11-01. Canonical decisions are on board <code>sprint-2026-10-31c</code>. Plan: <code>sprints/2026-10-31c/plan.html</code>. Triage: <code>sprints/2026-10-31c/qa-triage.md</code>. Reports: <code>qa-reports/2026-10-31c/</code> (sprint worktree, gitignored).</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>
