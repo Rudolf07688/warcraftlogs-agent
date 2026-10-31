@@ -49,7 +49,7 @@ async def test_persist_partial_writes_partial_message(session, patched_db, tenan
     conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
     await session.commit()
     # PERF-006: the partial reply is saved in its own short tenant-scoped transaction.
-    await ws_module._persist_partial(conv.id, ["chunk one ", "chunk two"], _identity(tenant_id))
+    await ws_module._persist_partial(conv.id, ["chunk one ", "chunk two"], _identity(tenant_id), 0)
     msgs = await repo.list_messages(session, conv.id, tenant_id=tenant_id)
     assert len(msgs) == 1
     assert msgs[0].role == "agent"
@@ -60,7 +60,7 @@ async def test_persist_partial_writes_partial_message(session, patched_db, tenan
 async def test_persist_partial_noop_when_empty(session, patched_db, tenant_id):
     conv = await repo.create_conversation(session, model="gemini-3.6-flash", tenant_id=tenant_id)
     await session.commit()
-    await ws_module._persist_partial(conv.id, [], _identity(tenant_id))
+    await ws_module._persist_partial(conv.id, [], _identity(tenant_id), 0)
     assert (await repo.list_messages(session, conv.id, tenant_id=tenant_id)) == []
 
 
