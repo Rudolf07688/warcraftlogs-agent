@@ -146,6 +146,12 @@ across 37 files.
   the protected files.
 - **D11. Rewrite the agent files and add a launch checklist,** and commit what's built.
   Done on 2026-10-31; see "What changed in the agent setup".
+- **D12. Don't raise `cleanupPeriodDays`.** Transcripts keep the 30-day default, so the
+  numbers we need are archived to `meta/sprints/<date>/usage.txt` instead.
+- **D13. Persistent team identities with a capped memory.** Each team agent picks its own
+  name, and the name survives respawns. Each one keeps a curated memory of about 500
+  words, updated sparingly and only with knowledge that helps the team in the long run.
+  Developers' own sub-agents stay ephemeral and unnamed. See P6.
 
 ## Proposals under discussion
 
@@ -270,6 +276,36 @@ What each option costs, using the 10-31 numbers:
 rewritten. `.claude/skills/team-launch/SKILL.md` (new) is the main-session checklist for
 before launch, the quiet watchdog role, and wrap-up.
 
+### P6. Persistent identities and memory: implemented 2026-10-31
+
+**The goal:** let the team build a working relationship over time. Each agent persists
+through respawns as the same named member, with its own small, curated memory. Its
+*context* is still fresh on every launch.
+
+- **Seats** are stable slots: `po`, `sm`, `dev-1`, `dev-2` and so on. Whoever is launched
+  into a seat inherits its name and memory. The product owner reuses developer seats so
+  that names carry over, and prefers a seat whose memory fits the work.
+- **Tool:** `.claude/team/member.py`. The commands:
+
+  | Command | What it does |
+  |---|---|
+  | `me --seat S` | The first action of every run. It prints who you are and your memory, or invites the first holder to choose a name. |
+  | `claim` | Takes a seat. Names are one capitalised word and must be unique. |
+  | `remember` | Replaces the whole memory, with a hard cap of 500 words; an over-cap write is rejected and nothing is saved |
+  | `roster` | Lists everyone on the team |
+
+- **Storage:** `meta/team/<seat>.md` in the **main checkout**, resolved through the git
+  common dir. Every worktree reads and writes the same copy, outside any feature branch.
+  Team-lead commits the files at wrap-up.
+- **Memory discipline** (in every agent file):
+  - Update it at most once per run, at the end. Often the right choice is no change.
+  - Keep only lasting codebase and tooling lessons, how a teammate works best, and what the
+    owner cares about.
+  - Never task status, or anything already recorded elsewhere.
+  - At the cap, cut the least useful line before adding one.
+- **Board names:** `--as` is now the member's own name in lower case. The board hook
+  learns each agent's name from its first post.
+
 ## Open questions
 
 1. **Verification on the next real sprint.**
@@ -279,6 +315,8 @@ before launch, the quiet watchdog role, and wrap-up.
    - Is the step-boundary board reading enough, or does the hook carry it all?
 2. **Tier boundaries:** are they in the right place? Review them after a sprint that
    contains all three tiers.
+3. **Memory quality:** after a few sprints, review whether the memories hold lasting
+   knowledge or drift into task notes, and whether 500 words is the right cap.
 
 ## Change log
 
@@ -307,3 +345,7 @@ before launch, the quiet watchdog role, and wrap-up.
     deleted after 30 days
 
   The layers are documented in `meta/README.md`.
+- **2026-10-31:** The owner declined raising the cleanup period (D12) and asked for
+  persistent, self-named team members with a capped memory (D13). Built
+  `.claude/team/member.py` and seats, wired an identity-and-memory section into the three
+  agent files and `team-launch`, and added P6.

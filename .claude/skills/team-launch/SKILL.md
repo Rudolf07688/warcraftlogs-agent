@@ -30,7 +30,10 @@ Steer: $ARGUMENTS
    - `python3 .claude/team/board.py init sprint-<date>`
    - `post decision "<steer + clarified answers>" --as team-lead --key steer`
 4. **Launch the product owner** as a named teammate: `Agent`, `name: product-owner`,
-   `subagent_type: product-owner`. Its brief contains:
+   `subagent_type: product-owner`. Use the same pattern, with seat `sm`, for a scrum master.
+   Its brief contains:
+   - **seat `po`.** The product owner's persistent name and memory come from
+     `.claude/team/member.py`; check `member.py roster`.
    - the steer and the clarified answers
    - the sprint directory, the branch, the base commit and the worktree paths
    - the next feature number and the migration head
@@ -57,9 +60,11 @@ Steer: $ARGUMENTS
 
 ## 3. Wrap up
 
-1. **Close the board:** stop all agents, then run
+1. **Commit team memory:** `meta/team/*.md` in the main checkout. Agents write there
+   directly from their worktrees. Note any memory changes in the team report.
+2. **Close the board:** stop all agents, then run
    `python3 .claude/team/board.py close --export meta/sprints/<date>/board.jsonl`.
-2. **Team-pattern report:** `meta/sprints/<date>/team-report.html`, in the same
+3. **Team-pattern report:** `meta/sprints/<date>/team-report.html`, in the same
    standalone style as the sprint review.
    - **Data:**
      - `python3 .claude/team/usage.py ~/.claude/projects/-home-rudolf-dev-warcraftlogs-agent/<this session id>`
@@ -71,7 +76,7 @@ Steer: $ARGUMENTS
        (add this sprint's row there too)
      - the coordination, build and QA shares
      - what worked and what to change next time
-3. **Report to the owner:**
+4. **Report to the owner:**
    - the paths to the plan, the sprint review and the team report
    - the points delivered
    - the owner's live checks
@@ -79,4 +84,4 @@ Steer: $ARGUMENTS
 
    On a yes: `git merge --no-ff`, check that the tree matches the sprint tip, remove the
    worktrees, and run `node .gitnexus/run.cjs analyze --index-only`.
-4. **Memory:** update the sprint status memory note.
+5. **Memory:** update the sprint status memory note.

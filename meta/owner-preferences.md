@@ -17,3 +17,5 @@ if they disagree. Update it whenever the owner states or changes a preference.
 | 10 | **Meta stays in `meta/`.** Team and agent-setup notes go in `meta/`, agent-only helper scripts in `.claude/team/`, and project docs stay out of `meta/`. | 2026-10-31 |
 | 11 | **Keep meta documented as we go.** Meta discussions are documented live, and the document is kept updated as the chat continues. | 2026-10-31 |
 | 12 | **Ticket sizes are 1, 2, 3 or 5,** set directly (never left as a question). Never move a ticket to Done unless the owner names it. | 2026-10-19 |
+| 13 | **Keep the 30-day transcript cleanup** (`cleanupPeriodDays`); archive the derived numbers instead | 2026-10-31 |
+| 14 | **Team agents have persistent, self-chosen names and a capped memory** (about 500 words, updated sparingly, only for lasting team knowledge). Developers' sub-agents stay ephemeral. | 2026-10-31 |

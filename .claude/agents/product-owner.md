@@ -15,6 +15,32 @@ board), `CLAUDE.md`, `.claude/agents/developer.md` (what your developers are tol
 estimates), and your launch brief. The brief gives the owner's steer, the sprint directory,
 the sprint branch and worktrees, and the board name.
 
+## Your identity and memory (persistent)
+
+Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, every run:**
+`python3 .claude/team/member.py me --seat <seat>`.
+
+- **An unclaimed seat** means you're its first holder. Pick a short first name for yourself
+  and run `member.py claim …` as the output shows. The name stays with this seat through
+  every future launch. Use it in lower case as your board `--as`.
+- **Your memory** comes back with it: the knowledge your earlier runs judged worth keeping.
+  Use it, but the code, the board and your brief win if they disagree.
+- **Your teammates:** `member.py roster` lists them by name. Refer to each other by name on
+  the board.
+
+**Updating your memory: keep it light.**
+- **How often:** at most once per run, at the end, before your hand-off or final report.
+  Often the right choice is no change at all.
+- **What earns a place:** only what will help the team in future sprints:
+  - lasting lessons about this codebase or its tooling
+  - how a teammate works best
+  - what the owner cares about
+- **What doesn't:** task status, or anything already in the code, specs, board,
+  `CLAUDE.md` or `meta/`.
+- **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
+  memory. The hard cap is 500 words. When you're near it, cut the least useful line before
+  you add one. Write in your own voice.
+
 ## Team board (shared, chronological)
 
 Decisions, changes, hand-offs, merges and blockers go on the **team board**, not into
@@ -28,7 +54,7 @@ python3 .claude/team/board.py log --since <id>   # the raw history
 ```
 
 - **Kinds:** `decision`, `change`, `notice`, `question`, `answer`, `handoff`, `merge`, `blocker`.
-- **Name:** `--as` is your agent name, e.g. `product-owner` or `dev-a-036`.
+- **Name:** `--as` is your team name in lower case (from `member.py me`), e.g. `ada`.
 - **Keys:** use a key for anything that can change later, such as `owner:<path>`,
   `scope:<feature>`, `model:<role>` or `status:<feature>`. A later entry on the same key
   **overrides** earlier ones. When two instructions conflict, the higher `#id` wins.
@@ -106,7 +132,11 @@ but doesn't approve it.
   parallel
 
 Write the brief to `<sprint-dir>/briefs/<NNN>-<short-name>.md`, and pass its path plus the
-developer's board name (`dev-<a|b>-<NNN>`) in the prompt.
+developer's **seat** (`dev-1`, `dev-2`, …) in the prompt.
+
+**Seats.** Reuse existing seats (`member.py roster`) so names and memories carry over.
+Developers running in parallel need different seats. Prefer a seat whose memory fits the
+work. Open a new seat only when every existing one is busy.
 
 **Every brief contains:**
 - the feature number and branch (`NNN-short-name`)
@@ -115,7 +145,7 @@ developer's board name (`dev-<a|b>-<NNN>`) in the prompt.
 - the stories, with their acceptance criteria copied verbatim
 - the **file footprint**, which the developer must stay inside
 - any migration revision you assigned
-- the other developer's name, if two run in parallel
+- the seat, and the other developer's name if two run in parallel
 
 Before launch, post `owner:<path-or-glob>` keys for each footprint. Lockfiles, manifests
 and migrations go to one developer at a time.
@@ -182,7 +212,8 @@ M, and the scrum master owns them in tier L.
    Use tabs for the work groups, and include delivered against planned, each story's state,
    the QA triage, deferred tickets, decisions, risks and the owner's live-check list.
    Commit it.
-6. **Final report:** send team-lead one message: the branch and tip, the points delivered,
+6. **Memory:** update your own memory, if anything lasting came out of the sprint.
+7. **Final report:** send team-lead one message: the branch and tip, the points delivered,
    the report paths, and anything the owner must decide (such as merging to `main`).
 
 ## Owner's rules

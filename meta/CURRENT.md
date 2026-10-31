@@ -9,24 +9,26 @@ Updated: 2026-10-31
 
 ## Topic
 
-The agent-team redesign. The full record is in `meta/team-optimisation.md` (decisions
-D1–D11, P1–P5, change log).
+The agent-team redesign, now "getting real meta": giving the team persistence. The full
+record is in `meta/team-optimisation.md` (decisions D1–D13, proposals P1–P6, change log).
 
 ## Where we are
 
-- **Implemented and committed:** the team board with its auto-inject hook (068d062), and
-  the tiered team with sub-agent developers and the `/team-launch` skill (f107786).
-- **Done:** meta knowledge now survives compaction and new sessions (d281333): this file,
-  the SessionStart hook, the CLAUDE.md META block, `owner-preferences.md`, `sessions.md`,
-  and the per-sprint usage archives.
-- **Next, per the owner:** "get real meta" and keep iterating on the team setup.
+- **Committed so far:**
+  - 068d062: the team board and its hook
+  - f107786: tiers and sub-agent developers
+  - d281333: meta persistence (this file, the SessionStart hook, CLAUDE.md META)
+- **Just built (P6):** persistent team members. `.claude/team/member.py` gives each seat
+  (`po`, `sm`, `dev-<n>`) a self-chosen name and a memory capped at 500 words, stored in
+  `meta/team/` in the main checkout. Wired into all three agent files and `team-launch`.
+- **The owner declined raising `cleanupPeriodDays`** (D12).
 
 ## Open threads
 
-- The next real sprint verifies the redesign: does coordination fall below 41%, do
-  developers without gates stay in their footprint, and are the tiers set right.
-- Asked the owner whether to raise `cleanupPeriodDays` (a user-level setting). Transcripts
-  are deleted after 30 days by default, and the 10-01 transcript is the oldest left.
+- Nobody has claimed a seat yet. Names get picked on the next team launch.
+- The next real sprint verifies everything: the coordination share against 41%, footprint
+  discipline, the tiers, and the board and memory in practice.
+- Memory quality review after a few sprints (open question 3).
 
 ## How to resume
 
