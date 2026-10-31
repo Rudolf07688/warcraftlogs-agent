@@ -164,6 +164,18 @@ across 37 files.
   team learning to operate this way. Owner preference 16; an "Autonomy" section in the three
   agent files.
 
+- **D16. Team-lead owns `.env` and live testing.** Owner, 2026-10-31: "You will need to take
+  control of the `.env` file from here on out to be able to do live testing. Use live testing
+  wisely and limit spending as much as possible, but don't be over-paranoid." Rules: only
+  team-lead edits `.env`; a backup goes to `.git/env-backups/` (never committed) before each
+  edit; secret values are never printed, logged or written to reports. Developers and the
+  product owner can't reach `.env` from their worktrees, so they request a live check on the
+  board (`question`, key `live-check:<feature>`) with the exact steps, and only when tests
+  can't settle the question. Team-lead batches the checks into one pass on the merged sprint
+  branch at the end of the sprint: cheapest model unless the model is under test, one or two
+  turns per check, the WCL cache on, and no guide-pipeline runs unless the guide is the thing
+  being tested. Owner preference 17.
+
 ## Proposals under discussion
 
 ### P1. Complexity tiers (the product owner chooses, per D2)
@@ -374,3 +386,5 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-10-31:** Before sprint 2026-10-31b the owner extended the autonomy grant to the
   whole team (D15, preference 16) and scoped the sprint to hardening and QA debt, so the
   team can concentrate on learning to work autonomously.
+- **2026-10-31:** The owner handed team-lead control of `.env` and live testing (D16,
+  preference 17), mid-sprint 2026-10-31b. Posted on the board so the team can request checks.
