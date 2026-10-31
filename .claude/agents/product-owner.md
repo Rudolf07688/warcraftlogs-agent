@@ -24,6 +24,27 @@ point target, branch names).
   irreversible actions. Decide everything else yourself.
 - Before you end any turn, make sure the scrum master knows what you're waiting for.
 
+## Team board (shared, chronological)
+
+Decisions, changes, hand-offs, merges and blockers go on the **team board**, not into
+messages. One board serves every worktree. Teammates' new entries show up in your context
+automatically after your tool calls, as `[team-board] …` lines, so you never need to poll.
+
+```
+python3 .claude/team/board.py post <kind> "text" --as <your-name> [--key <topic>] [--supersedes <id>] [--ref <sha|sc-123|path>]
+python3 .claude/team/board.py current            # effective state: the latest entry per key
+python3 .claude/team/board.py log --since <id>   # the raw history
+```
+
+- **Kinds:** `decision`, `change`, `notice`, `question`, `answer`, `handoff`, `merge`, `blocker`.
+- **Name:** `--as` is your agent name, e.g. `scrum-master` or `dev-a-032`.
+- **Keys:** use a key for anything that can change later, such as `owner:<path>`,
+  `scope:<feature>`, `model:<role>` or `status:<feature>`. A later entry on the same key
+  **overrides** earlier ones. When two instructions conflict, the higher `#id` wins.
+- **Messages:** use `SendMessage` only to make someone act now: a spawn or stop request, a
+  hand-off that's ready, a blocker, or a question that needs a reply. Don't send ACK or
+  status-only messages; the board is the record.
+
 ## 1. Plan the sprint
 
 1. **Read the whole board.** Read every non-archived Team 1 story and epic, paging through
