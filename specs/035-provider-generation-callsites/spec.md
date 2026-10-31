@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-31
 
-**Status**: Draft
+**Status**: Signed off (scrum master, 2026-10-31)
 
 **Stories**: sc-252 (2) follow-up suggestions, chat titles and report synthesis run on the active
 LLM provider · sc-253 (3) grounded class-guide pipeline runs on the Anthropic API (structured
@@ -27,6 +27,41 @@ and decisions D1–D5, D9, D10; provider-layer contract
 (`specs/011-agent-rate-limit-relief`, FR-012); titles (`specs/019-sidebar-conversations`, FR-017);
 report synthesis fail-closed (`specs/007-metadata-reports-profiles`, FR-017/018/019); guide
 pipeline (`specs/015-grounded-class-guides`, FR-046 reviewer differs, research R3/R14).
+
+## Clarifications
+
+### Session 2026-10-31
+
+Answered by the scrum master (spec signed off 2026-10-31).
+
+- Q: How does the entry point pick the client? → A: By model family (`is_anthropic_model`): a
+  Claude id goes to the active provider's Claude client (Anthropic API under `anthropic`,
+  Vertex Model Garden under `vertex`), a Gemini id to the genai client. `generation.py` calls
+  `active_provider()` only to choose server-tool variants (Claude on Vertex has only basic web
+  search and no web fetch).
+- Q: How are thinking-off calls (suggestions, titles) sent to Claude? → A: Haiku ids get thinking
+  disabled; any other Claude id gets no thinking setting and the lowest effort. A refusal of that
+  request (400) fails closed like any other error. One fake-client test per branch asserts the
+  request shape.
+- Q: Which retry policy does each sc-252 call site use through the shared loop? → A: Reports one
+  attempt (as today), suggestions one attempt (011 FR-012), titles keep their two attempts.
+- Q: A Claude research turn where searches ran but every one returned an error and none returned
+  results? → A: Raise the pipeline's model error (run held). A turn with no searches, or with
+  successful but empty searches, continues as today. Gemini unchanged.
+- Q: How does the grounded call learn the allowed fetch domains? → A: `generate_grounded` takes a
+  `fetch_domains` argument; `research.py` passes `fetchable_domains()` (one-line change, research
+  joins the footprint). Gemini keeps URL context as today.
+- Also decided: web search and web fetch use the dynamic-filtering tool versions on the Anthropic
+  API, at most 10 searches and 5 fetches per research call; a paused server turn is resumed at
+  most 3 times; structured output asks for a JSON schema built from the Pydantic model and is
+  validated by our own schema check (one-retry rule unchanged); temperature is never sent to
+  Claude; existing tests that patched removed internals move to the new seam with the same
+  assertions.
+- Also decided: this feature owns the sprint-level end-to-end test: one new parametrised test file
+  covering the agent (with 032's fakes), suggestions, titles, report synthesis and the guide
+  pipeline (`anthropic` reaches only the faked Anthropic client, `vertex` only Vertex clients), plus
+  the plan's grep check (outside `provider.py` and `generation.py`, no direct genai/anthropic
+  client imports for model calls; ADK agent types excepted).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -171,8 +206,9 @@ the "web search is not enabled" refusal and check the clear model error.
   reject non-default sampling values).
 - A Claude reply that stops at the token cap: the text is used as is (suggestions and titles parse
   what they get; a truncated structured reply fails validation and is retried once).
-- Every web search in a research turn returns an error block (rate limit, unavailable) or no
-  results at all: see Clarifications (pending).
+- Every web search in a Claude research turn returns an error block (rate limit, unavailable) and
+  none returns results: the pipeline's model error, run held. No searches at all, or successful
+  but empty searches: the turn continues with no sources, as on Gemini.
 - A Claude reply refused for safety reasons (`refusal` stop reason): treated as a failed call
   (no suggestions / title kept / clean 500 / model error).
 - Sources whose URL is a Vertex grounding redirect keep being resolved as today; Anthropic sources
@@ -198,14 +234,15 @@ the "web search is not enabled" refusal and check the clear model error.
 - **FR-006**: Report synthesis MUST keep its 60-second bound, output cap, input cap and fail-closed
   result (clean 500, no partial file), and MUST NOT block a worker thread while waiting.
 - **FR-007**: Under Claude, the entry point MUST NOT send temperature or other sampling values,
-  and MUST NOT force a tool choice; it MUST run calls that are thinking-off on Gemini with the
-  least thinking Claude allows for that model (see Clarifications).
+  and MUST NOT force a tool choice. Calls that are thinking-off on Gemini MUST send thinking
+  disabled to Haiku ids and, for any other Claude id, no thinking setting and the lowest effort.
 - **FR-008**: The guide pipeline's structured call MUST work on both providers: on Claude it asks
   for JSON matching the step's schema; on both, the reply is validated against that same schema
   with one retry on a misfit, then the pipeline's model error.
 - **FR-009**: The guide pipeline's grounded call MUST work on both providers: on Claude it uses the
   server-side web search tool and returns the text plus `{title, uri}` sources taken from the
-  search (and fetch) result blocks, de-duplicated by URI.
+  search (and fetch) result blocks, de-duplicated by URI. On Claude, a turn where at least one
+  search returned an error and none returned results MUST raise the pipeline's model error.
 - **FR-010**: On Claude, URL context MUST map to the server-side web fetch tool, restricted to the
   domains the fetch rules allow (`WCL_GUIDE_RESEARCH_FETCH_ENABLED`); where web fetch is not
   available, URL context MUST be omitted and the README MUST say so.
@@ -225,6 +262,8 @@ the "web search is not enabled" refusal and check the clear model error.
   web-fetch result blocks, a paused turn, the "not enabled" refusal and a validation retry); no
   live calls. The existing suggestion, title, report and guide-pipeline tests MUST still pass,
   moved to the new seam where they patched removed internals.
+- **FR-017**: Each sc-252 call site MUST pass its retry policy to the entry point: suggestions and
+  reports one attempt, titles two attempts (their existing policy).
 
 ### Key Entities
 
@@ -257,12 +296,10 @@ the "web search is not enabled" refusal and check the clear model error.
 - 032 (provider layer, role resolution, `settings.wcl_*_model` resolved per provider) merges before
   implementation starts; this feature calls it and does not change it (`provider.py`, `config.py`,
   `main.py`, `model_retry.py` are not edited).
-- Which client serves a call follows the model id's family (a Claude id goes to the active
-  provider's Claude client, a Gemini id to the genai client); under `anthropic` only Claude ids
-  are served (032). This is a model-family check, not a provider branch (contract: "Agent side").
-  Pending confirmation in Clarifications.
+- Under `anthropic` only Claude ids are served (032), so model-family dispatch (Clarifications)
+  sends every call there to the Anthropic API.
 - Chat web search under Claude stays out of scope (D3).
 - The owner enables Anthropic web search in the Console before the live guide check; searches are
   billed per use, so a request caps the number of searches.
-- The sprint-level end-to-end parametrised test (plan "End-to-end acceptance") covers this
-  feature's call sites; the agent part of it belongs to 032.
+- The sprint-level end-to-end parametrised test and grep check (plan "End-to-end acceptance") are
+  this feature's (Clarifications); the agent part reuses 032's fakes.

@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -34,5 +34,5 @@
 - This is a provider-plumbing feature: the spec names settings, model roles and the provider-layer
   modules because the acceptance criteria (plan section 035) are stated in those terms. Accepted
   as for 032/033.
-- Open points (thinking-off on Claude, model-family dispatch, retry policy for reports, research
+- Open points resolved in the spec's Clarifications (session 2026-10-31); spec signed off.
   with only failed searches, fetch-domain seam) go to `/speckit-clarify` via the scrum master.
