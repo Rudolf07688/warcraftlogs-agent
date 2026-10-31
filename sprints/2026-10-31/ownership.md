@@ -52,9 +52,20 @@ Feature numbers start at **032**.
 | `backend/tests/test_llm_provider.py`, `test_llm_provider_agent.py`, `test_llm_provider_app.py` (new), `backend/tests/test_vertex.py` | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
 | `frontend/src/App.modelFallback.test.tsx` (new) | dev-a-032 | 032 | released (merged e78e4a1) | 2026-10-31 |
 | `.env.example`, `README.md` (provider section) | dev-a-032 (then 033/035 lines) | 032 | released (merged e78e4a1) | 2026-10-31 |
-| `specs/035-provider-generation-callsites/**` | dev-b-035 | 035 | granted | 2026-10-31 |
-| `wcl_agent/llm/generation.py` (new) | dev-b-035 | 035 | granted | 2026-10-31 |
-| `backend/app/suggestions.py`, `services/conversation_titles.py`, `services/report_synthesis.py`, `services/guide_pipeline/llm.py`, `services/guide_pipeline/research.py` (one line) | dev-b-035 | 035 | granted | 2026-10-31 |
-| `backend/tests/test_llm_generation.py`, `test_guide_pipeline_llm.py`, `test_provider_e2e.py` (new); `test_suggestions.py`, `test_conversation_titles.py`, `test_report_synthesis.py`, `test_guide_pipeline_run.py`, `test_guide_reports.py` | dev-b-035 | 035 | granted | 2026-10-31 |
-| `README.md` (035 lines in the provider section) | dev-b-035 | 035 | granted — effective after 032 merges; 033 sequenced after 035 or by SM grant | 2026-10-31 |
-| `wcl_agent/llm/vertex.py` (genai_client forwarder deletion only, iff 033 merged first) | dev-b-035 | 035 | granted — effective after 032 merges | 2026-10-31 |
+| `specs/035-provider-generation-callsites/**` | dev-b-035 | 035 | released (merged 611c2c6 / 44969fb) | 2026-10-31 |
+| `wcl_agent/llm/generation.py` (new) | dev-b-035 | 035 | released (merged 611c2c6 / 44969fb) | 2026-10-31 |
+| `backend/app/suggestions.py`, `services/conversation_titles.py`, `services/report_synthesis.py`, `services/guide_pipeline/llm.py`, `services/guide_pipeline/research.py` (one line) | dev-b-035 | 035 | released (merged 611c2c6 / 44969fb) | 2026-10-31 |
+| `backend/tests/test_llm_generation.py`, `test_guide_pipeline_llm.py`, `test_provider_e2e.py` (new); `test_suggestions.py`, `test_conversation_titles.py`, `test_report_synthesis.py`, `test_guide_pipeline_run.py`, `test_guide_reports.py` | dev-b-035 | 035 | released (merged 611c2c6 / 44969fb) | 2026-10-31 |
+| `README.md` (035 lines in the provider section) | dev-b-035 | 035 | released (merged 44969fb) | 2026-10-31 |
+| `wcl_agent/llm/vertex.py` (genai_client forwarder deletion only) | dev-b-035 | 035 | released (merged 611c2c6 / 44969fb) | 2026-10-31 |
+| `specs/033-anthropic-discovery-label/**` | dev-a-033 | 033 | released (merged 274f594) | 2026-10-31 |
+| `backend/tests/llm_fakes.py` (new, shared LLM test fakes) | dev-b-035 | 035 | released (merged 611c2c6 / 44969fb) | 2026-10-31 |
+| `wcl_agent/llm/models.py`, `wcl_agent/cache/cache.py` (model_catalog key v2), `wcl_agent/llm/provider.py` (has_model_catalog one line) | dev-a-033 | 033 | released (merged 274f594) | 2026-10-31 |
+| `wcl_agent/llm/vertex.py` (delete anthropic_client forwarder; genai_client only if 035 merged first) | dev-a-033 | 033 | released (merged 274f594) | 2026-10-31 |
+| `backend/app/main.py` (`_load_models`), `backend/app/config.py`, `backend/app/schemas.py` (`ModelsResponse`), `backend/app/api/models.py` | dev-a-033 | 033 | released (merged 274f594) | 2026-10-31 |
+| `frontend/src/App.tsx` (provider state → ModelSelect), `frontend/src/components/ModelSelect.tsx`, `frontend/src/api/restClient.ts`, `ModelSelect.test.tsx` (new); `App.test.tsx`, `App.modelFallback.test.tsx` (mocks only, if needed) | dev-a-033 | 033 | released (merged 274f594) | 2026-10-31 |
+| `.env.example`, `backend/tests/test_model_discovery.py`, `test_vertex.py`, `test_api.py`, `test_anthropic_discovery.py` (new) | dev-a-033 | 033 | released (merged 274f594) | 2026-10-31 |
+| `README.md` (033: two lines) | dev-b-035 | 033 | released (merged 44969fb) | 2026-10-31 |
+| `backend/tests/test_models.py`, `test_model_fallback.py` (if needed) | dev-a-033 | 033 | released (merged 274f594) | 2026-10-31 |
+| `backend/tests/test_llm_provider.py`, `test_llm_provider_app.py` (032's tests, interim assertions replaced) | dev-a-033 | 033 | retro-granted, released (merged 274f594) | 2026-10-31 |
+| `backend/tests/test_vertex.py` (3 calls → provider.genai_client), `backend/tests/test_provider_e2e.py` (READS_PROVIDER fix), `wcl_agent/llm/vertex.py` (genai_client deletion), `README.md` | dev-b-035 | 035 fix-up | released (merged 611c2c6 / 44969fb) | 2026-10-31 |

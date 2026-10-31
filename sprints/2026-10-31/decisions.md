@@ -140,3 +140,5 @@ review. **Owner GO (2026-10-31, via team-lead): "go". D0–D3 are accepted as re
   limited to `research.fetchable_domains()`.)
 - **Why:** sc-253 promises that guides stay grounded and cited (AC4/AC5). A held run is
   visible and can be retried; a silently uncited guide is not.
+- D12 — 2026-10-31: Owner fast-track: the scrum master merges 033/035 when tests, build and grant are green; the PO only spot-checks after the merge; no /qa-sweep this sprint; one final report.
+- D13 — 2026-10-31: 033 spot-check passed after merge (274f594). sc-251's 390px readability is limited by the existing desktop-only header, not a 033 defect; a breadcrumb was added to sc-175 (mobile layout).

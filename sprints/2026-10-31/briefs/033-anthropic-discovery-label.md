@@ -43,7 +43,9 @@
 (deleting the `anthropic_client` forwarder; also `genai_client` if 033 merges after 035), `backend/app/schemas.py::ModelsResponse`,
 `backend/app/api/models.py`, the frontend model picker component and `frontend/src/api/restClient.ts`,
 `frontend/src/types.ts` if needed, README/.env.example lines, tests, `specs/033-anthropic-discovery-label/**`.
-**Not yours:** `frontend/src/App.tsx` (034; ask if you need it), `generation.py` and the 035 call sites.
+**Not yours:** `generation.py` and the 035 call sites (suggestions, titles, report synthesis, guide pipeline). `README.md` is currently granted to dev-b-035: list your README lines in your plan and the scrum master sequences them (after 035 merges, or by a separate grant). `frontend/src/App.tsx` is free since 034 merged, but ask before using it.
+
+**Peer:** `dev-b-035` is implementing 035 in parallel. It may delete the `vertex.genai_client` forwarder only if 033 merges first; otherwise you delete it once `models.py` stops using it.
 
 ## Working rules
 
