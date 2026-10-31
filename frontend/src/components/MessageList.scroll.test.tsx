@@ -8,7 +8,6 @@ import type { Message } from "../types";
 // replaced by a hand-driven context, so "the reader scrolled away" can be set directly.
 
 const ctx = vi.hoisted(() => ({
-  escapedFromLock: false,
   isAtBottom: true,
   stopScroll: vi.fn(),
   scrollToBottom: vi.fn(),
@@ -31,8 +30,10 @@ vi.mock("./PlotlyArtifact", () => ({ PlotlyArtifact: () => null }));
 
 const scrollTo = vi.fn();
 beforeEach(() => {
-  ctx.escapedFromLock = false;
-  ctx.stopScroll.mockClear();
+  // The library's lock, in miniature: stopScroll releases it, scrollToBottom re-engages it.
+  ctx.isAtBottom = true;
+  ctx.stopScroll.mockReset().mockImplementation(() => void (ctx.isAtBottom = false));
+  ctx.scrollToBottom.mockReset().mockImplementation(() => void (ctx.isAtBottom = true));
   scrollTo.mockClear();
   HTMLElement.prototype.scrollTo = scrollTo as never;
 });
@@ -71,7 +72,7 @@ describe("MessageList: scroll to the question when the answer completes", () => 
 
   it("does nothing if the reader scrolled away while it streamed", () => {
     const { rerender } = render(<MessageList {...props({ messages: asking, streaming: true })} />);
-    ctx.escapedFromLock = true;
+    ctx.isAtBottom = false; // scrolled up
     rerender(<MessageList {...props({ messages: asking, streaming: true, status: "x" })} />);
     rerender(<MessageList {...props({ messages: answered, streaming: false })} />);
     expect(scrollTo).not.toHaveBeenCalled();
@@ -99,12 +100,23 @@ describe("MessageList: scroll to the question when the answer completes", () => 
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
-  it("scrolls again after the next answer, to that answer's question", () => {
+  it("follows the next turn again, then scrolls to that answer's question (BUG-006)", () => {
     const { rerender } = render(<MessageList {...props({ messages: asking, streaming: true })} />);
     rerender(<MessageList {...props({ messages: answered, streaming: false })} />);
+    expect(ctx.isAtBottom).toBe(false); // the first answer released the lock
+    expect(ctx.scrollToBottom).not.toHaveBeenCalled();
     const next = [...answered, user("q2")];
     rerender(<MessageList {...props({ messages: next, streaming: true })} />);
+    expect(ctx.scrollToBottom).toHaveBeenCalledTimes(1); // the new turn is followed again
+    expect(ctx.isAtBottom).toBe(true);
     rerender(<MessageList {...props({ messages: [...next, agent("a2")], streaming: false })} />);
     expect(scrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not yank a reader who scrolled away themselves when a turn starts", () => {
+    const { rerender } = render(<MessageList {...props({ messages: answered })} />);
+    ctx.isAtBottom = false; // the reader's own scroll, not our release
+    rerender(<MessageList {...props({ messages: [...answered, user("q2")], streaming: true })} />);
+    expect(ctx.scrollToBottom).not.toHaveBeenCalled();
   });
 });
