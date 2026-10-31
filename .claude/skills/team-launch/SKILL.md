@@ -18,10 +18,13 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
 
 ## 1. Before launch
 
-1. **Clarify, if it's needed.** Ask the owner only questions whose answers change scope or
+1. **Check for a parked steer.** If `meta/CURRENT.md` has a "Next sprint steer" section,
+   it's the owner's default for this sprint: confirm it in one line, pass it to the
+   product owner verbatim, and remove the section once the sprint is launched.
+2. **Clarify, if it's needed.** Ask the owner only questions whose answers change scope or
    direction. Use one `AskUserQuestion` round, at most four questions, each with a
    recommended option. Skip this step if the steer is clear.
-2. **Set up**, from the main checkout:
+3. **Set up**, from the main checkout:
    - **Branch:** `git branch sprint-<date> main`.
    - **Worktrees:** `/home/rudolf/dev/wcl-worktrees/sprint` (on the branch), plus `dev-a`
      and `dev-b` (detached at the same commit).
@@ -31,10 +34,10 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
      Alembic head.
    - **Uncommitted changes:** the board hook and the agent files must be committed on
      `main` before you branch, because worktrees only see committed files.
-3. **Board:**
+4. **Board:**
    - `python3 .claude/team/board.py init sprint-<date>`
    - `post decision "<steer + clarified answers>" --as team-lead --key steer`
-4. **Launch the product owner** as a named teammate. First check `ListAgents` for a
+5. **Launch the product owner** as a named teammate. First check `ListAgents` for a
    leftover agent with the same name from an earlier sprint and stop it (a stale one
    replayed its old final report at launch once). Then: `Agent`, `name: product-owner`,
    `subagent_type: product-owner`. Use the same pattern, with seat `sm`, for a scrum master.
@@ -47,7 +50,7 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    - any iteration instructions
    - the board name
    - the owner's standing rules: never push, never Done, local HTML reports
-5. **Tell the owner in two or three lines** what's running. Mention that the plan report
+6. **Tell the owner in two or three lines** what's running. Mention that the plan report
    will appear at `sprints/<date>/plan.html` and won't block the team.
 
 ## 2. During the sprint: quiet watchdog

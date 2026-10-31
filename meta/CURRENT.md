@@ -25,6 +25,15 @@ The agent-team redesign: persistence and autonomy. Full record in
   progress updates during sprints). First skills pass done: pruned unused stacks, applied
   the sprint's learnings.
 
+## Next sprint steer (owner, 2026-11-01)
+
+Big sprint: the semantic knowledge base, epic 100. Scope covers stored WCL fetches (under the
+039 sharing rule), grounded class guides and past conversations. Embeddings: Vertex. Size
+about 30–35 pts: epic 100 plus sc-131, sc-132, sc-295, sc-296 from epic 103 (not sc-130).
+Likely three developers, tier L with a scrum master. Full note on Shortcut epic 100
+(comment, 2026-11-01); the stories are in Shortlist. Pass this to the PO verbatim in the
+launch brief.
+
 ## Open threads
 
 - Done: merged and pushed, worktrees and branches removed, stack on main, GitNexus re-indexed.
