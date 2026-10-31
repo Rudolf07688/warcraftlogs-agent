@@ -15,9 +15,10 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import get_args
 
 from pydantic import ValidationError
 
@@ -55,6 +56,7 @@ _REGIONS = frozenset({"us", "eu", "kr", "tw", "cn"})
 _CLIP = 100  # CharacterIn's maximum; longer values are invalid anyway (bounds the stored row)
 
 _ROLE = {"own": "self", "friend": "friend"}  # proposal target -> user_characters.role
+_ACTIONS = get_args(ProfileChangeIn.model_fields["action"].annotation)
 _LIMITS = {"own": ("character_limit", repo.MAX_OWN_CHARACTERS), "friend": ("friend_limit", repo.MAX_FRIENDS)}
 
 _MESSAGES = {
@@ -113,6 +115,55 @@ def _profile(chars: Sequence[UserCharacter]) -> dict[tuple[str, str, str], _Entr
     }
 
 
+def _blank(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _field(raw: object, key: str) -> object:
+    return raw.get(key) if isinstance(raw, Mapping) else getattr(raw, key, None)
+
+
+def _parse(raw: object) -> tuple[ProfileChangeIn | None, str | None]:
+    """One proposed item as the tool receives it; returns (change, None) or (None, code).
+
+    sc-241: ADK converts the tool's list one item at a time and hands over an item it
+    couldn't convert as the raw value, so every item is checked here on its own. A missing or
+    blank realm or region gets its own code before the generic ``invalid_item``.
+    """
+    if not isinstance(raw, (ProfileChangeIn, Mapping)):
+        return None, "invalid_item"
+    if _blank(_field(raw, "realm")):
+        return None, "invalid_realm"
+    if _blank(_field(raw, "region")):
+        return None, "invalid_region"
+    if isinstance(raw, ProfileChangeIn):
+        return raw, None
+    try:
+        return ProfileChangeIn.model_validate(raw), None
+    except ValidationError:
+        return None, "invalid_item"
+
+
+def _text(value: object) -> str:
+    return value.strip()[:_CLIP] if isinstance(value, str) else ""
+
+
+def _skipped(index: int, raw: object, code: str) -> ProposalItemOut:
+    """The card row of an item that couldn't be read; display only, never applied."""
+    action, target = _field(raw, "action"), _field(raw, "target")
+    return ProposalItemOut(
+        index=index,
+        action=action if action in _ACTIONS else "add",
+        target=target if target in _ROLE else "friend",
+        name=_text(_field(raw, "name")),
+        realm=_text(_field(raw, "realm")),
+        region=_text(_field(raw, "region")).lower(),
+        class_name=_text(_field(raw, "class_name")) or None,
+        spec=_text(_field(raw, "spec")) or None,
+        validation=ProposalValidation(ok=False, code=code, message=_MESSAGES[code]),
+    )
+
+
 def _check(change: ProfileChangeIn, profile: dict, counts: dict, seen: set) -> tuple[str | None, _Entry | None]:
     """Validate one change against the working profile; returns (code, matched entry)."""
     try:
@@ -146,7 +197,7 @@ def _check(change: ProfileChangeIn, profile: dict, counts: dict, seen: set) -> t
 
 
 def _validate(
-    changes: Sequence[ProfileChangeIn], chars: Sequence[UserCharacter]
+    changes: Sequence[ProfileChangeIn | object], chars: Sequence[UserCharacter]
 ) -> list[ProposalItemOut]:
     """Validate the changes in order over a working copy of the profile.
 
@@ -159,7 +210,11 @@ def _validate(
         counts[entry.target] += 1
     seen: set = set()
     items: list[ProposalItemOut] = []
-    for index, change in enumerate(changes):
+    for index, raw in enumerate(changes):
+        change, code = _parse(raw)
+        if change is None:
+            items.append(_skipped(index, raw, code))
+            continue
         code, existing = _check(change, profile, counts, seen)
         item = ProposalItemOut(
             index=index,
@@ -231,9 +286,11 @@ def _to_out(row: ProfileProposal, now: datetime | None = None) -> ProfileProposa
 
 
 async def create_proposal(
-    identity: RequestIdentity, conversation_id: uuid.UUID, changes: Sequence[ProfileChangeIn]
+    identity: RequestIdentity, conversation_id: uuid.UUID, changes: Sequence[ProfileChangeIn | object]
 ) -> ProfileProposalOut:
     """Validate the changes and store a pending proposal. Writes nothing to the profile.
+
+    Each change is validated on its own (an item that isn't a valid change is a skipped row).
 
     Raises ``ValueError`` for an empty or too large list (the tool returns it as its error)
     and ``ProposalError("not_found")`` when the conversation isn't this tenant's.

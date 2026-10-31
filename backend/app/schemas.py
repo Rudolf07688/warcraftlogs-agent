@@ -434,6 +434,18 @@ class ProfileChangeIn(BaseModel):
     # Display only, never stored: the role played in the source run (D9).
     played_role: RaidRole | None = None
 
+    @field_validator("raid_role", "played_role", mode="before")
+    @classmethod
+    def _role_any_case(cls, v, info):
+        # sc-241: models and logs write "Healer" or "DPS". An unknown played role is dropped
+        # (display only); an unknown raid role still fails, so the item is skipped.
+        if not isinstance(v, str):
+            return v
+        role = v.strip().lower()
+        if info.field_name == "played_role" and role not in RaidRole.__args__:
+            return None
+        return role
+
 
 class ProposalValidation(BaseModel):
     ok: bool
