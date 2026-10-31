@@ -94,12 +94,16 @@ async def test_vertex_reaches_only_vertex(llm, scripted):
 # Only these modules decide the provider or build/call model clients (ADK agent types and the
 # google.genai `types` module are not clients and are allowed everywhere).
 PROVIDER_LAYER = {"wcl_agent/llm/provider.py", "wcl_agent/llm/generation.py"}
-# Reads the provider for a read-only setting that main.py logs; no branch (scrum master).
-READS_PROVIDER = {"backend/app/config.py"}
+# Read the provider without choosing a client for a model call (scrum master; 033 discovery).
+READS_PROVIDER = {
+    "backend/app/config.py",  # read-only Settings.llm_provider
+    "backend/app/main.py",  # the sc-159 startup log line and the model-catalog cache key
+    "backend/app/api/models.py",  # the sc-251 read-only `provider` field for the picker label
+    "wcl_agent/llm/models.py",  # provider-specific discovery: id shape and which catalog to list
+}
 CLIENT_ALLOWED = {
     "wcl_agent/llm/model_retry.py": "ADK model wrappers take the provider's client; rate-limit classification",
     "wcl_agent/llm/models.py": "model discovery probes (033)",
-    "wcl_agent/llm/vertex.py": "transitional forwarders to provider (032 contract)",
 }
 CLIENT_USE = re.compile(
     r"from google import genai|import google\.genai\b|^\s*import anthropic\b|^\s*from anthropic\b"

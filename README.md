@@ -516,6 +516,11 @@ catalog (those are never changed automatically).
   only in `wcl_agent/llm/provider.py` (feature 032). `europe-west1` serves only Gemini 2.5 and no Claude,
   and the `eu` multi-region lacks the Pro preview, so `GOOGLE_CLOUD_LOCATION` (default
   `europe-west1`) is left to everything else. `WCL_ANTHROPIC_REGION` is gone.
+- **Under `anthropic`** (feature 033): the picker is discovered from the Anthropic Models
+  API instead of Model Garden. `WCL_MODEL_DISCOVERY` and `WCL_ANTHROPIC_CLASSES` apply as
+  above, and the static `WCL_ANTHROPIC_MODELS` is the fallback.
+- **Provider label**: the model picker shows a read-only "Vertex AI" or "Anthropic API"
+  label for the active provider.
 
 ## Switching the LLM provider (feature 032)
 
@@ -547,9 +552,8 @@ value logs a warning and runs as `vertex`. The startup log says `LLM provider: â
 - **Model ids**: dated Claude ids differ between the two (`claude-sonnet-4-20250514` on the
   API, `claude-sonnet-4@20250514` on Vertex); either form works in `.env` and is read in the
   active provider's form. Current ids (`claude-sonnet-5-5`) are the same on both.
-- **Which models are offered**: under `anthropic` the picker offers only Claude. Until
-  Anthropic model discovery lands, startup probes `WCL_ANTHROPIC_MODELS` (or, if empty, the
-  Claude role defaults above) through the Anthropic API instead of listing Vertex's catalog.
+- **Which models are offered**: under `anthropic` the picker offers only Claude, discovered
+  from the Anthropic Models API (see [Model discovery](#model-discovery-feature-016)).
 - **Old chats**: a chat created on a model the active provider doesn't serve continues on
   the default model. Nothing is migrated.
 - **The key**: it reaches the container through the existing `env_file: .env`, is passed

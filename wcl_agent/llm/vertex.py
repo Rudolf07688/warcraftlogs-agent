@@ -51,17 +51,6 @@ def project_id() -> str | None:
         return None
 
 
-# --- transitional forwarders (feature 032) ------------------------------------------------
-# The clients moved to ``provider``. ``genai_client`` stays for callers 032 doesn't own;
-# 035 moves its call sites and deletes it.
-
-
-def genai_client() -> Any:
-    from .provider import genai_client
-
-    return genai_client()
-
-
 # --- the Model Garden catalog -------------------------------------------------------------
 
 
