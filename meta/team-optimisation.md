@@ -410,3 +410,8 @@ through respawns as the same named member, with its own small, curated memory. I
   start of sprint 2026-10-31c. Agents propose changes on the board (key `skill:<name>`);
   team-lead applies them at wrap-up. Added to the three agent files and the team-launch
   wrap-up.
+- **2026-11-01:** First skills pass under D17: pruned the skills for stacks the project doesn't
+  use (A2A protocol, agentgateway, Agno, LangChain/LangGraph, Kafka, Firestore, Rails) and
+  three duplicate folders (top-level `rules/` and `references/`, a nested `gitnexus/` copy).
+  Kept Google ADK (the app's agent framework; the owner caught my mistake) and NATS
+  (planned worker queue in `todo.md`). 47 → 37 entries; git history keeps the rest.
