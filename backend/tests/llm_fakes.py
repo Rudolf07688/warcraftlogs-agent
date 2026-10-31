@@ -95,14 +95,16 @@ def web_search_not_enabled() -> tuple[int, dict]:
 
 class ScriptedClaude:
     """Answers each Messages API request with the next scripted reply (a message dict, or
-    ``(status, error body)``) and records the request bodies."""
+    ``(status, error body)``) and records the request bodies and hosts."""
 
     def __init__(self, *replies: dict | tuple[int, dict]) -> None:
         self.replies = list(replies)
         self.bodies: list[dict] = []
+        self.hosts: list[str] = []
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
         self.bodies.append(json.loads(request.content))
+        self.hosts.append(request.url.host)
         assert self.replies, "unexpected Claude request"
         item = self.replies.pop(0)
         if isinstance(item, tuple):

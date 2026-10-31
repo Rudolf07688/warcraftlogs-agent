@@ -19,7 +19,6 @@ from backend.app.services.guide_pipeline.models import GenerationBriefing
 from backend.tests.llm_fakes import (  # noqa: F401 - fixtures
     fetch_result,
     gemini_reply,
-    llm as llm_fakes,
     message,
     no_sleep,
     search_error,
@@ -27,6 +26,9 @@ from backend.tests.llm_fakes import (  # noqa: F401 - fixtures
     server_tool_use,
     text,
     web_search_not_enabled,
+)
+from backend.tests.llm_fakes import (
+    llm as llm_fakes,
 )
 from wcl_agent.llm.provider import ModelRole, role_model
 

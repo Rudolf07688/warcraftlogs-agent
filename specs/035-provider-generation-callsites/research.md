@@ -65,8 +65,9 @@ contract and the `claude-api` skill (checked against the live web search / web f
   `fetch_domains` is non-empty, `{"type": "web_fetch_20260209", "name": "web_fetch",
   "max_uses": 5, "allowed_domains": [...]}`. `pause_turn` is resumed by re-sending
   `[user, assistant(content)]` at most 3 times; blocks from all responses are collected.
-  Sources: every `web_search_result` (`title`, `url`) in `web_search_tool_result` blocks, then each
-  `web_fetch_result` (`url`, document `title`), de-duplicated by URI in order, as `{title, uri}`.
+  Sources: every `web_search_result` (`title`, `url`) in `web_search_tool_result` blocks and each
+  `web_fetch_result` (`url`, document `title`), in order of appearance, de-duplicated by URI (first
+  wins), as `{title, uri}`.
   Error blocks (`web_search_tool_result_error`) are collected by `error_code`.
 - **Rationale**: Dynamic-filtering variants are the skill's choice for Sonnet/Opus 5.5 (and Haiku
   5.5, "Claude 4.6 and later"); `max_uses` caps per-use billing; the doc says server-tool errors

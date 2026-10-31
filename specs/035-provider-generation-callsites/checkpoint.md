@@ -10,7 +10,11 @@
   + data-model.md + quickstart.md + tasks.md (T001–T025) committed on the branch.
 - Ownership GRANTED (plan gate passed 2026-10-31) for the plan.md "Source Code" list; README.md
   lines and the vertex.py forwarder deletion become effective after 032 merges.
-- **Implementation is blocked** until the scrum master sends "032 MERGED, rebase". Start at T001.
+- 032 merged (e78e4a1); branch rebased; implementation T001–T024 done (commits 469d74c sc-252,
+  9ee3eb3 sc-253, then the e2e/grep test). Remaining: T025 hand-off checks.
+- T024: 033 had not merged at hand-off and `wcl_agent/llm/models.py` still calls
+  `vertex.genai_client`, so the forwarder stays; 033 (merging last) deletes it.
+- Shared test fakes live in `backend/tests/llm_fakes.py` (granted).
 
 ## Decisions (binding)
 

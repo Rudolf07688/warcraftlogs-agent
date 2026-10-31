@@ -209,7 +209,7 @@ off and on; the "not enabled" 400 → `GuideModelError` naming the Console page;
 
 ## Phase 7: Polish and cross-cutting
 
-- [ ] T022 Create `backend/tests/test_provider_e2e.py` (sprint-level e2e, clarify): parametrised
+- [X] T022 Create `backend/tests/test_provider_e2e.py` (sprint-level e2e, clarify): parametrised
   over `vertex`/`anthropic`, the agent turn (032's scripted transport technique), suggestions,
   title, report synthesis, `generate_structured` and `generate_grounded` reach only the faked
   Anthropic client under `anthropic` and only the genai fake / Vertex Claude client under `vertex`;
@@ -224,10 +224,11 @@ off and on; the "not enabled" 400 → `GuideModelError` naming the Console page;
   guides follow `WCL_LLM_PROVIDER`; guides need web search (and web fetch) enabled at Anthropic
   Console → Settings → Capabilities (billed per search; a held run says so); URL context is not
   available for Claude on Vertex.
-- [ ] T024 If 033 has merged and `wcl_agent/llm/models.py` no longer calls
+- [X] T024 If 033 has merged and `wcl_agent/llm/models.py` no longer calls
   `vertex.genai_client`, delete that forwarder from `wcl_agent/llm/vertex.py` (text search for
-  callers first); otherwise record in `checkpoint.md` that 033 deletes it.
-- [ ] T025 Full suite `uv run --extra test pytest -q`; GitNexus `analyze --index-only` +
+  callers first); otherwise record in `checkpoint.md` that 033 deletes it. → 033 not merged at
+  hand-off; `models.py` still calls `vertex.genai_client`; recorded, forwarder left for 033.
+- [X] T025 Full suite `uv run --extra test pytest -q`; GitNexus `analyze --index-only` +
   `detect-changes --scope all --repo .` (re-run on partial/truncated); ownership check
   `git diff --name-only sprint-2026-10-31...HEAD`; restore `CLAUDE.md` and
   `.specify/feature.json`; hand-off message to the scrum master.
