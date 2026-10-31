@@ -83,6 +83,14 @@ def _player_ident(p: KnownPlayer) -> str:
     return f"{base} — {extra}" if extra else base
 
 
+def _tracked_raid_ident(r: TrackedRaid) -> str:
+    # sc-221: the label falls back to the uploader-written report title when Warcraft Logs gave
+    # no guild, zone or date (services/raids.py ``_build_label``); then only the code is shown.
+    if r.label and (r.guild or r.zone or r.report_started_at):
+        return f"{r.label} (report {r.report_code})"
+    return f"report {r.report_code}"
+
+
 def _encounter_ident(e: KnownEncounter) -> str:
     return f"{e.encounter_name} ({e.zone_name})" if e.zone_name else e.encounter_name
 
@@ -108,7 +116,7 @@ def _recent_block(
     }
 
     lines: list[str] = []
-    raids = [f"{r.label} (report {r.report_code})" for r in known_raids if r.label]
+    raids = [_tracked_raid_ident(r) for r in known_raids]
     if raids:
         lines.append("- Raids: " + "; ".join(raids))
     players = [
@@ -139,7 +147,8 @@ def _mplus_run_ident(run: RecentMplusRun) -> str:
 
 
 def _raid_run_ident(raid: RecentRaid) -> str:
-    parts = [raid.zone_name or raid.title, _DIFFICULTY.get(raid.difficulty), f"{raid.started_at:%Y-%m-%d}"]
+    # sc-221: never ``raid.title``, which the report's uploader writes.
+    parts = [raid.zone_name, _DIFFICULTY.get(raid.difficulty), f"{raid.started_at:%Y-%m-%d}"]
     return f"{', '.join(p for p in parts if p)} (report {raid.report_code})"
 
 

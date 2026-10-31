@@ -13,7 +13,7 @@ import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, or_, select, tuple_, update
+from sqlalchemy import case, delete, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
@@ -1028,6 +1028,19 @@ class CharacterConflict(Exception):
         self.code = code
 
 
+async def lock_profile(session: AsyncSession, *, tenant_id: uuid.UUID) -> None:
+    """Serialise this tenant's character adds until the transaction ends (sc-223).
+
+    Every add checks duplicates and the caps before it inserts, so two parallel adds could
+    both pass; this transaction-scoped advisory lock makes the second wait for the first.
+    Postgres only: SQLite (tests) runs one transaction at a time anyway.
+    """
+    if session.bind.dialect.name != "postgresql":
+        return
+    key = func.hashtextextended(f"profile:{tenant_id}", 0)
+    await session.execute(select(func.pg_advisory_xact_lock(key)))
+
+
 async def find_character_identity(
     session: AsyncSession, *, tenant_id: uuid.UUID, name: str, server: str, region: str
 ) -> UserCharacter | None:
@@ -1106,8 +1119,10 @@ async def add_character(
 
     Raises ``CharacterConflict`` when the identity is already saved in either role, or when
     the own-character or friend limit is reached. ``IntegrityError`` remains the backstop for a
-    same-role race on the DB unique constraint.
+    same-role race on the DB unique constraint. The tenant's profile is locked first, so the
+    checks and the insert can't interleave with another add (sc-223).
     """
+    await lock_profile(session, tenant_id=tenant_id)
     existing = await find_character_identity(
         session, tenant_id=tenant_id, name=name, server=server, region=region
     )
@@ -1178,6 +1193,51 @@ async def delete_character(
         )
     )
     return result.rowcount > 0
+
+
+# Bulk writes for an approved proposal (sc-225): one statement each, whatever the item count.
+# The caller holds ``lock_profile`` and has already checked duplicates and caps.
+
+
+async def add_characters(
+    session: AsyncSession, *, tenant_id: uuid.UUID, rows: list[dict]
+) -> list[UserCharacter]:
+    """Insert characters (``role``, ``name``, ``server``, ``region``, ``raid_role`` each)."""
+    chars = [UserCharacter(tenant_id=tenant_id, **row) for row in rows]
+    session.add_all(chars)
+    await session.flush()
+    return chars
+
+
+async def set_raid_roles(
+    session: AsyncSession, *, tenant_id: uuid.UUID, roles: dict[uuid.UUID, str | None]
+) -> set[uuid.UUID]:
+    """Set each character's raid-role override; returns the ids that still existed."""
+    if not roles:
+        return set()
+    result = await session.execute(
+        update(UserCharacter)
+        .where(UserCharacter.tenant_id == tenant_id, UserCharacter.id.in_(roles))
+        .values(raid_role=case(roles, value=UserCharacter.id))
+        .returning(UserCharacter.id)
+        .execution_options(synchronize_session=False)
+    )
+    return set(result.scalars())
+
+
+async def delete_characters(
+    session: AsyncSession, *, tenant_id: uuid.UUID, ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Delete characters; returns the ids that still existed."""
+    if not ids:
+        return set()
+    result = await session.execute(
+        delete(UserCharacter)
+        .where(UserCharacter.tenant_id == tenant_id, UserCharacter.id.in_(ids))
+        .returning(UserCharacter.id)
+        .execution_options(synchronize_session=False)
+    )
+    return set(result.scalars())
 
 
 async def set_guild(

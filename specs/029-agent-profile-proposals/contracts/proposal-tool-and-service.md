@@ -43,9 +43,15 @@ and scopes every query on tenant and user.
 
 - `not_found` covers a missing id, another tenant's id and another user's id (no disclosure).
 - Idempotency: an applied proposal comes back unchanged and nothing is written (C11).
-- Execution: row lock → re-validate → one savepoint per item through `profile_service` →
-  results → `applied` → one commit → guide tasks scheduled after the commit
-  (research R6).
+- Execution: row lock → the tenant's profile lock (`repo.lock_profile`, sc-223) → re-validate
+  → bulk writes, one delete, one update and one insert for the whole proposal (sc-225; an
+  update or remove whose row is gone is `failed · not_found`) → results → `applied` → one
+  commit → `schedule_character_guides` after the commit, at most 3 jobs at a time (sc-225).
+  Superseded: the per-item savepoints through `profile_service` (research R6).
+- `get_proposal` and `list_proposals` take an optional `db`: the caller's transaction, used by
+  the ws capture and the conversation reload (sc-225).
+- Item `class_name`/`spec` are the roster's values or null; the realm must fit the realm form,
+  at most 24 characters (sc-221).
 - 031 calls only these functions (and never touches `user_characters`). 029 adds no frames
   and no routes.
 
@@ -74,6 +80,6 @@ of `_add`/`_patch`/`_delete` change: they call the service, then map `CharacterC
 Exactly the design's `#validation-codes` table. Item `result.status`:
 - `skipped`: `validation.ok` was false;
 - `failed`: the item was valid when proposed but conflicts at execution (code = the
-  re-validation code, or the `CharacterConflict` code from a race);
+  re-validation code under the profile lock, or `not_found` for a row removed meanwhile);
 - `applied`: the item was applied (`character_id` = the new row for an add, or the row
   updated or removed).

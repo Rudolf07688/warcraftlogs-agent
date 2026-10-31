@@ -40,7 +40,7 @@ async def pg(monkeypatch):
     engine = create_async_engine(_PG_URL, pool_pre_ping=True)
     maker = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(db_session, "SessionLocal", maker)
-    monkeypatch.setattr(proposals, "schedule_character_guide", lambda *_: None)
+    monkeypatch.setattr(proposals, "schedule_character_guides", lambda *_: None)
     yield maker
     await engine.dispose()
 
@@ -127,3 +127,92 @@ async def test_a_failed_follow_up_rolls_the_whole_decision_back(me, proposal, mo
         await routes.approve(proposal.id, me)
     assert (await proposals.get_proposal(me, proposal.id)).status == "pending"
     assert await _state(me, proposal) == ([], [])  # no friend added, no line
+
+
+# --- sc-223: the friend cap holds under parallel adds -----------------------------------
+
+
+@pytest.fixture
+def slow_checks(monkeypatch):
+    """Widen the check-then-insert window so two unserialised adds would both pass: the REST
+    add's duplicate check and an approval's profile read each take 0.3 s longer."""
+    for owner, name in ((repo, "find_character_identity"), (proposals, "_load_profile")):
+        real = getattr(owner, name)
+
+        async def slow(*args, _real=real, **kwargs):
+            found = await _real(*args, **kwargs)
+            await asyncio.sleep(0.3)
+            return found
+
+        monkeypatch.setattr(owner, name, slow)
+
+
+async def _seed_friends(me, n: int) -> None:
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        db.add_all(
+            UserCharacter(tenant_id=me.tenant_id, role="friend", name=f"Pal{chr(97 + i % 26)}{chr(97 + i // 26)}",
+                          server="Tarren Mill", region="eu")
+            for i in range(n)
+        )
+
+
+async def _friend_count(me) -> int:
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        return await db.scalar(
+            sa.select(sa.func.count()).select_from(UserCharacter).where(
+                UserCharacter.tenant_id == me.tenant_id, UserCharacter.role == "friend"
+            )
+        )
+
+
+async def test_parallel_rest_adds_stop_at_the_cap(me, slow_checks):
+    await _seed_friends(me, repo.MAX_FRIENDS - 1)
+
+    async def add(name: str):
+        async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+            return await repo.add_character(
+                db, tenant_id=me.tenant_id, role="friend", name=name, server="Tarren Mill", region="eu"
+            )
+
+    results = await asyncio.gather(add("Kazrok"), add("Brightmane"), return_exceptions=True)
+    refused = [r for r in results if isinstance(r, repo.CharacterConflict)]
+    assert len(refused) == 1 and refused[0].code == "friend_limit"
+    assert await _friend_count(me) == repo.MAX_FRIENDS
+
+
+async def test_parallel_approvals_stop_at_the_cap(me, slow_checks):
+    await _seed_friends(me, repo.MAX_FRIENDS - 1)
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        conv = await repo.create_conversation(db, "gemini-3.6-flash", tenant_id=me.tenant_id)
+    made = [
+        await proposals.create_proposal(
+            me, conv.id, [ProfileChangeIn(action="add", target="friend", name=name, realm="Tarren Mill", region="eu")]
+        )
+        for name in ("Kazrok", "Brightmane")
+    ]
+    done = await asyncio.gather(*(proposals.execute_proposal(me, p.id) for p in made))
+    results = sorted((d.items[0].result.status, d.items[0].result.code) for d in done)
+    assert results == [("applied", None), ("failed", "friend_limit")]
+    assert await _friend_count(me) == repo.MAX_FRIENDS
+
+
+async def test_a_mixed_approval_applies_in_bulk_on_postgres(me):
+    # sc-225: the bulk delete / CASE update / insert, on the real dialect.
+    await _seed_friends(me, 2)  # Palaa, Palba
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        conv = await repo.create_conversation(db, "gemini-3.6-flash", tenant_id=me.tenant_id)
+    change = lambda action, name, **kw: ProfileChangeIn(  # noqa: E731
+        action=action, target="friend", name=name, realm="Tarren Mill", region="eu", **kw
+    )
+    made = await proposals.create_proposal(
+        me, conv.id, [change("update", "Palaa", raid_role="healer"), change("remove", "Palba"), change("add", "Kazrok")]
+    )
+    done = await proposals.execute_proposal(me, made.id)
+    assert [i.result.status for i in done.items] == ["applied"] * 3
+    async with tenant_scope(me.tenant_id, user_id=me.user_id) as db:
+        rows = await db.execute(
+            sa.select(UserCharacter.name, UserCharacter.raid_role)
+            .where(UserCharacter.tenant_id == me.tenant_id)
+            .order_by(UserCharacter.name)
+        )
+        assert rows.all() == [("Kazrok", None), ("Palaa", "healer")]

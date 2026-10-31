@@ -76,7 +76,7 @@ async def get_conversation(
     ]
     # Feature 031: each confirmation card in its real state (pending, applied, cancelled,
     # expired), linked to its agent message by message_seq.
-    detail.proposals = await profile_proposals.list_proposals(identity, conv_id)
+    detail.proposals = await profile_proposals.list_proposals(identity, conv_id, db=db)
     return detail
 
 
