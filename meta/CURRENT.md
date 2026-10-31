@@ -16,17 +16,17 @@ D1–D11, P1–P5, change log).
 
 - **Implemented and committed:** the team board with its auto-inject hook (068d062), and
   the tiered team with sub-agent developers and the `/team-launch` skill (f107786).
-- **Now:** making meta knowledge survive compaction and new sessions (this file, the
-  SessionStart hook, `meta/owner-preferences.md`, `meta/sessions.md`, the per-sprint usage
-  archives).
+- **Done:** meta knowledge now survives compaction and new sessions (d281333): this file,
+  the SessionStart hook, the CLAUDE.md META block, `owner-preferences.md`, `sessions.md`,
+  and the per-sprint usage archives.
 - **Next, per the owner:** "get real meta" and keep iterating on the team setup.
 
 ## Open threads
 
 - The next real sprint verifies the redesign: does coordination fall below 41%, do
   developers without gates stay in their footprint, and are the tiers set right.
-- Ask the owner about raising `cleanupPeriodDays`. Transcripts are deleted after 30 days by
-  default.
+- Asked the owner whether to raise `cleanupPeriodDays` (a user-level setting). Transcripts
+  are deleted after 30 days by default, and the 10-01 transcript is the oldest left.
 
 ## How to resume
 
