@@ -11,8 +11,11 @@ from an unknown account (the caller returns the same generic error either way).
 
 from __future__ import annotations
 
+import ipaddress
 import time
 from typing import Protocol
+
+from starlette.requests import Request
 
 from ..config import settings
 
@@ -77,6 +80,42 @@ class InProcessRateLimiter:
         count += 1
         self._windows[key] = (start, count)
         return count <= self._per_minute
+
+
+def client_source(request: Request) -> str:
+    """The client address the per-source limits key on (sc-158).
+
+    The direct peer, unless it is a configured trusted proxy (``TRUSTED_PROXIES``); then
+    the nearest ``X-Forwarded-For`` hop that isn't one. That is the address our own proxy
+    saw, whereas the leftmost entries are whatever the client sent. With no trusted
+    proxies, forwarded headers are ignored.
+    """
+    peer = request.client.host if request.client else "unknown"
+    trusted = settings.trusted_proxy_networks
+    if not _in(peer, trusted):
+        return peer
+    hops = [
+        hop.strip()
+        for header in request.headers.getlist("x-forwarded-for")
+        for hop in header.split(",")
+        if hop.strip()
+    ]
+    for hop in reversed(hops):
+        if not _in(hop, trusted):
+            # A trusted proxy writes a real address; anything else keeps the safe peer key.
+            return hop if _in(hop, None) else peer
+    return hops[0] if hops else peer
+
+
+def _in(
+    host: str, networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None
+) -> bool:
+    """Whether ``host`` is an IP address inside ``networks`` (any valid IP when None)."""
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return networks is None or any(addr in net for net in networks)
 
 
 # Process-wide default instances. The login limiter keys on account+source; the token
