@@ -14,9 +14,10 @@ import re
 import uuid
 from collections.abc import Awaitable, Callable
 
-from wcl_agent.llm.model_retry import RetryPolicy, current_turn, generate_with_retry
+from wcl_agent.llm.generation import generate_text
+from wcl_agent.llm.model_retry import RetryPolicy, current_turn
+from wcl_agent.llm.provider import ModelRole
 
-from .. import suggestions
 from ..db import repository as repo
 from ..tenancy.context import RequestIdentity, tenant_scope
 from . import background
@@ -63,30 +64,24 @@ def clean_title(raw: str | None) -> str:
 
 
 async def generate_title(question: str, answer: str) -> str:
-    """One cheap, non-streaming model call through the shared rate-limit retry loop.
+    """One cheap, non-streaming call to the fast-role model through the shared rate-limit
+    retry loop.
 
-    Uses the follow-up suggestions model and client (one per process). Returns the cleaned
-    title, or ``""``; errors propagate to ``retitle_conversation``, which owns them.
+    Returns the cleaned title, or ``""``; errors propagate to ``retitle_conversation``, which
+    owns them.
     """
-    from google.genai import types
-
     prompt = _PROMPT.format(
         question=question[:_MAX_QUESTION_CHARS], answer=answer[:_MAX_ANSWER_CHARS]
     )
-    config = types.GenerateContentConfig(
-        max_output_tokens=_MAX_OUTPUT_TOKENS,
+    raw = await generate_text(
+        prompt,
+        ModelRole.FAST,
+        max_tokens=_MAX_OUTPUT_TOKENS,
+        policy=_POLICY,
         temperature=0.2,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
+        thinking=False,
     )
-
-    async def call_model():
-        yield await suggestions._get_client().aio.models.generate_content(
-            model=suggestions._SUGGEST_MODEL, contents=prompt, config=config
-        )
-
-    async for response in generate_with_retry(call_model, _POLICY):
-        return clean_title(getattr(response, "text", "") or "")
-    return ""
+    return clean_title(raw)
 
 
 async def retitle_conversation(

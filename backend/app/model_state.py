@@ -10,9 +10,14 @@ falls back to the configured allow-list so the app still functions.
 
 from __future__ import annotations
 
+import logging
+
 from wcl_agent.llm.models import sibling_model
+from wcl_agent.llm.provider import to_provider_id
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_model_state(app) -> tuple[list[str], str, bool]:
@@ -34,6 +39,18 @@ def get_model_state(app) -> tuple[list[str], str, bool]:
 def is_valid_model(app, model: str) -> bool:
     models, _, _ = get_model_state(app)
     return model in models
+
+
+def resolve_chat_model(app, model: str) -> str:
+    """The model a chat turn runs on (feature 032, D4): ``model`` in the active provider's id
+    form if it is served, else the default, so a chat created under the other provider (or on
+    a retired model) simply continues instead of failing."""
+    models, default, _ = get_model_state(app)
+    resolved = to_provider_id(model)
+    if resolved in models:
+        return resolved
+    logger.info("chat model %s is not served; continuing on %s", model, default)
+    return default
 
 
 def fallback_model_for(app, model: str) -> str | None:

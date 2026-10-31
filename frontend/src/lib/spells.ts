@@ -160,6 +160,13 @@ export const SPELLS: Record<string, Spell> = {
     verb: "Weaving a raw incantation",
     flavor: ["Threading the leyline query…", "Shaping the spell by hand…"],
   },
+  // --- Profile ---
+  propose_profile_changes: {
+    icon: GiScrollQuill,
+    hue: GOLD,
+    verb: "Inscribing the changes",
+    flavor: ["Drafting the roster changes…", "Awaiting your seal…"],
+  },
   // --- Grounding ---
   web_search: {
     icon: GiCrystalBall,

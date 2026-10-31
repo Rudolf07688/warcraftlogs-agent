@@ -7,6 +7,7 @@ Two ways to build the chat model set, chosen by ``mode``:
   opus), probe the newest few versions of every class in one concurrent wave, and keep
   the newest ``keep`` that answer. If the catalog can't be listed, the static lists are
   probed instead (``source="fallback"``).
+  On the Anthropic API the same pipeline runs over the Models API listing (Claude only).
 - ``static``: probe the configured ``.env`` ids and keep the ones that answer.
 
 Every probe is a one-token call that carries one dummy function declaration, so a model
@@ -33,7 +34,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal, TypeVar
 
-from . import vertex
+from . import provider, vertex
 from ..cache.cache_models import ClassResult, ModelCatalog
 from .vertex import CatalogEntry, CatalogUnavailable
 
@@ -73,6 +74,10 @@ _CLASS_NAMES = {"google": GEMINI_CLASSES, "anthropic": ANTHROPIC_CLASSES}
 # anchors drop TTS, image, live, embedding, dated previews, fable and claude-3-opus.
 _GEMINI_RE = re.compile(r"^gemini-(\d+)(?:\.(\d+))?-(pro|flash-lite|flash)(-preview)?$")
 _CLAUDE_RE = re.compile(r"^claude-(haiku|sonnet|opus)-(\d+)(?:-(\d+))?$")
+# The Anthropic API writes a dated id as ``name-YYYYMMDD`` (Vertex: ``name@YYYYMMDD``). The
+# minor is one or two digits so a date is never read as one.
+_CLAUDE_API_RE = re.compile(r"^(claude-(?:haiku|sonnet|opus)-\d+(?:-\d{1,2})?)(?:-(\d{8}))?$")
+_DATE_SUFFIX = re.compile(r"[@-]\d{8}$")
 
 
 @dataclass(frozen=True)
@@ -127,9 +132,11 @@ def parse_class_settings(publisher: Literal["google", "anthropic"], raw: str) ->
 
 
 def callable_id(entry: CatalogEntry) -> str:
-    """The id a call uses: Claude pins a dated version as ``name@version``."""
+    """The id a call uses: Claude pins a dated version as ``name@version`` (Anthropic API:
+    ``name-version``)."""
     if entry.publisher == "anthropic" and entry.version_id not in (None, "", "default"):
-        return f"{entry.name}@{entry.version_id}"
+        sep = "-" if provider.active_provider() == "anthropic" else "@"
+        return f"{entry.name}{sep}{entry.version_id}"
     return entry.name
 
 
@@ -222,9 +229,12 @@ def has_transient_gaps(classes: Sequence[ClassResult]) -> bool:
 def is_catalog_id(model_id: str) -> bool:
     """Whether ``model_id`` has the shape discovery serves (a cached value is re-checked).
 
-    Gemini ids are bare class names; Claude ids may pin a dated version. Anything else,
-    such as a ``projects/…`` resource path, is rejected.
+    Gemini ids are bare class names; Claude ids may pin a dated version, written for the
+    active provider (``name@date`` on Vertex, ``name-date`` on the Anthropic API, which also
+    serves no Gemini). Anything else, such as a ``projects/…`` resource path, is rejected.
     """
+    if provider.active_provider() == "anthropic":
+        return _CLAUDE_API_RE.match(model_id) is not None
     name, _, version = model_id.partition("@")
     if _GEMINI_RE.match(name):
         return not version
@@ -236,9 +246,9 @@ def is_catalog_id(model_id: str) -> bool:
 def model_class(model_id: str) -> tuple[str, str] | None:
     """``(publisher, class)`` of a served id by the discovery naming rules, else None.
 
-    A dated Claude id (``name@version``) is classified by its name.
+    A dated Claude id (``name@version`` or ``name-version``) is classified by its name.
     """
-    name = model_id.partition("@")[0]
+    name = _DATE_SUFFIX.sub("", model_id)
     if match := _GEMINI_RE.match(name):
         return "google", match.group(3)
     if match := _CLAUDE_RE.match(name):
@@ -333,7 +343,7 @@ def missing_fixed_models(fixed: Mapping[str, str], listed: Sequence[str]) -> lis
 
 def _make_gemini_client() -> Any | None:
     try:
-        return vertex.genai_client()
+        return provider.genai_client()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Gemini client unavailable for model discovery: %s", exc)
         return None
@@ -342,9 +352,9 @@ def _make_gemini_client() -> Any | None:
 def _make_anthropic_client() -> Any | None:
     try:
         # No SDK retries: check_model owns the single 429 retry (a probe must stay fast).
-        return vertex.anthropic_client(max_retries=0)
+        return provider.anthropic_client(max_retries=0)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Anthropic-on-Vertex client unavailable for model discovery: %s", exc)
+        logger.warning("Anthropic client unavailable for model discovery: %s", exc)
         return None
 
 
@@ -529,9 +539,43 @@ def _discover_static(
     )
 
 
+def _list_anthropic_api() -> list[CatalogEntry]:
+    """The Anthropic Models API listing (it pages itself), one entry per model.
+
+    An alias (``claude-sonnet-5-5``) wins over a dated twin, so the stable id is served.
+    Ids outside the haiku/sonnet/opus naming are kept as they are, for the fixed-model check.
+    """
+    try:
+        ids = [m.id for m in provider.anthropic_client(max_retries=0).models.list(
+            limit=100, timeout=vertex.CATALOG_TIMEOUT_S
+        )]
+    except Exception as exc:  # every failure means the same thing to discovery
+        raise CatalogUnavailable(f"anthropic: {type(exc).__name__}: {exc}") from exc
+    aliases: set[str] = set()
+    dated: dict[str, str] = {}
+    entries: list[CatalogEntry] = []
+    for model_id in ids:
+        match = _CLAUDE_API_RE.match(model_id)
+        if match is None:
+            entries.append(CatalogEntry("anthropic", model_id, None, None))
+        elif match.group(2) is None:
+            aliases.add(match.group(1))
+        else:
+            dated.setdefault(match.group(1), match.group(2))
+    for name in dict.fromkeys([*aliases, *dated]):
+        entries.append(CatalogEntry("anthropic", name, "default" if name in aliases else dated[name], None))
+    return entries
+
+
 def _list_catalog() -> list[CatalogEntry]:
-    """Both publishers' listings, fetched concurrently. Either failing fails the listing:
-    a half-catalog dropdown would hide models with no visible reason."""
+    """The provider's catalog: Anthropic API models, or both Model Garden publishers fetched
+    concurrently. Either failing fails the listing (a half-catalog dropdown would hide models
+    with no visible reason), and so does a listing with no models (sc-159)."""
+    if provider.active_provider() == "anthropic":
+        entries = _list_anthropic_api()
+        if not entries:
+            raise CatalogUnavailable("anthropic: the listing has no models")
+        return entries
     results = _gather_threads(
         [lambda p=p: vertex.list_publisher_models(p) for p in ("google", "anthropic")]
     )
@@ -542,6 +586,8 @@ def _list_catalog() -> list[CatalogEntry]:
         if isinstance(result, BaseException):
             raise CatalogUnavailable(f"{type(result).__name__}: {result}") from result
         entries += result
+    if not entries:
+        raise CatalogUnavailable("the listing has no models")
     return entries
 
 
@@ -618,7 +664,7 @@ def discover_models(
     - ``degraded``: True when probing couldn't run (or found nothing) and the fallback set
       is being served instead.
     """
-    if mode == "catalog" and not vertex.uses_vertex():
+    if mode == "catalog" and provider.active_provider() == "vertex" and not vertex.uses_vertex():
         logger.info("model catalog needs Vertex (GOOGLE_GENAI_USE_VERTEXAI); probing the static lists")
         mode = "static"
     if mode != "catalog":

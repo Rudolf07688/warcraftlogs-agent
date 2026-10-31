@@ -138,7 +138,7 @@ async def test_report_notes_are_quoted_and_flagged_in_prompts(monkeypatch):
         prompts[schema.__name__] = prompt
         return schema.model_validate({"verdicts": [], "items": []})
 
-    async def grounded(model, prompt, *, url_context):
+    async def grounded(model, prompt, *, fetch_domains):
         prompts["research"] = prompt
         return llm.GroundedText("notes", [])
 

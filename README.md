@@ -54,6 +54,9 @@ Agent: On Heroic Ula'tek this season, across 500 logged Hunter parses ...
 
 > Prefer an AI Studio API key instead of Vertex? Set
 > `GOOGLE_GENAI_USE_VERTEXAI=FALSE` and `GOOGLE_API_KEY=...` in `.env`.
+>
+> Prefer Claude on your own Anthropic API key? See
+> [Switching the LLM provider](#switching-the-llm-provider-feature-032).
 
 ## Run
 
@@ -510,9 +513,74 @@ catalog (those are never changed automatically).
   uses the static lists.
 - **Where models run**: every model call (chat, web search, guides, reports, greeting,
   suggestions, probes) uses `WCL_MODEL_LOCATION` (default `global`); clients are built
-  only in `wcl_agent/llm/vertex.py`. `europe-west1` serves only Gemini 2.5 and no Claude,
+  only in `wcl_agent/llm/provider.py` (feature 032). `europe-west1` serves only Gemini 2.5 and no Claude,
   and the `eu` multi-region lacks the Pro preview, so `GOOGLE_CLOUD_LOCATION` (default
   `europe-west1`) is left to everything else. `WCL_ANTHROPIC_REGION` is gone.
+- **Under `anthropic`** (feature 033): the picker is discovered from the Anthropic Models
+  API instead of Model Garden. `WCL_MODEL_DISCOVERY` and `WCL_ANTHROPIC_CLASSES` apply as
+  above, and the static `WCL_ANTHROPIC_MODELS` is the fallback.
+- **Provider label**: the model picker shows a read-only "Vertex AI" or "Anthropic API"
+  label for the active provider.
+
+## Switching the LLM provider (feature 032)
+
+One setting picks who serves the models: Vertex AI (the default: Gemini, and Claude through
+Model Garden) or the Anthropic API (Claude with your own key). To switch, set two lines in
+`.env` and restart the backend (`01_start_app.sh`, or `docker compose up -d backend`):
+
+```bash
+WCL_LLM_PROVIDER=anthropic          # vertex (default) | anthropic
+ANTHROPIC_API_KEY=sk-ant-...        # from console.anthropic.com; a secret, never commit it
+```
+
+To switch back, set `WCL_LLM_PROVIDER=vertex` or delete the line, and restart. An unknown
+value logs a warning and runs as `vertex`. The startup log says `LLM provider: …`.
+
+- **Model roles**: each fixed use of a model has a default per provider, so nothing else
+  in `.env` needs editing. A role variable you set still wins, but only if the active
+  provider serves it: a Gemini id left over under `anthropic` is ignored with one warning.
+
+  | Role | Variable | `vertex` default | `anthropic` default |
+  |---|---|---|---|
+  | Chat default | `WCL_DEFAULT_MODEL` | `gemini-3.6-flash` | `claude-sonnet-5-5` |
+  | Findings reports | `WCL_REPORT_MODEL` | `gemini-3.6-flash` | `claude-sonnet-5-5` |
+  | Guide author | `WCL_GUIDE_MODEL` | `gemini-3.7-flash` | `claude-sonnet-5-5` |
+  | Guide reviewer | `WCL_GUIDE_REVIEW_MODEL` | `gemini-3.1-pro-preview` | `claude-opus-5-5` |
+  | Suggestions, titles | `WCL_SUGGEST_MODEL` | `gemini-3.6-flash` | `claude-haiku-5-5` |
+  | Greeting | `WCL_GREETING_MODEL` | `gemini-3.5-flash-lite` | `claude-haiku-5-5` |
+
+- **Model ids**: dated Claude ids differ between the two (`claude-sonnet-4-20250514` on the
+  API, `claude-sonnet-4@20250514` on Vertex); either form works in `.env` and is read in the
+  active provider's form. Current ids (`claude-sonnet-5-5`) are the same on both.
+- **Which models are offered**: under `anthropic` the picker offers only Claude, discovered
+  from the Anthropic Models API (see [Model discovery](#model-discovery-feature-016)).
+- **Old chats**: a chat created on a model the active provider doesn't serve continues on
+  the default model. Nothing is migrated.
+- **The key**: it reaches the container through the existing `env_file: .env`, is passed
+  straight to the Anthropic client and never appears in logs, error messages or API
+  responses. Without it, the backend still starts, logs one error saying the key is
+  missing, and serves the degraded model list; chat turns then fail with that message.
+- **Google credentials**: under `anthropic` the chat agent, the greeting and model discovery
+  don't need Application Default Credentials. Warcraft Logs and Blizzard calls never did.
+  Without an ADC file on the host, set `GCP_ADC_FILE=/dev/null` in `.env` so compose
+  mounts an empty file instead of creating a directory at the gcloud default path.
+- **Suggestions, titles, reports and guides** (feature 035) run on the active provider too,
+  with the role models above: follow-up suggestions and chat titles on the fast model, PDF
+  findings reports on the report model, class guides on the author and reviewer models. They
+  fail closed as before (no suggestions, the first-message title stays, a clean error instead
+  of a half-written PDF, a held guide run).
+- **Web search for guides**: under `anthropic`, guide research uses Anthropic's server-side
+  web search, and web fetch for the pages the fetch rules allow (official Blizzard sites
+  always, guide sites only with `WCL_GUIDE_RESEARCH_FETCH_ENABLED=true`). An organisation
+  admin must have web search and web fetch turned on in the Anthropic Console under
+  **Settings → Capabilities** (<https://platform.claude.com/settings/capabilities>); searches
+  are billed per use, at most 10 searches and 5 fetches per research call. If they are off,
+  the guide run is held with a message saying so. Claude on Vertex gets basic web search only;
+  web fetch (Gemini's "URL context") is not available there.
+- **Claude on Vertex works again**: Claude agent turns failed on both providers (ADK rejected
+  the agent's thinking settings). Claude now runs with adaptive thinking, and each request
+  asks the API to drop thinking blocks that the app's per-request context edits invalidate,
+  instead of failing the turn.
 
 ## Feature 010 — shared UI components (shadcn/ui)
 

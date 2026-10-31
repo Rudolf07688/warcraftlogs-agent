@@ -4,8 +4,8 @@ The confirmation card's two actions (design: participants-and-confirmation.html 
 #followup). Both call only the proposal service (feature 029), which applies or cancels in its
 own tenant- and user-scoped transaction; these handlers never touch profile rows. When a call
 moves a proposal out of ``pending``, one short follow-up line is saved as an agent message in
-the proposal's chat. It's built from the per-item results, not by the model, and is never added
-to the agent's session (D10).
+the proposal's chat, in the same transaction as the decision (sc-242). It's built from the
+per-item results, not by the model, and is never added to the agent's session (D10).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from ..auth.dependencies import require_csrf
 from ..db import repository as repo
 from ..schemas import MessageOut, ProfileProposalOut, ProposalDecisionOut, ProposalItemOut
 from ..services import profile_proposals
-from ..tenancy.context import RequestIdentity, tenant_scope
+from ..tenancy.context import RequestIdentity
 
 router = APIRouter(prefix="/api/profile/proposals", tags=["profile"])
 
@@ -117,30 +117,28 @@ def _refused(code: str) -> HTTPException:
 async def _decide(
     identity: RequestIdentity,
     proposal_id: uuid.UUID,
-    action: Callable[[RequestIdentity, uuid.UUID], Awaitable[ProfileProposalOut]],
+    action: Callable[..., Awaitable[ProfileProposalOut]],
 ) -> ProposalDecisionOut:
+    # Only the call that leaves ``pending`` saves a line, decided under the proposal's row lock
+    # and in the same transaction (sc-242): a repeat or an overlapping call (double click,
+    # second tab) returns the stored state with no second message and no seq conflict.
+    saved: list[MessageOut] = []
+
+    async def save_follow_up(session, proposal: ProfileProposalOut) -> None:
+        msg = await repo.add_message(
+            session, proposal.conversation_id, "agent", follow_up_text(proposal), tenant_id=identity.tenant_id
+        )
+        await session.flush()
+        await session.refresh(msg)
+        saved.append(MessageOut.model_validate(msg))
+
     try:
-        before = await profile_proposals.get_proposal(identity, proposal_id)
-        after = await action(identity, proposal_id)
+        after = await action(identity, proposal_id, on_transition=save_follow_up)
     except profile_proposals.ProposalError as exc:
         raise _refused(exc.code) from exc
     if after.status == "expired":  # cancel reports an expired proposal instead of raising
         raise _refused("proposal_expired")
-    # Only the call that left ``pending`` saves a line: a repeat (double click, second tab)
-    # returns the stored state with no second message.
-    follow_up = None
-    if before.status == "pending":
-        async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as session:
-            msg = await repo.add_message(
-                session,
-                after.conversation_id,
-                "agent",
-                follow_up_text(after),
-                tenant_id=identity.tenant_id,
-            )
-            await session.refresh(msg)
-            follow_up = MessageOut.model_validate(msg)
-    return ProposalDecisionOut(proposal=after, follow_up=follow_up)
+    return ProposalDecisionOut(proposal=after, follow_up=saved[0] if saved else None)
 
 
 @router.post("/{proposal_id}/approve", response_model=ProposalDecisionOut)

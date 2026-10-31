@@ -8,6 +8,7 @@ never from arguments, so prompt injection can't pick another tenant, user or rec
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from google.adk.tools import ToolContext
@@ -19,7 +20,10 @@ from ..services import profile_proposals
 from ..tenancy.context import current_identity
 
 
+logger = logging.getLogger(__name__)
+
 _UNAVAILABLE = "Profile changes are unavailable in this session."
+_FAILED = "Couldn't prepare the profile changes. Tell the user to try again."
 _NOTE = "Nothing has changed yet. The user approves or cancels on the card."
 
 
@@ -47,12 +51,17 @@ async def propose_profile_changes(
         conversation_id = uuid.UUID(tool_context.session.id)
     except ValueError:  # a disposable greeting/guide session, not a chat
         return {"status": "error", "error_message": _UNAVAILABLE}
+    # ADK hands over an item it couldn't convert as the raw value; the service validates each
+    # item and reports a bad one as a skipped row (sc-241).
     try:
         proposal = await profile_proposals.create_proposal(identity, conversation_id, changes)
     except ValueError as exc:
         return {"status": "error", "error_message": str(exc)}
     except profile_proposals.ProposalError:
         return {"status": "error", "error_message": _UNAVAILABLE}
+    except Exception:  # sc-241: a plain tool error, so the turn goes on; never the exception text
+        logger.exception("propose_profile_changes failed")
+        return {"status": "error", "error_message": _FAILED}
     return {"status": "success", "proposal": proposal.model_dump(mode="json"), "note": _NOTE}
 
 

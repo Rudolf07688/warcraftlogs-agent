@@ -26,6 +26,8 @@ from wcl_agent.llm.models import (
     log_class_results,
     missing_fixed_models,
 )
+from wcl_agent.llm import provider
+from wcl_agent.llm.provider import credentials_error
 from wcl_agent.llm.vertex import model_location, project_id
 from wcl_agent.client.wcl_client import aclose_clients
 
@@ -141,10 +143,14 @@ async def _load_models(app: FastAPI) -> tuple[ModelCatalog, bool]:
         )
 
     if mode == "catalog":
-        project = await asyncio.to_thread(project_id)
+        active = provider.active_provider()
+        # The Anthropic API has no project or location; the provider is in the key so one
+        # provider's catalog is never served under the other.
+        project = await asyncio.to_thread(project_id) if active == "vertex" else None
         key = keys.model_catalog(
+            active,
             project or "-",
-            model_location(),
+            model_location() if active == "vertex" else "-",
             classes_signature(gemini_classes, anthropic_classes),
         )
         catalog = await get_or_load(
@@ -163,6 +169,9 @@ async def _load_models(app: FastAPI) -> tuple[ModelCatalog, bool]:
             catalog = catalog.model_copy(update={"default": default})
     else:
         catalog = await load()
+    logger.info(
+        "model discovery: %d models from %s (%s)", len(catalog.models), catalog.source, provider.active_provider()
+    )
     if not loaded:
         log_class_results(catalog.classes)  # every boot explains its picks (SC-006)
     fixed = {
@@ -240,6 +249,13 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
                 settings.wcl_guide_model,
             )
 
+        # Feature 032: say which provider serves the models, and say once, plainly, when it
+        # can't (anthropic without a key). Discovery then serves the degraded list.
+        logger.info("LLM provider: %s", settings.llm_provider)
+        llm_error = credentials_error()
+        if llm_error:
+            logger.error(llm_error)
+
         await tracker.run(
             "models",
             lambda: _load_models(app),
@@ -253,6 +269,8 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
         # rather than regenerating, so a fast model id makes greetings effectively instant.
         async def _greeting() -> None:
             app.state.greeting_cache = {}
+            if llm_error:
+                return  # priming could only fail and log the missing key a second time
             app.state.greeting_prime_task = asyncio.create_task(
                 get_greeting(app, GREETING_MODEL)
             )

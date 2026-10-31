@@ -12,9 +12,12 @@ from functools import lru_cache
 from typing import Literal
 
 from dotenv import load_dotenv
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from wcl_agent.llm import provider
 from wcl_agent.llm.models import ClassSetting, parse_class_settings
+from wcl_agent.llm.provider import ModelRole, role_model
 
 # Populate os.environ from a local .env so ADK / wcl_client (which use os.getenv)
 # work in local dev. Harmless in containers/Cloud Run where env is already set.
@@ -82,12 +85,19 @@ class Settings(BaseSettings):
 
     # Fallback allow-list + default (comma-separated env: WCL_MODELS / WCL_DEFAULT_MODEL).
     # The live dropdown is the startup-validated set (US4); these are the documented
-    # fallback served if discovery/validation can't run.
+    # fallback served if discovery/validation can't run. Feature 032: the model roles
+    # (default chat, report, guide, guide review, suggest, greeting) are empty here and
+    # resolved per provider in ``_resolve_roles`` (WCL_LLM_PROVIDER, wcl_agent.llm.provider);
+    # an explicit value wins when the active provider serves it.
     wcl_models: str = "gemini-3.6-flash,gemini-3.1-pro-preview"
-    wcl_default_model: str = "gemini-3.6-flash"
+    wcl_default_model: str = ""
+    # Follow-up suggestions and chat titles (the fast role), and the new-chat greeting.
+    wcl_suggest_model: str = ""
+    wcl_greeting_model: str = ""
 
     # Candidate models to discover + probe at startup (US4). Gemini ids pass through
-    # to Vertex; Anthropic-on-Vertex ids run Claude via Model Garden.
+    # to Vertex; Claude ids run on the active provider (Vertex's Model Garden or the
+    # Anthropic API), each read in that provider's id form.
     wcl_gemini_models: str = "gemini-3.6-flash,gemini-3.1-pro-preview"
     wcl_anthropic_models: str = ""
 
@@ -104,7 +114,8 @@ class Settings(BaseSettings):
 
     # Background spec-guide generation (US6). A web-search-capable model so guides
     # reflect the current retail patch. Runs over a disposable session like the greeting.
-    wcl_guide_model: str = "gemini-3.7-flash"
+    # A model role (feature 032): resolved per provider.
+    wcl_guide_model: str = ""
 
     # Per-user cap on manual spec-guide generation requests (feature 008 / US2, FR-014).
     # Bounds user-initiated generation so a burst can't cascade into WCL/model rate limits.
@@ -114,7 +125,7 @@ class Settings(BaseSettings):
     wcl_guide_max_concurrency: int = 2
 
     # feature 015: grounded guide pipeline (contracts/guide-pipeline.md §Config).
-    wcl_guide_review_model: str = "gemini-3.1-pro-preview"  # reviewer; must differ from the author
+    wcl_guide_review_model: str = ""  # reviewer role; must differ from the author
     wcl_guide_max_review_rounds: int = 3  # checks + review rounds before a run is held (FR-047)
     wcl_guide_brief_max_chars: int = 6000  # one coaching brief, never truncated (FR-010)
     wcl_guide_preamble_briefs_max_chars: int = 12000  # whole briefs inlined per chat turn (FR-013)
@@ -129,7 +140,8 @@ class Settings(BaseSettings):
     # Findings-report synthesis (feature 007 / US2-US3). A plain (non-web-search) model
     # that summarizes in-scope chat content into an analytic findings document. Runs
     # off the event loop with a bounded timeout; independent of the user's chat model.
-    wcl_report_model: str = "gemini-3.6-flash"
+    # A model role (feature 032): resolved per provider.
+    wcl_report_model: str = ""
 
     # Feature 011: model rate-limit relief. Rate-limited / overloaded model refusals are
     # retried with exponential backoff (initial → max, base 2, jitter) until the attempt
@@ -185,17 +197,35 @@ class Settings(BaseSettings):
     recent_mplus_shown: int = 6
     recent_raids_refresh_timeout_s: int = 120
 
+    @model_validator(mode="after")
+    def _resolve_roles(self) -> Settings:
+        """Each model role: its explicit value if the active provider serves it, else the
+        provider's default (feature 032), so switching providers takes one ``.env`` line."""
+        self.wcl_default_model = role_model(ModelRole.CHAT, self.wcl_default_model)
+        self.wcl_report_model = role_model(ModelRole.REPORT, self.wcl_report_model)
+        self.wcl_guide_model = role_model(ModelRole.GUIDE, self.wcl_guide_model)
+        self.wcl_guide_review_model = role_model(ModelRole.GUIDE_REVIEW, self.wcl_guide_review_model)
+        self.wcl_suggest_model = role_model(ModelRole.FAST, self.wcl_suggest_model)
+        self.wcl_greeting_model = role_model(ModelRole.GREETING, self.wcl_greeting_model)
+        return self
+
+    @property
+    def llm_provider(self) -> provider.Provider:
+        return provider.active_provider()
+
+    # Feature 032: the model lists keep only the ids the active provider serves, in its id
+    # form; under `anthropic` an empty list falls back to the Claude role defaults.
     @property
     def model_list(self) -> list[str]:
-        return [m.strip() for m in self.wcl_models.split(",") if m.strip()]
+        return provider.served_ids(self.wcl_models.split(",")) or provider.default_candidates()
 
     @property
     def gemini_models(self) -> list[str]:
-        return [m.strip() for m in self.wcl_gemini_models.split(",") if m.strip()]
+        return provider.served_ids(self.wcl_gemini_models.split(","))
 
     @property
     def anthropic_models(self) -> list[str]:
-        return [m.strip() for m in self.wcl_anthropic_models.split(",") if m.strip()]
+        return provider.served_ids(self.wcl_anthropic_models.split(",")) or provider.default_candidates()
 
     @property
     def candidate_models(self) -> list[str]:
@@ -208,13 +238,18 @@ class Settings(BaseSettings):
     @property
     def model_discovery_mode(self) -> Literal["catalog", "static"]:
         mode = self.wcl_model_discovery.strip().lower()
-        if mode in ("catalog", "static"):
-            return mode  # type: ignore[return-value]
-        logger.warning("WCL_MODEL_DISCOVERY=%r is not catalog or static; using catalog", mode)
-        return "catalog"
+        if mode not in ("catalog", "static"):
+            logger.warning("WCL_MODEL_DISCOVERY=%r is not catalog or static; using catalog", mode)
+            mode = "catalog"
+        if mode == "catalog" and not provider.has_model_catalog():
+            logger.info("no model catalog for %s; probing the static lists", self.llm_provider)
+            return "static"
+        return mode  # type: ignore[return-value]
 
     @property
     def gemini_classes(self) -> list[ClassSetting]:
+        if self.llm_provider == "anthropic":
+            return []  # the Anthropic API serves no Gemini
         return parse_class_settings("google", self.wcl_gemini_classes)
 
     @property

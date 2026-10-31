@@ -20,6 +20,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_cooldown_usage: "Checking cooldown usage",
   check_rate_limit: "Checking API budget",
   run_wcl_graphql: "Querying Warcraft Logs",
+  propose_profile_changes: "Preparing profile changes",
 };
 
 export const THINKING_DEFAULT = "Thinking";
