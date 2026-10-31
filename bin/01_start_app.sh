@@ -25,5 +25,15 @@ docker compose ps
 
 echo " -- Application Launched -- "
 
-docker compose logs -f & PID=$!; 
+cleanup() {
+    trap - INT TERM EXIT
+    echo " -- Stopping Application -- "
+    kill $PID 2>/dev/null
+    docker compose down
+    exit 0
+}
+trap cleanup INT TERM EXIT
+
+docker compose logs -f & PID=$!
 echo " -- Logs Streaming -- "
+wait $PID
