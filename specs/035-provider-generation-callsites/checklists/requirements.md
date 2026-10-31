@@ -35,4 +35,3 @@
   modules because the acceptance criteria (plan section 035) are stated in those terms. Accepted
   as for 032/033.
 - Open points resolved in the spec's Clarifications (session 2026-10-31); spec signed off.
-  with only failed searches, fetch-domain seam) go to `/speckit-clarify` via the scrum master.
