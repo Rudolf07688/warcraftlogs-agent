@@ -26,6 +26,9 @@ record is in `meta/team-optimisation.md` (decisions D1–D13, proposals P1–P6,
 ## Open threads
 
 - Nobody has claimed a seat yet. Names get picked on the next team launch.
+- The owner asked whether team-lead (the main session) wants its own identity and memory.
+  My answer: yes to a capped, first-person memory of my practice as lead, kept in git and
+  visible to the team; no to a persona name. Waiting for the owner's call.
 - The next real sprint verifies everything: the coordination share against 41%, footprint
   discipline, the tiers, and the board and memory in practice.
 - Memory quality review after a few sprints (open question 3).
