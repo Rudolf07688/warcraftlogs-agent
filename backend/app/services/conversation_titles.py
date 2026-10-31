@@ -96,6 +96,14 @@ def _strip_controls(text: str) -> str:
     )
 
 
+def _untag(text: str) -> str:
+    """``text`` without closing chat tags, stripped until none is left, so a nested one
+    such as ``</ana</analyst>lyst>`` can't reassemble into a real tag (QA SEC-003)."""
+    while (stripped := _TAG.sub("", text)) != text:
+        text = stripped
+    return text
+
+
 async def generate_title(question: str, answer: str) -> str:
     """One cheap, non-streaming call to the fast-role model through the shared rate-limit
     retry loop.
@@ -104,8 +112,8 @@ async def generate_title(question: str, answer: str) -> str:
     owns them.
     """
     prompt = _PROMPT.format(
-        question=_TAG.sub("", question[:_MAX_QUESTION_CHARS]),
-        answer=_TAG.sub("", answer[:_MAX_ANSWER_CHARS]),
+        question=_untag(question[:_MAX_QUESTION_CHARS]),
+        answer=_untag(answer[:_MAX_ANSWER_CHARS]),
     )
     raw = await generate_text(
         prompt,

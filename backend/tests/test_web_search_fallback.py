@@ -17,7 +17,12 @@ from google.genai import types
 from backend.app import agent_runner
 from backend.tests.test_model_fallback import A, B, POLICY, FakeGenai, _gemini, _text_response
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, _build_web_search_tool
-from wcl_agent.llm.model_retry import ModelRateLimited, make_before_model_callback
+from wcl_agent.llm.model_retry import (
+    ModelRateLimited,
+    RetryPolicy,
+    make_before_model_callback,
+    recently_limited,
+)
 
 ANSWER = "The tuning lands next week."
 SEARCHED = "Hotfix notes say next week."
@@ -41,8 +46,8 @@ def _is_search_request(contents) -> bool:
     return "class tuning hotfix" in (first or "")
 
 
-async def _turn(monkeypatch, client: FakeGenai) -> list[dict]:
-    web_search = _build_web_search_tool(A, POLICY)
+async def _turn(monkeypatch, client: FakeGenai, policy=POLICY) -> list[dict]:
+    web_search = _build_web_search_tool(A, policy)
     web_search.agent.model.client = client
     agent = Agent(
         name="wcl_agent",
@@ -95,8 +100,16 @@ async def test_web_search_rate_limit_never_reaches_the_user_raw(monkeypatch):
         return _respond(model, contents)
 
     client.respond = respond
-    records = await _turn(monkeypatch, client)
-    assert searches == [A, A]  # the search got the retry policy, then gave up
+    full = RetryPolicy(attempts=5, initial_s=0.0, max_s=0.0, jitter_s=0.0)
+    records = await _turn(monkeypatch, client, full)
+    # QA PERF-001: the short probe, not the full five attempts; the limit is remembered,
+    # so the root's next request goes straight to the sibling.
+    assert searches == [A, A]
+    assert recently_limited(A)
+    assert client.calls[-1] == B
+    assert [r for r in records if r["type"] == "model_fallback"] == [
+        {"type": "model_fallback", "from_model": A, "to_model": B}
+    ]
     assert "".join(r["text"] for r in records if r["type"] == "token") == ANSWER
     assert "RAW-PROVIDER-TEXT" not in repr(records)
 

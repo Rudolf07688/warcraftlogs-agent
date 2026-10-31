@@ -67,6 +67,12 @@ RATE_LIMITED_MESSAGE = (
 BOTH_RATE_LIMITED_MESSAGE = (
     "Both {label} models are rate-limited right now. Please try again in about a minute."
 )
+# QA SEC-001: any other failure. Provider, database and WCL errors can carry internal
+# details (project ids, SQL), so the player gets this plus a reference to the log line.
+AGENT_ERROR_MESSAGE = (
+    "Something went wrong while answering. Please try again. If it keeps happening, "
+    "mention reference {ref}."
+)
 
 
 class _TurnSocket:
@@ -345,10 +351,12 @@ async def _handle_turn(
         except Exception:  # noqa: BLE001 - socket may already be gone
             pass
         return None
-    except Exception as exc:  # noqa: BLE001 - surface failure to the client
+    except Exception:  # noqa: BLE001 - surface failure to the client
+        ref = uuid.uuid4().hex[:8]
+        logger.exception("turn failed (ref %s)", ref)
         await _persist_partial(conv_id, tokens, identity)
         try:
-            await _send(ws, ErrorFrame(code="agent_error", message=str(exc)))
+            await _send(ws, ErrorFrame(code="agent_error", message=AGENT_ERROR_MESSAGE.format(ref=ref)))
         except Exception:  # noqa: BLE001 - socket may already be gone
             pass
         return None

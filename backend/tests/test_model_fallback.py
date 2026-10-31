@@ -381,6 +381,23 @@ async def test_both_remembered_starts_on_the_chosen_model():
     assert client.calls == [A] and stats.switched_to is None
 
 
+@pytest.mark.parametrize(
+    ("retry_enabled", "fallback"), [(False, None), (False, B), (True, None)]
+)
+async def test_only_a_chat_turn_whose_retries_ran_out_is_remembered(retry_enabled, fallback):
+    # QA BUG-002: the greeting (retry disabled) fails on its first 429, and a background
+    # job has no sibling; neither may send everyone's next turns to the sibling.
+    client = FakeGenai(busy={A})
+    stats = TurnStats(model=A, retry_enabled=retry_enabled, fallback_model=fallback)
+    token = current_turn.set(stats)
+    try:
+        with contextlib.suppress(ModelRateLimited):
+            await _collect(_gemini(A, client), _request(A))
+    finally:
+        current_turn.reset(token)
+    assert not model_retry.recently_limited(A)
+
+
 async def test_other_models_and_turnless_calls_are_not_remembered():
     other = "gemini-3.8-pro"
     client = FakeGenai(busy={other, A})

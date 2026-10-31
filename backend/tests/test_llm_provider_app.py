@@ -284,21 +284,28 @@ async def test_the_key_never_reaches_logs_frames_or_responses(
         ]
 
     assert frames[-1]["type"] == "error" and frames[-1]["code"] == "agent_error"
-    assert "401" in frames[-1]["message"]  # the SDK's error reached the player, minus the key
+    # QA SEC-001: the player gets a fixed message; the SDK's error is in the log, minus the key.
+    assert "401" not in frames[-1]["message"] and "reference" in frames[-1]["message"]
+    assert any("401" in (r.exc_text or "") for r in caplog.records)
     exposed = [caplog.text, json.dumps(frames), *(r.text for r in responses)]
     exposed += [r.exc_text or "" for r in caplog.records]
     assert all(SENTINEL_KEY not in text for text in exposed)
 
 
-async def test_a_turn_without_a_key_ends_with_a_plain_error(env, use_provider, as_user, patched_db, monkeypatch):  # noqa: F811
+async def test_a_turn_without_a_key_ends_with_a_plain_error(env, use_provider, as_user, patched_db, monkeypatch, caplog):  # noqa: F811
     use_provider("anthropic")
     _quiet_socket(monkeypatch)
 
-    frames = await _chat_turn(as_user, "claude-sonnet-5-5")
+    with caplog.at_level(logging.ERROR):
+        frames = await _chat_turn(as_user, "claude-sonnet-5-5")
 
+    # QA SEC-001: a fixed message with a reference; the reason is logged under that reference.
+    message = frames[-1]["message"]
+    ref = message.rsplit(" ", 1)[-1].rstrip(".")
     assert frames[-1]["code"] == "agent_error"
-    assert "ANTHROPIC_API_KEY is not set" in frames[-1]["message"]
-    assert "Traceback" not in frames[-1]["message"]
+    assert message == ws_mod.AGENT_ERROR_MESSAGE.format(ref=ref)
+    [record] = [r for r in caplog.records if f"ref {ref}" in r.getMessage()]
+    assert "ANTHROPIC_API_KEY is not set" in (record.exc_text or "")
 
 
 # --- chats on an unserved model continue on the default (AC 6, D4) --------------------------

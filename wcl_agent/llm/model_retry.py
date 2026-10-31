@@ -258,9 +258,21 @@ RATE_LIMIT_MEMORY_S = 300.0
 _limited_until: dict[str, float] = {}
 
 
-def _remember_limited(model: str | None) -> None:
-    if model:
+def _remember_limited(model: str | None, stats: TurnStats | None) -> None:
+    """Remember ``model`` only when a chat turn's retries really ran out (QA BUG-002): a
+    retry-disabled helper (the greeting) fails on its first 429, and a turn without a
+    sibling (background jobs) has nothing to switch to."""
+    if model and stats is not None and stats.retry_enabled and stats.fallback_model:
         _limited_until[model] = time.monotonic() + RATE_LIMIT_MEMORY_S
+
+
+def _short(policy: RetryPolicy) -> RetryPolicy:
+    """The quick probe a model gets while its turn can still switch (sc-176)."""
+    return replace(
+        policy,
+        attempts=min(policy.attempts, _PRIMARY_ATTEMPTS),
+        budget_s=min(policy.budget_s, _PRIMARY_BUDGET_S),
+    )
 
 
 def recently_limited(model: str | None) -> bool:
@@ -337,38 +349,36 @@ async def generate_with_fallback(
 
     sc-184: ``may_switch=False`` (the web-search sub-agent, pinned to the turn's model)
     follows a switch the turn already made but never makes one; its own conversation is
-    all on the sibling, so no signature guard is needed.
+    all on the sibling, so no signature guard is needed. While the turn could still switch
+    it gets the same short probe, and a spent probe is remembered, so the root's next
+    request switches at once (QA PERF-001).
     """
     stats = current_turn.get()
     own = stats is not None and llm_request.model == stats.model
+    can_switch = own and bool(stats.fallback_model) and stats.switched_to is None
     if not may_switch:
         if own and stats.switched_to:
             llm_request.model = stats.switched_to
-        async for response in generate_with_retry(inner, policy):
-            yield response
+        try:
+            async for response in generate_with_retry(inner, _short(policy) if can_switch else policy):
+                yield response
+        except ModelRateLimited:
+            if own:
+                _remember_limited(llm_request.model, stats)
+            raise
         return
-    can_switch = own and bool(stats.fallback_model) and stats.switched_to is None
     if can_switch and recently_limited(stats.model) and not recently_limited(stats.fallback_model):
         _switch(llm_request, stats, "was rate-limited moments ago")
     elif own and stats.switched_to:
         _route_to_sibling(llm_request, stats)
     else:
-        primary = (
-            replace(
-                policy,
-                attempts=min(policy.attempts, _PRIMARY_ATTEMPTS),
-                budget_s=min(policy.budget_s, _PRIMARY_BUDGET_S),
-            )
-            if can_switch
-            else policy
-        )
         try:
-            async for response in generate_with_retry(inner, primary):
+            async for response in generate_with_retry(inner, _short(policy) if can_switch else policy):
                 yield response
             return
         except ModelRateLimited:
             if own:
-                _remember_limited(llm_request.model)
+                _remember_limited(llm_request.model, stats)
             if not can_switch:
                 raise
         _switch(llm_request, stats, "still rate-limited")
@@ -376,7 +386,7 @@ async def generate_with_fallback(
         async for response in generate_with_retry(inner, policy):
             yield response
     except ModelRateLimited:
-        _remember_limited(llm_request.model)
+        _remember_limited(llm_request.model, stats)
         raise
 
 

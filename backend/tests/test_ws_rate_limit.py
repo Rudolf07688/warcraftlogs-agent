@@ -115,6 +115,7 @@ async def test_other_errors_keep_agent_error_and_partial(as_user, patched_db, mo
     sock = _FakeSocket()
     await ws_mod._handle_turn(sock, ChatTurn(model="gemini-3.6-flash", content="q"), _identity(as_user))
     assert sock.frames[-1]["code"] == "agent_error"
+    assert "vertex exploded" not in sock.frames[-1]["message"]  # QA SEC-001: no raw text
     conv_id = uuid.UUID(sock.frames[0]["conversation_id"])
     msgs = await _messages(patched_db, conv_id, as_user.tenant_id)
     assert [(m.role, m.status) for m in msgs] == [("user", "complete"), ("agent", "partial")] or [
