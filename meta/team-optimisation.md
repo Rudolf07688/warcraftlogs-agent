@@ -362,3 +362,6 @@ through respawns as the same named member, with its own small, curated memory. I
   `member.py` (and fixed `remember -` for stdin), seeded `meta/team/lead.md` with seven
   lessons from sprint 2026-10-31 (273 words), and wired it into `team-launch` and the
   SessionStart hook.
+- **2026-10-31:** The owner gave team-lead autonomy ("I value your initiative, your
+  recommendations and your learnings as an individual"). Recorded it in `meta/team/lead.md`
+  and as owner preference 15.

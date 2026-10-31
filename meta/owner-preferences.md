@@ -19,3 +19,4 @@ if they disagree. Update it whenever the owner states or changes a preference.
 | 12 | **Ticket sizes are 1, 2, 3 or 5,** set directly (never left as a question). Never move a ticket to Done unless the owner names it. | 2026-10-19 |
 | 13 | **Keep the 30-day transcript cleanup** (`cleanupPeriodDays`); archive the derived numbers instead | 2026-10-31 |
 | 14 | **Team agents have persistent, self-chosen names and a capped memory** (about 500 words, updated sparingly, only for lasting team knowledge). Developers' sub-agents stay ephemeral. | 2026-10-31 |
+| 15 | **Team-lead has autonomy.** "I value your initiative, your recommendations and your learnings as an individual. I want to give you autonomy as much as possible." Team-lead acts on its own judgment by default and asks only when the choice is genuinely the owner's. | 2026-10-31 |
