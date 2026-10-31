@@ -37,7 +37,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from wcl_agent.cache.cache import evict_report
 from wcl_agent.client import wcl_client
 from wcl_agent.client.queries import REPORT_SUMMARY, report_summaries_query
-from wcl_agent.client.wcl_client import FetchedResponse, ReportGone, exact_report_codes
+from wcl_agent.client.wcl_client import (
+    FetchedResponse,
+    ReportGone,
+    exact_report_codes,
+    returned_report_code,
+)
 
 from ..db import session as db_session
 from ..repositories.raw_fetches import (
@@ -52,10 +57,12 @@ from ..tenancy.context import current_identity, set_scope
 logger = logging.getLogger(__name__)
 
 SHUTDOWN_GRACE_S = 5.0
-_WRITE_TIMEOUT_S = 10.0  # a hung database costs one item this long; the queue absorbs the rest
+_WRITE_TIMEOUT_S = 10.0  # per batch, then per item on retry; the queue absorbs the rest
+_EVICT_TIMEOUT_S = 5.0  # Redis eviction of gone reports, outside the DB timeout
 _LOG_EVERY_S = 60.0
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
 BATCH_MAX = 20  # items per transaction (sc-177): one commit, bounded by the write timeout
+BATCH_MAX_BYTES = 8 * 1024 * 1024  # and body bytes per transaction (041 fix 3)
 
 
 @dataclass(frozen=True)
@@ -107,7 +114,13 @@ async def _report_statuses(
 
 
 async def _store_one(session: AsyncSession, pending: PendingWrite) -> list[str]:
-    """Write one item in the open transaction; returns the codes whose Redis keys must go."""
+    """Write one item in the open transaction; returns the codes whose Redis keys must go.
+
+    Grants come from what WCL returned, never from the query text alone (041 fix 2, decision
+    scope:041:grant-rule): our summary queries grant each code whose report object came back
+    with that code; any other query grants its one code only when it is plain and its body
+    holds the report (:func:`returned_report_code`).
+    """
     item = pending.item
     if isinstance(item, ReportGone):
         for code in item.codes:
@@ -116,12 +129,15 @@ async def _store_one(session: AsyncSession, pending: PendingWrite) -> list[str]:
     await upsert_raw_fetch(session, item)
     codes = exact_report_codes(item.query, item.variables) or []
     gone: list[str] = []
-    if codes and _is_summary(item, codes) and b'"visibility"' in item.content:
+    if codes and _is_summary(item, codes):
         statuses, gone = await _report_statuses(item, codes)
         await record_report_status(session, statuses)
         for code in gone:
             await delete_report(session, code)
-    granted = [c for c in codes if c not in gone]
+        granted = [s.code for s in statuses]
+    else:
+        code = returned_report_code(item.query, item.variables, item.content)
+        granted = [code] if code else []
     if pending.tenant_id is not None and granted:
         # Grants are RLS'd per tenant; set_config(..., true) may be re-set inside a transaction.
         await set_scope(session, tenant_id=pending.tenant_id)
@@ -129,15 +145,15 @@ async def _store_one(session: AsyncSession, pending: PendingWrite) -> list[str]:
     return gone
 
 
-async def store_batch(batch: Sequence[PendingWrite]) -> None:
-    """Write queued items in one transaction, then evict the Redis keys of gone reports."""
+async def store_batch(batch: Sequence[PendingWrite]) -> list[str]:
+    """Write queued items in one transaction; returns the codes of gone reports, whose Redis
+    keys the writer evicts after this timed DB part (041 fix 3)."""
     gone: list[str] = []
     async with db_session.SessionLocal() as session:
         for pending in batch:
             gone += await _store_one(session, pending)
         await session.commit()
-    for code in dict.fromkeys(gone):
-        await evict_report(code)
+    return gone
 
 
 def _describe(exc: BaseException) -> str:
@@ -181,7 +197,7 @@ class FetchWriter:
 
     def __init__(
         self,
-        store: Callable[[Sequence[PendingWrite]], Awaitable[None]] = store_batch,
+        store: Callable[[Sequence[PendingWrite]], Awaitable[list[str] | None]] = store_batch,
         *,
         max_items: int,
         max_bytes: int,
@@ -191,6 +207,7 @@ class FetchWriter:
         self._queue: asyncio.Queue[PendingWrite] = asyncio.Queue(maxsize=max(1, max_items))
         self._bytes = 0  # body bytes queued or being written
         self._busy = 0  # items being written
+        self._carry: PendingWrite | None = None  # taken from the queue, too big for the last batch
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task[None] | None = None
         self.dropped = 0
@@ -231,41 +248,63 @@ class FetchWriter:
         self._bytes += size
         self._queue.put_nowait(pending)
 
+    async def _next_batch(self) -> list[PendingWrite]:
+        """Up to :data:`BATCH_MAX` items and :data:`BATCH_MAX_BYTES` (041 fix 3). The item that
+        would overflow waits for the next batch; one oversize item still goes alone."""
+        first, self._carry = self._carry, None
+        batch = [first if first is not None else await self._queue.get()]
+        size = batch[0].size
+        while len(batch) < BATCH_MAX and not self._queue.empty():
+            pending = self._queue.get_nowait()
+            if size + pending.size > BATCH_MAX_BYTES:
+                self._carry = pending
+                break
+            batch.append(pending)
+            size += pending.size
+        return batch
+
     async def _run(self) -> None:
         while True:
-            batch = [await self._queue.get()]
-            while len(batch) < BATCH_MAX and not self._queue.empty():
-                batch.append(self._queue.get_nowait())
+            batch = await self._next_batch()
             self._busy = len(batch)
             try:
-                await self._write(batch)
+                gone = await self._write(batch)
+                if gone:
+                    await self._evict(gone)
             finally:
                 self._busy = 0
                 for pending in batch:
                     self._bytes -= pending.size
                     self._queue.task_done()
 
-    async def _write(self, batch: list[PendingWrite]) -> None:
-        """One transaction for the batch; on an error (not a hung database) each item alone,
-        so one bad item loses only itself. Nothing ever reaches a caller (FR-007)."""
+    async def _write(self, batch: list[PendingWrite]) -> list[str]:
+        """One transaction for the batch; on any error, a timeout included, each item alone, so
+        one bad or slow item loses only itself and a ReportGone is never lost with the batch
+        (041 fix 3). Order is kept. Returns the gone codes. Nothing ever reaches a caller."""
         try:
             async with asyncio.timeout(_WRITE_TIMEOUT_S):
-                await self._store(batch)
-            return
-        except TimeoutError as exc:
-            for _ in batch:
-                self._failures.hit(_describe(exc))
-            return
-        except Exception as exc:  # noqa: BLE001
+                return list(await self._store(batch) or [])
+        except Exception as exc:  # noqa: BLE001 - TimeoutError too (FR-007)
             if len(batch) == 1:
                 self._failures.hit(_describe(exc))
-                return
+                return []
+        gone: list[str] = []
         for pending in batch:
             try:
                 async with asyncio.timeout(_WRITE_TIMEOUT_S):
-                    await self._store([pending])
+                    gone += await self._store([pending]) or []
             except Exception as exc:  # noqa: BLE001
                 self._failures.hit(_describe(exc))
+        return gone
+
+    async def _evict(self, codes: list[str]) -> None:
+        """Gone reports leave the shared Redis cache, after (never inside) the timed DB write."""
+        try:
+            async with asyncio.timeout(_EVICT_TIMEOUT_S):
+                for code in dict.fromkeys(codes):
+                    await evict_report(code)
+        except Exception as exc:  # noqa: BLE001 - eviction is best effort, like the cache
+            logger.warning("fetch persistence: Redis eviction incomplete: %s", type(exc).__name__)
 
     async def stop(self, grace_s: float = SHUTDOWN_GRACE_S) -> None:
         """Stop accepting, give queued writes ``grace_s`` to finish, then drop the rest."""
@@ -278,7 +317,7 @@ class FetchWriter:
         try:
             await asyncio.wait_for(self._queue.join(), grace_s)
         except TimeoutError:
-            left = self._queue.qsize() + self._busy
+            left = self._queue.qsize() + self._busy + int(self._carry is not None)
             self.dropped += left
             logger.warning(
                 "fetch persistence: stopped after %.1fs, dropped %d unwritten response(s)", grace_s, left

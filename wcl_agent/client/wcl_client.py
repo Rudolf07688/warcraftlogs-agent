@@ -38,6 +38,7 @@ import httpx
 
 from ..cache.cache import CacheFamily, _env_int, aclose_redis, get_or_load, keys
 from ..cache.cache_models import OAuthToken
+from .queries import REPORT_SUMMARY
 
 logger = logging.getLogger(__name__)
 
@@ -325,9 +326,54 @@ def exact_report_codes(query: str, variables: dict[str, Any]) -> list[str] | Non
         return None
     for var, literal in matches:
         value = variables.get(var) if var else literal
-        if not isinstance(value, str) or not value.strip():
+        # A padded code ("ABC ") is sent to WCL as is, so it isn't the trimmed code (041 BUG-003).
+        if not isinstance(value, str) or not value.strip() or value != value.strip():
             return None
     return report_codes(query, variables)
+
+
+def _outside_parens(query: str) -> str:
+    """The query with every parenthesised part (arguments, variable declarations) removed."""
+    out, depth = [], 0
+    for ch in query:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+# Anything that could make the response's ``reportData.report`` key mean another field, hide a
+# field from execution, or hide text from the parser: aliases (``:`` outside arguments),
+# directives, string literals, fragments and comments.
+_UNPLAIN = ("#", "@", '"', "...", "fragment")
+_REPORT_TOKEN_RE = re.compile(r"\breport\b")
+# A body whose first field is ``reportData.report`` holding an object (``_cost`` comes first).
+_REPORT_OBJECT_RE = re.compile(
+    rb'\A\s*\{\s*"data"\s*:\s*\{\s*(?:"_cost"\s*:\s*\{[^{}]*\}\s*,\s*)?'
+    rb'"reportData"\s*:\s*\{\s*"report"\s*:\s*\{'
+)
+
+
+def returned_report_code(query: str, variables: dict[str, Any], content: bytes) -> str | None:
+    """The code of the one report a *plain* query asked for, when WCL returned it (041 fix 2).
+
+    Plain: exactly one ``report`` field, its code a padding-free variable, and nothing that
+    could alias, skip or hide a field (:data:`_UNPLAIN`, ``:`` outside arguments). Only then can
+    the response key ``reportData.report`` be that field, so a non-null object there proves
+    WCL served the report. Everything else returns None and earns no grant.
+    """
+    if any(token in query for token in _UNPLAIN) or ":" in _outside_parens(query):
+        return None
+    if len(_REPORT_TOKEN_RE.findall(query)) != 1:
+        return None
+    matches = _REPORT_CODE_RE.findall(query)
+    codes = exact_report_codes(query, variables)
+    if len(matches) != 1 or not matches[0][0] or not codes:
+        return None
+    return codes[0] if _REPORT_OBJECT_RE.match(content[:2048]) else None
 
 
 # --- Fetch sink (feature 020): every successful WCL response, offered for persistence ---
@@ -400,29 +446,49 @@ def _offer(key: str, query: str, variables: dict[str, Any], content: bytes) -> N
         _deliver(FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc)))
 
 
-# A "gone" answer is tiny; bigger bodies are never scanned for it.
+# A "gone" answer is tiny; bigger bodies are never parsed for it.
 _GONE_MAX_BYTES = 4096
-_NULL_REPORT_RE = re.compile(rb'"reportData"\s*:\s*\{\s*"report"\s*:\s*null\s*\}')
+# WCL's wording for a report that is missing or not ours to see (041 fix 1).
+_GONE_MESSAGE_RE = re.compile(r"not exist|no such|not found|permission|private", re.IGNORECASE)
+
+
+def _is_gone_error(error: object) -> bool:
+    """An error about the report itself (not a field below it) saying it is missing/private."""
+    return (
+        isinstance(error, dict)
+        and error.get("path") == ["reportData", "report"]
+        and isinstance(error.get("message"), str)
+        and _GONE_MESSAGE_RE.search(error["message"]) is not None
+    )
 
 
 def _gone_codes(
     query: str, variables: dict[str, Any], content: bytes, payload: dict[str, Any] | None = None
 ) -> list[str]:
-    """The report of a single-report query that WCL answered with ``reportData.report: null``,
-    else []. ``payload`` is the parsed body when the caller already has it (GraphQL errors).
-    Batch queries are skipped: their callers retry each code alone (load_report_summaries)."""
-    if _fetch_sink is None or len(content) > _GONE_MAX_BYTES:
+    """The report of our own :data:`REPORT_SUMMARY` that WCL answered ``reportData.report:
+    null``, else []. With ``errors`` (``payload`` is then the parsed body) every error must be
+    about the report itself and read as not-found/permission: a null that propagated up from a
+    failing subfield, or a transient error, deletes nothing (041 fix 1, decision
+    scope:041:gone-rule). Hand-written and other queries never delete: their text could alias,
+    pad or hide what they really ask for."""
+    if _fetch_sink is None or query != REPORT_SUMMARY or len(content) > _GONE_MAX_BYTES:
         return []
     codes = exact_report_codes(query, variables)
-    if codes is None or len(codes) != 1 or len(_REPORT_FIELD_RE.findall(query)) != 1:
+    if not codes or len(codes) != 1:
         return []
     if payload is None:
-        return codes if _NULL_REPORT_RE.search(content) else []
-    data = payload.get("data")
+        try:
+            payload = json.loads(content)
+        except ValueError:
+            return []
+    data = payload.get("data") if isinstance(payload, dict) else None
     report_data = data.get("reportData") if isinstance(data, dict) else None
-    if isinstance(report_data, dict) and "report" in report_data and report_data["report"] is None:
-        return codes
-    return []
+    if not (isinstance(report_data, dict) and "report" in report_data and report_data["report"] is None):
+        return []
+    errors = payload.get("errors") or []
+    if not isinstance(errors, list) or not all(_is_gone_error(e) for e in errors):
+        return []
+    return codes
 
 
 async def _loads(content: bytes) -> dict[str, Any]:

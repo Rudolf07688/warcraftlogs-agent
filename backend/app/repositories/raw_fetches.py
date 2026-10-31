@@ -25,7 +25,14 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from wcl_agent.client.wcl_client import _COST_RE, FetchedResponse, operation_name, report_codes
+from wcl_agent.client.wcl_client import (
+    _COST_RE,
+    _REPORT_TOKEN_RE,
+    FetchedResponse,
+    exact_report_codes,
+    operation_name,
+    report_codes,
+)
 
 from ..db.models import RawFetch, RawFetchGrant, RawReport
 from ..db.repository import _insert
@@ -65,6 +72,25 @@ def _payload(dialect: str, body: str) -> ColumnElement:
     return func.json_remove(raw, "$.data._cost")
 
 
+_STRING_RE = re.compile(r'"([^"\\]*)"')
+
+
+def _stored_codes(query: str, variables: dict) -> list[str]:
+    """The codes a row is filed under, so delete-on-gone finds it (041 BUG-007).
+
+    Exact when the strict parser resolves the query. When it can't but the query names a
+    report, every string literal and string variable is listed too: an over-approximation that
+    can only make a gone report delete more. Such rows are never served (reads need exact
+    codes).
+    """
+    exact = exact_report_codes(query, variables)
+    if exact is not None or not _REPORT_TOKEN_RE.search(query):
+        return exact if exact is not None else report_codes(query, variables)
+    loose = report_codes(query, variables) + _STRING_RE.findall(query)
+    loose += [v for v in variables.values() if isinstance(v, str)]
+    return list(dict.fromkeys(c.strip() for c in loose if c.strip()))
+
+
 def _prepare(content: bytes) -> tuple[str, bytes]:
     """(hash, storable body). The hash ignores ``data._cost``, which changes every request;
     the body loses ``\\u0000`` escapes (Postgres JSONB rejects them, sc-177)."""
@@ -96,8 +122,9 @@ async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> N
             .values(fetched_at=fetched.fetched_at)
         )
         return
-    codes = report_codes(fetched.query, fetched.variables)
-    single = codes[0] if len(codes) == 1 and len(codes[0]) <= MAX_CODE else None
+    codes = _stored_codes(fetched.query, fetched.variables)
+    exact = exact_report_codes(fetched.query, fetched.variables)
+    single = codes[0] if exact and len(codes) == 1 and len(codes[0]) <= MAX_CODE else None
     op = operation_name(fetched.query)
     stmt = _insert(session, RawFetch).values(
         query_key=fetched.query_key,
