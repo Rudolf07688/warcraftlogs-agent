@@ -158,6 +158,12 @@ across 37 files.
   owner is the team's one continuous member, and the lead's lessons used to live only in
   conversations until the owner corrected them.
 
+- **D15. The whole team gets the lead's autonomy grant.** Owner, 2026-10-31, before sprint
+  2026-10-31b: each agent decides within its role and explains afterwards; escalations only
+  for irreversible actions, scope beyond the steer, pushing. The sprint's second goal is the
+  team learning to operate this way. Owner preference 16; an "Autonomy" section in the three
+  agent files.
+
 ## Proposals under discussion
 
 ### P1. Complexity tiers (the product owner chooses, per D2)
@@ -365,3 +371,6 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-10-31:** The owner gave team-lead autonomy ("I value your initiative, your
   recommendations and your learnings as an individual"). Recorded it in `meta/team/lead.md`
   and as owner preference 15.
+- **2026-10-31:** Before sprint 2026-10-31b the owner extended the autonomy grant to the
+  whole team (D15, preference 16) and scoped the sprint to hardening and QA debt, so the
+  team can concentrate on learning to work autonomously.
