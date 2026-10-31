@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import requests
 
-from wcl_agent.llm import vertex
+from wcl_agent.llm import provider, vertex
 from wcl_agent.llm.vertex import CatalogEntry, CatalogUnavailable
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -140,9 +140,9 @@ def test_client_factories_use_the_model_location(regional, monkeypatch):
     g = _capture(monkeypatch, genai, "Client")
     a = _capture(monkeypatch, anthropic, "AnthropicVertex")
     aa = _capture(monkeypatch, anthropic, "AsyncAnthropicVertex")
-    vertex.genai_client()
-    vertex.anthropic_client(max_retries=0)
-    vertex.async_anthropic_client(default_headers={"x": "y"})
+    vertex.genai_client()  # feature 032: forwards to provider
+    vertex.anthropic_client(max_retries=0)  # forwards to provider
+    provider.async_anthropic_client(default_headers={"x": "y"})
     assert g == {"vertexai": True, "project": "proj-1", "location": "global"}
     assert a == {"project_id": "proj-1", "region": "global", "max_retries": 0}
     assert aa == {"project_id": "proj-1", "region": "global", "default_headers": {"x": "y"}}
@@ -179,17 +179,18 @@ def test_api_key_setup_gets_plain_clients(monkeypatch):
     g = _capture(monkeypatch, genai, "Client")
     vertex.genai_client()
     assert g == {}
-    assert vertex.adk_client_kwargs() == {}
+    assert provider.adk_client_kwargs() == {}
     assert not RetryingGemini(model="gemini-3.8-flash").client_kwargs
 
 
-def test_no_model_client_is_built_outside_vertex():
-    pattern = re.compile(r"genai\.Client\(|AnthropicVertex\(")
+def test_no_model_client_is_built_outside_the_provider_layer():
+    """Feature 032 (sc-249 AC 2): provider.py is the only place that constructs a model client."""
+    pattern = re.compile(r"genai\.Client\(|AnthropicVertex\(|\bAnthropic\(|AsyncAnthropic\(")
     offenders = [
         f"{path.relative_to(ROOT)}:{n}"
         for base in ("wcl_agent", "backend/app")
         for path in (ROOT / base).rglob("*.py")
-        if path != ROOT / "wcl_agent" / "llm" / "vertex.py"
+        if path != ROOT / "wcl_agent" / "llm" / "provider.py"
         for n, line in enumerate(path.read_text().splitlines(), 1)
         if pattern.search(line)
     ]

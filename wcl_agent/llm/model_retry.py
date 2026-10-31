@@ -36,7 +36,7 @@ from google.genai import types as genai_types
 from pydantic import Field
 
 from .context_trim import trim_old_tool_results, user_turn_indices
-from .vertex import adk_client_kwargs, async_anthropic_client
+from .provider import adk_client_kwargs, async_anthropic_client
 
 logger = logging.getLogger(__name__)
 

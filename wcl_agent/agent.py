@@ -62,7 +62,7 @@ from .tools.tools import (
     get_selected_encounter,
     get_spec_options,
 )
-from .llm.vertex import adk_client_kwargs
+from .llm.provider import ModelRole, adk_client_kwargs, role_model
 
 # Tag-delimited sections per specs/009-grounded-coaching-prompt/contracts/prompt.md.
 # backend/tests/test_prompt_contract.py asserts the sections and key clauses; wording
