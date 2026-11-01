@@ -34,6 +34,7 @@ from google.genai import types
 from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
 from wcl_agent.llm.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
 
+from .agent_tools.kb_tools import KB_TOOLS
 from .agent_tools.profile_tools import PROFILE_TOOLS
 from .agent_tools.stored_data_tools import STORED_DATA_TOOLS
 from .config import settings
@@ -80,9 +81,12 @@ def _get_runner(model: str) -> Runner:
         )
         runner = Runner(
             # Feature 029 (C6): the backend-side profile tool joins the WCL tools and the
-            # generated capability summary. Outside an authenticated chat turn (greeting,
-            # guide jobs) it fails closed.
-            agent=build_agent(model, retry=policy, extra_groups=(PROFILE_TOOLS, STORED_DATA_TOOLS)),
+            # generated capability summary; 044 adds the knowledge search and 045 the exact
+            # stored-data lookups. Outside an authenticated chat turn (greeting, guide jobs)
+            # they fail closed.
+            agent=build_agent(
+                model, retry=policy, extra_groups=(PROFILE_TOOLS, KB_TOOLS, STORED_DATA_TOOLS)
+            ),
             app_name=APP_NAME,
             session_service=_get_session_service(),
         )
