@@ -1,0 +1,30 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                             77    32925     9524903     131915      2
+Ansel QA fix 049 lookup                      26    21815     2252181     112333      0
+Shortcut sync for sprint 2026-11-01b         15    10197     1315011     107524      0
+Nils QA fix 048 kickoff                      70    52499     8588726     177941      0
+Dev Ansel: 047 clean-up + KB debt           159   128990    37399643     612350      1
+QA spec conformance sweep                    42    34752     3586736     134743      0
+P7 security review 047                       38    36427     2276166      97316      0
+P7 security review 046                       35    27057     2227512     100702      0
+QA performance sweep                         35    35387     2529342     110476      0
+QA security sweep                            33    33245     2447033     109125      0
+Dev Nils: 046 big-report turns              146   113473    31275288     614203      1
+QA bug hunt sweep                            50    49813     4287801     139508      0
+product-owner                                91    89324    15089621    1192515      3
+product-owner                                16    10085     1407650     126449      0
+TOTAL {'calls': 833, 'out': 675989, 'cr': 124207613, 'cc': 3767100, 'inp': 1750, 'sends': 7}
+main (team-lead) [('Bash', 49), ('mcp__shortcut__stories-get-by-id', 10), ('Monitor', 4), ('ToolSearch', 3), ('Agent', 2), ('SendMessage', 2)]
+Ansel QA fix 049 lookup [('Bash', 25), ('bash', 1)]
+Shortcut sync for sprint 2026-11-01b [('mcp__shortcut__stories-search', 15), ('mcp__shortcut__stories-get-by-id', 7), ('Bash', 4), ('mcp__shortcut__stories-update', 3), ('mcp__shortcut__stories-create', 2), ('ToolSearch', 1)]
+Nils QA fix 048 kickoff [('Bash', 67), ('Write', 3)]
+Dev Ansel: 047 clean-up + KB debt [('Bash', 136), ('Write', 16), ('mcp__shortcut__stories-update', 12), ('Edit', 7), ('Skill', 4), ('mcp__shortcut__stories-get-by-id', 3)]
+QA spec conformance sweep [('Bash', 42), ('Write', 1)]
+P7 security review 047 [('Bash', 39)]
+P7 security review 046 [('Bash', 36)]
+QA performance sweep [('Bash', 34), ('Read', 1), ('Write', 1)]
+QA security sweep [('Bash', 33), ('Read', 1)]
+Dev Nils: 046 big-report turns [('Bash', 131), ('mcp__shortcut__stories-update', 8), ('Edit', 5), ('Write', 5), ('Skill', 4), ('ToolSearch', 1)]
+QA bug hunt sweep [('Bash', 49), ('Read', 1), ('Write', 1)]
+product-owner [('Bash', 59), ('mcp__shortcut__stories-update', 25), ('mcp__shortcut__stories-create-comment', 12), ('mcp__shortcut__stories-create', 11), ('Agent', 11), ('mcp__shortcut__stories-get-by-id', 10)]
+product-owner [('mcp__shortcut__stories-get-by-id', 11), ('Bash', 7), ('mcp__shortcut__stories-search', 7), ('ToolSearch', 1)]

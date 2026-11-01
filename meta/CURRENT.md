@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-01 17:05 (end of the P9 meta session; owner opening a fresh session)
+Updated: 2026-11-01 18:55 (sprint 2026-11-01b wrapped in session f6f1e132; merge question with the owner)
 
 ## Topic
 
@@ -13,6 +13,12 @@ The agent-team redesign: persistence and autonomy. Full record in
 `meta/team-optimisation.md` (decisions D1–D19, proposals P1–P9, baseline, change log).
 
 ## Where we are
+- **Sprint 2026-11-01b wrapped** (20/20, 1.03 M/pt, P9 held: 0 green-that-wasn't, 0 wake-ups,
+  lint 14 → 3; report meta/sprints/2026-11-01b/team-report.html). Was: (first P9 trial): 20 pts, tier M, Maren + Nils (big-report
+  turns) + Ansel (.env tests, KB debt). Branch `sprint-2026-11-01b` at dd0c2df, board of the
+  same name. Planned with the PO "in the room" first (owner asked for both viewpoints).
+- Owner preference 23: name tickets for the owner, never bare ids (dd0c2df).
+- 25fe6c1 + 99df14d are pushed (origin/main = 99df14d): push question closed.
 
 - The fresh-session hand-off worked (2nd boundary now): nothing settled was re-asked.
   Session ids: `meta/sessions.md` (back-filled to today).
@@ -29,8 +35,6 @@ The agent-team redesign: persistence and autonomy. Full record in
 1. **Longer-lived Google credentials** (service account) for the live pass; I offered to
    draft the exact permissions.
 2. **Session boundaries** on trial: one session per sprint, separate meta sessions.
-3. Push: 25fe6c1 (P9) and the hand-off commit after it are local only. Owner said
-   "fantastic" but did not answer the push question: ask again, don't assume.
 
 ## For the next sprint (mine)
 

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Report 2026-11-01b</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--ink:#1d1d1b;--mute:#6b6a64;--line:#e3e1d9;--acc:#2f6f5e;--warn:#a5531f;--good:#2f6f5e;--bar:#d9e7e2}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151614;--card:#1e201d;--ink:#ecebe6;--mute:#a09f98;--line:#33352f;--acc:#7cc4ad;--warn:#e19a6a;--good:#7cc4ad;--bar:#2a3d37}}
+:root[data-theme="dark"]{--bg:#151614;--card:#1e201d;--ink:#ecebe6;--mute:#a09f98;--line:#33352f;--acc:#7cc4ad;--warn:#e19a6a;--good:#7cc4ad;--bar:#2a3d37}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 10px}
+.sub{color:var(--mute);margin:0 0 20px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.tile b{display:block;font-size:24px}.tile span{color:var(--mute);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:10px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600}
+.scroll{overflow-x:auto}
+.now td{font-weight:600}
+.bar{height:10px;background:var(--bar);border-radius:5px;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--acc);border-radius:5px}
+.good{color:var(--good)}.warn{color:var(--warn)}
+ul{margin:6px 0 0 18px;padding:0}li{margin:3px 0}
+code{font-size:13px;background:var(--bar);padding:0 4px;border-radius:4px}
+</style>
+</head>
+<body><main>
+<h1>Team report: sprint 2026-11-01b</h1>
+<p class="sub">Big-report turns that finish and cost less, plus clean-up and debt from the knowledge-base sprint. Tier M: Maren as product owner with two developers, Nils and Ansel, and no scrum master. It was the first real trial of P9 ("tools over rules": <code>check.py</code>, <code>pg.py</code>, <code>mutate.py</code>, <code>board.py wait</code>, <code>member.py lint</code>). New this time: the owner had the product owner "in the room" for planning before launch. Written by team-lead, 2026-11-01.</p>
+
+<div class="tiles">
+<div class="tile"><b>20 / 20</b><span>points delivered, 10 stories, nothing dropped</span></div>
+<div class="tile"><b class="good">1.03</b><span>weighted cost per point (was 1.18)</span></div>
+<div class="tile"><b class="good">26%</b><span>coordination share (was 26%)</span></div>
+<div class="tile"><b class="good">1 h 36 min</b><span>steer to wrap-up (15:08Z → 16:44Z)</span></div>
+<div class="tile"><b class="good">0</b><span>team-lead wake-ups (target: fallbacks only)</span></div>
+<div class="tile"><b class="good">3 / 3</b><span>live checks passed, cheapest model</span></div>
+</div>
+
+<h2>Cost against the baseline</h2>
+<div class="card scroll"><table>
+<tr><th>Sprint</th><th>Points</th><th>Model calls</th><th>Weighted (M)</th><th>Per point</th><th>Coordination</th><th>Build</th><th>QA</th><th>Notes</th></tr>
+<tr><td>2026-10-25</td><td>23</td><td>1975</td><td>61.0</td><td>2.65</td><td>55%</td><td>35%</td><td>8%</td><td>9 developers, QA + fix round</td></tr>
+<tr><td>2026-10-26</td><td>20</td><td>1482</td><td>43.6</td><td>2.18</td><td>42%</td><td>49%</td><td>8%</td><td>Owner plan gate, no fix round</td></tr>
+<tr><td>2026-10-31</td><td>21</td><td>990</td><td>29.2</td><td>1.39</td><td>41%</td><td>58%</td><td>0%</td><td>No QA sweep</td></tr>
+<tr><td>2026-10-31b</td><td>21</td><td>757</td><td>17.5</td><td>0.83</td><td>29%</td><td>52%</td><td>18%</td><td>PO + 2 devs, tier M + S</td></tr>
+<tr><td>2026-10-31c</td><td>19</td><td>628</td><td>17.5</td><td>0.92</td><td>38%</td><td>48%</td><td>12%</td><td>PO + 2 devs, lead share incl. meta</td></tr>
+<tr><td>2026-11-01</td><td>33</td><td>1256</td><td>39.0</td><td>1.18</td><td>26%</td><td>58%</td><td>16%</td><td>Tier L, P7 trial, split fix round</td></tr>
+<tr class="now"><td>2026-11-01b</td><td>20</td><td>833</td><td>20.5</td><td>1.03</td><td>26%</td><td>56%</td><td>18%</td><td>Tier M, PO + 2 devs, P9 trial, PO in planning, split fix round</td></tr>
+</table>
+<p class="sub" style="margin:8px 0 0">Weighted means cache reads count 0.1×, cache writes 1.25× and output 5×. Coordination is team-lead 1.28, Maren 3.45 (delivery) plus 0.35 (planning run) and the board sync 0.32. Build is the two features 9.61 plus the two fix rounds 1.81. QA is P7 at hand-off 1.01 plus the end sweep 2.67. The 0.83–0.92 tier-M sprints had no P7 review and smaller fix rounds. Per point, this is the cheapest sprint since P7 was adopted.</p></div>
+
+<h2>Where the tokens went</h2>
+<div class="card">
+<table>
+<tr><th>Share</th><th>M units</th><th></th></tr>
+<tr><td>Build (Nils 046 + 048, Ansel 047 + 049)</td><td>11.43</td><td style="width:45%"><div class="bar"><i style="width:56%"></i></div></td></tr>
+<tr><td>Coordination (team-lead, Maren, board sync)</td><td>5.39</td><td><div class="bar"><i style="width:26%"></i></div></td></tr>
+<tr><td>QA (2 P7 reviews, 4 end-sweep agents)</td><td>3.68</td><td><div class="bar"><i style="width:18%"></i></div></td></tr>
+</table></div>
+
+<h2>P9 trial: did the tools hold?</h2>
+<div class="card scroll"><table>
+<tr><th>Measure</th><th>Target</th><th>Result</th></tr>
+<tr><td>"Green that wasn't": a pass that later turned out red</td><td>0</td><td class="good">0. All seven hand-offs and merges quote a <code>check.py</code> RESULT line with a receipt. When Maren's merged run went red on a timing flake, she posted it as a failure (#73), not as green.</td></tr>
+<tr><td>Team-lead wake-ups for the merger</td><td>fallbacks only</td><td class="good">0. Maren ran <code>board.py wait</code> per developer and picked up all four hand-offs herself. Last sprint: 19 of 40 messages were my wake-ups.</td></tr>
+<tr><td>Merges that reused a receipt</td><td>where the tree matches</td><td>1 of 3. Feature 046 merged on its receipt (<code>check.py REUSE</code>). The other two merged trees held both streams, so they had to run fresh, as designed.</td></tr>
+<tr><td>Memory lines flagged by <code>lint</code> (members who ran)</td><td>falling</td><td class="good">14 → 3: Ansel 6 → 2, Nils 4 → 1, Maren 4 → 0. Each cut its own recipes now that the tools exist (preference 21 held). Tomas and Ilse didn't run, so their 5 and 4 stand.</td></tr>
+<tr><td>Messages (SendMessage)</td><td>low</td><td class="good">7 in the whole sprint (last sprint 40). The board carried the rest: 94 entries.</td></tr>
+<tr><td>Mutation checks</td><td>tests bite</td><td class="good">Every new test reported as biting, through <code>mutate.py</code>. Ansel's deadlock test fails with <code>DeadlockDetectedError</code> on the old lock order.</td></tr>
+</table></div>
+
+<h2>What worked</h2>
+<div class="card"><ul>
+<li><b>The product owner in planning.</b> The owner asked for both viewpoints. Maren corrected two of my claims from the code: the <code>.env</code> ticket wasn't the P9 lever I thought it was, and its proposed fix wouldn't have worked. She also caught that the empty-answer bug was the other half of the prompt blow-up. The planning run cost 0.35 M, under 2% of the sprint, and launch needed no clarifying round.</li>
+<li><b>Developers coordinating on the board without me.</b> Nils found a pre-existing flaky test. Ansel fixed it in a commit on its own, and Nils cherry-picked that exact commit to get a clean receipt. Four board entries, no message to me.</li>
+<li><b>Design answers up front.</b> Both developers posted their design decisions (<code>clarify:</code> keys) before writing code. Maren overrode none of them.</li>
+<li><b>Live results.</b> The top-3 damage question went from 397k to 29k prompt tokens. The chart turn that used to end with no answer now answers with a chart (53k, was 220k). The recent-raid pre-fetch warmed 2 tables with no failures.</li>
+<li><b>Owner preference 23</b> (ticket names) reached the product owner's file, the team-launch skill and Maren within minutes, and her reports use names.</li>
+</ul></div>
+
+<h2>What to change</h2>
+<div class="card"><ul>
+<li><b>Our own security fix caused the QA High.</b> Moving the pre-fetch to the background lane (P7 rework) left the kickoff turn waiting behind it. The P7 review checks the diff, and the rework round had no review of its own. Change: a P7 rework that touches lanes, locks or ordering gets one targeted line in the end-sweep brief ("re-check the rework for liveness"). It's cheaper than a second review.</li>
+<li><b>Timing-sensitive tests.</b> Two flakes in one sprint came from wall-clock assumptions: an import-time NOW, and a 400 ms probe under a slow suite. Change: add "no wall-clock budgets under 1 s in tests, compute time per test" to <code>developer.md</code>.</li>
+<li><b>GitNexus in a fresh worktree index</b> returned nameless Python functions (Nils, <code>skill:gitnexus-impact-analysis</code>). I'll apply it as a local learning after the merge.</li>
+<li><b><code>check.py</code>'s <code>.env</code> refusal</b> can be relaxed once 047 is on main: the suite now switches <code>.env</code> off itself (Ansel, #54). I'll keep the refusal as a warning rather than drop it.</li>
+<li><b>Live pass finding:</b> the agent picked the wrong "last boss kill" in one of two turns on the same report. Filed as "Agent picks the wrong last boss kill" (sc-365). This is a model-behaviour bug, not a team one.</li>
+</ul></div>
+
+<h2>Board and code</h2>
+<div class="card scroll"><table>
+<tr><th>Board entries</th><td>94: 33 change (file ownership), 21 notice, 18 decision, 10 answer, 7 handoff, 3 merge, 2 question. By author: Maren 47, Nils 24, Ansel 21, team-lead 2.</td></tr>
+<tr><th>Code vs docs</th><td>Code (backend, wcl_agent): +2468 / −116 in 40 files, of which tests are +1814. Spec Kit and sprint docs: +1909 in 29 files.</td></tr>
+<tr><th>QA</th><td>P7 at hand-off: 2 Medium (both fixed) + 8 Low. End sweep: 0 Critical, 1 High, 6 Medium, 14 Low. The High and 3 Mediums were fixed in the split fix round (048, 049); the rest are 9 <code>qa-deferred</code> tickets, plus 1 from the live pass.</td></tr>
+<tr><th>Suite</th><td>1887 passed, 0 skipped (with Postgres) on the merged tip.</td></tr>
+</table></div>
+</main></body></html>

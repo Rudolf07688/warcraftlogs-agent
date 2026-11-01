@@ -52,6 +52,7 @@ as an autonomous unit that needs only a small owner input to steer it.
 | 2026-10-31b | 21 | 757 | 11 (no SM) | 17.5 | **0.83** | **29%** | 52% | 18% | PO + 2 devs, tiers M + S, autonomy grant (D15); QA sweep + one fix round; machine crash mid-sprint |
 | 2026-10-31c | 19 | 628 | 9 (no SM) | 17.5 | **0.92** | **38%** | 48% | 12% | PO + 2 devs (Ansel on opus), tiers M + S; QA sweep + one split fix round; 78 min steer to wrap; lead share includes skills prune + live pass |
 | 2026-11-01 | 33 | 1256 | 40 (SM 15) | 39.0 | **1.18** | **26%** | 58% | 16% | Tier L: PO + SM (Ilse) + 3 devs (Nils new); P7 trial 4% inside QA; split fix round; ~3 h 10 min steer to wrap |
+| 2026-11-01b | 20 | 833 | 7 (no SM) | 20.5 | **1.03** | **26%** | 56% | 18% | Tier M: PO + 2 devs; first P9 trial; PO in planning (0.35 M); P7 5% + split fix round; 1 h 36 min steer to wrap |
 
 **Caveats.**
 - The main-session transcripts include some non-sprint work. On 10-25 that was writing the
@@ -542,3 +543,11 @@ through respawns as the same named member, with its own small, curated memory. I
   for the scripts. Built P9 (above), updated `developer.md`, `product-owner.md`,
   `scrum-master.md` and `team-launch`; filed sc-336; added the prompt-size test idea to
   sc-334.
+- **2026-11-01 (sprint 2026-11-01b wrap-up):** 20/20 pts at 1.03 M/pt, coordination 26%, in
+  1 h 36 min from steer to wrap. First P9 trial: 0 "green that wasn't", 0 team-lead
+  wake-ups (Maren used `board.py wait`), 1 of 3 merges reused a receipt, 7 messages in the
+  sprint (was 40), and `lint` lines for the members who ran fell 14 → 3. The owner had the PO
+  "in the room" for planning, and she corrected two of my claims from the code. Owner
+  preference 23: name tickets, not bare ids. The QA High came from our own P7 rework (a lane
+  move stalled the kickoff turn). Live pass 3/3. Team report:
+  `meta/sprints/2026-11-01b/team-report.html`.

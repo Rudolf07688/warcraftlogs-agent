@@ -29,9 +29,9 @@ async def get(path, cookie):
         return r.status_code, r.json()
 
 
-async def post(path, cookie, csrf):
+async def post(path, cookie, csrf, body=None):
     async with httpx.AsyncClient(base_url=API) as c:
-        r = await c.post(path, headers={"Cookie": cookie, "Origin": ORIGIN, "X-CSRF-Token": csrf})
+        r = await c.post(path, headers={"Cookie": cookie, "Origin": ORIGIN, "X-CSRF-Token": csrf}, json=body)
         return r.status_code, r.json()
 
 
@@ -62,7 +62,18 @@ async def main():
     convs = {}
     for name in sys.argv[1:]:
         slot, key = name.split(":")
-        frames, text = await turn(cookie, model, PROMPTS[key], convs.get(slot))
+        prompt = PROMPTS.get(key)
+        if key == "kickoff":  # the welcome-page recent-raid click: investigate, then send its kickoff prompt
+            _, rr = await get("/api/recent-raids", cookie)
+            raids = rr.get("raids", [])
+            raid = next((r for r in raids if r.get("difficulty") == 4), raids[0] if raids else None)
+            if raid is None:
+                print("kickoff: no recent raids"); continue
+            code, inv = await post(f"/api/raids/{raid['report_code']}/investigate", cookie, csrf, {"model": model})
+            print(f"kickoff: {raid['report_code']} difficulty={raid.get('difficulty')} investigate={code}")
+            convs[slot], prompt = inv["conversation_id"], inv["kickoff_prompt"]
+            await asyncio.sleep(20)  # let the background pre-fetch warm the store, as a user reading the page would
+        frames, text = await turn(cookie, model, prompt, convs.get(slot))
         for f in frames:
             if f["type"]=="meta" and f.get("conversation_id"): convs[slot]=f["conversation_id"]
         types={}
@@ -87,6 +98,8 @@ async def main():
 
 
 PROMPTS = {
+    # sprint 2026-11-01b: big-report turns (046/048), clean-up (047/049). "kickoff" is built in above.
+    "chart5": "In report BKNtypgnhrxXvj84, make a bar chart of the top 5 damage dealers on the last boss kill. Keep the text to one line.",
     # sprint 2026-11-01: knowledge base (043/044/045)
     "stored": "Which fights are stored for report BKNtypgnhrxXvj84? Use only data we already have stored; one short line per fight.",
     "guide": "From our class guides only (search the knowledge base), how should an arms warr open? Two lines.",
