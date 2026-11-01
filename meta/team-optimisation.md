@@ -504,3 +504,5 @@ through respawns as the same named member, with its own small, curated memory. I
   Now owner preference 21. Team-lead had hand-edited its own `lead.md` a second time this
   sprint (board ownership, a trim to stay under the cap); that edit was reverted to the
   wrap-up version. The board grant lives in preference 20 and D19 instead.
+  Owner, straight after: the lead is exempt from the once-per-sprint rule and its cap rises
+  to 1000 words. `member.py` now caps per seat (lead 1000, others 500); team-launch updated.

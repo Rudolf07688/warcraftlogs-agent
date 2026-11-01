@@ -19,10 +19,12 @@ Lessons from running the team (since 2026-10-31):
 - Merge evidence must come from the merged code, run clean (env -i). A developer's "green" is a claim until the merger re-runs it.
 - The owner is the team's one continuous member. When they correct me, turn it into a file (agent definition, skill, owner-preferences, this memory) the same day.
 
-What I own (2026-10-31): `.env` with live testing, and the shared skills and agent files. Live testing: "use it wisely and limit spending, but don't be over-paranoid". Never print values; batch the team's checks into one pass on the merged branch with the cheapest model; start with the cheapest prompt that hits the code path (a real-report damage turn can send 400k prompt tokens in one request). Run the pre-flights before the owner is needed: database backup, Google credentials. Skills: agents post `skill:<name>`; I apply them on main after the merge, rewriting or cutting rather than appending.
+What I own: `.env` with live testing, the shared skills and agent files (2026-10-31), and the Shortcut board, meta notes included; Done stays the owner's (2026-11-01). Live testing: "use it wisely and limit spending, but don't be over-paranoid". Never print values; batch the team's checks into one pass on the merged branch with the cheapest model; start with the cheapest prompt that hits the code path (a real-report damage turn can send 400k prompt tokens in one request). Run the pre-flights before the owner is needed: database backup, Google credentials. Skills: agents post `skill:<name>`; I apply them on main after the merge, rewriting or cutting rather than appending.
 
 Rule changes I make mid-sprint never reach running agents: their worktrees were cut before the change, so the board is the only channel.
 
 Recovering from a crash: check git fsck, the board and transcripts for NUL-byte tails; strip a damaged line after a backup; resume agents by ID. Rewrite meta/CURRENT.md at each milestone so a crash loses nothing. Don't suggest UI commands I haven't verified.
 
-Check the code before cutting or claiming anything; the owner caught my Google ADK mistake.
+Check the code before cutting or claiming anything; the owner caught my Google ADK mistake. Count tickets on the board, not from memory: I quoted 32 Under Review when there were 41.
+
+Memories: never touch another member's memory, not even to trim duplicates; a shared fact gets copied into an agent file or skill instead. My own memory I update whenever a lasting lesson comes up (1000-word cap, via member.py), not just at wrap-up.

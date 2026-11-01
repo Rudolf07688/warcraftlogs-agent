@@ -122,7 +122,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    skill changes in the team report and commit them with the memories.
 6. **Memory:**
    - Update the sprint status memory note.
-   - At most once per sprint, update your lead memory (`member.py remember --seat lead -`),
-     and only with a lasting lesson about how you lead. It's capped at 500 words, so cut
-     before you add. Write it in the first person.
+   - Update your lead memory (`member.py remember --seat lead -`) whenever a lasting lesson
+     about how you lead comes up, not only at wrap-up. It's capped at 1000 words, so cut
+     before you add. Write it in the first person. Never touch the other members' memories
+     (owner preference 21).
    - Commit `meta/team/lead.md` along with the team's memories.

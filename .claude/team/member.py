@@ -9,7 +9,7 @@ every worktree reads and writes the same copy. team-lead commits them at wrap-up
 
   member.py me --seat SEAT                       who you are + your memory (run this first)
   member.py claim --seat SEAT --name NAME --role ROLE --about "one line"   (lead: no --name)
-  member.py remember --seat SEAT [-|PATH]         REPLACE your memory (max 500 words)
+  member.py remember --seat SEAT [-|PATH]         REPLACE your memory (max 500 words; lead 1000)
   member.py roster                               everyone on the team, one line each
 """
 import argparse
@@ -20,6 +20,7 @@ import sys
 from datetime import date
 
 WORD_CAP = 500
+LEAD_WORD_CAP = 1000  # owner, 2026-11-01: team-lead gets a larger memory
 SEP = "\n## Memory\n"
 
 
@@ -54,6 +55,10 @@ def words(text):
     return len(re.findall(r"\S+", text))
 
 
+def cap(seat):
+    return LEAD_WORD_CAP if seat == "lead" else WORD_CAP
+
+
 def cmd_me(a):
     path = seat_file(a.seat)
     if not os.path.exists(path) and a.seat == "lead":
@@ -71,7 +76,7 @@ def cmd_me(a):
     fields, memory = parse(path)
     print(f"You are {fields['name']} ({fields['role']}, seat {a.seat}, since {fields['since']}). "
           f"{fields['about']}\nUse --as {fields['name'].lower()} on the board.\n")
-    print(f"Your memory ({words(memory)}/{WORD_CAP} words):\n{memory or '(empty)'}")
+    print(f"Your memory ({words(memory)}/{cap(a.seat)} words):\n{memory or '(empty)'}")
 
 
 def roster_rows():
@@ -105,12 +110,12 @@ def cmd_remember(a):
     src = a.file_opt or a.file
     text = sys.stdin.read() if src in (None, "-") else open(src).read()
     n = words(text)
-    if n > WORD_CAP:
-        sys.exit(f"member: {n} words is over the {WORD_CAP}-word cap. Nothing saved. "
+    if n > cap(a.seat):
+        sys.exit(f"member: {n} words is over the {cap(a.seat)}-word cap. Nothing saved. "
                  "Cut the least useful lines and try again.")
     fields, _ = parse(path)
     write(path, fields, text)
-    print(f"member: memory saved for {fields['name']} ({n}/{WORD_CAP} words)")
+    print(f"member: memory saved for {fields['name']} ({n}/{cap(a.seat)} words)")
 
 
 def cmd_roster(a):
