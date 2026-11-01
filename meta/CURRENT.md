@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-01 (sprint 2026-11-01 finished: merged, pushed, P7 adopted)
+Updated: 2026-11-01 (sprint finished: pushed, P7 adopted, stories Done, iterations closed)
 
 ## Topic
 
@@ -24,10 +24,13 @@ The agent-team redesign: persistence and autonomy. Full record in
   hand-off, prompted from the code; in `product-owner.md` §3 and `scrum-master.md` §4.
   First real test next sprint: watch whether the end sweep still finds Highs.
 
-## Waiting on the owner
+## Board state (2026-11-01)
 
-1. Which stories to move to Done (32 Under Review: iterations 161, 266, 290; sc-335).
-2. Maren's housekeeping: four active Team 1 iterations; default workflow still The Classic.
+- All 41 Under Review stories moved to Done on the owner's word (iterations 161, 254, 266,
+  290; includes the 9 epic-203 stories from 2026-10-26). All four iterations closed (end
+  dates 10-31 / 11-01). No active iteration until the next sprint creates one.
+- Still open: Team 1 default workflow is The Classic (owner's call, not raised again).
+  Epics 100 and 203 stay open: backlog QA tickets sc-318..329 and sc-214.
 
 ## Open threads
 
