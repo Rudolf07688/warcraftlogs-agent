@@ -37,8 +37,8 @@
 
 ## Phase 6: US6 sc-255 Message numbering race (P3)
 
-- [ ] T018 [US6] `backend/app/db/repository.py`: lock the conversation row in `_next_seq`
-- [ ] T019 [US6] `backend/tests/test_047_message_seq_pg.py`: two concurrent sessions on Postgres; mutate against old code; commit
+- [X] T018 [US6] `backend/app/db/repository.py`: lock the conversation row in `_next_seq`
+- [X] T019 [US6] `backend/tests/test_047_message_seq_pg.py`: two concurrent sessions on Postgres; mutate against old code; commit
 
 ## Phase 7: Hand-off
 
