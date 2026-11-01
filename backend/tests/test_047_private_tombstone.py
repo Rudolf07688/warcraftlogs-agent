@@ -15,13 +15,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from backend.app.db.models import RawFetch, RawFetchGrant
+from backend.app.db.models import RawFetch, RawFetchGrant, RawReport
 from backend.app.services import fetch_persistence, raw_fetch_reads
 from backend.app.services.fetch_persistence import PendingWrite, store_batch
 from backend.app.services.raw_fetch_reads import read_stored_fetch
 from backend.app.tenancy.context import RequestIdentity, current_identity
 from wcl_agent.client.queries import REPORT_SUMMARY, report_summaries_query
-from wcl_agent.client.wcl_client import FetchedResponse, _flight_key
+from wcl_agent.client.wcl_client import FetchedResponse, ReportGone, _flight_key
 
 NOW = datetime.now(UTC)
 ENDED = int((NOW - timedelta(days=3)).timestamp() * 1000)
@@ -117,3 +117,30 @@ async def test_a_table_requested_after_the_private_summary_is_written(patched_db
     fresh = table("Prv3", "new", NOW, requested_at=seen + timedelta(seconds=1))
     await store_batch([PendingWrite(fresh, tenant_id)])
     assert (await counts(patched_db, "Prv3"))[0] == 1
+
+
+async def test_a_stale_batch_summary_still_tombstones_and_deletes_its_private_codes(patched_db, tenant_id):
+    """P7 SEC-001: a batch sent before X was seen gone is stale, but its "Y is private" finding is
+    what WCL said when it answered: Y's rows go, Y is tombstoned, and nothing else is written."""
+    t0 = NOW - timedelta(minutes=2)
+    await store_batch([
+        PendingWrite(summary("Stl1", "public", t0), tenant_id),
+        PendingWrite(table("Stl1", "old", t0, t0), tenant_id),
+    ])
+    sent = NOW - timedelta(seconds=30)
+    await store_batch([PendingWrite(ReportGone(("Gone1",), NOW - timedelta(seconds=20)))])
+    variables = {"c0": "Gone1", "c1": "Stl1"}
+    batch = fetched(report_summaries_query(2), variables,
+                    {"reportData": {"r0": report("Gone1", "public"), "r1": report("Stl1", "private")}},
+                    NOW - timedelta(seconds=5), requested_at=sent)
+    result = await store_batch([PendingWrite(batch, tenant_id)])
+
+    assert await counts(patched_db, "Stl1") == (0, 1)  # rows gone; the old grant stays, with nothing to serve
+    assert "Stl1" in fetch_persistence._tombstones and result.changed == []
+    async with patched_db() as session:
+        assert await session.get(RawFetch, batch.query_key) is None  # the stale batch row isn't written
+        assert await session.get(RawReport, "Gone1") is None  # nor its stale "public" status
+    assert await served(tenant_id, "Stl1") is None
+    late = table("Stl1", "stale", NOW, requested_at=NOW - timedelta(seconds=10))  # under way before the batch answered
+    await store_batch([PendingWrite(late, tenant_id)])
+    assert (await counts(patched_db, "Stl1"))[0] == 0

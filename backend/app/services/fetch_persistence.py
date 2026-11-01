@@ -174,7 +174,9 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
     with that code; any other query grants its one code only when it is plain and its body
     holds the report (:func:`returned_report_code`). A fetch requested before one of its
     reports was seen gone or private writes nothing: not its row, its statuses or its grant (045
-    sc-296, 047 sc-322).
+    sc-296, 047 sc-322). Only the private findings of our own summaries still count when stale:
+    they are what WCL said at ``fetched_at``, so their codes are tombstoned and deleted anyway
+    (047 P7 SEC-001).
     """
     item = pending.item
     if isinstance(item, ReportGone):
@@ -183,20 +185,25 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
             await delete_report(session, code)
         result.gone.extend(item.codes)
         return
-    if _stale(item):
+    stale = _stale(item)
+    codes = exact_report_codes(item.query, item.variables) or []
+    summary = bool(codes) and _is_summary(item, codes)
+    if stale and not summary:
         logger.info("fetch persistence: skipped a fetch requested before its report was gone")
         return
-    if await upsert_raw_fetch(session, item):
+    if not stale and await upsert_raw_fetch(session, item):
         result.changed.append(item)
-    codes = exact_report_codes(item.query, item.variables) or []
-    gone: list[str] = []
-    if codes and _is_summary(item, codes):
+    if summary:
         statuses, gone = await _report_statuses(item, codes)
         _bury(gone, item.fetched_at)  # found private: a fetch already under way is stale too (sc-322)
-        await record_report_status(session, statuses)
+        if not stale:
+            await record_report_status(session, statuses)
         for code in gone:
             await delete_report(session, code)
         result.gone.extend(gone)
+        if stale:
+            logger.info("fetch persistence: kept only the private findings of a stale summary")
+            return
         granted = [s.code for s in statuses]
     else:
         code = returned_report_code(item.query, item.variables, item.content)
