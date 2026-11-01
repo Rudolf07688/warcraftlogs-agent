@@ -209,3 +209,15 @@ async def test_an_unscoped_chat_chunk_insert_is_refused(pg, tenants):
         db.add(chat_chunk(a, conv))
         with pytest.raises(DBAPIError, match="row-level security"):
             await db.commit()
+
+
+async def test_backfill_iterator_reads_keys_and_bodies_on_postgres(pg):
+    from backend.app.repositories.raw_fetches import list_fetch_keys, load_fetch_for_index
+
+    code = fresh()
+    key = await add_fetch(pg, code)
+    async with pg() as db:
+        keys = await list_fetch_keys(db, after=key[:-1], limit=5, summaries=False)
+        row = await load_fetch_for_index(db, key)
+    assert key in keys
+    assert row.report_codes == [code] and row.body.startswith(b"{")

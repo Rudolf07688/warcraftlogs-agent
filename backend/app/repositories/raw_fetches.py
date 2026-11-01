@@ -453,3 +453,55 @@ async def read_visible_fetch(
     """
     probe = await probe_visible_fetch(session, query_key, tenant_id=tenant_id, since=since, fresh=fresh)
     return probe.body
+
+
+# --- Knowledge base backfill (feature 043, sc-113) -------------------------------------
+
+SUMMARY_OPERATIONS = ("ReportSummary", "ReportsBatch")  # our report summary queries' names
+
+
+@dataclass(frozen=True)
+class IndexableFetch:
+    """One stored row as the knowledge base backfill chunks it. Rows keep no query text."""
+
+    query_key: str
+    operation_name: str | None
+    params: dict
+    report_codes: list[str]
+    body: bytes  # the stored JSON
+
+
+async def list_fetch_keys(
+    session: AsyncSession, *, after: str | None, limit: int, summaries: bool
+) -> list[str]:
+    """Up to ``limit`` keys of stored rows naming at least one report, in key order after
+    ``after``: our summary queries (``summaries``) or every other row. For the knowledge base
+    backfill only; it serves nothing (044's search applies :func:`fetch_visible_clause`)."""
+    summary = RawFetch.operation_name.in_(SUMMARY_OPERATIONS)
+    other = or_(~summary, RawFetch.operation_name.is_(None))
+    stmt = (
+        select(RawFetch.query_key)
+        .where(_NonEmpty(RawFetch.report_codes), summary if summaries else other)
+        .order_by(RawFetch.query_key)
+        .limit(limit)
+    )
+    if after is not None:
+        stmt = stmt.where(RawFetch.query_key > after)
+    return list(await session.scalars(stmt))
+
+
+async def load_fetch_for_index(session: AsyncSession, query_key: str) -> IndexableFetch | None:
+    """One stored row for the knowledge base backfill (body as JSON bytes), or None if gone."""
+    found = (
+        await session.execute(
+            select(
+                RawFetch.operation_name,
+                RawFetch.params,
+                RawFetch.report_codes,
+                _payload_bytes(session.bind.dialect.name),
+            ).where(RawFetch.query_key == query_key)
+        )
+    ).first()
+    if found is None:
+        return None
+    return IndexableFetch(query_key, found[0], dict(found[1] or {}), list(found[2] or []), bytes(found[3]))
