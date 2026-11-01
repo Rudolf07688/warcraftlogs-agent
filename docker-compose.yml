@@ -2,7 +2,11 @@
 # Secrets/config come from the root .env (env_file). Bring up with:  docker compose up --build
 services:
   db:
-    image: postgres:17
+    # Postgres 17 plus the pgvector extension (feature 043, knowledge base): same major
+    # version and on-disk format as postgres:17, so an existing pgdata volume starts as is.
+    # The trixie tag matches postgres:17's Debian 13 glibc (2.41); the plain pg17 tag is
+    # bookworm (2.36) and would leave a collation-version mismatch on an existing database.
+    image: pgvector/pgvector:pg17-trixie
     env_file: .env
     environment:
       # POSTGRES_USER is the owner/superuser — it owns the tables and runs Alembic
