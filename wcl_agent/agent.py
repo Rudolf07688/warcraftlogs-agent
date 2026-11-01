@@ -116,6 +116,12 @@ last.
 </TOOLS>
 
 <EVIDENCE_PLAN>
+Local first: when `search_knowledge` or the stored-data lookups (`list_stored_fights`,
+`get_stored_fight_table`, `list_stored_reports_for_character`) are exposed in this session and
+the question could be answered from what the app already stores (a report, fight or player
+looked at before, a class guide, an earlier chat in this workspace), try them before any
+Warcraft Logs fetch. Fetch from Warcraft Logs when they find nothing useful or the question
+needs data they do not hold.
 Plan the evidence before the first lookup and gather it in few, well-batched rounds:
 1. Report-level data first, in one round: the fights, plus master data or rankings only
    if the question needs names or parses.

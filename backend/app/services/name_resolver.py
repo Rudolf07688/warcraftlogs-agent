@@ -36,6 +36,7 @@ from ..db.models import KnownEncounter, KnownPlayer, UserCharacter
 logger = logging.getLogger(__name__)
 
 MAX_MATCHES = 5
+_ECHO_CHARS = 60  # the input is echoed in the error text, cut to this length
 _KNOWN_PLAYERS_SCAN = 2000  # newest known players considered for a name
 
 # Abbreviations players use. Targets are roster filter values; an alias whose target the
@@ -97,10 +98,11 @@ class ResolutionError(ValueError):
         self.value = value
         self.reason = reason
         self.matches = tuple(dict.fromkeys(matches))[:MAX_MATCHES]
+        shown = value if len(value) <= _ECHO_CHARS else value[: _ECHO_CHARS - 1] + "…"
         if reason == "ambiguous":
-            message = f'Ambiguous {field} "{value}": it could be {", ".join(self.matches)}. Say which one.'
+            message = f'Ambiguous {field} "{shown}": it could be {", ".join(self.matches)}. Say which one.'
         else:
-            message = f'Unknown {field} "{value}".'
+            message = f'Unknown {field} "{shown}".'
             if self.matches:
                 message += f" Close matches: {', '.join(self.matches)}."
         super().__init__(message)
@@ -264,7 +266,7 @@ def _difficulty_word(value: str) -> int | None:
 def resolve_difficulty(value: str | int) -> ResolvedDifficulty:
     """"hc", "Heroic" or 4 to 4 Heroic; "m+", "mythic+" or 10 to 10 Mythic+; LFR 1, Normal 3, Mythic 5."""
     text = str(value).strip()
-    found = int(text) if text.isdigit() else _difficulty_word(text)
+    found = int(text) if text.isascii() and text.isdigit() else _difficulty_word(text)
     if found in DIFFICULTY_NAMES:
         return ResolvedDifficulty(found, DIFFICULTY_NAMES[found])
     raise ResolutionError(
@@ -339,7 +341,7 @@ async def resolve_encounter(
     """
     text = str(value).strip()
     candidates = await _encounter_candidates(session, tenant_id)
-    if text.isdigit():
+    if text.isascii() and text.isdigit():
         by_id = [c for c in candidates if c.id == int(text)]
         if by_id:
             return by_id[0], None

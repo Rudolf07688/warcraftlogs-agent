@@ -13,7 +13,7 @@ Registered as `KB_TOOLS = ToolGroup("Stored knowledge", (search_knowledge,))` in
 | `spec` | enum of roster specs (`Arms`, `BeastMastery`, …) | soft unless stated; alone = every class with it |
 | `encounter` | string (name or id) | resolved; soft unless stated |
 | `difficulty` | enum `LFR` \| `Normal` \| `Heroic` \| `Mythic` \| `Mythic+` | never relaxed |
-| `report_code` | string `^[A-Za-z0-9]{1,32}$` | hard |
+| `report_code` | string `^[A-Za-z0-9]{1,32}$` | hard; implies kind `wcl` (guide/chat with it is an error) |
 | `character` | string (name or `Name-Realm`) | resolved against the workspace; never relaxed |
 | `since`, `until` | ISO date or datetime (UTC) | soft unless stated; relaxed together |
 | `k` | int 1–15, default 8 | |

@@ -17,7 +17,7 @@ Throwaway pgvector container on port 15444 (never `docker compose`, never 5432).
 
 ```bash
 docker run -d --rm --name wcl-044-pg -e POSTGRES_USER=wcl -e POSTGRES_PASSWORD=wcl \
-  -e POSTGRES_DB=wcl -p 15444:5432 pgvector/pgvector:pg17
+  -e POSTGRES_DB=wcl -p 15444:5432 pgvector/pgvector:pg17-trixie
 # migrate as the owner role, test as the runtime role (039 quickstart §2 for the role setup)
 env -i HOME=$HOME PATH=$PATH DATABASE_URL=postgresql+asyncpg://wcl:wcl@localhost:15444/wcl \
   uv run alembic -c backend/alembic.ini upgrade head
@@ -29,14 +29,19 @@ docker stop wcl-044-pg   # disk is tight: always stop it
 
 ## Eval
 
-```bash
-# CI mode (stand-in or recorded embeddings; reports recall@k per mode and latency)
-env -i HOME=$HOME PATH=$PATH TEST_DATABASE_URL=… uv run python -m backend.evals.kb run --k 8
+`run` and `live` seed fake public reports, global guide chunks and a workspace, and never clean
+up, so they need `--db` naming a throwaway eval database and refuse the app's
+`DATABASE_URL` / `DATABASE_OWNER_URL` (P7 SEC-005). Use the container above.
 
-# team-lead only, live (real embedder; capped at ~300 texts): writes backend/evals/kb/embeddings.json
+```bash
+EVAL_DB=postgresql+asyncpg://wcl_app:wcl_app@localhost:15444/wcl
+# recall@k per mode and latency (stand-in, or the recorded set if embeddings.json exists)
+env -i HOME=$HOME PATH=$PATH uv run python -m backend.evals.kb run --db $EVAL_DB --k 8
+
+# team-lead only, live (real embedder, about 75 texts): writes backend/evals/kb/embeddings.json
 uv run python -m backend.evals.kb record
 # team-lead only, live (cheapest chat model, capped): filter accuracy + local-answer rate
-uv run python -m backend.evals.kb live --max-questions 30
+uv run python -m backend.evals.kb live --db $EVAL_DB --max-questions 30
 ```
 
 ## Owner live check (team-lead, sprint end)
