@@ -328,3 +328,68 @@ async def test_pending_drop_counts_are_flushed_on_stop(caplog):
     drops = [m for m in warnings(caplog) if "queue full" in m]
     assert drops == ["fetch persistence: queue full, dropped 1 response(s)",
                      "fetch persistence: queue full, dropped 2 response(s)"]
+
+
+# --- feature 045 (sc-295 PERF-005, contract 5): fewer round trips per item ---------------
+
+
+PLAIN_Q = "query ReportQ($code: String!) { reportData { report(code: $code) { table } } }"
+
+
+def granting(code: str, n: int, at: datetime | None = None) -> FetchedResponse:
+    """A plain report query whose body holds the report: it grants ``code`` (041 fix 2)."""
+    body = json.dumps({"data": {"reportData": {"report": {"table": n}}}}).encode()
+    variables = {"code": code, "n": n}
+    return FetchedResponse(f"grant-{code}-{n}", PLAIN_Q, variables, body, at or datetime.now(UTC))
+
+
+async def test_a_batch_scopes_each_tenant_once_and_skips_grants_it_just_wrote(
+    patched_db, monkeypatch, tenant_id, other_tenant_id
+):
+    from backend.app.repositories import raw_fetches
+    from backend.app.services import fetch_persistence
+
+    scopes: list = []
+    grants: list = []
+    real_grant = raw_fetches.grant_codes
+
+    async def scope(session, tenant):
+        scopes.append(tenant)
+
+    async def grant(session, tenant, codes, at):
+        grants.append((tenant, list(codes)))
+        await real_grant(session, tenant, codes, at)
+
+    monkeypatch.setattr(fetch_persistence, "scope_tenant", scope)
+    monkeypatch.setattr(fetch_persistence, "grant_codes", grant)
+    batch = [PendingWrite(granting("Pf1", i), tenant_id) for i in range(5)]
+    batch += [PendingWrite(granting("Pf1", 9), other_tenant_id), PendingWrite(granting("Pf2", 1), tenant_id),
+              PendingWrite(granting("Pf3", 1), tenant_id)]
+    result = await store_batch(batch)
+    assert scopes == [tenant_id, other_tenant_id, tenant_id]  # once per tenant switch, not per item
+    assert grants == [(tenant_id, ["Pf1"]), (other_tenant_id, ["Pf1"]), (tenant_id, ["Pf2"]), (tenant_id, ["Pf3"])]
+    assert len(result.changed) == 8 and result.gone == []
+
+
+async def test_an_unchanged_body_is_not_reported_changed(patched_db):
+    first = item("Same1")
+    assert [i.query_key for i in (await store_batch([PendingWrite(first)])).changed] == [first.query_key]
+    again = FetchedResponse(first.query_key, first.query, first.variables, first.content, datetime.now(UTC))
+    assert (await store_batch([PendingWrite(again)])).changed == []
+
+
+async def test_a_grant_younger_than_an_hour_is_not_rewritten(patched_db, tenant_id):
+    from datetime import timedelta
+
+    from backend.app.db.models import RawFetchGrant
+
+    t0 = datetime.now(UTC) - timedelta(hours=3)
+    await store_batch([PendingWrite(granting("Gr1", 1, t0), tenant_id)])
+    await store_batch([PendingWrite(granting("Gr1", 2, t0 + timedelta(minutes=30)), tenant_id)])
+    async with patched_db() as session:
+        kept = await session.scalar(select(RawFetchGrant.granted_at))
+    assert kept.replace(tzinfo=UTC) == t0  # 30 min newer: left alone
+    await store_batch([PendingWrite(granting("Gr1", 3, t0 + timedelta(hours=2)), tenant_id)])
+    async with patched_db() as session:
+        moved = await session.scalar(select(RawFetchGrant.granted_at))
+    assert moved.replace(tzinfo=UTC) == t0 + timedelta(hours=2)

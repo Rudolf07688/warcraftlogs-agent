@@ -5,9 +5,11 @@ client's injected ``data._cost`` field. No Python JSON work on a multi-MB body e
 the event loop (020 research R3).
 
 Feature 039: this is the ONLY module that reads ``raw_fetches`` (a guard test enforces it).
-:func:`read_visible_fetch` applies the visibility rule — a row is served to a tenant only when
-every report it names is public or granted to that tenant, both confirmed recently — so DB-first
-reads and later search work can't bypass it (specs/039-local-first-data/data-model.md).
+:func:`fetch_visible_clause` is the one definition of the visibility rule — a row is served to a
+tenant only when every report it names is public or granted to that tenant, both confirmed
+recently — and every read goes through it (:func:`probe_visible_fetch`, 044's search join), so
+DB-first reads and search can't bypass it (specs/039-local-first-data/data-model.md, 045
+contracts/visibility-clause.md).
 """
 
 from __future__ import annotations
@@ -18,11 +20,31 @@ import re
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 
-from sqlalchemy import Text, cast, delete, func, literal, select, text, update
+from sqlalchemy import (
+    Boolean,
+    LargeBinary,
+    Text,
+    and_,
+    case,
+    cast,
+    delete,
+    exists,
+    func,
+    literal,
+    literal_column,
+    not_,
+    or_,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from wcl_agent.client.wcl_client import (
@@ -41,6 +63,7 @@ _UPDATED = ("operation_name", "params", "report_code", "report_codes", "fetched_
 MAX_CODE = 32  # raw_reports.code / raw_fetch_grants.report_code; longer codes are never visible
 MAX_OPERATION = 120  # raw_fetches.operation_name
 _OFF_LOOP_BYTES = 256_000  # hashing / scanning bigger bodies runs in a thread
+GRANT_REFRESH = timedelta(hours=1)  # a grant younger than this isn't rewritten (045 PERF-005)
 # A JSON escape sequence: an escaped backslash (kept) or \u0000, which JSONB rejects (dropped).
 _ESCAPE_RE = re.compile(rb"\\(\\|u0000)")
 
@@ -75,7 +98,7 @@ def _payload(dialect: str, body: str) -> ColumnElement:
 _STRING_RE = re.compile(r'"([^"\\]*)"')
 
 
-def _stored_codes(query: str, variables: dict) -> list[str]:
+def stored_codes(query: str, variables: dict) -> list[str]:
     """The codes a row is filed under, so delete-on-gone finds it (041 BUG-007).
 
     Exact when the strict parser resolves the query. When it can't but the query names a
@@ -100,13 +123,14 @@ def _prepare(content: bytes) -> tuple[str, bytes]:
     return digest, content
 
 
-async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> None:
+async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> bool:
     """Store one fetch; a row with the same ``query_key`` is replaced only by a newer fetch.
 
     An unchanged body (same hash) only moves ``fetched_at`` forward: the payload is neither
     sent nor rewritten (sc-177). Overlong labels never fail the insert: the operation name is
     truncated, and a code over :data:`MAX_CODE` leaves ``report_code`` empty (it stays in
-    ``report_codes``, so deletion still finds it).
+    ``report_codes``, so deletion still finds it). Returns whether the stored payload changed
+    (inserted or replaced; contract 5, 043's post-store hook).
     """
     if len(fetched.content) > _OFF_LOOP_BYTES:
         digest, body = await asyncio.to_thread(_prepare, fetched.content)
@@ -121,8 +145,8 @@ async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> N
             .where(RawFetch.query_key == fetched.query_key, RawFetch.fetched_at < fetched.fetched_at)
             .values(fetched_at=fetched.fetched_at)
         )
-        return
-    codes = _stored_codes(fetched.query, fetched.variables)
+        return False
+    codes = stored_codes(fetched.query, fetched.variables)
     exact = exact_report_codes(fetched.query, fetched.variables)
     single = codes[0] if exact and len(codes) == 1 and len(codes[0]) <= MAX_CODE else None
     op = operation_name(fetched.query)
@@ -140,8 +164,8 @@ async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> N
         index_elements=["query_key"],
         set_={col: stmt.excluded[col] for col in _UPDATED},
         where=RawFetch.fetched_at < stmt.excluded.fetched_at,
-    )
-    await session.execute(stmt)
+    ).returning(RawFetch.query_key)
+    return (await session.execute(stmt)).first() is not None
 
 
 # --- Visibility (feature 039) -------------------------------------------------------
@@ -153,6 +177,8 @@ async def grant_codes(
     """Record that ``tenant_id`` fetched these codes from WCL itself at ``at``.
 
     ``raw_fetch_grants`` is under RLS: the caller sets the transaction's tenant scope first.
+    A stored grant less than :data:`GRANT_REFRESH` older than ``at`` is left alone, so a
+    report fetched again and again doesn't rewrite its grant row each time (045 PERF-005).
     """
     rows = [
         {"tenant_id": tenant_id, "report_code": code, "granted_at": at}
@@ -165,7 +191,7 @@ async def grant_codes(
     stmt = stmt.on_conflict_do_update(
         index_elements=["tenant_id", "report_code"],
         set_={"granted_at": stmt.excluded.granted_at},
-        where=RawFetchGrant.granted_at < stmt.excluded.granted_at,
+        where=RawFetchGrant.granted_at < literal(at - GRANT_REFRESH, RawFetchGrant.granted_at.type),
     )
     await session.execute(stmt)
 
@@ -212,21 +238,146 @@ async def delete_report(session: AsyncSession, code: str) -> int:
     return result.rowcount or 0
 
 
-async def read_visible_fetch(
+async def scope_tenant(session: AsyncSession, tenant_id: uuid.UUID | None) -> None:
+    """Set the transaction's ``app.tenant_id`` for the grants' RLS in one statement (Postgres
+    only). ``app.user_id`` stays unset: no raw-store policy reads it (0018)."""
+    if session.bind.dialect.name == "postgresql":
+        await session.execute(
+            text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id) if tenant_id else ""}
+        )
+
+
+class _CodesVisible(ColumnElement[bool]):
+    """Every element of a ``report_codes`` array is a visible code (see :func:`fetch_visible_clause`).
+
+    Compiled per dialect, because walking a JSON array differs: ``jsonb_array_elements`` on
+    Postgres, ``json_each`` on SQLite.
+    """
+
+    type = Boolean()
+    inherit_cache = False
+
+    def __init__(self, codes: ColumnElement, tenant_id: uuid.UUID | None, since: datetime):
+        self.codes, self.tenant_id, self.since = codes, tenant_id, since
+
+
+def _codes_visible(element: _CodesVisible, postgres: bool) -> ColumnElement[bool]:
+    if postgres:
+        each = func.jsonb_array_elements(element.codes).table_valued("value").alias("vis_code")
+        is_string = func.jsonb_typeof(each.c.value) == "string"
+        code = each.c.value.op("#>>", return_type=Text)(literal_column("'{}'"))
+    else:
+        each = func.json_each(element.codes).table_valued("value", "type").alias("vis_code")
+        is_string = each.c.type == "text"
+        code = each.c.value
+    since = literal(element.since, RawReport.checked_at.type)
+    allowed = exists().where(
+        RawReport.code == code, RawReport.visibility == "public", RawReport.checked_at >= since
+    )
+    if element.tenant_id is not None:
+        allowed = or_(
+            allowed,
+            exists().where(
+                RawFetchGrant.tenant_id == element.tenant_id,
+                RawFetchGrant.report_code == code,
+                RawFetchGrant.granted_at >= since,
+            ),
+        )
+    ok = and_(is_string, func.length(code) >= 1, func.length(code) <= MAX_CODE, allowed)
+    return not_(exists(select(literal(1)).select_from(each).where(not_(ok))))
+
+
+@compiles(_CodesVisible, "postgresql")
+def _compile_pg(element, compiler, **kw):
+    return compiler.process(_codes_visible(element, postgres=True), **kw)
+
+
+@compiles(_CodesVisible)
+def _compile_default(element, compiler, **kw):
+    return compiler.process(_codes_visible(element, postgres=False), **kw)
+
+
+class _NonEmpty(ColumnElement[bool]):
+    """A JSON array with at least one element (per dialect, like :class:`_CodesVisible`)."""
+
+    type = Boolean()
+    inherit_cache = False
+
+    def __init__(self, codes: ColumnElement):
+        self.codes = codes
+
+
+@compiles(_NonEmpty, "postgresql")
+def _compile_non_empty_pg(element, compiler, **kw):
+    return compiler.process(func.jsonb_array_length(element.codes) > 0, **kw)
+
+
+@compiles(_NonEmpty)
+def _compile_non_empty(element, compiler, **kw):
+    return compiler.process(func.json_array_length(element.codes) > 0, **kw)
+
+
+def fetch_visible_clause(
+    raw_fetch_id: ColumnElement[str] | str, *, tenant_id: uuid.UUID | None, since: datetime
+) -> ColumnElement[bool]:
+    """The 039 visibility rule in SQL: the ONE definition (045 contract 3).
+
+    True when the ``raw_fetches`` row with ``query_key = raw_fetch_id`` exists, names at least
+    one report, every code is at most :data:`MAX_CODE` long, and every code is public (checked
+    at or after ``since``) or granted to ``tenant_id`` at or after ``since``. ``tenant_id``
+    None sees public reports only. Freshness is the caller's rule. On Postgres the caller's
+    transaction carries the tenant scope (:func:`scope_tenant`; grants are RLS'd).
+    """
+    row = aliased(RawFetch, name="vis_fetch")
+    return exists().where(
+        row.query_key == raw_fetch_id,
+        _NonEmpty(row.report_codes),
+        _CodesVisible(row.report_codes, tenant_id, since),
+    )
+
+
+ProbeOutcome = Literal["hit", "miss", "not_visible"]
+
+
+@dataclass(frozen=True)
+class Probe:
+    """What one store read found. ``body`` (JSON bytes) only on a hit; ``shared`` when every
+    code is public, so the body may go to the shared, tenant-less Redis cache (sc-296)."""
+
+    outcome: ProbeOutcome
+    body: bytes | None = None
+    shared: bool = False
+
+
+_MISS = Probe("miss")
+
+
+def _payload_bytes(dialect: str) -> ColumnElement[bytes]:
+    """The stored JSON as bytes, so no text decode/encode runs on the event loop (PERF-006)."""
+    if dialect == "postgresql":
+        return func.convert_to(cast(RawFetch.payload, Text), "UTF8", type_=LargeBinary)
+    return cast(RawFetch.payload, LargeBinary)
+
+
+async def probe_visible_fetch(
     session: AsyncSession,
     query_key: str,
     *,
     tenant_id: uuid.UUID | None,
     since: datetime,
     fresh: Freshness,
-) -> str | None:
-    """The stored body for ``query_key`` as JSON text, or None. The ONE read of the store.
+) -> Probe:
+    """Read ``query_key`` through the visibility rule, in at most four statements (045 PERF-002).
 
-    Served only when every report the row names (codes up to :data:`MAX_CODE`) is public or
-    granted to ``tenant_id``, each confirmed at or after ``since``, and ``fresh(fetched_at,
-    statuses)`` holds (one status per code, in order). A row naming no report is public WCL data, reachable only by its exact
-    key; whether it is fresh is the caller's rule. ``tenant_id`` None sees public reports
-    only. On Postgres the caller's transaction carries the tenant scope (grants are RLS'd).
+    1. the row's codes and ``fetched_at`` (no row: a miss, nothing else runs);
+    2. the codes' ``raw_reports`` statuses, for ``fresh(fetched_at, statuses)`` (one status per
+       code, in order; not fresh: a miss);
+    3. the tenant scope, only when a code isn't publicly confirmed (grants are RLS'd);
+    4. :func:`fetch_visible_clause` for the tenant and for "public only", and the payload when
+       visible, pinned to the ``fetched_at`` of step 1 (a row replaced meanwhile is a miss).
+
+    A row naming no report is public WCL data whose freshness is the caller's rule; the
+    visibility clause never serves it. ``tenant_id`` None sees public reports only.
     """
     row = (
         await session.execute(
@@ -234,32 +385,49 @@ async def read_visible_fetch(
         )
     ).first()
     if row is None:
-        return None
+        return _MISS
     codes = list(row.report_codes or [])
-    if any(not isinstance(c, str) or not 0 < len(c) <= MAX_CODE for c in codes):
-        return None
+    if not codes or any(not isinstance(c, str) or not 0 < len(c) <= MAX_CODE for c in codes):
+        return Probe("not_visible")
     statuses: dict[str, ReportStatus] = {}
-    if codes:
-        for r in await session.scalars(select(RawReport).where(RawReport.code.in_(codes))):
-            statuses[r.code] = ReportStatus(
-                r.code, r.visibility, r.end_time_ms, _aware(r.checked_at)
-            )
-        granted: set[str] = set()
-        if tenant_id is not None:
-            granted = set(
-                await session.scalars(
-                    select(RawFetchGrant.report_code).where(
-                        RawFetchGrant.tenant_id == tenant_id,
-                        RawFetchGrant.report_code.in_(codes),
-                        RawFetchGrant.granted_at >= since,
-                    )
-                )
-            )
-        for code in codes:
-            status = statuses.get(code)
-            public = status is not None and status.visibility == "public" and status.checked_at >= since
-            if not public and code not in granted:
-                return None
+    for r in await session.scalars(select(RawReport).where(RawReport.code.in_(codes))):
+        statuses[r.code] = ReportStatus(r.code, r.visibility, r.end_time_ms, _aware(r.checked_at))
     if not fresh(_aware(row.fetched_at), [statuses.get(c) for c in codes]):
-        return None
-    return await session.scalar(select(cast(RawFetch.payload, Text)).where(RawFetch.query_key == query_key))
+        return _MISS
+    public = all(
+        (s := statuses.get(c)) is not None and s.visibility == "public" and s.checked_at >= since for c in codes
+    )
+    if tenant_id is not None and not public:
+        await scope_tenant(session, tenant_id)
+    visible = fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since)
+    found = (
+        await session.execute(
+            select(
+                visible,
+                fetch_visible_clause(RawFetch.query_key, tenant_id=None, since=since),
+                case((visible, _payload_bytes(session.bind.dialect.name))),
+            ).where(RawFetch.query_key == query_key, RawFetch.fetched_at == row.fetched_at)
+        )
+    ).first()
+    if found is None:
+        return _MISS
+    if not found[0]:
+        return Probe("not_visible")
+    return Probe("hit", bytes(found[2]), bool(found[1]))
+
+
+async def read_visible_fetch(
+    session: AsyncSession,
+    query_key: str,
+    *,
+    tenant_id: uuid.UUID | None,
+    since: datetime,
+    fresh: Freshness,
+) -> bytes | None:
+    """The stored body for ``query_key`` as JSON bytes, or None: :func:`probe_visible_fetch`'s
+    body. Served only when every report the row names (codes up to :data:`MAX_CODE`) is public
+    or granted to ``tenant_id``, each confirmed at or after ``since``, and ``fresh(fetched_at,
+    statuses)`` holds. On Postgres the scope is set here when a grant is needed.
+    """
+    probe = await probe_visible_fetch(session, query_key, tenant_id=tenant_id, since=since, fresh=fresh)
+    return probe.body

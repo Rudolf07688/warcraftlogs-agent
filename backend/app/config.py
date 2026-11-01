@@ -199,6 +199,9 @@ class Settings(BaseSettings):
     # most this plus the Redis TTL (24 h), so keep it short (039 research R9).
     wcl_store_reads_enabled: bool = True
     raw_store_reverify_days: int = 1
+    # feature 045 (PERF-001): a store read costs at most this, then the query goes to WCL; a
+    # timeout or connection error also keeps the store out of the way for 30 s.
+    raw_store_probe_timeout_ms: int = 400
 
     # feature 013: welcome-page recent raids. A refresh starts at most every
     # `refresh_min_s`; a `running` claim older than `stale_s` is reclaimable (crash/restart).
