@@ -15,9 +15,12 @@ Rules:
   the report to that workspace exactly as its own chat turn would, and the store answers only
   what that workspace may see (the 039 rule). It is no chat turn: there is no refresh actor
   (it never forces a refresh) and no turn to count.
-* At most 1 + :data:`MAX_BOSS_TABLES` Warcraft Logs requests, in the background lane (at most
-  ``WCL_BACKGROUND_CONCURRENCY`` at once, yielding to chat turns); it never delays the response,
-  and a failure is only logged.
+* At most 1 + :data:`MAX_BOSS_TABLES` Warcraft Logs requests; it never delays the response, and
+  a failure is only logged. The boss tables run in the background lane (at most
+  ``WCL_BACKGROUND_CONCURRENCY`` at once, yielding to chat turns); a chat turn that joins one of
+  them in flight promotes it to the interactive lane (048). The summary is the kickoff turn's
+  own first call and is shared through the cache's single-flight, which a joiner can't promote,
+  so it is loaded in the interactive lane: the turn never waits on a background slot for it.
 * One job per (workspace, report) per :data:`COOLDOWN_S`: a repeat click within it starts
   nothing (P7-046 SEC-001). The cooldown is in-process: each app instance keeps its own.
 * Only when store reads are on and the store is installed as the client's fetch source: without
@@ -67,11 +70,11 @@ async def prefetch(identity: RequestIdentity, report_code: str) -> None:
     """Warm the report summary and its per-boss Summary tables as ``identity``'s workspace."""
     current_identity.set(identity)  # a fresh context (background.spawn): this task only
     try:
+        summary = await load_report_summary(report_code)
+        if summary is None:
+            return
+        fights = pick_boss_fights(summary)
         with background_lane():
-            summary = await load_report_summary(report_code)
-            if summary is None:
-                return
-            fights = pick_boss_fights(summary)
             results = await asyncio.gather(
                 *(get_report_table(report_code, BOSS_TABLE, fight_id=fight_id) for fight_id in fights)
             )

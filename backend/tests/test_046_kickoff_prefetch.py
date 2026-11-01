@@ -52,13 +52,14 @@ class _FakeWcl:
     def __init__(self, monkeypatch, summary=None, fail: Exception | None = None):
         self.summaries: list[uuid.UUID | None] = []
         self.tables: list[tuple[str, str, int, uuid.UUID | None]] = []
-        self.lanes: set[str] = set()
+        self.lanes: set[str] = set()  # the tables'
+        self.summary_lanes: set[str] = set()
         self.gate: asyncio.Event | None = None
         self.summary = summary or _summary((2, 100, 4, True), (5, 200, 4, False))
 
         async def load(code):
             self.summaries.append(_tenant())
-            self.lanes.add(wcl_client._lane.get())
+            self.summary_lanes.add(wcl_client._lane.get())
             if self.gate is not None:
                 await self.gate.wait()
             if fail is not None:
@@ -106,6 +107,7 @@ async def test_a_click_pre_fetches_once_as_the_workspace(as_user, session_factor
     assert wcl.tables == [("RECENT1", "Summary", 2, as_user.tenant_id), ("RECENT1", "Summary", 5, as_user.tenant_id)]
     assert current_identity.get() is None  # nothing leaks into the request's own context
     assert wcl.lanes == {"background"}  # capped, and yields to chat turns (P7-046 SEC-001)
+    assert wcl.summary_lanes == {"interactive"}  # the turn's own first call, shared via the cache (048)
 
 
 async def test_a_repeat_click_within_the_cooldown_starts_nothing(

@@ -29,7 +29,7 @@ Order: sc-334 → sc-302 → sc-328 → sc-339 (drop sc-339 first if short). Tes
 ## Phase 5: US4 Recent-raid kickoff (sc-339)
 
 - [X] T013 [US4] New backend/app/services/kickoff_prefetch.py: `pick_boss_fights`, `prefetch`, `schedule` (background.spawn, identity, bound 10, errors logged)
-- [X] T014 [US4] Schedule the pre-fetch after the 404 rule when the fetch writer runs, in backend/app/api/raids.py
+- [X] T014 [US4] Schedule the pre-fetch after the 404 rule when the fetch writer runs, in backend/app/api/raids.py (as built: `kickoff_prefetch.schedule` gates on store reads + installed store, 10-min cooldown; raids.py just calls it — P7-046)
 - [X] T015 [US4] `<RECENT_RAID_KICKOFF>` playbook in wcl_agent/agent.py
 - [X] T016 [US4] Tests (fires once per click, dedupes concurrent clicks, swallows errors, acts as the workspace, bound, 404 fetches nothing, playbook text) in backend/tests/test_046_kickoff_prefetch.py; mutate.py bite
 

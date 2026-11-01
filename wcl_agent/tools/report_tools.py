@@ -109,6 +109,7 @@ TOO_LARGE_NOTE = (
 )
 _SORT_KEYS = ("total", "totalUptime")
 _LEAD_KEYS = ("name", "id", "class", "spec", "total", "per_second")
+_ROW_LIST_KEYS = ("entries", "details")  # a row's own rows, not a per-row breakdown
 
 
 def _scalar(value: Any) -> bool:
@@ -119,9 +120,14 @@ def _number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _compact_row(row: dict[str, Any], seconds: float | None) -> dict[str, Any]:
-    """A row's plain fields; ``icon`` "Class-Spec" becomes class/spec; ``{name}`` dicts their name."""
+def _compact_row(row: dict[str, Any], n: int, seconds: float | None) -> tuple[dict[str, Any], int]:
+    """A row's plain fields; ``icon`` "Class-Spec" becomes class/spec; ``{name}`` dicts their name.
+
+    Its nested row lists (``entries``/``details``: the Interrupts and Dispels shapes, where a
+    wrapper row holds the real rows) are cut to their top rows too, never dropped (048); returns
+    the row and the rows they left out."""
     out: dict[str, Any] = {}
+    omitted = 0
     for key, value in row.items():
         if key == "icon":
             continue
@@ -129,6 +135,9 @@ def _compact_row(row: dict[str, Any], seconds: float | None) -> dict[str, Any]:
             out[key] = value
         elif isinstance(value, dict) and isinstance(value.get("name"), str):
             out[key] = value["name"]  # e.g. a death's killing ability
+        elif key in _ROW_LIST_KEYS and isinstance(value, list):
+            out[key], out[f"{key}_omitted"], inner = _top_rows(value, n, seconds)
+            omitted += out[f"{key}_omitted"] + inner
     icon, kind = row.get("icon"), row.get("type")
     if isinstance(icon, str) and isinstance(kind, str) and icon.startswith(f"{kind}-"):
         del out["type"]
@@ -136,19 +145,25 @@ def _compact_row(row: dict[str, Any], seconds: float | None) -> dict[str, Any]:
     if seconds and _number(row.get("total")):
         out["per_second"] = round(row["total"] / seconds, 1)
     lead = {k: out.pop(k) for k in _LEAD_KEYS if k in out}
-    return {**lead, **out}
+    return {**lead, **out}, omitted
 
 
-def _top_rows(rows: list[Any], n: int, seconds: float | None) -> tuple[list[Any], int]:
-    """The top ``n`` rows (by the first sort key the rows carry) and how many were left out."""
+def _top_rows(rows: list[Any], n: int, seconds: float | None) -> tuple[list[Any], int, int]:
+    """The top ``n`` rows (by the first sort key the rows carry), how many were left out, and
+    how many the kept rows' nested row lists left out."""
     dicts = [r for r in rows if isinstance(r, dict)]
     if not dicts:
         kept = [r for r in rows if _scalar(r)][:n]
-        return kept, len(rows) - len(kept)
+        return kept, len(rows) - len(kept), 0
     key = next((k for k in _SORT_KEYS if any(_number(r.get(k)) for r in dicts)), None)
     if key is not None:
         dicts.sort(key=lambda r: r.get(key) if _number(r.get(key)) else float("-inf"), reverse=True)
-    return [_compact_row(r, seconds) for r in dicts[:n]], len(rows) - min(n, len(dicts))
+    kept, inner = [], 0
+    for row in dicts[:n]:
+        compacted, row_omitted = _compact_row(row, n, seconds)
+        kept.append(compacted)
+        inner += row_omitted
+    return kept, len(rows) - min(n, len(dicts)), inner
 
 
 def _compact_level(level: dict[str, Any], n: int, seconds: float | None, depth: int) -> tuple[dict[str, Any], int]:
@@ -160,8 +175,8 @@ def _compact_level(level: dict[str, Any], n: int, seconds: float | None, depth: 
         if _scalar(value):
             out[key] = value
         elif isinstance(value, list):
-            out[key], out[f"{key}_omitted"] = _top_rows(value, n, seconds)
-            omitted += out[f"{key}_omitted"]
+            out[key], out[f"{key}_omitted"], inner = _top_rows(value, n, seconds)
+            omitted += out[f"{key}_omitted"] + inner
         elif isinstance(value, dict) and depth == 0:
             out[key], inner = _compact_level(value, n, seconds, depth + 1)
             omitted += inner
