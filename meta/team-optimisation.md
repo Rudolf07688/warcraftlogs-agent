@@ -342,6 +342,28 @@ coordinated less (9 messages). Team-lead posts `phase:<meta|live|wrap>` notices 
 board, and `usage.py` splits the main session at those timestamps. The baseline then
 compares team coordination only.
 
+### P9. Tools over rules (implemented 2026-11-01, trial next sprint)
+
+- **Evidence:** "green that wasn't" recurred for three members although `developer.md` said
+  to read the summary line; about half of the developers' memory lines were hand-written
+  recipes (clean suite run, throwaway Postgres, mutation check, GitNexus false alarms,
+  guard tests); 19 of 40 messages last sprint were team-lead wake-ups. Rules in prose don't
+  hold under pressure, and members memorise what the toolkit should do.
+- **Built:** `check.py` (clean run, reads the summary, receipt per git tree, `verify --index`
+  lets a merger reuse a receipt for an identical merged tree; refuses a tree with `.env`),
+  `pg.py`, `mutate.py` (verified restore, crash-safe backup), `guards.py` (6 guards found
+  from the tests themselves), `board.py wait` (probe: a sub-agent's own background job
+  re-invokes it ~3 s after it exits), `member.py lint` (read-only; preference 21 holds),
+  `.gitnexusignore` (GitNexus skipped `wcl_agent/cache/` by its default `cache` rule).
+- **Measured cost:** none of it runs in the per-tool-call hook (40 ms). Full suite 101 s in a
+  clean worktree; `pg.py up` 6 s; `wait` polls a file every 3 s.
+- **Found on the way:** sc-336, the suite reads the real `.env` in the main checkout
+  (21 failures, live Model Garden calls). It was a known workaround in team-launch, never a
+  ticket.
+- **Measure next sprint:** "green that wasn't" count (target 0); team-lead wake-ups (target
+  only fallbacks); merges that reused a receipt; memory lines flagged by `lint` before and
+  after wrap-up.
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -515,3 +537,8 @@ through respawns as the same named member, with its own small, curated memory. I
   CURRENT.md). Practice adopted on trial: one session per sprint and separate sessions for
   meta talks, with CURRENT.md rewritten as the hand-off before each boundary. Test: does a
   fresh session repeat anything already settled? Each slip is a missing line in a file.
+- **2026-11-01 (fresh meta session, tools over rules):** First fresh-session hand-off held:
+  nothing settled was re-asked. The owner asked for a reflection on the team's tools, then
+  for the scripts. Built P9 (above), updated `developer.md`, `product-owner.md`,
+  `scrum-master.md` and `team-launch`; filed sc-336; added the prompt-size test idea to
+  sc-334.

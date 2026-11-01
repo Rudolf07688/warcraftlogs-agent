@@ -14,7 +14,7 @@ tooling. Nothing in here is about the WCL app itself; project work lives in
 | `team/` | The persistent team members: one file per seat, with a self-chosen name and a memory capped at 500 words (the lead seat: 1000). Written by the agents through `.claude/team/member.py`. |
 | `agent-team/` | The owner's original team prompt and the first role notes (`team-00-*`) |
 
-Agent-facing helpers live in `.claude/team/`: `board.py`, `member.py`, `usage.py` and `meta_context.py`.
+Agent-facing helpers live in `.claude/team/`: `board.py` (incl. `wait`), `member.py` (incl. `lint`), `check.py` (clean suite runs with receipts), `pg.py` (throwaway Postgres), `mutate.py` (mutation checks), `guards.py` (architecture guard tests), `livecheck.py`, `boardwatch.py`, `usage.py` and `meta_context.py`.
 
 ## How meta knowledge survives
 

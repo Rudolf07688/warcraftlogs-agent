@@ -11,6 +11,8 @@ every worktree reads and writes the same copy. team-lead commits them at wrap-up
   member.py claim --seat SEAT --name NAME --role ROLE --about "one line"   (lead: no --name)
   member.py remember --seat SEAT [-|PATH]         REPLACE your memory (max 500 words; lead 1000)
   member.py roster                               everyone on the team, one line each
+  member.py lint --seat SEAT | --all             read-only: memory lines that repeat the shared
+                                                 files or that a team tool now covers
 """
 import argparse
 import os
@@ -127,6 +129,79 @@ def cmd_roster(a):
               f"[memory {r['words']}w]")
 
 
+STOP = set("""this that with from have when then they them your their into only also must
+never every after before about which while where what there here will would should could
+does done than more most some such each just like make sure same other first""".split())
+# memory topics a shared tool now does for you (pattern -> tool)
+TOOL_HINTS = [
+    (r"env -i|pass/fail line|summary line|\btail\b|green", "check.py run (clean env, reads the summary, receipt)"),
+    (r"mutat", "mutate.py (backup, mutate, run, verified restore)"),
+    (r"pg17|pgvector|throwaway|TEST_DATABASE_URL|init_db", "pg.py up NAME"),
+    (r"guard test|\bguards?\b|only the .* may", "guards.py"),
+    (r"until-loop|wake|wait.* HANDOFF", "board.py wait --kind handoff"),
+    (r"CRITICAL|name collision|not index", "developer.md GitNexus notes (cache/ is indexed since 2026-11-01)"),
+]
+
+
+def content_words(text):
+    return {w for w in re.findall(r"[a-z0-9_./-]{4,}", text.lower()) if w not in STOP}
+
+
+def shared_paragraphs():
+    root = os.path.dirname(os.path.dirname(team_dir()))
+    files = [os.path.join(root, "CLAUDE.md")]
+    for sub in (".claude/agents", ".claude/skills"):
+        for dirpath, _, names in os.walk(os.path.join(root, sub)):
+            files += [os.path.join(dirpath, n) for n in names if n.endswith(".md")]
+    paras = []
+    for f in files:
+        try:
+            lines = open(f).read().splitlines()
+        except OSError:
+            continue
+        start, buf = 0, []
+        for i, line in enumerate(lines + [""], 1):
+            if line.strip():
+                if not buf:
+                    start = i
+                buf.append(line)
+            elif buf:
+                paras.append((os.path.relpath(f, root), start, content_words(" ".join(buf))))
+                buf = []
+    return paras
+
+
+def lint_seat(seat, paras):
+    fields, memory = parse(seat_file(seat))
+    names = [r["name"] for r in roster_rows()]
+    about_people = re.compile(r"^(Teammates?|Team)\b|^(%s)\b[^.]{0,40}[:(]" % "|".join(map(re.escape, names)))
+    hits = []
+    for line in memory.splitlines():
+        item = line.strip().lstrip("-* ").strip()
+        words_m = content_words(item)
+        if len(words_m) < 6:
+            continue
+        best = max(((len(words_m & w) / len(words_m), f, n) for f, n, w in paras), default=(0, "", 0))
+        tools = [] if about_people.search(item) else [tool for pat, tool in TOOL_HINTS if re.search(pat, item, re.I)]
+        if best[0] >= 0.6 or tools:
+            where = f"repeats {best[1]}:{best[2]} ({best[0]:.0%} of its words)" if best[0] >= 0.6 else ""
+            now = f"now a tool: {', '.join(tools)}" if tools else ""
+            hits.append(f"  - {item[:110]}{'...' if len(item) > 110 else ''}\n      {'; '.join(x for x in (where, now) if x)}")
+    print(f"{fields['name']} ({seat}, {words(memory)}/{cap(seat)} words): "
+          f"{len(hits)} line(s) worth a look" + (":" if hits else "."))
+    for h in hits:
+        print(h)
+
+
+def cmd_lint(a):
+    paras = shared_paragraphs()
+    seats = [r["seat"] for r in roster_rows()] if a.all else [a.seat]
+    for seat in seats:
+        lint_seat(seat, paras)
+    print("\nSuggestions only. Each member decides and edits their own memory "
+          "(member.py remember); nobody edits another's.")
+
+
 def main():
     p = argparse.ArgumentParser(prog="member.py", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -143,8 +218,13 @@ def main():
     q.add_argument("file", nargs="?", help='a file path, or "-" (default) for stdin')
     q.add_argument("--file", dest="file_opt")
     s.add_parser("roster")
+    q = s.add_parser("lint")
+    g = q.add_mutually_exclusive_group(required=True)
+    g.add_argument("--seat")
+    g.add_argument("--all", action="store_true")
     a = p.parse_args()
-    {"me": cmd_me, "claim": cmd_claim, "remember": cmd_remember, "roster": cmd_roster}[a.cmd](a)
+    {"me": cmd_me, "claim": cmd_claim, "remember": cmd_remember, "roster": cmd_roster,
+     "lint": cmd_lint}[a.cmd](a)
 
 
 if __name__ == "__main__":

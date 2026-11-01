@@ -50,8 +50,9 @@ Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, 
   - what the owner cares about
 - **What doesn't:** task status, or anything already in the code, specs, board,
   `CLAUDE.md` or `meta/`.
-- **Shared before personal:** before saving, check whether your agent file or a skill
-  already says it. If so, cut it from your memory. If you think every agent should know
+- **Shared before personal:** before saving, run `member.py lint --seat <seat>`: it lists
+  your lines that repeat your agent file or a skill, or that a team tool (`check.py`,
+  `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
   it, post a `skill:<name>` notice on the board instead of keeping it to yourself.
 - **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
   memory. The hard cap is 500 words. When you're near it, cut the least useful line before
@@ -102,17 +103,26 @@ python3 .claude/team/board.py log --since <id>   # the raw history
 - **Never read the owner's `.env`.** There are no live LLM or WCL calls: use fakes and
   fixtures. When tests can't settle something, post a `question` with key
   `live-check:<feature>` and exact steps; team-lead runs the live pass at the end.
+- **Team tools** (`.claude/team/`, run with `python3`; each has `--help`). Use them instead of
+  hand-rolled recipes:
+  - `check.py run [PATHS] [--pg <you>] --as <you>`: the suite in a clean env. It reads the
+    summary line itself, prints `RESULT PASS|FAIL` plus the failures, keeps the log, and on a
+    passing full run of a committed, clean tree writes a **receipt** the merger can reuse.
+    It refuses a tree that holds a `.env` (the settings read it even under `env -i`, sc-336).
+  - `pg.py up <you>` / `pg.py down <you>`: throwaway `pgvector/pgvector:pg17-trixie` on a free
+    port with the schema applied (`init_db`); prints `TEST_DATABASE_URL`. Never plain `pg17`
+    (collation mismatch with the owner's volume), never the compose database.
+  - `mutate.py FILE --old "..." --new "..." --test T`: proves a test bites; restores the file
+    byte for byte, even on a kill. A collection error is reported as not a real bite.
+  - `guards.py [WORD]`: the architecture guard tests ("only X may name Y").
 - **Shell facts (learned the hard way):**
-  - Agent shells may carry the app's env vars. Run every suite in a clean env:
-    `env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q`.
+  - Agent shells may carry the app's env vars: `check.py` clears them. If you must call
+    pytest directly, use `env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q`.
   - The shell is zsh, which doesn't word-split: wrap a repeated prefix in a function
     (`B() { python3 .claude/team/board.py post "$@" --as <you>; }`), never a variable.
   - Vitest only picks up `src/**/*.test.tsx`; a `.test.ts` file is silently skipped.
-  - Postgres-only tests are skipped under SQLite. Prove RLS or migration work on a
-    throwaway `pgvector/pgvector:pg17-trixie` on your brief's port, never plain `pg17` (its
-    older glibc gives a collation mismatch on the owner's volume). Migrate it with
-    `backend.cli.init_db`, set `TEST_DATABASE_URL` and run the full suite (0 skipped);
-    recipe in `specs/044-kb-search/quickstart.md`. Remove the container afterwards.
+  - Postgres-only tests are skipped under SQLite. Prove RLS or migration work with
+    `check.py run --pg <you>` (the full suite, 0 skipped), then `pg.py down <you>`.
 
 ## File ownership (hard rule)
 
@@ -137,17 +147,22 @@ python3 .claude/team/board.py log --since <id>   # the raw history
   - Record HIGH or CRITICAL risk, with your mitigation, as a `notice` on the board and in
     the hand-off.
   - `UNKNOWN` risk is unresolved: confirm it with a text search.
-  - Before a plan gate, grep the tests your design must leave unchanged, and the guard
-    tests that pin architecture (`grep -rn "only the" backend/tests`): a "no change needed
-    in X" claim or a new stored-data shape has broken one of them twice.
+  - Before a plan gate, grep the tests your design must leave unchanged, and run
+    `guards.py` for the guard tests that pin architecture: a "no change needed in X" claim
+    or a new stored-data shape has broken one of them twice.
   - Before you commit, index your worktree and run change detection:
     `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`,
     then `detect-changes --scope all --repo .`. A `partial` or `truncated` result isn't
     clean, so re-run it.
   - In a worktree, `impact --repo warcraftlogs-agent` can resolve to another checkout's
-    index: index your worktree and pass its absolute path as `--repo`. CRITICAL from
-    `detect-changes` is often a name collision (`__init__`, `_run`): check before you
-    report it.
+    index: index your worktree and pass its absolute path as `--repo`.
+  - Known noise, so you don't re-learn it: CRITICAL from `detect-changes` is often a name
+    collision (`__init__`, `_run`, `id`, `query_key`, `Settings`) or a markdown heading in a
+    new file; `detect-changes` ignores untracked new files (run `impact` on the edited
+    symbols instead). Confirm with a text search and post the real caller set. The reverse
+    also holds: `AsyncWCLClient.query` shows LOW but every WCL call goes through it, so treat
+    it as HIGH. `wcl_agent/cache/` is indexed since 2026-11-01 (`.gitnexusignore`; GitNexus
+    skips folders named `cache` by default).
 - **shadcn for UI.** Search the registry through the shadcn MCP and always pass
   `registries: ["@shadcn"]`. Add components with the command the MCP gives, from
   `<worktree>/frontend`, and run its audit checklist afterwards (constitution VII).
@@ -178,13 +193,15 @@ python3 .claude/team/board.py log --since <id>   # the raw history
 
 **Tier L:** as tier M, but stop and return at the gates your brief names.
 
-**Verify** with `uv run --extra test pytest -q` for the backend, and `npm run build` plus
-`npm test` in `frontend/` for the frontend. Commit on your feature branch. **Never push.**
+**Verify** with `check.py run` for the backend, and `npm run build` plus `npm test` in
+`frontend/` for the frontend. Commit on your feature branch. **Never push.**
 
 **Hand-off (your final result).**
 - **Checks:** run change detection, check ownership, and make sure everything is green.
-  Read the final pass/fail line of the clean `env -i` run yourself, and paste the command
-  plus that line into the hand-off: a "green" that was only counted once cost a rework round.
+  Commit, then run `check.py run --as <you>` (add `--pg <you>` if you touched Postgres code)
+  on the committed head and paste its `RESULT` and `RECEIPT` lines into the hand-off. No
+  receipt means the tree was dirty or red: a "green" that was only said, not read, cost a
+  rework round three times.
 - **Board:** move your stories to **Under Review**, then post a `handoff` entry.
 - **Memory:** update it now if something lasting came out of this run (see above).
 - **Return:**
@@ -222,9 +239,8 @@ Constitution first:
 
 Security decisions about external data (WCL, model output) rest on what the server
 returned, never on the query or prompt text: aliases, directives and null propagation make
-text parsing lie. Prove a new test bites with a quick mutation of the code it guards:
-`cp` the file to a backup, mutate, run, then restore from the backup (`git checkout` silently
-does nothing for an untracked new file) and re-run the suite before committing. Never chain
+text parsing lie. Prove a new test bites with `mutate.py` on the code it guards (it restores the file and
+checks it; `git checkout` would silently do nothing for an untracked new file). Never chain
 `pytest … | tail && git commit`: the pipe's exit status is `tail`'s, so a red suite commits.
 
 Match the surrounding code's style and comment density. No dead code, no secrets. When you

@@ -52,8 +52,9 @@ Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, 
   - what the owner cares about
 - **What doesn't:** task status, or anything already in the code, specs, board,
   `CLAUDE.md` or `meta/`.
-- **Shared before personal:** before saving, check whether your agent file or a skill
-  already says it. If so, cut it from your memory. If you think every agent should know
+- **Shared before personal:** before saving, run `member.py lint --seat <seat>`: it lists
+  your lines that repeat your agent file or a skill, or that a team tool (`check.py`,
+  `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
   it, post a `skill:<name>` notice on the board instead of keeping it to yourself.
 - **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
   memory. The hard cap is 500 words. When you're near it, cut the least useful line before
@@ -169,9 +170,19 @@ work. Open a new seat only when every existing one is busy.
 Before launch, post `owner:<path-or-glob>` keys for each footprint. Lockfiles, manifests
 and migrations go to one developer at a time.
 
+**Wait on the board yourself, don't wait to be woken.** A developer's completion notice goes
+to team-lead, not to you, and an idle agent sees no board entries. So right after each
+launch (and each resume), arm a background wait with Bash `run_in_background: true`:
+`python3 .claude/team/board.py wait --kind handoff --kind blocker --author <dev-name>`
+(90-minute default timeout; exit 2 on expiry: check the developer, then re-arm). Then end
+your turn: you are re-invoked when the entry lands, within seconds, at no token cost while
+waiting. Tested 2026-11-01. Post a `notice` that you run your own watcher, so team-lead
+stops sending wake-ups.
+
 **Developer statuses:**
-- **Hand-off:** arrives as the sub-agent's result: branch, commits, files, test counts,
-  risks, and acceptance-criterion mapping.
+- **Hand-off:** a board `handoff` (your wait fires) plus the sub-agent's result: branch,
+  commits, files, the `check.py` RESULT and RECEIPT lines, risks, and the
+  acceptance-criterion mapping.
 - **Blocked:** the developer returns early with "blocked: …". You resolve it on the board,
   then resume it with `SendMessage` to its agent id.
 
@@ -189,11 +200,15 @@ cache, single-flight or Redis key path. At each security-core hand-off, before y
 1. **Files:** every changed file is inside the footprint
    (`git diff --name-only <base>...<branch>`).
 2. **Rebase:** rebase the branch onto the current sprint tip if the tip has moved.
-3. **Run the checks on the rebased result:** `uv run --extra test pytest -q`,
-   `cd frontend && npm run build` and `npm test` if the frontend changed. Then
-   `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only` and
-   `detect-changes --scope all --repo .`.
-4. **Merge:** `git merge --no-ff`, then post `merge` with the commit.
+3. **Run the checks on the rebased result.** Trial-merge with
+   `git merge --no-ff --no-commit <branch>`, then `python3 .claude/team/check.py verify --index`
+   (add `--need-pg` for Postgres work). `REUSE` means this exact tree already passed the full
+   suite on the developer's receipt, so skip the re-run; `RUN NEEDED` means run
+   `check.py run --as <you>` (`--pg <you>` for Postgres work). Never accept a "green" without
+   one of the two. Also `cd frontend && npm run build` and `npm test` if the frontend
+   changed, then `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`
+   and `detect-changes --scope all --repo .`. Commit the merge, or `git merge --abort`.
+4. **Merge:** commit the trial merge, then post `merge` with the commit.
 5. **Red check:** resume the same developer once to fix it. Allow at most one rework round,
    then accept with follow-up tickets unless the defect is critical.
 6. **Commits:** commit messages end with

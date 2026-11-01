@@ -67,11 +67,13 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   `tail -n0 -F .git/team-board/<board>.jsonl | python3 -u .claude/team/boardwatch.py`
   (handoff, merge, escalation) and a 30-minute timeout, and re-arm on expiry; the expiry is
   the heartbeat. Don't relay idle notifications.
-- **Wake the merger on every hand-off.** An idle agent sees no board entries until a
-  message wakes it. On each board `handoff`, send whoever merges (scrum master in tier L,
-  product owner otherwise) one line: the board number, branch, head and agent id. Don't
-  forward the developer's full result; forward only what it adds beyond the board. Skip the
-  wake-up when that agent has said it runs its own board watcher, unless it stalls.
+- **The merger wakes itself.** The product owner and scrum master arm
+  `board.py wait --kind handoff --author <dev>` in the background after each launch (tested
+  2026-11-01: a sub-agent's own background job re-invokes it within seconds). Expect their
+  `notice` saying so. Send a one-line wake-up (board number, branch, head, agent id) only
+  as a fallback: a `handoff` that no `merge` or reply follows within about 15 minutes. Check
+  the timestamps first. You'll also see their interim "waiting on background work"
+  notices: ignore them.
 - **Completion notices of developers come to you**, not to the merger. Use them only to
   catch a developer that stopped without posting a hand-off.
 - **Live pass** (`.claude/team/livecheck.py`, stack from the sprint worktree with
@@ -81,7 +83,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
     recreate the backend (`up -d --force-recreate backend`): the bind-mounted credentials
     file keeps the old copy.
   - Remove the symlinked `.env` before running the test suite in that worktree: the
-    settings read it and 22 tests go red.
+    settings read it and about 21 tests go red, some with live calls (sc-336). `check.py`
+    refuses such a tree.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on

@@ -8,6 +8,9 @@ ones. Storage lives in the git common dir, so every worktree of the repo sees on
   board.py read --as NAME          unread entries from others, then marks them read
   board.py current [--key PREFIX]  effective state: latest entry per key + open items
   board.py log [--since N] [--last N] [--key PREFIX]
+  board.py wait [--kind K] [--author A] [--key P] [--text P] [--since N] [--timeout S]
+                                   block until a match, print it (run_in_background: you
+                                   are re-invoked when it exits; costs no tokens meanwhile)
   board.py init NAME | close [--export PATH] | status
   board.py hook                    PostToolUse hook: injects unread entries as context
 
@@ -160,6 +163,32 @@ def cmd_log(a, r):
     print("\n".join(fmt(e) for e in rows) if rows else "team-board: empty")
 
 
+def matches(e, a):
+    return ((not a.kind or e["kind"] in a.kind)
+            and (not a.author or e["author"].lower() in [x.lower() for x in a.author])
+            and (not a.key or (e.get("key") or "").startswith(a.key))
+            and (not a.text or e["text"].startswith(tuple(a.text))))
+
+
+def cmd_wait(a, r):
+    """Block until a matching entry appears, print it, exit 0 (timeout: exit 2). Run it with
+    run_in_background: the agent is re-invoked when it exits, at no token cost while waiting."""
+    import time
+    name = require_board(r)
+    entries = load(r, name)
+    since = a.since if a.since is not None else (entries[-1]["id"] if entries else 0)
+    deadline = time.monotonic() + a.timeout
+    while True:
+        hits = [e for e in load(r, name) if e["id"] > since and matches(e, a)]
+        if hits:
+            print("\n".join(fmt(e) for e in hits))
+            return
+        if time.monotonic() >= deadline:
+            print(f"team-board: no match after {a.timeout}s (since #{since}); re-arm or check the agent")
+            sys.exit(2)
+        time.sleep(a.interval)
+
+
 def cmd_init(a, r):
     if not r:
         sys.exit("team-board: not inside a git repository")
@@ -258,6 +287,14 @@ def main():
     q.add_argument("--since", type=int)
     q.add_argument("--last", type=int)
     q.add_argument("--key")
+    q = s.add_parser("wait", help="block until a matching entry appears (run in background)")
+    q.add_argument("--kind", action="append", help="entry kind (repeatable)")
+    q.add_argument("--author", action="append", help="author name (repeatable)")
+    q.add_argument("--key", help="key prefix")
+    q.add_argument("--text", action="append", help="text prefix, e.g. ESCALATION (repeatable)")
+    q.add_argument("--since", type=int, help="entry id to wait after (default: the latest now)")
+    q.add_argument("--timeout", type=int, default=5400, help="seconds (default 5400 = 90 min)")
+    q.add_argument("--interval", type=float, default=3.0)
     q = s.add_parser("init")
     q.add_argument("name")
     q = s.add_parser("close")
@@ -272,7 +309,8 @@ def main():
             pass
         return
     r = root()
-    {"post": cmd_post, "read": cmd_read, "current": cmd_current, "log": cmd_log, "init": cmd_init,
+    {"post": cmd_post, "read": cmd_read, "current": cmd_current, "log": cmd_log, "wait": cmd_wait,
+     "init": cmd_init,
      "close": cmd_close, "status": cmd_status, "hook": cmd_hook}[a.cmd](a, r)
 
 

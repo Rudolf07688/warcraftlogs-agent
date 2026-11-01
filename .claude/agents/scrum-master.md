@@ -51,8 +51,9 @@ Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, 
   - what the owner cares about
 - **What doesn't:** task status, or anything already in the code, specs, board,
   `CLAUDE.md` or `meta/`.
-- **Shared before personal:** before saving, check whether your agent file or a skill
-  already says it. If so, cut it from your memory. If you think every agent should know
+- **Shared before personal:** before saving, run `member.py lint --seat <seat>`: it lists
+  your lines that repeat your agent file or a skill, or that a team tool (`check.py`,
+  `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
   it, post a `skill:<name>` notice on the board instead of keeping it to yourself.
 - **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
   memory. The hard cap is 500 words. When you're near it, cut the least useful line before
@@ -89,6 +90,10 @@ python3 .claude/team/board.py log --since <id>   # the raw history
 - **Launch:** start each developer **as a background sub-agent** yourself (`Agent`,
   `subagent_type: developer`, no `name`), passing its brief and its seat. Seats follow the
   product owner's rules in §3.
+- **Wait on the board yourself:** after each launch or resume, arm
+  `python3 .claude/team/board.py wait --kind handoff --kind blocker --author <dev-name>` with
+  `run_in_background: true` and end your turn; you're re-invoked when it fires
+  (`product-owner.md` §3). Gate returns and blockers reach you without team-lead.
 - **Messaging teammates** are only for live co-design: more than about 3 genuine two-way
   exchanges during a run that can't be written as board entries. Send team-lead
   `SPAWN-REQUEST name/model/effort/brief` only for that case.
@@ -120,8 +125,9 @@ changes.
 
 ## 4. Integrate
 
-Use the product owner's merge checks from `product-owner.md` §3: rebase, run the checks on
-the rebased result, check the files, then merge with `--no-ff`. Before merging a
+Use the product owner's merge checks from `product-owner.md` §3: rebase, trial-merge,
+`check.py verify --index` (reuse the developer's receipt) or `check.py run`, check the files,
+then commit the merge. Before merging a
 security-core hand-off, run the scoped security review described there (D18): you write the
 `qa-security` prompt from the code and the design, never from the developer's notes. Post `merge` with the
 commit, and release the developer's grants. Commit messages end with

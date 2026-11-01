@@ -1,2 +1,4 @@
 google-cloud-cli-linux-x86_64/
 frontend/node_modules/
+# GitNexus skips any folder named "cache" by default; this is our Redis WCL cache layer.
+!wcl_agent/cache/
