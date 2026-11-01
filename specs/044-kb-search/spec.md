@@ -44,6 +44,19 @@ Self-answered (developer autonomy); each is a board decision `clarify:044-<topic
   error text tells the agent it may drop the filter and put the name in a query instead
   (keyword search keeps names intact) (`clarify:044-applicability`).
 
+Gate 1 review (Ilse, board #37), folded in:
+
+- Eval embeddings: a stand-in makes hybrid vs vector-only meaningless, so the live mode gets a
+  `record` command that embeds the fixture corpus and the questions with the real embedder
+  (capped at about 300 texts) and writes the recorded fixture; team-lead runs it at sprint end.
+  Until then CI runs on a deterministic stand-in and only reports recall; "hybrid not worse"
+  (SC-004) is asserted only on real recorded embeddings.
+- Spec-only filters: the resolver gives an ambiguous error only where one answer is required
+  (the class+spec phrase, the chunk writers). A spec-only search filter resolves to every
+  (class, spec) pair that has the spec.
+- Ansel's schema (#36): the name key used in `players[].key` and `characters[].key` is one
+  function, `name_key(str)`, in the resolver, used by both the writers and search.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - The app understands the names players use (Priority: P1, sc-304)
@@ -69,8 +82,9 @@ unknown and ambiguous values, and check the canonical values and the typed error
    resolved, **Then** all give the same encounter id.
 3. **Given** "arms warr", **When** resolved as a class+spec phrase, **Then** the result is
    Warrior / Arms with role dps.
-4. **Given** "prot" with no class, **When** resolved, **Then** the result is an ambiguous error
-   listing Paladin / Protection and Warrior / Protection.
+4. **Given** "prot" with no class, **When** resolved where one answer is required (a class+spec
+   phrase), **Then** the result is an ambiguous error listing Paladin / Protection and
+   Warrior / Protection; **When** resolved as a spec-only filter, **Then** it gives both pairs.
 5. **Given** "Ulatk" (a typo), **When** resolved as an encounter, **Then** the result is an
    unknown error whose close matches include Ula'tek.
 6. **Given** a character name the workspace has as an own character, a friend or a known
@@ -190,10 +204,13 @@ clause; run the eval in CI and check it reports recall@k for both modes and late
 - **FR-004**: Character resolution MUST read the workspace's `user_characters` (own and
   friends) and `known_players`, scoped to the caller's workspace only.
 - **FR-005**: Matching MUST be case-, accent- and apostrophe-insensitive (also ignoring spaces
-  and hyphens).
+  and hyphens). The normalised form is one public function, `name_key(str)`, which the chunk
+  writers use for the stored `players[].key` / `characters[].key` and search uses to match.
 - **FR-006**: An unknown or ambiguous value MUST produce a typed error (kind of value, the
   input, `unknown` or `ambiguous`, and up to five close matches) that a caller can turn into a
-  message the agent can act on. The resolver never returns an empty "match".
+  message the agent can act on. The resolver never returns an empty "match". A spec on its own
+  is ambiguous only where one answer is required (class+spec phrase, chunk writers); as a
+  search filter it resolves to every (class, spec) pair that has it.
 
 **Search tool (sc-114)**
 
@@ -245,14 +262,19 @@ clause; run the eval in CI and check it reports recall@k for both modes and late
 - **FR-021**: An eval harness under `backend/evals/kb/` MUST hold a fixture corpus covering
   wcl, guide and chat chunks and about 30 labelled questions (expected sources, expected
   filters), with recorded embeddings for corpus and questions, and MUST report recall@k for
-  hybrid and vector-only and latency (p50/p95) per mode. CI runs it with no network call.
+  hybrid and vector-only and latency (p50/p95) per mode. CI runs it with no network call, on a
+  deterministic stand-in until real embeddings are recorded, and then only reports recall; the
+  "hybrid not worse" assertion runs only on a recorded set marked as real.
 - **FR-022**: A live mode MUST run the agent on the cheapest chat model over the labelled
   questions with a question cap and report filter-extraction accuracy (tool arguments vs the
   labels) and the local-answer rate (turns with no Warcraft Logs tool call) with and without
-  the search-first clause. It is run only by team-lead; CI never runs it.
+  the search-first clause. It also has a `record` command that embeds the fixture corpus and
+  the questions with the real embedder (capped at about 300 texts) and writes the recorded
+  fixture. It is run only by team-lead; CI never runs it.
 - **FR-023**: A short write-up in this spec dir MUST recommend the embedding model and whether
-  true BM25 is worth it, noting the licences of the candidates. The default model changes only
-  on a clear eval win.
+  true BM25 is worth it, noting the licences of the candidates, and says which embedding set
+  (stand-in or recorded real) produced its numbers. The default model changes only on a clear
+  eval win.
 
 ### Filter applicability
 
@@ -292,8 +314,9 @@ regardless of filters.
   chat, deleted conversation, crafted filter values), zero out-of-scope chunks are returned.
 - **SC-003**: A search result never exceeds the output cap, at the maximum k with maximal
   chunks (tested).
-- **SC-004**: On the eval set, hybrid recall@k is reported next to vector-only recall@k, and
-  hybrid is not worse than vector-only; search latency p95 on the fixture corpus is reported.
+- **SC-004**: On the eval set, hybrid recall@k is reported next to vector-only recall@k and
+  search latency p95 is reported; on recorded real embeddings, hybrid is not worse than
+  vector-only.
 - **SC-005**: The CI suite makes no Vertex, LLM or Warcraft Logs call.
 
 ## Assumptions
@@ -310,5 +333,5 @@ regardless of filters.
 - Freshness (039's `is_fresh`) is not applied to search: it decides when a stored body may
   replace a WCL call, while a search hit is context; visibility is applied.
 - The tool joins a backend tool group registered next to `PROFILE_TOOLS` in `agent_runner.py`.
-- The recorded eval embeddings are produced by a deterministic local stand-in until team-lead
-  records real Vertex embeddings in the live pass; the write-up says which were used.
+- The recorded eval embeddings are a deterministic local stand-in until team-lead runs the
+  `record` command in the live pass; the write-up says which set was used.
