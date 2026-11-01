@@ -164,6 +164,7 @@ work. Open a new seat only when every existing one is busy.
 - the **file footprint**, which the developer must stay inside
 - any migration revision you assigned
 - the seat, and the other developer's name if two run in parallel
+- whether the feature is **security-core** (see the security review below)
 
 Before launch, post `owner:<path-or-glob>` keys for each footprint. Lockfiles, manifests
 and migrations go to one developer at a time.
@@ -173,6 +174,16 @@ and migrations go to one developer at a time.
   risks, and acceptance-criterion mapping.
 - **Blocked:** the developer returns early with "blocked: …". You resolve it on the board,
   then resume it with `SendMessage` to its agent id.
+
+**Security review at hand-off (owner decision D18).** A feature is security-core when it
+touches tenant visibility, auth, RLS, rendering untrusted output (model or WCL), or a shared
+cache, single-flight or Redis key path. At each security-core hand-off, before you merge:
+- Run one `qa-security` sub-agent scoped to `<base>...<branch>`.
+- Write its prompt yourself from the diff and the spec: what the code must never allow, and
+  the paths to attack. Never pass on the developer's notes or threat model; a review
+  prompted from them anchors on the developer's view and misses the class it missed.
+- Resume the developer with the Highs and Mediums to fix, as part of its one rework round.
+  Lows become tickets. The end-of-sprint QA sweep stays the gate.
 
 **Merging (tiers S and M).** In the sprint worktree:
 1. **Files:** every changed file is inside the footprint

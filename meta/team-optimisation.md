@@ -191,6 +191,13 @@ across 37 files.
   marked "Local learnings" section and are re-checked after each upgrade. Agent memories
   hold what one member learned; skills hold what every agent doing that task should know.
   Owner preference 18.
+- **D18. Adopt P7: a scoped security review at each security-core hand-off.** Owner,
+  2026-11-01, after the sprint 2026-11-01 wrap-up: "yes adopt P7". The merger (scrum master
+  in tier L, product owner otherwise) runs one `qa-security` pass on the feature diff before
+  merging, with a prompt written from the code and design, never from the developer's notes.
+  Security-core now also covers any shared cache, single-flight or Redis key path. The
+  developer fixes Highs and Mediums in its one rework round; the end sweep stays the gate.
+  In `product-owner.md` §3 and `scrum-master.md` §4.
 
 ## Proposals under discussion
 
@@ -298,7 +305,7 @@ What each option costs, using the 10-31 numbers:
   developers who want to fan out; and that a coordinator's `SendMessage` to a sub-agent's
   id resumes it cleanly for rework.
 
-### P7. Scoped security review at hand-off for security-core work (experiment, 2026-11-01)
+### P7. Scoped security review at hand-off for security-core work (adopted as D18, 2026-11-01)
 
 - **Evidence:** in both autonomy sprints, the two QA Highs sat in security-core code
   (2026-10-31b: the srcset bypass and the retry wait; 2026-10-31c: trusting query text over
@@ -320,8 +327,7 @@ What each option costs, using the 10-31 numbers:
 - **Recommendation (team-lead, Ilse, Maren):** adopt. The merger (scrum master in tier L,
   product owner otherwise) writes the prompt from the code and design, never from the
   developer's notes, one run per security-core hand-off. Widen security-core to any change
-  to a shared cache, single-flight or Redis key path. Waiting on the owner's yes before it
-  goes into the agent files.
+  to a shared cache, single-flight or Redis key path. The owner agreed; see D18.
 
 ### P8. Report team-lead spend by activity (2026-11-01)
 
@@ -482,3 +488,6 @@ through respawns as the same named member, with its own small, curated memory. I
   feature.json trap, grep guard tests before a plan gate, paste the clean-run tail, mutation
   restore from a backup); `team-launch` (one-line wake-ups for the idle merger, gcloud
   pre-flight, recreate the backend after login, no `.env` symlink during suite runs).
+- **2026-11-01 (after the wrap-up):** The owner adopted P7 (D18) and asked for the push.
+  The scoped security review went into `product-owner.md` §3 (brief field, review steps)
+  and `scrum-master.md` §4. Main pushed with the sprint.

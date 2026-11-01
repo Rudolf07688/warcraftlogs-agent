@@ -121,7 +121,9 @@ changes.
 ## 4. Integrate
 
 Use the product owner's merge checks from `product-owner.md` §3: rebase, run the checks on
-the rebased result, check the files, then merge with `--no-ff`. Post `merge` with the
+the rebased result, check the files, then merge with `--no-ff`. Before merging a
+security-core hand-off, run the scoped security review described there (D18): you write the
+`qa-security` prompt from the code and the design, never from the developer's notes. Post `merge` with the
 commit, and release the developer's grants. Commit messages end with
 `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`. **Never push.**
 
