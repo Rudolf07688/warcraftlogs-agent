@@ -89,6 +89,106 @@ async def _acap(obj: Any) -> Any:
     return await asyncio.to_thread(_cap, obj)
 
 
+# --- Compact report tables (046, sc-334) -----------------------------------------
+# A whole-raid table is mostly per-row breakdowns (abilities, targets, gear, talents). Over
+# the table cap the model gets the top rows of each list with their plain fields instead of a
+# text prefix, so a top-N question is answered from one call instead of one call per player.
+
+TABLE_MAX_CHARS = 40_000  # ~10k tokens at chars/4; a table at or under it is returned as is
+TABLE_TOP_N = (25, 10, 5)  # rows kept per list; fewer when the projection is still too large
+COMPACT_NOTE = (
+    "Large table, compacted: each list keeps its top rows by total (auras by uptime) with name, "
+    "id, class, spec, total, per_second and the row's other plain fields; '<list>_omitted' counts "
+    "the rows left out. This already answers top-N and ranking questions: do not fetch players "
+    "one by one for them. Per-row breakdowns (abilities, targets, gear, talents, events) are "
+    "dropped; for one player's breakdown, call again with source_id set to that row's id."
+)
+TOO_LARGE_NOTE = (
+    "Table too large to return, even compacted. Narrow the query (set fight_id, source_id or "
+    "ability_id, or request a more specific data_type) and try again."
+)
+_SORT_KEYS = ("total", "totalUptime")
+_LEAD_KEYS = ("name", "id", "class", "spec", "total", "per_second")
+
+
+def _scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _compact_row(row: dict[str, Any], seconds: float | None) -> dict[str, Any]:
+    """A row's plain fields; ``icon`` "Class-Spec" becomes class/spec; ``{name}`` dicts their name."""
+    out: dict[str, Any] = {}
+    for key, value in row.items():
+        if key == "icon":
+            continue
+        if _scalar(value):
+            out[key] = value
+        elif isinstance(value, dict) and isinstance(value.get("name"), str):
+            out[key] = value["name"]  # e.g. a death's killing ability
+    icon, kind = row.get("icon"), row.get("type")
+    if isinstance(icon, str) and isinstance(kind, str) and icon.startswith(f"{kind}-"):
+        del out["type"]
+        out["class"], out["spec"] = kind, icon[len(kind) + 1 :]
+    if seconds and _number(row.get("total")):
+        out["per_second"] = round(row["total"] / seconds, 1)
+    lead = {k: out.pop(k) for k in _LEAD_KEYS if k in out}
+    return {**lead, **out}
+
+
+def _top_rows(rows: list[Any], n: int, seconds: float | None) -> tuple[list[Any], int]:
+    """The top ``n`` rows (by the first sort key the rows carry) and how many were left out."""
+    dicts = [r for r in rows if isinstance(r, dict)]
+    if not dicts:
+        kept = [r for r in rows if _scalar(r)][:n]
+        return kept, len(rows) - len(kept)
+    key = next((k for k in _SORT_KEYS if any(_number(r.get(k)) for r in dicts)), None)
+    if key is not None:
+        dicts.sort(key=lambda r: r.get(key) if _number(r.get(key)) else float("-inf"), reverse=True)
+    return [_compact_row(r, seconds) for r in dicts[:n]], len(rows) - min(n, len(dicts))
+
+
+def _compact_level(level: dict[str, Any], n: int, seconds: float | None, depth: int) -> tuple[dict[str, Any], int]:
+    """Scalars kept, lists cut to their top rows, dicts walked one level down (Summary
+    ``playerDetails``); returns the level and the rows omitted in all."""
+    out: dict[str, Any] = {}
+    omitted = 0
+    for key, value in level.items():
+        if _scalar(value):
+            out[key] = value
+        elif isinstance(value, list):
+            out[key], out[f"{key}_omitted"] = _top_rows(value, n, seconds)
+            omitted += out[f"{key}_omitted"]
+        elif isinstance(value, dict) and depth == 0:
+            out[key], inner = _compact_level(value, n, seconds, depth + 1)
+            omitted += inner
+    return out, omitted
+
+
+def compact_table(table: Any) -> Any:
+    """``table`` as is when it fits :data:`TABLE_MAX_CHARS`, else its compact projection."""
+    if len(json.dumps(table, default=str)) <= TABLE_MAX_CHARS:
+        return table
+    data = table.get("data") if isinstance(table, dict) else None
+    if isinstance(data, dict):
+        total_time = data.get("totalTime")
+        seconds = total_time / 1000 if _number(total_time) and total_time > 0 else None
+        for n in TABLE_TOP_N:
+            projected, omitted = _compact_level(data, n, seconds, 0)
+            result = {"_compact": True, "_truncated": omitted > 0, "_note": COMPACT_NOTE, "data": projected}
+            if len(json.dumps(result, default=str)) <= TABLE_MAX_CHARS:
+                return result
+    return {"_compact": True, "_truncated": True, "_note": TOO_LARGE_NOTE}
+
+
+async def acompact_table(table: Any) -> Any:
+    """:func:`compact_table` off the event loop (sizing is a full ``json.dumps``, like ``_acap``)."""
+    return await asyncio.to_thread(compact_table, table)
+
+
 def report_query(field_calls: str, var_decls: str) -> str:
     """The ``reportData.report(code:){ <field_calls> }`` query; its text is the stored row's key
     (045 sc-131 reads stored tables by it)."""
@@ -362,9 +462,9 @@ async def get_report_table(
     Returns:
         dict: {"status": "success", "data_type": ..., "table": {...},
                "provenance": {...}, "completeness": {...}} or an error.
-            ``completeness.truncated`` is true when the table was too large and
-            only a preview is returned — narrow the query before drawing
-            completeness-dependent conclusions.
+            A large table comes back compacted: the top rows of each list with a
+            count of omitted rows (see its ``_note``). ``completeness.truncated``
+            is true only when rows were omitted.
     """
     if data_type not in TABLE_DATA_TYPES:
         return {"status": "error", "error_message": f"Bad data_type '{data_type}'.",
@@ -395,7 +495,7 @@ async def get_report_table(
     if table is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     return with_envelope(
-        {"status": "success", "data_type": data_type, "table": await _acap(table)},
+        {"status": "success", "data_type": data_type, "table": await acompact_table(table)},
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
 

@@ -194,6 +194,10 @@ Check tool outputs before drawing conclusions:
   the rest (next page, narrower filter) or state that the claim rests on partial
   data. Never make a completeness-dependent claim ("nobody died to X") from partial
   data.
+- A table marked `_compact` already holds the top rows of each list, sorted by total,
+  with `per_second` and a `_omitted` count per list. Answer top-N and ranking questions
+  from it: never fetch players one by one for them. Fetch one player's table (source_id)
+  only for a breakdown the compact table lacks, and only for the players the answer needs.
 If validation fails, repair the query and retry; if it cannot be repaired, tell the
 user what did not match. Never conceal a mismatch.
 </VALIDATION_BEFORE_ANALYSIS>
