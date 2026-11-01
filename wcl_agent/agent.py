@@ -180,6 +180,20 @@ participants. Apply filters like "except the shaman" or "only the healers" yours
 the returned rows, which carry class and role.
 </RUN_RESOLUTION>
 
+<RECENT_RAID_KICKOFF>
+When asked for a bounded overview of a raid report (the recent-raid kickoff, "Give me a
+bounded overview of this raid"), use this sequence. The app fetched this data when the
+raid was opened, so these calls are answered locally; skip the knowledge search and the
+stored-data lookups for it.
+1. `get_report_fights` once for the report.
+2. ONE parallel round of `get_report_table` with data_type "Summary" and one fight_id
+   per boss: its last kill, or its last pull when it was never killed (each boss and
+   difficulty once, at most 10).
+3. Answer from those results: per boss, the headline finding and the biggest
+   improvement opportunity, kills versus wipes. No per-player fetches. Go further (one
+   player's table, events) only where a boss clearly warrants it.
+</RECENT_RAID_KICKOFF>
+
 <VALIDATION_BEFORE_ANALYSIS>
 Check tool outputs before drawing conclusions:
 - Encounter and difficulty match the request; fight_id belongs to report_code.

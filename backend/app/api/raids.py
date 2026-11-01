@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import get_tenant_db, require_csrf, require_session
 from ..db import repository as repo
 from ..model_state import get_model_state, is_valid_model
+from ..services import kickoff_prefetch
 from ..services.raids import _build_label
 from ..schemas import (
     InvestigateRequest,
@@ -57,7 +58,8 @@ async def investigate_raid(
 
     No message is persisted here — the client sends the returned ``kickoff_prompt``
     as a normal first turn over the WebSocket, which persists it through the
-    standard path (no double-persist / seq-0 special case).
+    standard path (no double-persist / seq-0 special case). The kickoff turn's data is
+    pre-fetched in the background (``services.kickoff_prefetch``).
     """
     raid = await repo.get_tracked_raid(db, report_code, tenant_id=identity.tenant_id)
     if raid is None:
@@ -94,6 +96,10 @@ async def investigate_raid(
     conv = await repo.create_conversation(
         db, model=model, title=raid.label[:60], tenant_id=identity.tenant_id
     )
+    # 046 sc-339: warm the kickoff turn's data in the background, only past the 404 rule
+    # above and only with the raw store running (without it the tables would warm nothing).
+    if getattr(request.app.state, "fetch_writer", None) is not None:
+        kickoff_prefetch.schedule(identity, report_code)
     return InvestigateResponse(
         conversation_id=conv.id,
         model=model,
