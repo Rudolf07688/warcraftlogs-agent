@@ -369,7 +369,10 @@ def record_store(outcome: StoreOutcome) -> None:
 
 
 def _schedule_flush() -> None:
-    loop = asyncio.get_running_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # counted outside a loop (a sync caller): flushed with the next count
+        return
     task = _flush_tasks.get(loop)
     if task is None or task.done():
         _flush_tasks[loop] = loop.create_task(_flush_later())
@@ -867,11 +870,14 @@ async def read_stats(days: int) -> dict[str, Any]:
         "available": False,
         "families": summarize({}),
         "redis": None,
+        **summarize_local([]),
     }
     client = _client() if settings.active else None
     if client is None:
         return result
-    slots = [(family, keys.metrics(family, day)) for family in CacheFamily for day in _window(days)]
+    slots: list[tuple[CacheFamily | str, str]] = [
+        (family, keys.metrics(family, day)) for family in (*CacheFamily, LOCAL_METRICS) for day in _window(days)
+    ]
     try:
         pipe = client.pipeline(transaction=False)
         for _, key in slots:
@@ -880,13 +886,50 @@ async def read_stats(days: int) -> dict[str, Any]:
     except RedisError as exc:
         logger.warning("wcl cache: stats unavailable: %s", exc)
         return result
-    per_day: dict[CacheFamily, list[dict[str, int]]] = {}
+    per_day: dict[CacheFamily | str, list[dict[str, int]]] = {}
     for (family, _), raw in zip(slots, hashes):
         per_day.setdefault(family, []).append(
             {(k.decode() if isinstance(k, bytes) else k): int(v) for k, v in raw.items()}
         )
-    result.update(available=True, families=summarize(per_day), redis=await _redis_health(client))
+    local = per_day.pop(LOCAL_METRICS, [])
+    result.update(
+        available=True,
+        families=summarize(per_day),  # type: ignore[arg-type]
+        redis=await _redis_health(client),
+        **summarize_local(local),
+    )
     return result
+
+
+def _rate(part: int, whole: int) -> float | None:
+    return round(part / whole, 3) if whole else None
+
+
+def summarize_local(days: list[dict[str, int]]) -> dict[str, dict[str, Any]]:
+    """The raw-store probe counts and the local-answer rate over the window (feature 045).
+
+    ``store.hit_rate`` is hits over probes that reached the store (timeouts excluded: the
+    store didn't answer); ``local_answers.rate`` is chat turns with no network WCL call over
+    all turns. Pure, so it is testable without Redis.
+    """
+    total = Counter[str]()
+    for day in days:
+        total.update({k: int(v) for k, v in day.items()})
+    hits, misses, hidden = total["store_hit"], total["store_miss"], total["store_not_visible"]
+    return {
+        "store": {
+            "hits": hits,
+            "misses": misses,
+            "not_visible": hidden,
+            "timeouts": total["store_timeout"],
+            "hit_rate": _rate(hits, hits + misses + hidden),
+        },
+        "local_answers": {
+            "turns": total["turns"],
+            "local_turns": total["local_turns"],
+            "rate": _rate(total["local_turns"], total["turns"]),
+        },
+    }
 
 
 async def _redis_health(client: Redis) -> dict[str, Any] | None:
@@ -912,8 +955,39 @@ _refresh_actor: ContextVar[str | None] = ContextVar("wcl_refresh_actor", default
 REFRESH_WINDOW_S = 60
 
 
+class _Turn:
+    """One chat turn's WCL usage (feature 045, sc-132); shared by its tools' copied contexts."""
+
+    __slots__ = ("external",)
+
+    def __init__(self) -> None:
+        self.external = False
+
+
+_turn: ContextVar[_Turn | None] = ContextVar("wcl_turn", default=None)
+
+
 def set_refresh_actor(user_id: str | None) -> None:
+    """Set (at turn start) or clear (at turn end) the turn's user.
+
+    It is also the chat turn's boundary for the local-answer rate (045 sc-132): a user opens
+    a turn, None closes the open one and counts it, as local when it made no network WCL call.
+    """
     _refresh_actor.set(user_id or None)
+    previous = _turn.get()
+    if previous is not None:
+        _counts[(LOCAL_METRICS, "turns")] += 1
+        if not previous.external:
+            _counts[(LOCAL_METRICS, "local_turns")] += 1
+        _schedule_flush()
+    _turn.set(_Turn() if user_id else None)
+
+
+def note_external_call() -> None:
+    """The running turn asked Warcraft Logs itself (any network call, failed ones too)."""
+    turn = _turn.get()
+    if turn is not None:
+        turn.external = True
 
 
 def get_refresh_actor() -> str | None:

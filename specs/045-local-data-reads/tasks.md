@@ -37,15 +37,15 @@ Run suites in a clean env: `env -i HOME=$HOME PATH=$PATH uv run --extra test pyt
 
 ## Phase 5: US3 sc-132 local-answer rate (P2)
 
-- [ ] T016 [US3] Turn holder opened/closed by `set_refresh_actor`, `turns`/`local_turns` counted, in `wcl_agent/cache/cache.py`; client marks network calls (success or failure) in `wcl_agent/client/wcl_client.py`; tests (no WCL call → local; one network call → not; stored hit → local; failed call → not; thread/sub-task marking) in `backend/tests/test_local_answer.py`
-- [ ] T017 [US3] `read_stats` adds `store` and `local_answers`; `StoreStats`, `LocalAnswerStats` and the `CacheStats` fields in `backend/app/schemas.py`; tests (window sums, rates, degraded shape) in `backend/tests/test_cache_stats.py`
+- [X] T016 [US3] Turn holder opened/closed by `set_refresh_actor`, `turns`/`local_turns` counted, in `wcl_agent/cache/cache.py`; client marks network calls (success or failure) in `wcl_agent/client/wcl_client.py`; tests (no WCL call → local; one network call → not; stored hit → local; failed call → not; thread/sub-task marking) in `backend/tests/test_local_answer.py`
+- [X] T017 [US3] `read_stats` adds `store` and `local_answers`; `StoreStats`, `LocalAnswerStats` and the `CacheStats` fields in `backend/app/schemas.py`; tests (window sums, rates, degraded shape) in `backend/tests/test_cache_stats.py`
 
 ## Phase 6: US4 sc-131 exact lookups (P3) — after resolver merge + `raw_fetches.py` back from Ansel
 
-- [ ] T018 [US4] `list_visible_summaries(session, *, tenant_id, since, limit)` via `fetch_visible_clause` in `backend/app/repositories/raw_fetches.py`
-- [ ] T019 [US4] Shared `report_query(field_calls, var_decls)` builder in `wcl_agent/tools/report_tools.py` (if granted; else pinned duplicate)
-- [ ] T020 [US4] Tools + `STORED_DATA_TOOLS` group in `backend/app/agent_tools/stored_data_tools.py`; tests (visible, not visible == not stored byte-identical, stale, resolver error, outside a turn, bounds) in `backend/tests/test_stored_data_tools.py`
-- [ ] T021 [US4] Register the group in `backend/app/agent_runner.py` (when granted)
+- [X] T018 [US4] `list_visible_summaries(session, *, tenant_id, since, limit)` via `fetch_visible_clause` in `backend/app/repositories/raw_fetches.py`
+- [X] T019 [US4] Shared `report_query(field_calls, var_decls)` builder in `wcl_agent/tools/report_tools.py` (if granted; else pinned duplicate)
+- [X] T020 [US4] Tools + `STORED_DATA_TOOLS` group in `backend/app/agent_tools/stored_data_tools.py`; tests (visible, not visible == not stored byte-identical, stale, resolver error, outside a turn, bounds) in `backend/tests/test_stored_data_tools.py`
+- [X] T021 [US4] Register the group in `backend/app/agent_runner.py` (when granted)
 
 ## Phase 7: Polish
 

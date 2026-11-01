@@ -109,3 +109,46 @@ async def test_unreachable_redis_still_answers(as_admin, monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body["enabled"] is True and body["available"] is False and body["redis"] is None
+
+
+# --- feature 045 (sc-132): raw-store probes and the local-answer rate ----------------------
+
+
+def test_summarize_local_sums_days_and_derives_rates():
+    out = cache.summarize_local([
+        {"store_hit": 3, "store_miss": 4, "store_not_visible": 1, "store_timeout": 2, "turns": 8, "local_turns": 5},
+        {"store_hit": 1, "turns": 2, "local_turns": 1},
+    ])
+    assert out["store"] == {"hits": 4, "misses": 4, "not_visible": 1, "timeouts": 2, "hit_rate": 0.444}
+    assert out["local_answers"] == {"turns": 10, "local_turns": 6, "rate": 0.6}
+    assert cache.summarize_local([]) == {
+        "store": {"hits": 0, "misses": 0, "not_visible": 0, "timeouts": 0, "hit_rate": None},
+        "local_answers": {"turns": 0, "local_turns": 0, "rate": None},
+    }
+
+
+async def test_admin_sees_store_counters_and_local_rate_for_the_window(as_admin, fake_redis):
+    today, old = cache._window(1)[0], cache._window(10)[-1]
+    await fake_redis.hset(keys.metrics(cache.LOCAL_METRICS, today),
+                          mapping={"store_hit": 2, "store_miss": 2, "turns": 4, "local_turns": 3})
+    await fake_redis.hset(keys.metrics(cache.LOCAL_METRICS, old), mapping={"turns": 100})
+    body = (await as_admin.client.get(URL, params={"days": 7})).json()
+    assert body["store"] == {"hits": 2, "misses": 2, "not_visible": 0, "timeouts": 0, "hit_rate": 0.5}
+    assert body["local_answers"] == {"turns": 4, "local_turns": 3, "rate": 0.75}
+    assert "local" not in body["families"]  # not a cache family
+
+
+async def test_counted_probes_and_turns_reach_the_stats(fake_redis):
+    cache.record_store("hit")
+    cache.record_store("timeout")
+    cache.set_refresh_actor("user-1")
+    cache.set_refresh_actor(None)  # a turn with no WCL call: local
+    await cache.drain_metrics()
+    stats = await cache.read_stats(1)
+    assert stats["store"]["hits"] == 1 and stats["store"]["timeouts"] == 1
+    assert stats["local_answers"] == {"turns": 1, "local_turns": 1, "rate": 1.0}
+
+
+async def test_degraded_stats_keep_the_new_fields(as_admin):
+    body = (await as_admin.client.get(URL)).json()  # no Redis
+    assert body["store"]["hit_rate"] is None and body["local_answers"] == {"turns": 0, "local_turns": 0, "rate": None}

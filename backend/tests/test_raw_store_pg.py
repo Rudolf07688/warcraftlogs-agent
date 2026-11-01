@@ -210,3 +210,24 @@ async def test_the_045_probe_budget_and_visibility_clause_on_postgres(pg, tenant
             sa.literal_column("raw_fetches.query_key").in_([own.query_key, pub.query_key]),
         )))
     assert keys == {pub.query_key}
+
+
+async def test_the_045_visible_summaries_list_on_postgres(pg, tenants):
+    """045 sc-131: the summaries list goes through the clause; under RLS B never sees A's grant."""
+    from backend.app.repositories.raw_fetches import list_visible_summaries
+
+    a, b = tenants
+    own, pub = code(), code()
+    status = lambda x, v: fetched(REPORT_SUMMARY, {"code": x},  # noqa: E731
+                                  {"reportData": {"report": {"code": x, "visibility": v, "endTime": 1}}})
+    await store_batch([PendingWrite(status(own, "unlisted"), a), PendingWrite(status(pub, "public"), a)])
+    since = NOW - timedelta(days=1)
+
+    async def listed(tenant):
+        async with pg() as db:
+            await set_scope(db, tenant_id=tenant)
+            bodies = await list_visible_summaries(db, tenant_id=tenant, since=since, limit=500)
+        return {json.loads(x)["data"]["reportData"]["report"]["code"] for x in bodies} & {own, pub}
+
+    assert await listed(a) == {own, pub}
+    assert await listed(b) == {pub}
