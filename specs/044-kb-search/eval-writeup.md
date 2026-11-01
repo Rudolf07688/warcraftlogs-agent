@@ -69,3 +69,20 @@ Revisit when the recorded eval or live use shows keyword ranking as the weak leg
 without it. It reports `local_answer_rate` (turns with no Warcraft Logs tool call),
 `search_rate` and `filter_accuracy` (the first `search_knowledge` call's filters against the
 labels, compared through the resolver). That is 60 turns at most, and some may call WCL.
+
+## Recorded eval (team-lead live pass, 2026-11-01)
+
+`record` embedded the 75 eval texts with `gemini-embedding-001` (768 dimensions) into
+`backend/evals/kb/embeddings.json`, committed with this note. `run --k 8` on a throwaway
+`kbeval` database (pgvector 0.8.7, pg17-trixie), 30 questions:
+
+| Mode | recall@8 | p50 | p95 |
+|---|---|---|---|
+| hybrid | 1.000 | 17.3 ms | 21.2 ms |
+| vector | 1.000 | 11.3 ms | 13.2 ms |
+| keyword | 0.983 | 12.6 ms | 14.4 ms |
+
+`test_kb_eval.py` against the same database: hybrid is not worse than vector-only on the
+recorded set (passes). The set is small and saturates at recall 1.0, so it shows that the
+embedder and the fusion work, not that hybrid beats vector-only; grow it before using it
+to choose between models or to argue for BM25. Decision unchanged: keep `gemini-embedding-001`, no BM25.

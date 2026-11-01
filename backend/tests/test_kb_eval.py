@@ -125,7 +125,11 @@ async def test_record_refuses_without_an_embedder(monkeypatch, capsys):
     from backend.app.kb import embedder
     from backend.evals.kb import live
 
+    # The recorded set is committed after team-lead's live record run, so check that the
+    # refusal leaves the file as it was (absent, or unchanged), not that it doesn't exist.
+    before = harness.EMBEDDINGS.read_bytes() if harness.EMBEDDINGS.exists() else None
     monkeypatch.setattr(embedder, "get_embedder", lambda: None)
     assert await live.record() == 2
     assert "nothing recorded" in capsys.readouterr().out
-    assert not harness.EMBEDDINGS.exists()
+    after = harness.EMBEDDINGS.read_bytes() if harness.EMBEDDINGS.exists() else None
+    assert after == before
