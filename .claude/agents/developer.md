@@ -108,7 +108,8 @@ python3 .claude/team/board.py log --since <id>   # the raw history
   - `check.py run [PATHS] [--pg <you>] --as <you>`: the suite in a clean env. It reads the
     summary line itself, prints `RESULT PASS|FAIL` plus the failures, keeps the log, and on a
     passing full run of a committed, clean tree writes a **receipt** the merger can reuse.
-    It refuses a tree that holds a `.env` (the settings read it even under `env -i`, sc-336).
+    A `.env` in the tree is harmless since 047: the test conftest sets `WCL_LOAD_DOTENV=0`
+    (it still refuses an older tree without that guard).
   - `pg.py up <you>` / `pg.py down <you>`: throwaway `pgvector/pgvector:pg17-trixie` on a free
     port with the schema applied (`init_db`); prints `TEST_DATABASE_URL`. Never plain `pg17`
     (collation mismatch with the owner's volume), never the compose database.
@@ -155,7 +156,10 @@ python3 .claude/team/board.py log --since <id>   # the raw history
     then `detect-changes --scope all --repo .`. A `partial` or `truncated` result isn't
     clean, so re-run it.
   - In a worktree, `impact --repo warcraftlogs-agent` can resolve to another checkout's
-    index: index your worktree and pass its absolute path as `--repo`.
+    index: index your worktree and pass its absolute path as `--repo`. If a fresh index
+    says "not found" for a symbol you can see, it may have stored nameless Python functions
+    (seen 2026-11-01b): query another worktree's index of the same code, or re-index after
+    your first edit, before you fall back to grep.
   - Known noise, so you don't re-learn it: CRITICAL from `detect-changes` is often a name
     collision (`__init__`, `_run`, `id`, `query_key`, `Settings`) or a markdown heading in a
     new file; `detect-changes` ignores untracked new files (run `impact` on the edited
@@ -242,6 +246,9 @@ returned, never on the query or prompt text: aliases, directives and null propag
 text parsing lie. Prove a new test bites with `mutate.py` on the code it guards (it restores the file and
 checks it; `git checkout` would silently do nothing for an untracked new file). Never chain
 `pytest … | tail && git commit`: the pipe's exit status is `tail`'s, so a red suite commits.
+Tests must not depend on wall-clock speed: compute "now" inside the test (never at import),
+and give timeouts in tests generous headroom (no budgets under about 1 s). A full suite
+takes 2–3 minutes under load, and two flakes in 2026-11-01b came from exactly this.
 
 Match the surrounding code's style and comment density. No dead code, no secrets. When you
 rework something, fix the root cause rather than the symptom.

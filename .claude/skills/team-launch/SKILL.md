@@ -84,9 +84,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
     fails, ask the owner for `! gcloud auth application-default login`. After a login,
     recreate the backend (`up -d --force-recreate backend`): the bind-mounted credentials
     file keeps the old copy.
-  - Remove the symlinked `.env` before running the test suite in that worktree: the
-    settings read it and about 21 tests go red, some with live calls (sc-336). `check.py`
-    refuses such a tree.
+  - The symlinked `.env` is harmless to the test suite since 047 (the conftest sets
+    `WCL_LOAD_DOTENV=0`); remove it with the worktrees at wrap-up.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on

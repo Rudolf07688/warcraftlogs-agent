@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-01 18:55 (sprint 2026-11-01b wrapped in session f6f1e132; merge question with the owner)
+Updated: 2026-11-01 20:35 (sprint 2026-11-01b merged + pushed; owner: "Well done")
 
 ## Topic
 
@@ -13,7 +13,7 @@ The agent-team redesign: persistence and autonomy. Full record in
 `meta/team-optimisation.md` (decisions D1–D19, proposals P1–P9, baseline, change log).
 
 ## Where we are
-- **Sprint 2026-11-01b wrapped** (20/20, 1.03 M/pt, P9 held: 0 green-that-wasn't, 0 wake-ups,
+- **Sprint 2026-11-01b merged to main and pushed** (20/20, 1.03 M/pt, P9 held: 0 green-that-wasn't, 0 wake-ups,
   lint 14 → 3; report meta/sprints/2026-11-01b/team-report.html). Was: (first P9 trial): 20 pts, tier M, Maren + Nils (big-report
   turns) + Ansel (.env tests, KB debt). Branch `sprint-2026-11-01b` at dd0c2df, board of the
   same name. Planned with the PO "in the room" first (owner asked for both viewpoints).

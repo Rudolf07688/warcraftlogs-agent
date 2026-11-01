@@ -87,7 +87,13 @@ def shown_cmd(paths, pg):
 
 
 def env_file_refusal(top):
-    if os.path.exists(os.path.join(top, ".env")):
+    # Since 047 (sc-336) the test conftest sets WCL_LOAD_DOTENV=0, so a .env no longer leaks into
+    # the suite and a run there is clean. Refuse only trees that predate that guard.
+    try:
+        guarded = "WCL_LOAD_DOTENV" in open(os.path.join(top, "backend", "tests", "conftest.py")).read()
+    except OSError:
+        guarded = False
+    if not guarded and os.path.exists(os.path.join(top, ".env")):
         return ("REFUSED: this tree has a .env, and the app settings read it even under env -i "
                 "(sc-336), so the run would not be clean and may call live APIs. Run from a "
                 "worktree without .env, or pass --allow-env (no receipt is written then).")
