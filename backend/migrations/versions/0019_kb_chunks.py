@@ -1,7 +1,7 @@
 """knowledge base chunks — pgvector, kb_chunks + kb_chat_chunks (feature 043, sc-111)
 
 Postgres only (the vector and tsvector types exist nowhere else; SQLite tests build the schema
-from the models). Needs the ``pgvector/pgvector:pg17`` image: Alembic runs as the owner role,
+from the models). Needs the ``pgvector/pgvector:pg17-trixie`` image: Alembic runs as the owner role,
 which may ``CREATE EXTENSION``; pgvector 0.8+ is required for filtered HNSW scans
 (``hnsw.iterative_scan``, feature 044).
 
@@ -94,7 +94,7 @@ def upgrade() -> None:
     if installed is None or _version(installed) < MIN_VECTOR_VERSION:
         raise RuntimeError(
             f"pgvector {installed} is installed; the knowledge base needs 0.8 or newer "
-            "(ALTER EXTENSION vector UPDATE, or the pgvector/pgvector:pg17 image)"
+            "(ALTER EXTENSION vector UPDATE, or the pgvector/pgvector:pg17-trixie image)"
         )
 
     op.create_unique_constraint("uq_conversations_id_tenant", "conversations", ["id", "tenant_id"])

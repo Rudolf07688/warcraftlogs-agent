@@ -13,7 +13,7 @@ import re
 import uuid
 from dataclasses import dataclass
 
-from .chunks import MAX_TEXT, ChunkDraft
+from .chunks import MAX_LABEL, MAX_TEXT, ChunkDraft
 from .names import class_spec
 
 MAX_PARTS = 5  # per section; the rest of a very long section is left out
@@ -47,6 +47,7 @@ def _sections(markdown: str) -> list[tuple[str, str]]:
 
 def _parts(body: str, room: int) -> list[str]:
     """``body`` in pieces of at most ``room`` characters, split at paragraph breaks."""
+    room = max(room, 1)  # a part must always make progress
     parts: list[str] = []
     current = ""
     for paragraph in re.split(r"\n\s*\n", body):
@@ -77,8 +78,8 @@ def chunk_guide(job: GuideJob) -> list[ChunkDraft]:
     content = _CONTENT.get(job.content_type, job.content_type)
     drafts: list[ChunkDraft] = []
     for index, (title, body) in enumerate(_sections(strip_claim_markers(job.markdown) or "")):
-        head = f"{spec} {cls} ({role or 'unknown role'}) {content} guide, section {title}"
-        parts = _parts(body, MAX_TEXT - len(head) - 12)
+        head = f"{spec} {cls} ({role or 'unknown role'}) {content} guide, section {title[:MAX_LABEL]}"
+        parts = _parts(body, max(MAX_TEXT - len(head) - 12, MAX_TEXT // 2))
         for number, part in enumerate(parts, start=1):
             suffix = f" ({number}/{len(parts)})" if len(parts) > 1 else ""
             drafts.append(

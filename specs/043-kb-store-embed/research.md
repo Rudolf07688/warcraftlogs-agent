@@ -5,13 +5,15 @@ SM's Gate 1 notes (#44, #45) are binding here.
 
 ## R1. Image and old-volume compatibility
 
-- **Decision**: `pgvector/pgvector:pg17` in `docker-compose.yml` and every throwaway recipe.
+- **Decision**: `pgvector/pgvector:pg17-trixie` in `docker-compose.yml` and every throwaway recipe.
   Prove compatibility by starting a throwaway `postgres:17` with a named volume, writing a
   marker row, stopping it, copying the volume (`docker run --rm -v src:/from -v dst:/to alpine
-  cp -a /from/. /to`), and starting `pgvector/pgvector:pg17` on the copy; the marker survives
+  cp -a /from/. /to`), and starting `pgvector/pgvector:pg17-trixie` on the copy; the marker survives
   and `CREATE EXTENSION vector` works. Never the compose volume.
 - **Rationale**: same major version and the same Debian-based Postgres build plus the extension
-  files, so the on-disk format is identical.
+  files, so the on-disk format is identical. The `-trixie` tag matters: the plain `pg17` tag is a
+  bookworm build whose glibc differs from the `postgres:17` image, which gives a collation
+  mismatch on an existing volume (board #82).
 - **Alternatives**: a separate vector DB (rejected by the owner's design); building the
   extension into a custom image (more to maintain).
 

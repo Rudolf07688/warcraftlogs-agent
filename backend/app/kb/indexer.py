@@ -10,7 +10,9 @@ The chunk tables are the backlog: a NULL vector means "not embedded yet" (still 
 searchable). After an embedding failure the consumer stops embedding until the next sweep;
 every ``kb_embed_sweep_s`` the sweep embeds whatever is still NULL: global rows directly, chat
 rows workspace by workspace under that workspace's scope. A full queue drops the job (counted
-in a throttled warning; the backfill recovers it). Only the app lifespan starts an indexer; the
+in a throttled warning). The backfill only indexes sources that have no chunks yet, so a dropped
+job of an already-indexed source stays stale until that source changes again (backlog
+``kb-backfill-hardening``). Only the app lifespan starts an indexer; the
 CLI, evals and tests leave it unset, so the hooks do nothing there.
 """
 

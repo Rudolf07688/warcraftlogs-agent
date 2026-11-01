@@ -203,9 +203,10 @@ class Settings(BaseSettings):
     # timeout or connection error also keeps the store out of the way for 30 s.
     raw_store_probe_timeout_ms: int = 400
     # feature 043: the knowledge base. Stored WCL fetches, published guides and finished chat
-    # exchanges become chunks in a background queue (bounded; a full queue drops the job and
-    # the backfill recovers it), embedded with `kb_embed_model` at 768 dimensions. Without
-    # embeddings chunks stay keyword-searchable; rows still missing a vector are retried every
+    # exchanges become chunks in a background queue (bounded; a full queue drops the job, and
+    # the backfill only picks up sources with no chunks yet: a dropped update stays stale),
+    # embedded with `kb_embed_model` at 768 dimensions. Without embeddings chunks stay
+    # keyword-searchable; rows still missing a vector are retried every
     # `kb_embed_sweep_s`. `kb_embed_request_batch` texts go in one Vertex request; the price
     # (USD per 1M input tokens) only feeds the backfill's cost estimate.
     kb_index_enabled: bool = True
