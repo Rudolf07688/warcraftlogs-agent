@@ -1,9 +1,9 @@
 # Research: 045 local data reads
 
 ## R1 Probe timeout and breaker
-- **Decision**: 400 ms default (`RAW_STORE_PROBE_TIMEOUT_MS`), breaker 30 s, half-open with one trial. Trips on `TimeoutError`, `OSError`, SQLAlchemy `OperationalError`/`InterfaceError`/pool `TimeoutError` and any `DBAPIError` with `connection_invalidated`. Other errors: a miss.
+- **Decision**: 400 ms default (`RAW_STORE_PROBE_TIMEOUT_MS`), breaker 30 s, half-open with one trial. Opens on a connection error at once and on the 3rd consecutive timeout (the half-open trial: its first). Failures are `TimeoutError`, `OSError`, SQLAlchemy `OperationalError`/`InterfaceError`/pool `TimeoutError` and any `DBAPIError` with `connection_invalidated`. Other errors: a miss.
 - **Rationale**: a healthy local Postgres answers in 1-5 ms; a hit is worth it only when fast (QA PERF-001). A bug shouldn't disable the store for everyone.
-- **Alternatives**: per-loop breaker (DB health is process-wide, not per loop); counting failures before opening (one stall already costs a turn).
+- **Alternatives**: per-loop breaker (DB health is process-wide, not per loop); counting failures before opening (first answer: one stall already costs a turn; 047 sc-323 changed it to 3 consecutive timeouts, because one slow read must not disable the store for 30 s).
 
 ## R2 Statement budget
 - **Decision**: lookup → statuses → (set_config) → visibility+payload pinned to `fetched_at`. Miss 1, stale 2, hit 3-4.

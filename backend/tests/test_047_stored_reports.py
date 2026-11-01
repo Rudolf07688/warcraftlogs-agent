@@ -62,14 +62,16 @@ def codes_of(bodies: list[dict]) -> set[str]:
     return {r["code"] for b in bodies for r in ((b["data"] or {}).get("reportData") or {}).values()}
 
 
-async def insert_row(factory, key: str, op: str, params: dict, codes: list[str], data: dict) -> None:
+async def insert_row(
+    factory, key: str, op: str, params: dict, codes: list[str], data: dict, fetched_at: datetime = NOW
+) -> None:
     """A stored row as it may sit in the table (written by an older or looser path)."""
     async with factory() as session:
         body = json.dumps({"data": data})
         await session.execute(
             RawFetch.__table__.insert().values(
                 query_key=key, operation_name=op, params=params, report_code=None, report_codes=codes,
-                fetched_at=NOW, payload=_payload("sqlite", body), payload_hash=None,
+                fetched_at=fetched_at, payload=_payload("sqlite", body), payload_hash=None,
             )
         )
         await record_report_status(session, [ReportStatus(c, "public", ENDED, NOW) for c in codes])
@@ -131,3 +133,12 @@ async def test_only_the_needed_fields_come_back(patched_db, tenant_id):
         "masterData": {"actors": [{"name": "Vagxsu"}, {"name": "Other"}]},
     }}}}
     assert len(json.dumps(body)) * 10 < len(full.content)
+
+
+async def test_the_scan_reads_only_rows_fetched_since_the_visibility_window(patched_db, tenant_id):
+    """049 PERF-002: ``fetched_at >= since`` bounds the walk (the Postgres plan is in the _pg file)."""
+    for code, at in (("Bd1", NOW), ("Bd2", SINCE - timedelta(hours=1))):
+        params = {"code": code}  # both visible by a fresh public status; only the fetch time differs
+        await insert_row(patched_db, _flight_key(REPORT_SUMMARY, params), "ReportSummary", params, [code],
+                         {"reportData": {"report": report(code)}}, fetched_at=at)
+    assert codes_of(await listed(patched_db, tenant_id)) == {"Bd1"}
