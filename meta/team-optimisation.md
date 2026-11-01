@@ -198,6 +198,11 @@ across 37 files.
   Security-core now also covers any shared cache, single-flight or Redis key path. The
   developer fixes Highs and Mediums in its one rework round; the end sweep stays the gate.
   In `product-owner.md` §3 and `scrum-master.md` §4.
+- **D19. Team-lead owns the Shortcut board.** Owner, 2026-11-01: "You can own the shortcut
+  board as well. Use it and change it as it makes sense. Use it to communicate or send
+  messages around at a meta level - whatever helps the team evolve forward." Covers
+  iterations, workflows, epics, labels, Shortlist and meta notes on the board (stories or
+  Shortcut docs). Done stays the owner's acceptance signal. Owner preference 20.
 
 ## Proposals under discussion
 
@@ -491,3 +496,7 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-11-01 (after the wrap-up):** The owner adopted P7 (D18) and asked for the push.
   The scoped security review went into `product-owner.md` §3 (brief field, review steps)
   and `scrum-master.md` §4. Main pushed with the sprint.
+- **2026-11-01 (board close-out):** On the owner's word, all 41 Under Review stories went
+  to Done and iterations 161, 254, 266 and 290 were closed. The owner switched Team 1's
+  default workflow to Standard (the MCP can't edit team settings) and handed the board to
+  team-lead (D19).

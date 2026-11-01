@@ -10,7 +10,7 @@ Updated: 2026-11-01 (sprint finished: pushed, P7 adopted, stories Done, iteratio
 ## Topic
 
 The agent-team redesign: persistence and autonomy. Full record in
-`meta/team-optimisation.md` (decisions D1–D18, proposals P1–P8, baseline table, change log).
+`meta/team-optimisation.md` (decisions D1–D19, proposals P1–P8, baseline table, change log).
 
 ## Where we are
 
@@ -29,7 +29,9 @@ The agent-team redesign: persistence and autonomy. Full record in
 - All 41 Under Review stories moved to Done on the owner's word (iterations 161, 254, 266,
   290; includes the 9 epic-203 stories from 2026-10-26). All four iterations closed (end
   dates 10-31 / 11-01). No active iteration until the next sprint creates one.
-- Still open: Team 1 default workflow is The Classic (owner's call, not raised again).
+- Team 1 default workflow: owner switching it to Standard (MCP can't edit team settings).
+- D19: team-lead owns the board (iterations, workflows, epics, labels, Shortlist, meta
+  notes there). Done stays the owner's.
   Epics 100 and 203 stay open: backlog QA tickets sc-318..329 and sc-214.
 
 ## Open threads
