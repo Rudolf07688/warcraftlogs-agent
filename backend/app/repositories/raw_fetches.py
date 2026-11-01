@@ -47,10 +47,12 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
+from wcl_agent.client.queries import REPORT_SUMMARY, report_summaries_query
 from wcl_agent.client.wcl_client import (
     _COST_RE,
     _REPORT_TOKEN_RE,
     FetchedResponse,
+    _flight_key,
     exact_report_codes,
     operation_name,
     report_codes,
@@ -428,25 +430,84 @@ async def probe_visible_fetch(
 
 
 SUMMARY_OPS = ("ReportSummary", "ReportsBatch")  # our report summary queries (single, batch)
+SUMMARY_LIST_TIMEOUT_MS = 2000  # statement timeout of the summaries list on Postgres (047 sc-324)
+
+# Each report object of a stored summary body cut down to what the character lookup reads
+# (code, title, start, zone name, actor names), in the body's own shape: a few KB, not the
+# fights and full roster (047 sc-324). Per dialect; ``raw_fetches`` is the outer row.
+_SUMMARY_PROJECTION = {
+    "postgresql": """convert_to(jsonb_build_object('data', jsonb_build_object('reportData', (
+        SELECT jsonb_object_agg(r.key, jsonb_build_object(
+            'code', r.value->'code', 'title', r.value->'title', 'startTime', r.value->'startTime',
+            'zone', jsonb_build_object('name', r.value#>'{zone,name}'),
+            'masterData', jsonb_build_object('actors', (
+                SELECT coalesce(jsonb_agg(jsonb_build_object('name', a->'name')), '[]'::jsonb)
+                FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.value#>'{masterData,actors}') = 'array'
+                     THEN r.value#>'{masterData,actors}' ELSE '[]'::jsonb END) AS a))))
+        FROM jsonb_each(CASE WHEN jsonb_typeof(raw_fetches.payload#>'{data,reportData}') = 'object'
+             THEN raw_fetches.payload#>'{data,reportData}' ELSE '{}'::jsonb END) AS r
+        WHERE jsonb_typeof(r.value) = 'object')))::text, 'UTF8')""",
+    "sqlite": """CAST(json_object('data', json_object('reportData', json((
+        SELECT json_group_object(r.key, json_object(
+            'code', json_extract(r.value, '$.code'), 'title', json_extract(r.value, '$.title'),
+            'startTime', json_extract(r.value, '$.startTime'),
+            'zone', json_object('name', json_extract(r.value, '$.zone.name')),
+            'masterData', json_object('actors', json((
+                SELECT json_group_array(json_object('name', json_extract(a.value, '$.name')))
+                FROM json_each(r.value, '$.masterData.actors') AS a WHERE a.type = 'object')))))
+        FROM json_each(raw_fetches.payload, '$.data.reportData') AS r WHERE r.type = 'object')))) AS BLOB)""",
+}
+
+
+def _our_summary(query_key: str, params: object, codes: object) -> bool:
+    """The row is a response to our own fixed summary query with exactly these codes.
+
+    Rows keep no query text, but their key is :func:`_flight_key` of it: rebuilt here from our
+    own query text and the stored params, it matches only a row our query wrote (a hand-written
+    ``run_wcl_graphql`` query may be named ``ReportSummary``, but can't have that key). The
+    params must also give exact codes, equal to the row's (the 039 rule).
+    """
+    if not isinstance(params, dict) or not params:
+        return False
+    if set(params) == {"code"}:
+        query = REPORT_SUMMARY
+    elif set(params) == {f"c{i}" for i in range(len(params))}:
+        query = report_summaries_query(len(params))
+    else:
+        return False
+    exact = exact_report_codes(query, params)
+    return exact is not None and exact == codes and _flight_key(query, params) == query_key
 
 
 async def list_visible_summaries(
     session: AsyncSession, *, tenant_id: uuid.UUID | None, since: datetime, limit: int
 ) -> list[bytes]:
-    """The newest stored report summary bodies (JSON bytes) the tenant may see, at most
-    ``limit`` (045 sc-131). Visibility only, through :func:`fetch_visible_clause`; freshness
-    is the caller's concern. On Postgres the caller's transaction carries the tenant scope.
+    """The newest stored report summaries (JSON bytes) the tenant may see, at most ``limit``
+    (045 sc-131), each cut down to the fields the character lookup reads (047 sc-324).
+
+    Only rows of our own summary queries with exact codes (:func:`_our_summary`); visibility
+    only through :func:`fetch_visible_clause`; freshness is the caller's concern. Served by the
+    partial index ``ix_raw_fetches_summaries`` (0020). On Postgres the caller's transaction
+    carries the tenant scope, and :data:`SUMMARY_LIST_TIMEOUT_MS` bounds the statement (it stays
+    set for the rest of that transaction).
     """
-    rows = await session.scalars(
-        select(_payload_bytes(session.bind.dialect.name))
+    dialect = session.bind.dialect.name
+    if dialect == "postgresql":
+        await session.execute(
+            text("SELECT set_config('statement_timeout', :ms, true)"), {"ms": str(SUMMARY_LIST_TIMEOUT_MS)}
+        )
+    projection = literal_column(_SUMMARY_PROJECTION["postgresql" if dialect == "postgresql" else "sqlite"])
+    rows = await session.execute(
+        select(RawFetch.query_key, RawFetch.params, RawFetch.report_codes, projection)
         .where(
-            RawFetch.operation_name.in_(SUMMARY_OPS),
+            # Literal names, so the planner can match the partial index's predicate.
+            RawFetch.operation_name.in_([literal_column(f"'{op}'") for op in SUMMARY_OPS]),
             fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since),
         )
         .order_by(RawFetch.fetched_at.desc())
         .limit(limit)
     )
-    return [bytes(body) for body in rows]
+    return [bytes(body) for key, params, codes, body in rows if _our_summary(key, params, codes)]
 
 
 async def read_visible_fetch(
