@@ -510,3 +510,8 @@ through respawns as the same named member, with its own small, curated memory. I
   26 auto-generated "2025-04-DD Epic" placeholders (ids 36–61; only 37 held stories, three
   archived 2025 setup stories). Epic states now match their stories: 100, 103, 105 and 203
   in progress; 99, 104 and 248 done; the rest to do.
+
+- **2026-11-01 (retro and session boundaries):** Sprint retro with the owner (summary in
+  CURRENT.md). Practice adopted on trial: one session per sprint and separate sessions for
+  meta talks, with CURRENT.md rewritten as the hand-off before each boundary. Test: does a
+  fresh session repeat anything already settled? Each slip is a missing line in a file.
