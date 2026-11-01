@@ -24,9 +24,9 @@ from wcl_agent.client.wcl_client import _flight_key
 from wcl_agent.tools.report_tools import (
     HOSTILITY_TYPES,
     TABLE_DATA_TYPES,
-    _acap,
     _fight_ids,
     _summary_from,
+    acompact_table,
     report_query,
 )
 
@@ -166,7 +166,7 @@ async def get_stored_fight_table(
         return dict(_FAILED)
     if report is None or report.get("table") is None:
         return dict(NOT_STORED)
-    return {"status": "success", "data_type": data_type, "table": await _acap(report["table"])}
+    return {"status": "success", "data_type": data_type, "table": await acompact_table(report["table"])}
 
 
 async def list_stored_reports_for_character(character: str, tool_context: ToolContext = None) -> dict:

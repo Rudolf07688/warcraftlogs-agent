@@ -107,7 +107,7 @@ def test_small_result_is_not_capped():
     assert payload(result) == {
         "status": "success", "mode": "hybrid", "relaxed": [], "capped": False, "note": None,
         "untrusted": kb.UNTRUSTED_NOTE,
-        "hits": [{"kind": "guide", "source": {"section": "Rotation"}, "text": "x", "score": 0.01}],
+        "hits": [{"kind": "guide", "source": {"section": "Rotation"}, "text": "<data>x</data>", "score": 0.01}],
     }
 
 
