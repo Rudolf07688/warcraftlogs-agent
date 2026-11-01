@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import { DEFAULT_SPELL, spellFor } from "./lib/spells";
+import { toolLabel } from "./toolLabels";
 import type { Frame } from "./api/wsClient";
 import type { ConversationDetail, Message, ProfileProposal } from "./types";
 
@@ -181,5 +182,18 @@ describe("App: a streamed proposal belongs to its own chat (sc-243)", () => {
 describe("spells", () => {
   it("(g) propose_profile_changes has its own spell", () => {
     expect(spellFor("propose_profile_changes")).not.toBe(DEFAULT_SPELL);
+  });
+
+  const STORED_TOOLS = [
+    "search_knowledge",
+    "list_stored_fights",
+    "get_stored_fight_table",
+    "list_stored_reports_for_character",
+  ];
+
+  it.each(STORED_TOOLS)("(h) %s has its own spell and label, not the Warcraft Logs default", (name) => {
+    expect(spellFor(name)).not.toBe(DEFAULT_SPELL);
+    expect(toolLabel(name)).not.toBe(toolLabel("an_unknown_tool"));
+    expect(toolLabel(name)).not.toMatch(/Warcraft Logs/);
   });
 });
