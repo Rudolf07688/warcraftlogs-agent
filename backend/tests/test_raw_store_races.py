@@ -180,19 +180,20 @@ async def test_the_same_tenant_joining_a_grant_only_load_still_gets_it(patched_d
 async def test_a_public_load_is_still_shared_with_every_joiner(patched_db, wcl, fake_redis, tenant_id, other_tenant_id):
     await store_batch([PendingWrite(summary("Priv9", "public"), tenant_id)])
     loads, reads = [], []
-    real_query, real_get = wcl_client.AsyncWCLClient.query, fake_redis.get
+    redis_class = type(fake_redis)  # the cache's own client is another instance of it
+    real_query, real_get = wcl_client.AsyncWCLClient.query, redis_class.get
 
     async def query(self, *args, **kwargs):
         loads.append(1)
         return await real_query(self, *args, **kwargs)
 
-    async def get(name):
+    async def get(self, name):
         reads.append(name)
-        return await real_get(name)
+        return await real_get(self, name)
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(wcl_client.AsyncWCLClient, "query", query)
-        mp.setattr(fake_redis, "get", get)
+        mp.setattr(redis_class, "get", get)
         results = await _summaries(tenant_id, other_tenant_id, None)
     assert all(r is not None for r in results) and wcl["n"] == 0
     assert len(loads) == 1 and reads.count(keys.report_summary("Priv9")) == 1  # one lookup for all
