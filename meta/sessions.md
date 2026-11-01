@@ -13,4 +13,4 @@ are archived in `meta/sprints/<date>/usage.txt` so they outlive the transcripts.
 | 2026-10-31 | 84278822-c396-4fc0-8dea-734725eec37e | Hardening sprint 2026-10-31b (037/038, pushed c614178) and local-first sprint 2026-10-31c (039, pushed 6f31f72); includes the crash recovery. Ids matched by commit times (2026-11-01). |
 | 2026-11-01 | a6f10fe7-0fa2-4b01-9ffb-b9917cd504bd | Knowledge-base sprint 2026-11-01 (tier L, pushed ec58d90), retro, board close-out, session-boundary trial agreed |
 | 2026-11-01 | 5f887f5b-3c0e-4240-8359-5507acf337d8 | First fresh meta session: tooling reflection, P9 "tools over rules" built (25fe6c1), sc-336 filed |
-| 2026-11-01 | f6f1e132-ef58-44e1-9fd8-49f0643502f4 | Sprint 2026-11-01b (big-report turns + KB debt, 20 pts, tier M): planned with Maren in the room, owner preference 23 (ticket names) |
+| 2026-11-01 | f6f1e132-ef58-44e1-9fd8-49f0643502f4 | Sprint 2026-11-01b (big-report turns + KB debt, 20 pts, tier M): planned with Maren in the room, owner preference 23 (ticket names); merged + pushed; retro → P10 (lighter PO admin) + P11 (live checks judge answers), pushed b8a6a54+ |
