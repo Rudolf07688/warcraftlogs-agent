@@ -63,9 +63,10 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   - the product owner's final report
 - **Small progress updates (owner preference 19):** two to four plain lines to the owner at
   each milestone (merge, QA result, fix round, live pass) and otherwise about every 30
-  minutes when something moved. Arm a `Monitor` on the board file filtered to
-  `handoff|merge|escalation` with a 30-minute timeout, and re-arm on expiry; the expiry is
-  the heartbeat. Don't relay idle notifications.
+  minutes when something moved. Arm a `Monitor` with
+  `tail -n0 -F .git/team-board/<board>.jsonl | python3 -u .claude/team/boardwatch.py`
+  (handoff, merge, escalation) and a 30-minute timeout, and re-arm on expiry; the expiry is
+  the heartbeat. Live pass: `.claude/team/livecheck.py`. Don't relay idle notifications.
 - **Completion notices of developers come to you**, not to the product owner. Forward
   each in one message (branch, head, tests, anything new) and tell the product owner to
   merge.
