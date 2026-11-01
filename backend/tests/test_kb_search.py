@@ -105,6 +105,7 @@ def test_small_result_is_not_capped():
     assert cap(result) is result
     assert payload(result) == {
         "status": "success", "mode": "hybrid", "relaxed": [], "capped": False, "note": None,
+        "untrusted": kb.UNTRUSTED_NOTE,
         "hits": [{"kind": "guide", "source": {"section": "Rotation"}, "text": "x", "score": 0.01}],
     }
 
@@ -363,6 +364,11 @@ async def test_resolves_filters_into_canonical_values(identity, fake_search, pat
         ({"class_name": "Warrior", "spec": "Holy"}, 'Unknown spec "Holy"'),
         ({"class_name": "%"}, 'Unknown class "%"'),
         ({"difficulty": "epic"}, "Unknown difficulty"),
+        ({"until": "9999-12-31"}, "ISO date"),
+        ({"since": "2026-10-01" + " " * 50}, "ISO date"),
+        ({"report_code": 12345}, "report_code"),
+        ({"encounter": "x" * 101}, "at most 100"),
+        ({"character": "y" * 101}, "at most 100"),
     ],
 )
 async def test_bad_arguments_are_correctable_errors(identity, fake_search, patched_db, kwargs, message):
@@ -406,3 +412,18 @@ def test_only_the_kb_package_reads_the_chunk_tables():
         and re.search(r"\bKbChunk\b|\bKbChatChunk\b|(?i:\b(?:from|join)\s+kb_(?:chat_)?chunks\b)", path.read_text())
     ]
     assert offenders == []
+
+
+def test_resolution_errors_echo_at_most_sixty_characters():
+    with pytest.raises(nr.ResolutionError) as err:
+        nr.resolve_class("z" * 500)
+    assert "z" * 59 + "…" in str(err.value) and "z" * 61 not in str(err.value)
+
+
+async def test_unicode_digits_are_not_encounter_ids(session, tenant_id, monkeypatch):
+    async def zones():
+        return [{"id": 3, "name": "Three", "encounters": [{"id": 3, "name": "Boss Three"}]}]
+
+    monkeypatch.setattr(nr, "load_world_zones", zones)
+    with pytest.raises(nr.ResolutionError):
+        await nr.resolve_encounter("\u0663", session=session, tenant_id=tenant_id)  # Arabic-Indic 3

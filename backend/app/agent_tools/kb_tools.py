@@ -48,6 +48,8 @@ _CHARACTER_HINT = (
     " If this is a player in a stored log, drop `character` and put the name in a query instead."
 )
 _REPORT_CODE = re.compile(r"[A-Za-z0-9]{1,32}")
+_MAX_NAME_CHARS = 100  # encounter and character arguments
+_MAX_DATE_CHARS = 40
 
 
 class _BadArgument(ValueError):
@@ -70,8 +72,10 @@ def _queries(queries: list[str]) -> tuple[str, ...]:
 
 def _date(value: str, name: str) -> datetime:
     try:
+        if len(value) > _MAX_DATE_CHARS:
+            raise ValueError(value)
         parsed = datetime.fromisoformat(value.strip())
-    except (AttributeError, ValueError):
+    except (TypeError, ValueError):
         raise _BadArgument(f"{name} must be an ISO date such as 2026-10-28.") from None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
@@ -79,7 +83,10 @@ def _date(value: str, name: str) -> datetime:
 def _until(value: str) -> datetime:
     """An exclusive upper bound: a bare date includes that whole day."""
     bound = _date(value, "until")
-    return bound + timedelta(days=1) if len(value.strip()) == 10 else bound
+    try:
+        return bound + timedelta(days=1) if len(value.strip()) == 10 else bound
+    except OverflowError:  # "9999-12-31"
+        raise _BadArgument("until must be an ISO date such as 2026-10-28.") from None
 
 
 async def _request(
@@ -107,8 +114,11 @@ async def _request(
     stated = list(user_stated or [])
     if any(s not in kb_search.RELAX_ORDER for s in stated):
         raise _BadArgument(f"user_stated takes {', '.join(kb_search.RELAX_ORDER)}.")
-    if report_code is not None and not _REPORT_CODE.fullmatch(report_code):
+    if report_code is not None and not (isinstance(report_code, str) and _REPORT_CODE.fullmatch(report_code)):
         raise _BadArgument("report_code is the report's letters and digits only.")
+    for name, value in (("encounter", encounter), ("character", character)):
+        if value is not None and (not isinstance(value, str) or len(value) > _MAX_NAME_CHARS):
+            raise _BadArgument(f"{name} must be a name of at most {_MAX_NAME_CHARS} characters.")
     lower = _date(since, "since") if since else None
     upper = _until(until) if until else None
     if lower and upper and lower >= upper:

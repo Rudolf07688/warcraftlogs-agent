@@ -157,10 +157,16 @@ async def test_a_chunk_without_an_embedding_is_found_by_keyword(pg, tenants):
 
 async def test_both_legs_contribute(pg, tenants):
     word = fresh()
-    # keyword-only match (no vector) and a vector-close chunk without the word
-    kw = await add_guide(pg, f"{word} Overpower builds Martial Prowess", embed=False)
-    vec = await add_guide(pg, "Mortal Strike Execute Overpower Colossus Smash rotation priority")
-    result = await search(tenants[0], f"{word} Mortal Strike Execute Overpower Colossus Smash rotation", kind="guide", k=15)
+    async with pg() as db:  # Monk guides belong to this test; the database outlives runs
+        await db.execute(sa.delete(SpecGuide).where(SpecGuide.class_name == "Monk"))
+        await db.commit()
+    # a keyword-only match (no vector) and a vector-close chunk without the word
+    kw = await add_guide(pg, f"{word} Overpower builds Martial Prowess", class_name="Monk", spec="Windwalker", embed=False)
+    vec = await add_guide(pg, "Mortal Strike Execute Overpower Colossus Smash rotation priority", class_name="Monk", spec="Windwalker")
+    result = await search(
+        tenants[0], f"{word} Mortal Strike Execute Overpower Colossus Smash rotation", kind="guide",
+        class_name="Monk", hard={"class_name"}, k=15,
+    )
     found = {h.source["content_type"] for h in result.hits}
     assert {kw, vec} <= found
 
@@ -322,3 +328,15 @@ async def test_wcl_filters_narrow_and_hits_point_at_the_fight(pg, tenants):
     ]
     by_player = await search(a, f"Report {code}", report_code=code, class_name="Warrior", spec="Arms", hard={"spec", "class_name"})
     assert {h.source["fight_id"] for h in by_player.hits if h.kind == "wcl"} == {12}
+
+
+async def test_stopwords_do_not_match_every_wcl_chunk(pg, tenants):
+    """P7 SEC-001: the 'simple' config keeps stopwords; the query side drops them."""
+    a, _ = tenants
+    code = fresh()
+    await set_status(pg, code, "public")
+    await add_wcl(pg, await add_fetch(pg, [code]), code, f"the boss of {code} is a wall", embed=False)
+    hits = await search(a, "the of a is", embedder=None, kind="wcl", report_code=code)
+    assert hits.hits == []
+    found = await search(a, f"the {code}", embedder=None, kind="wcl", report_code=code)
+    assert code in codes_of(found)
