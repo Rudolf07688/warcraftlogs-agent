@@ -89,14 +89,20 @@ async def _acap(obj: Any) -> Any:
     return await asyncio.to_thread(_cap, obj)
 
 
+def report_query(field_calls: str, var_decls: str) -> str:
+    """The ``reportData.report(code:){ <field_calls> }`` query; its text is the stored row's key
+    (045 sc-131 reads stored tables by it)."""
+    return (
+        f"query ReportQ($code: String!{var_decls}) {{ "
+        f"reportData {{ report(code: $code) {{ {field_calls} }} }} }}"
+    )
+
+
 async def _report_fields(
     code: str, field_calls: str, var_decls: str, variables: dict[str, Any]
 ) -> dict[str, Any] | None:
     """Run ``reportData.report(code:){ <field_calls> }`` and return the report object."""
-    query = (
-        f"query ReportQ($code: String!{var_decls}) {{ "
-        f"reportData {{ report(code: $code) {{ {field_calls} }} }} }}"
-    )
+    query = report_query(field_calls, var_decls)
     data = await wcl_client.get_async_client().query(query, {"code": code, **variables})
     return ((data.get("data") or {}).get("reportData") or {}).get("report")
 

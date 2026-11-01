@@ -416,6 +416,28 @@ async def probe_visible_fetch(
     return Probe("hit", bytes(found[2]), bool(found[1]))
 
 
+SUMMARY_OPS = ("ReportSummary", "ReportsBatch")  # our report summary queries (single, batch)
+
+
+async def list_visible_summaries(
+    session: AsyncSession, *, tenant_id: uuid.UUID | None, since: datetime, limit: int
+) -> list[bytes]:
+    """The newest stored report summary bodies (JSON bytes) the tenant may see, at most
+    ``limit`` (045 sc-131). Visibility only, through :func:`fetch_visible_clause`; freshness
+    is the caller's concern. On Postgres the caller's transaction carries the tenant scope.
+    """
+    rows = await session.scalars(
+        select(_payload_bytes(session.bind.dialect.name))
+        .where(
+            RawFetch.operation_name.in_(SUMMARY_OPS),
+            fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since),
+        )
+        .order_by(RawFetch.fetched_at.desc())
+        .limit(limit)
+    )
+    return [bytes(body) for body in rows]
+
+
 async def read_visible_fetch(
     session: AsyncSession,
     query_key: str,

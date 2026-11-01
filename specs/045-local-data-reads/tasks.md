@@ -42,10 +42,10 @@ Run suites in a clean env: `env -i HOME=$HOME PATH=$PATH uv run --extra test pyt
 
 ## Phase 6: US4 sc-131 exact lookups (P3) — after resolver merge + `raw_fetches.py` back from Ansel
 
-- [ ] T018 [US4] `list_visible_summaries(session, *, tenant_id, since, limit)` via `fetch_visible_clause` in `backend/app/repositories/raw_fetches.py`
-- [ ] T019 [US4] Shared `report_query(field_calls, var_decls)` builder in `wcl_agent/tools/report_tools.py` (if granted; else pinned duplicate)
-- [ ] T020 [US4] Tools + `STORED_DATA_TOOLS` group in `backend/app/agent_tools/stored_data_tools.py`; tests (visible, not visible == not stored byte-identical, stale, resolver error, outside a turn, bounds) in `backend/tests/test_stored_data_tools.py`
-- [ ] T021 [US4] Register the group in `backend/app/agent_runner.py` (when granted)
+- [X] T018 [US4] `list_visible_summaries(session, *, tenant_id, since, limit)` via `fetch_visible_clause` in `backend/app/repositories/raw_fetches.py`
+- [X] T019 [US4] Shared `report_query(field_calls, var_decls)` builder in `wcl_agent/tools/report_tools.py` (if granted; else pinned duplicate)
+- [X] T020 [US4] Tools + `STORED_DATA_TOOLS` group in `backend/app/agent_tools/stored_data_tools.py`; tests (visible, not visible == not stored byte-identical, stale, resolver error, outside a turn, bounds) in `backend/tests/test_stored_data_tools.py`
+- [X] T021 [US4] Register the group in `backend/app/agent_runner.py` (when granted)
 
 ## Phase 7: Polish
 
