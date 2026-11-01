@@ -1012,7 +1012,11 @@ class KbChatChunk(Base):
             ondelete="CASCADE",
             name="fk_kb_chat_chunks_conversation",
         ),
-        UniqueConstraint("conversation_id", "message_seq", name="uq_kb_chat_chunks_message"),
+        # With the tenant in the key, a foreign conversation id hits the FK, never this key
+        # (no cross-tenant existence oracle; P7 SEC-001).
+        UniqueConstraint(
+            "tenant_id", "conversation_id", "message_seq", name="uq_kb_chat_chunks_message"
+        ),
         Index(
             "ix_kb_chat_chunks_embedding",
             "embedding",

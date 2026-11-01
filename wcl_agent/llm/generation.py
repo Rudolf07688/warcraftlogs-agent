@@ -1,4 +1,5 @@
-"""One-shot model calls on the active provider: text, JSON and search-grounded text (feature 035).
+"""One-shot model calls on the active provider: text, JSON and search-grounded text (feature 035),
+and text embeddings for the knowledge base (feature 043).
 
 Follow-up suggestions, chat titles, findings reports and the guide pipeline ask this module for
 a reply instead of calling an SDK themselves. It is part of the provider layer: with
@@ -286,3 +287,31 @@ async def generate_grounded(
         policy,
     )
     return Grounded((response.text or "").strip(), grounding_sources(response))
+
+
+# --- embeddings for the knowledge base (feature 043) ------------------------------------------
+
+
+def embeddings_available() -> bool:
+    """Whether the genai client that embeds can be built (configuration and credentials)."""
+    try:
+        _genai_client()
+    except Exception:  # noqa: BLE001 - any setup error means "no embeddings", never a crash
+        return False
+    return True
+
+
+async def embed_texts(
+    model: str, texts: Sequence[str], *, task: str, dimensions: int, policy: RetryPolicy
+) -> list[list[float]]:
+    """Raw (not normalised) embedding vectors for ``texts``, in order, from one request on the
+    genai client, whichever provider serves chat. Over-long texts are truncated by the model.
+    Raises the SDK error or ``ModelRateLimited``."""
+    config = genai_types.EmbedContentConfig(
+        task_type=task, output_dimensionality=dimensions, auto_truncate=True
+    )
+    response = await _with_retry(
+        lambda: _genai_client().aio.models.embed_content(model=model, contents=list(texts), config=config),
+        policy,
+    )
+    return [list(embedding.values or []) for embedding in response.embeddings or []]

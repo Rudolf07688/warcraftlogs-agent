@@ -55,7 +55,8 @@ constraints double as the source lookups (cascade deletes, re-index).
 | `text`, `content_hash`, `embedding`, `embed_model`, `embedded_at`, `extra` | as above | text bounded 6,000 chars |
 | `tsv` | tsvector GENERATED STORED | `to_tsvector('english', text)` |
 
-Constraints: `UNIQUE (conversation_id, message_seq)`. Indexes: HNSW, GIN `tsv`, GIN `extra`,
+Constraints: `UNIQUE (tenant_id, conversation_id, message_seq)` (tenant first: a foreign
+conversation id fails on the FK, never on this key, so there is no existence oracle; P7 SEC-001). Indexes: HNSW, GIN `tsv`, GIN `extra`,
 GIN `characters jsonb_path_ops`, B-tree `(tenant_id, created_at)`.
 
 `conversations` gains `UNIQUE (id, tenant_id)` (`uq_conversations_id_tenant`), the target of

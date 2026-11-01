@@ -25,6 +25,8 @@ from datetime import UTC, datetime
 from ...config import settings
 from ...db import repository as repo
 from ...db import session as db_session
+from ...kb import indexer as kb_indexer
+from ...kb.guide_chunker import GuideJob
 from .authoring import SECTION_LABEL, author_claims, revise_claims
 from .briefing import PatchUnknown, SeasonUnknown, build_briefing
 from .checks import run_checks
@@ -336,7 +338,7 @@ async def _run(class_name: str, spec: str, content_type: str, stats: RunStats) -
     sources = cited_sources(authored.claims, fact_sheet)
     snapshot = EvidenceSnapshot(data_sheet=data_sheet, fact_sheet=fact_sheet)
     async with db_session.SessionLocal() as session:
-        await repo.publish_spec_guide(
+        published = await repo.publish_spec_guide(
             session,
             class_name=class_name,
             spec=spec,
@@ -353,6 +355,10 @@ async def _run(class_name: str, spec: str, content_type: str, stats: RunStats) -
             evidence=snapshot.model_dump(mode="json"),
         )
         await session.commit()
+    # Feature 043: the published guide's sections become knowledge base chunks (enqueue only).
+    kb_indexer.offer_guide(
+        GuideJob(published.id, class_name, spec, content_type, rendered.markdown, briefing.live_patch)
+    )
     await _resolve_reports(loop.report_verdicts)
     stats.claims_published = len(authored.claims)
     return RunOutcome(outcome="published", rounds=loop.rounds)

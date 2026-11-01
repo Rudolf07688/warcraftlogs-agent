@@ -171,7 +171,11 @@ def upgrade() -> None:
             ondelete="CASCADE",
             name="fk_kb_chat_chunks_conversation",
         ),
-        sa.UniqueConstraint("conversation_id", "message_seq", name="uq_kb_chat_chunks_message"),
+        # The tenant leads the key: a foreign conversation id must fail on the FK, never here
+        # (no cross-tenant existence oracle; P7 SEC-001).
+        sa.UniqueConstraint(
+            "tenant_id", "conversation_id", "message_seq", name="uq_kb_chat_chunks_message"
+        ),
     )
     _search_indexes("kb_chat_chunks")
     op.create_index(
