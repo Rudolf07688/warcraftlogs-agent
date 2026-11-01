@@ -54,9 +54,9 @@ def report(c: str) -> dict:
     }
 
 
-def fetched(query: str, variables: dict, data: dict) -> FetchedResponse:
+def fetched(query: str, variables: dict, data: dict, at: datetime = NOW) -> FetchedResponse:
     body = json.dumps({"data": data}).encode()
-    return FetchedResponse(_flight_key(query, variables), query, variables, body, NOW)
+    return FetchedResponse(_flight_key(query, variables), query, variables, body, at)
 
 
 @pytest.fixture
@@ -112,3 +112,55 @@ async def test_the_lookup_is_strict_bounded_and_uses_the_index(pg, tenant):
         raw = await db.connection()
         plan = (await raw.exec_driver_sql("EXPLAIN " + statement, parameters)).scalars().all()
     assert any("ix_raw_fetches_summaries" in line for line in plan), "\n".join(plan)
+
+
+async def test_the_scan_is_bounded_by_the_fetch_time_not_by_everything_stored(pg, tenant):
+    """049 PERF-002: rows fetched before the window are not read, however many there are; rows
+    inside it still come back. ``EXPLAIN ANALYZE`` counts the rows the index scan handed on."""
+    since = NOW - timedelta(days=1)
+    recent = code()
+    old = [code() for _ in range(5)]
+    writes = [PendingWrite(fetched(REPORT_SUMMARY, {"code": recent}, {"reportData": {"report": report(recent)}}), tenant)]
+    for c in old:
+        stale = fetched(REPORT_SUMMARY, {"code": c}, {"reportData": {"report": report(c)}}, at=NOW - timedelta(days=40))
+        writes.append(PendingWrite(stale, tenant))
+    await store_batch(writes)
+
+    seen: list[tuple[str, object]] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if "jsonb_object_agg" in statement:
+            seen.append((statement, parameters))
+
+    engine = pg.kw["bind"].sync_engine
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        async with pg() as db:
+            await set_scope(db, tenant_id=tenant)
+            bodies = await list_visible_summaries(db, tenant_id=tenant, since=since, limit=500)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    listed = {r["code"] for b in bodies for r in json.loads(b)["data"]["reportData"].values()}
+    assert recent in listed and not listed & set(old)
+
+    [(statement, parameters)] = seen
+    async with pg() as db:
+        await set_scope(db, tenant_id=tenant)
+        in_window = await db.scalar(sa.text(
+            "SELECT count(*) FROM raw_fetches WHERE operation_name IN ('ReportSummary', 'ReportsBatch')"
+            " AND fetched_at >= :since"), {"since": since})
+        stored = await db.scalar(sa.text(
+            "SELECT count(*) FROM raw_fetches WHERE operation_name IN ('ReportSummary', 'ReportsBatch')"))
+        await db.execute(sa.text("SET LOCAL enable_seqscan = off"))
+        raw = await db.connection()
+        plan = (await raw.exec_driver_sql("EXPLAIN (ANALYZE, FORMAT JSON) " + statement, parameters)).scalar()
+    assert stored - in_window >= len(old)  # there is more stored than the window holds
+
+    def index_scans(node):
+        yield from ([node] if node.get("Index Name") == "ix_raw_fetches_summaries" else [])
+        for child in node.get("Plans", []):
+            yield from index_scans(child)
+
+    [scan] = [n for n in index_scans(plan[0]["Plan"]) if "fetched_at" in n.get("Index Cond", "")]
+    read = scan["Actual Rows"] + scan.get("Rows Removed by Filter", 0)
+    assert read <= in_window, json.dumps(plan)

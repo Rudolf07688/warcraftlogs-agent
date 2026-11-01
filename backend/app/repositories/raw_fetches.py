@@ -486,10 +486,14 @@ async def list_visible_summaries(
     (045 sc-131), each cut down to the fields the character lookup reads (047 sc-324).
 
     Only rows of our own summary queries with exact codes (:func:`_our_summary`); visibility
-    only through :func:`fetch_visible_clause`; freshness is the caller's concern. Served by the
-    partial index ``ix_raw_fetches_summaries`` (0020). On Postgres the caller's transaction
-    carries the tenant scope, and :data:`SUMMARY_LIST_TIMEOUT_MS` bounds the statement (it stays
-    set for the rest of that transaction).
+    only through :func:`fetch_visible_clause`. Served by the partial index
+    ``ix_raw_fetches_summaries`` (0020), and bounded by it: only rows fetched at or after
+    ``since`` are read, so the walk never grows with the rows stored since the beginning (PERF-002).
+    A visible row has a fresh status or grant, and a fetch writes those with the row's own
+    ``fetched_at``, so this loses only a summary last fetched before ``since`` and kept visible by
+    a grant of another query naming its report. On Postgres the caller's transaction carries the
+    tenant scope, and :data:`SUMMARY_LIST_TIMEOUT_MS` bounds the statement (it stays set for the
+    rest of that transaction).
     """
     dialect = session.bind.dialect.name
     if dialect == "postgresql":
@@ -502,6 +506,7 @@ async def list_visible_summaries(
         .where(
             # Literal names, so the planner can match the partial index's predicate.
             RawFetch.operation_name.in_([literal_column(f"'{op}'") for op in SUMMARY_OPS]),
+            RawFetch.fetched_at >= since,
             fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since),
         )
         .order_by(RawFetch.fetched_at.desc())

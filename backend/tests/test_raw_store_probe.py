@@ -350,6 +350,8 @@ def test_breaker_transitions(clock):
 async def test_every_probe_is_counted_once(patched_db, monkeypatch, tenant_id, other_tenant_id):
     row = table("Cnt1")
     await store_batch([PendingWrite(summary("Cnt1")), PendingWrite(row, tenant_id)])
+    # A slow full run must not turn a real probe into a timeout (that opens the breaker early).
+    monkeypatch.setattr(raw_fetch_reads.settings, "raw_store_probe_timeout_ms", 30_000)
     with turn(tenant_id):
         await source(row)  # hit
         await source(table("Cnt2"))  # miss

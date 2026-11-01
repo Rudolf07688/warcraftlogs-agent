@@ -14,7 +14,7 @@ in the DB"). Design: `documentation/designs/20261101_semantic_knowledge_base.md`
 
 ### Session 2026-11-01 (self-answered, board #39-#43)
 
-- Q: Probe timeout default and breaker trigger? → A: 400 ms setting; 30 s breaker; opens on timeouts and connection-class errors only; half-open lets one trial through (`clarify:045-breaker`).
+- Q: Probe timeout default and breaker trigger? → A: 400 ms setting; 30 s breaker; opens on 3 consecutive timeouts (first answer: one; changed by 047 sc-323, a single slow read must not disable the store) or one connection-class error; half-open lets one trial through (`clarify:045-breaker`).
 - Q: How can the probe run inside single-flight when its answer depends on the workspace? → A: the flight key includes the store's workspace scope whenever a store is installed (`clarify:045-flight-scope`).
 - Q: Where is the per-turn boundary without touching `ws.py`? → A: the cache module's per-turn hook `set_refresh_actor` (`clarify:045-turn-seam`).
 - Q: How are gone-vs-write races ordered without a migration? → A: DB tombstone status `gone` in `raw_reports` + request start time on fetches; Redis tombstone key checked after each report-family write (`clarify:045-races`).
@@ -40,12 +40,13 @@ call skips the store.
 
 **Acceptance Scenarios**:
 
-1. **Given** the store hangs, **When** a report query runs, **Then** it waits at most the probe
-   timeout (default 400 ms, configurable, never over 500 ms by default) and goes to WCL, and for the
-   next ~30 s no probe runs at all (breaker open).
+1. **Given** the store hangs, **When** report queries run, **Then** each waits at most the probe
+   timeout (default 400 ms, configurable, never over 500 ms by default) and goes to WCL, and after
+   the 3rd consecutive timeout (or at once on a connection error) no probe runs for ~30 s (breaker
+   open; 047 sc-323).
 2. **Given** the breaker has been open for 30 s, **When** the next calls arrive, **Then** exactly
    one trial probe runs; others skip the store until it ends; success closes the breaker, a timeout
-   or connection error opens it again for 30 s.
+   or connection error opens it again for 30 s (the trial's single timeout is enough).
 3. **Given** no stored row for the query, **When** the store is probed, **Then** it costs one SQL
    statement (at most 2) and no tenant scope is set.
 4. **Given** a stored, fresh, visible row, **When** the store is probed, **Then** at most one
@@ -164,8 +165,9 @@ not visible (another workspace's grant), not stored, stale.
 
 **sc-295**
 - **FR-001**: The probe timeout is a setting (`RAW_STORE_PROBE_TIMEOUT_MS`, default 400). A breaker
-  opens for 30 s after a probe timeout or connection error; while open no probe runs; after it, one
-  trial probe (half-open) decides.
+  opens for 30 s after 3 consecutive probe timeouts (a success resets the count) or one connection
+  error; while open no probe runs; after it, one trial probe (half-open) decides, and a single
+  timeout of the trial opens it again.
 - **FR-002**: The probe looks up the row first. No row, invalid codes or not fresh end the probe
   without setting a tenant scope. A miss costs at most 2 SQL statements.
 - **FR-003**: On a hit the tenant scope is one `set_config` statement (skipped when every code is
