@@ -25,7 +25,7 @@
 
 - [X] T010 [US4] Migration `backend/migrations/versions/0020_raw_fetch_summary_index.py` + index on `RawFetch` in `backend/app/db/models.py`
 - [X] T011 [US4] `backend/app/repositories/raw_fetches.py`: `list_visible_summaries` verifies our fixed query key + exact codes, projects fields in SQL, statement timeout
-- [X] T012 [US4] `backend/app/agent_tools/stored_data_tools.py`: caller passes the timeout (outside the `get_stored_fight_table` hunk)
+- [X] T012 [US4] `backend/app/agent_tools/stored_data_tools.py`: no change needed (the repository applies the timeout and keeps the body shape)
 - [X] T013 [US4] `backend/tests/test_047_stored_reports.py`: forged op / inexact codes never returned (SQLite); Postgres: index plan + projection bytes bounded
 - [X] T014 [US4] guard test unchanged; mutate; `check.py --pg`; commit
 
@@ -42,5 +42,5 @@
 
 ## Phase 7: Hand-off
 
-- [ ] T020 detect-changes, ownership check, rebase on sprint tip, `check.py run --pg ansel` on the committed head
+- [X] T020 detect-changes, ownership check, rebase on sprint tip, `check.py run --pg ansel` on the committed head
 - [ ] T021 Stories to Under Review, board handoff, `live-check:047` question

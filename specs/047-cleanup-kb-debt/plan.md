@@ -58,7 +58,7 @@ backend/app/services/fetch_persistence.py     # sc-322 bury summary-private code
 specs/045-local-data-reads/spec.md            # sc-322 FR-010 as built
 backend/app/services/raw_fetch_reads.py       # sc-323 breaker counts timeouts
 backend/app/repositories/raw_fetches.py       # sc-324 strict + projected summaries
-backend/app/agent_tools/stored_data_tools.py  # sc-324 caller (not the get_stored_fight_table hunk)
+backend/app/agent_tools/stored_data_tools.py  # sc-324 caller: unchanged (same body shape, cut down)
 backend/app/db/models.py                      # sc-324 index declaration
 backend/migrations/versions/0020_raw_fetch_summary_index.py
 wcl_agent/cache/cache.py                      # sc-326 joiners / lock waiters count external
