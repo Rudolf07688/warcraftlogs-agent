@@ -32,6 +32,7 @@ from wcl_agent.client.wcl_client import FetchedResponse, exact_report_codes
 
 from ..db import session as db_session
 from ..db.models import KbChatChunk, KbChunk, Tenant
+from ..repositories.raw_fetches import load_fetch_for_index
 from ..services import fetch_persistence  # module, not names: it imports this module too
 from ..tenancy.context import tenant_scope
 from . import store
@@ -39,7 +40,7 @@ from .chat_chunker import ExchangeJob, chunk_exchange
 from .embedder import get_embedder
 from .guide_chunker import GuideJob, chunk_guide
 from .names import mentioned_characters
-from .wcl_chunker import chunk_fetch, needed_fights, source_from_query
+from .wcl_chunker import chunk_fetch, chunkable_query, needed_fights, source_from_query
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,21 @@ SHUTDOWN_GRACE_S = 5.0
 SWEEP_MAX_ROWS = 2_000  # per table and sweep, so a sweep never starves the queue for long
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the writer: big bodies are parsed off the loop
 
-Job = FetchedResponse | GuideJob | ExchangeJob
+
+
+@dataclass(frozen=True)
+class FetchJob:
+    """A stored fetch to (re)chunk. Only the key and the query travel through the queue; the
+    consumer reads the body from the store, so a queued job never holds a multi-MB response
+    (P7 SEC-001)."""
+
+    query_key: str
+    query: str
+    variables: dict
+    report_codes: tuple[str, ...]
+
+
+Job = FetchJob | GuideJob | ExchangeJob
 
 
 @dataclass
@@ -148,30 +163,32 @@ class KbIndexer:
 
     async def handle(self, job: Job) -> None:
         """Chunk, write and embed one job (also called directly by tests)."""
-        if isinstance(job, FetchedResponse):
+        if isinstance(job, FetchJob):
             await self._index_fetch(job)
         elif isinstance(job, GuideJob):
             await self._index_guide(job)
         else:
             await self._index_exchange(job)
 
-    async def _index_fetch(self, fetched: FetchedResponse) -> None:
-        codes = exact_report_codes(fetched.query, fetched.variables) or []
-        if not codes:
-            return  # 039 never serves a row that names no report: no chunks to pay for
-        if len(fetched.content) > _PARSE_OFF_LOOP_BYTES:
-            body = await asyncio.to_thread(json.loads, fetched.content)
-        else:
-            body = json.loads(fetched.content)
-        source = source_from_query(fetched.query_key, fetched.query, fetched.variables, codes, body)
+    async def _index_fetch(self, job: FetchJob) -> None:
         async with db_session.SessionLocal() as session:
+            row = await load_fetch_for_index(session, job.query_key)
+            if row is None:
+                return  # gone (report gone or private): its chunks went with it (cascade)
+            # The newest stored body for this key: a newer fetch since the offer only means its
+            # own job finds nothing left to change.
+            if len(row.body) > _PARSE_OFF_LOOP_BYTES:
+                body = await asyncio.to_thread(json.loads, row.body)
+            else:
+                body = json.loads(row.body)
+            source = source_from_query(job.query_key, job.query, job.variables, job.report_codes, body)
             code, fights = needed_fights(source)
             contexts = await store.fight_contexts(session, code, fights) if code else {}
+            # Even no chunks is written: a body that now yields none must drop the old ones
+            # (P7 SEC-002a).
             drafts = chunk_fetch(source, contexts)
-            if not drafts:
-                return
             try:
-                ids = await store.replace_source_chunks(session, drafts, raw_fetch_id=fetched.query_key)
+                ids = await store.replace_source_chunks(session, drafts, raw_fetch_id=job.query_key)
                 await session.commit()
             except IntegrityError:
                 # The fetch row went (report gone or private) before we got here: nothing to keep.
@@ -266,9 +283,15 @@ _indexer: KbIndexer | None = None
 
 
 def offer_fetch(fetched: FetchedResponse) -> None:
-    """The writer's post-commit hook for a stored fetch whose body changed (contract 5)."""
-    if _indexer is not None:
-        _indexer.offer(fetched)
+    """The writer's post-commit hook for a stored fetch whose body changed (contract 5).
+
+    Only a fetch that can ever have chunks is queued: it names an exact report code (039 never
+    serves the rest) and its query is one the chunker reads. The job carries no body."""
+    if _indexer is None or not chunkable_query(fetched.query):
+        return
+    codes = exact_report_codes(fetched.query, fetched.variables)
+    if codes:
+        _indexer.offer(FetchJob(fetched.query_key, fetched.query, dict(fetched.variables), tuple(codes)))
 
 
 def offer_guide(job: GuideJob) -> None:
@@ -283,4 +306,4 @@ def offer_exchange(job: ExchangeJob) -> None:
         _indexer.offer(job)
 
 
-__all__ = ["ExchangeJob", "GuideJob", "KbIndexer", "offer_exchange", "offer_fetch", "offer_guide"]
+__all__ = ["ExchangeJob", "FetchJob", "GuideJob", "KbIndexer", "offer_exchange", "offer_fetch", "offer_guide"]

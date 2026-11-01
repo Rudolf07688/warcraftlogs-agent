@@ -139,7 +139,7 @@ from sqlalchemy import select, update  # noqa: E402
 from backend.app.db import session as db_session  # noqa: E402
 from backend.app.db.models import Conversation, KbChatChunk, KbChunk, RawFetch, UserCharacter  # noqa: E402
 from backend.app.kb import indexer as kb_indexer  # noqa: E402
-from backend.app.kb.indexer import ExchangeJob, GuideJob, KbIndexer  # noqa: E402
+from backend.app.kb.indexer import ExchangeJob, FetchJob, GuideJob, KbIndexer  # noqa: E402
 from backend.app.services.fetch_persistence import PendingWrite, store_batch  # noqa: E402
 from wcl_agent.client.queries import REPORT_SUMMARY  # noqa: E402
 from wcl_agent.client.wcl_client import FetchedResponse, _flight_key  # noqa: E402
@@ -185,10 +185,20 @@ def indexer() -> KbIndexer:
 
 
 async def add_raw(db, fetched: FetchedResponse) -> None:
+    """Store (or replace) the fetch's row with its body, as the 039 writer would."""
     async with db() as s:
-        s.add(RawFetch(query_key=fetched.query_key, params=fetched.variables, report_codes=[CODE],
-                       fetched_at=NOW, payload={}))
+        await s.merge(RawFetch(query_key=fetched.query_key, params=fetched.variables, report_codes=[CODE],
+                               fetched_at=NOW, payload=json.loads(fetched.content)))
         await s.commit()
+
+
+def job_of(fetched: FetchedResponse) -> FetchJob:
+    return FetchJob(fetched.query_key, fetched.query, fetched.variables, (CODE,))
+
+
+async def index(db, indexer: KbIndexer, fetched: FetchedResponse) -> None:
+    await add_raw(db, fetched)
+    await indexer.handle(job_of(fetched))
 
 
 async def chunks(db, model=KbChunk):
@@ -199,9 +209,7 @@ async def chunks(db, model=KbChunk):
 async def test_a_stored_fetch_is_chunked_and_embedded_with_unit_vectors(db, indexer):
     fake = FakeEmbedder()
     set_embedder(fake)
-    fetched = summary_fetch([1, 2, 3])
-    await add_raw(db, fetched)
-    await indexer.handle(fetched)
+    await index(db, indexer, summary_fetch([1, 2, 3]))
     rows = await chunks(db)
     assert [r.label for r in rows] == ["fight 1 summary", "fight 2 summary", "fight 3 summary"]
     assert all(math.isclose(math.fsum(x * x for x in r.embedding), 1.0) for r in rows)
@@ -212,20 +220,18 @@ async def test_a_stored_fetch_is_chunked_and_embedded_with_unit_vectors(db, inde
 async def test_an_unchanged_chunk_is_never_embedded_again(db, indexer):
     fake = FakeEmbedder()
     set_embedder(fake)
-    await add_raw(db, summary_fetch([1, 2]))
-    await indexer.handle(summary_fetch([1, 2]))
+    await index(db, indexer, summary_fetch([1, 2]))
     assert sum(map(len, fake.calls)) == 2
-    await indexer.handle(summary_fetch([1, 2]))  # same text: nothing to embed
+    await index(db, indexer, summary_fetch([1, 2]))  # same text: nothing to embed
     assert sum(map(len, fake.calls)) == 2
-    await indexer.handle(summary_fetch([1, 2, 3]))  # one new fight: one call for it alone
+    await index(db, indexer, summary_fetch([1, 2, 3]))  # one new fight: one call for it alone
     assert fake.calls[-1] == [(await chunks(db))[2].text] and sum(map(len, fake.calls)) == 3
 
 
 async def test_a_replaced_fetch_loses_chunks_it_no_longer_produces(db, indexer):
     set_embedder(FakeEmbedder())
-    await add_raw(db, summary_fetch([1, 2]))
-    await indexer.handle(summary_fetch([1, 2]))
-    await indexer.handle(summary_fetch([2], title="Renamed"))
+    await index(db, indexer, summary_fetch([1, 2]))
+    await index(db, indexer, summary_fetch([2], title="Renamed"))
     [row] = await chunks(db)
     assert row.fight_id == 2 and "Renamed" in row.text and row.embedding is not None
 
@@ -233,8 +239,7 @@ async def test_a_replaced_fetch_loses_chunks_it_no_longer_produces(db, indexer):
 async def test_a_failing_embedder_leaves_keyword_rows_and_the_sweep_embeds_them(db, indexer):
     fake = FakeEmbedder(fail=True)
     set_embedder(fake)
-    await add_raw(db, summary_fetch([1]))
-    await indexer.handle(summary_fetch([1]))  # never raises
+    await index(db, indexer, summary_fetch([1]))  # never raises
     [row] = await chunks(db)
     assert row.embedding is None and row.text.startswith(f"Report {CODE}")
     await indexer.handle(GuideJob(uuid.uuid4(), "Warrior", "Arms", "raid", "## Rotation\nMortal Strike."))
@@ -253,8 +258,7 @@ async def test_a_vector_is_not_stored_when_the_text_changed_meanwhile(db, indexe
             return await super().embed(texts, task=task)
 
     set_embedder(Racing())
-    await add_raw(db, summary_fetch([1]))
-    await indexer.handle(summary_fetch([1]))
+    await index(db, indexer, summary_fetch([1]))
     [row] = await chunks(db)
     assert row.text == "newer" and row.embedding is None
 
@@ -262,17 +266,48 @@ async def test_a_vector_is_not_stored_when_the_text_changed_meanwhile(db, indexe
 async def test_without_an_embedder_chunks_are_still_written(db, indexer, monkeypatch):
     monkeypatch.setattr(kb_embedder, "get_embedder", lambda: None)
     monkeypatch.setattr(kb_indexer, "get_embedder", lambda: None)
-    await add_raw(db, summary_fetch([1]))
-    await indexer.handle(summary_fetch([1]))
+    await index(db, indexer, summary_fetch([1]))
     [row] = await chunks(db)
     assert row.embedding is None
 
 
-async def test_a_fetch_naming_no_report_is_never_chunked(db, indexer):
+def fetched_for(query: str, variables: dict, body: bytes = b'{"data": {}}') -> FetchedResponse:
+    return FetchedResponse(_flight_key(query, variables), query, variables, body, NOW)
+
+
+async def test_only_chunkable_fetches_are_queued_and_jobs_carry_no_body(db):
+    """P7 SEC-001: the queue holds small jobs, and only for fetches that can have chunks."""
+    indexer = KbIndexer(max_items=10, batch=2, sweep_s=600)
+    indexer.start()
+    try:
+        big = b'{"data": {"x": "' + b"y" * 5_000_000 + b'"}}'
+        no_report = "query CharRef($name: String!) { characterData { character(name: $name) { id } } }"
+        events = 'query ReportQ($code: String!) { reportData { report(code: $code) { events(dataType: Casts) { data } } } }'
+        table = 'query ReportQ($code: String!) { reportData { report(code: $code) { table(dataType: Deaths) } } }'
+        kb_indexer.offer_fetch(fetched_for(no_report, {"name": "x"}, big))
+        kb_indexer.offer_fetch(fetched_for(events, {"code": CODE}, big))
+        assert indexer._queue.qsize() == 0
+        kb_indexer.offer_fetch(fetched_for(table, {"code": CODE}, big))
+        kb_indexer.offer_fetch(summary_fetch([1]))
+        queued = [indexer._queue.get_nowait() for _ in range(indexer._queue.qsize())]
+    finally:
+        await indexer.stop(grace_s=1)
+    assert [type(j).__name__ for j in queued] == ["FetchJob", "FetchJob"]
+    assert all(not hasattr(j, "content") and j.report_codes == (CODE,) for j in queued)
+
+
+async def test_a_changed_fetch_that_now_yields_no_chunks_drops_its_old_ones(db, indexer):
+    """P7 SEC-002a: a body that no longer has a boss fight leaves no stale chunk behind."""
     set_embedder(FakeEmbedder())
-    q = "query CharRef($name: String!) { characterData { character(name: $name) { id } } }"
-    fetched = FetchedResponse(_flight_key(q, {"name": "x"}), q, {"name": "x"}, b'{"data": {}}', NOW)
-    await indexer.handle(fetched)
+    await index(db, indexer, summary_fetch([1, 2]))
+    assert len(await chunks(db)) == 2
+    await index(db, indexer, summary_fetch([]))
+    assert await chunks(db) == []
+
+
+async def test_a_job_whose_row_is_gone_writes_nothing(db, indexer):
+    set_embedder(FakeEmbedder())
+    await indexer.handle(job_of(summary_fetch([1])))  # never stored
     assert await chunks(db) == []
 
 
