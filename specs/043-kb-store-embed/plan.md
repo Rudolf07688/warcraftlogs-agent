@@ -21,7 +21,7 @@ the embed backlog (NULL vector = pending); sources' deletes cascade to their chu
 **Primary Dependencies**: FastAPI, SQLAlchemy 2 async (asyncpg / aiosqlite), Alembic,
 google-genai 2.25 (embeddings, via `wcl_agent.llm.provider`), new: `pgvector` (SQLAlchemy type)
 
-**Storage**: Postgres 17 + pgvector ≥ 0.8 (`pgvector/pgvector:pg17`); SQLite for unit tests
+**Storage**: Postgres 17 + pgvector ≥ 0.8 (`pgvector/pgvector:pg17-trixie`); SQLite for unit tests
 
 **Testing**: pytest (+ pytest-asyncio); Postgres-only tests on a throwaway container (port 15443)
 

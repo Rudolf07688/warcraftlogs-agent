@@ -171,7 +171,7 @@ cost, nothing written); run with it, interrupt midway, rerun; count embedder cal
 **Store (sc-111)**
 
 - **FR-001**: The local stack and the developers' throwaway database recipe MUST use the
-  vector-capable Postgres 17 image (`pgvector/pgvector:pg17`); an existing Postgres 17 volume
+  vector-capable Postgres 17 image (`pgvector/pgvector:pg17-trixie`); an existing Postgres 17 volume
   MUST start under it unchanged.
 - **FR-002**: Migration 0019 (after `0018_raw_store_visibility`) MUST enable the vector
   extension and require version 0.8 or newer, and create `kb_chunks` (global; kind `wcl` or
