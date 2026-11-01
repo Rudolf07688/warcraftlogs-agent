@@ -7,6 +7,11 @@ live WebSocket stream and real Vertex/WCL calls are exercised in quickstart.md.
 
 from __future__ import annotations
 
+import os
+
+# Before any app import: a checkout's .env must never reach a test (sc-336, backend/app/config.py).
+os.environ["WCL_LOAD_DOTENV"] = "0"
+
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
