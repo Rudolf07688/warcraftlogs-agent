@@ -152,6 +152,52 @@ async def test_each_waiter_marks_its_own_load(monkeypatch, fake_redis, tenant_id
     assert await fake_redis.mget([a, b]) == [None, None]
 
 
+async def _summaries(*tenants):
+    async def as_(tenant):
+        with turn(tenant):
+            return await load_report_summary("Priv9")
+
+    return await asyncio.gather(*(as_(tenant) for tenant in tenants))
+
+
+async def test_another_tenant_joining_a_grant_only_load_loads_for_itself(
+    patched_db, wcl, fake_redis, tenant_id, other_tenant_id
+):
+    """QA SEC-001/BUG-007: the cache flight is keyed by the Redis key only, so B joins A's load."""
+    await store_batch([PendingWrite(summary("Priv9", "unlisted"), tenant_id)])
+    a, b, background = await _summaries(tenant_id, other_tenant_id, None)
+    assert a is not None and a.title == "Raid"
+    assert b is None and background is None  # what each gets alone: WCL says report null
+    assert await fake_redis.get(keys.report_summary("Priv9")) in (None, wcl_cache._MISSING)
+
+
+async def test_the_same_tenant_joining_a_grant_only_load_still_gets_it(patched_db, wcl, fake_redis, tenant_id):
+    await store_batch([PendingWrite(summary("Priv9", "unlisted"), tenant_id)])
+    first, second = await _summaries(tenant_id, tenant_id)
+    assert first is not None and second is not None and wcl["n"] == 0
+
+
+async def test_a_public_load_is_still_shared_with_every_joiner(patched_db, wcl, fake_redis, tenant_id, other_tenant_id):
+    await store_batch([PendingWrite(summary("Priv9", "public"), tenant_id)])
+    loads, reads = [], []
+    real_query, real_get = wcl_client.AsyncWCLClient.query, fake_redis.get
+
+    async def query(self, *args, **kwargs):
+        loads.append(1)
+        return await real_query(self, *args, **kwargs)
+
+    async def get(name):
+        reads.append(name)
+        return await real_get(name)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(wcl_client.AsyncWCLClient, "query", query)
+        mp.setattr(fake_redis, "get", get)
+        results = await _summaries(tenant_id, other_tenant_id, None)
+    assert all(r is not None for r in results) and wcl["n"] == 0
+    assert len(loads) == 1 and reads.count(keys.report_summary("Priv9")) == 1  # one lookup for all
+
+
 # --- AC2 race 1: a stale fetch written after a ReportGone ----------------------------------------
 
 

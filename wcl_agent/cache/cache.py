@@ -554,7 +554,10 @@ async def _shared(
     ttl: int | Callable[[M], int] | None,
     force_refresh: bool,
 ) -> M | None:
-    """The Redis layer, with concurrent same-process lookups of one key sharing one call."""
+    """The Redis layer, with concurrent same-process lookups of one key sharing one call.
+
+    A load marked unshareable served its first caller through that caller's own grant (QA
+    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone."""
     settings = cache_settings()
     if not settings.active:
         return await loader()
@@ -564,21 +567,37 @@ async def _shared(
     flight = flights.get(key)
     joined = flight is not None
     if flight is None:
-        task = asyncio.ensure_future(_lookup(settings, family, key, model, loader, ttl, False))
+        task = asyncio.ensure_future(_flight(settings, family, key, model, loader, ttl))
         flight = flights[key] = [task, 0]
         task.add_done_callback(functools.partial(_drop_flight, flights, key))
     task = flight[0]
     flight[1] += 1
     try:
-        value = await asyncio.shield(task)
+        value, unshareable = await asyncio.shield(task)
     finally:
         flight[1] -= 1
         if flight[1] == 0 and not task.done():
             _drop_flight(flights, key, task)  # a new caller starts afresh, never joins this
             task.cancel()  # every caller left: stop the load (and release its lock)
+    if joined and unshareable:
+        return await _lookup(settings, family, key, model, loader, ttl, False)
     if joined:
         _record(family, Outcome.NEG_HIT if value is None else Outcome.HIT)
     return value
+
+
+async def _flight(
+    settings: CacheSettings,
+    family: CacheFamily,
+    key: str,
+    model: type[M],
+    loader: Callable[[], Awaitable[M | None]],
+    ttl: int | Callable[[M], int] | None,
+) -> tuple[M | None, bool]:
+    """The shared load: its value, and whether the load was marked unshareable (read here, in
+    the task's context, which holds the first caller's ``_Load``)."""
+    value = await _lookup(settings, family, key, model, loader, ttl, False)
+    return value, _unshareable()
 
 
 async def _lookup(
