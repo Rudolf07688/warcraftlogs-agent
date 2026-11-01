@@ -30,11 +30,21 @@ docker stop wcl-044-pg   # disk is tight: always stop it
 ## Eval
 
 `run` and `live` seed fake public reports, global guide chunks and a workspace, and never clean
-up, so they need `--db` naming a throwaway eval database and refuse the app's
-`DATABASE_URL` / `DATABASE_OWNER_URL` (P7 SEC-005). Use the container above.
+up. They connect first and refuse any database whose name, as the server reports it
+(`current_database()`), does not start with `kbeval`, and any they cannot reach (P7 SEC-005,
+SEC-006): the URL is never trusted, since `localhost`, `127.0.0.1` and `::1` are one server.
+Use a container of its own whose only database is `kbeval`, never the app's.
 
 ```bash
-EVAL_DB=postgresql+asyncpg://wcl_app:wcl_app@localhost:15444/wcl
+docker run -d --rm --name wcl-044-eval -e POSTGRES_USER=wcl -e POSTGRES_PASSWORD=wcl \
+  -e POSTGRES_DB=kbeval -p 15445:5432 pgvector/pgvector:pg17-trixie
+env -i HOME=$HOME PATH=$PATH APP_DB_USER=wcl_app APP_DB_PASSWORD=wcl_app \
+BOOTSTRAP_ADMIN_EMAIL=founder@example.com BOOTSTRAP_ADMIN_PASSWORD=throwaway-founder-pass \
+DATABASE_OWNER_URL=postgresql+asyncpg://wcl:wcl@localhost:15445/kbeval \
+DATABASE_URL=postgresql+asyncpg://wcl_app:wcl_app@localhost:15445/kbeval \
+  uv run python -m backend.cli.init_db
+EVAL_DB=postgresql+asyncpg://wcl_app:wcl_app@localhost:15445/kbeval
+
 # recall@k per mode and latency (stand-in, or the recorded set if embeddings.json exists)
 env -i HOME=$HOME PATH=$PATH uv run python -m backend.evals.kb run --db $EVAL_DB --k 8
 
@@ -42,6 +52,7 @@ env -i HOME=$HOME PATH=$PATH uv run python -m backend.evals.kb run --db $EVAL_DB
 uv run python -m backend.evals.kb record
 # team-lead only, live (cheapest chat model, capped): filter accuracy + local-answer rate
 uv run python -m backend.evals.kb live --db $EVAL_DB --max-questions 30
+docker stop wcl-044-eval   # disk is tight: always stop it
 ```
 
 ## Owner live check (team-lead, sprint end)

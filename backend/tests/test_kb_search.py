@@ -4,6 +4,7 @@ visibility are proved on Postgres in test_kb_search_pg.py."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
@@ -241,6 +242,43 @@ async def test_relaxed_lists_only_drops_that_produced_hits():
     assert result.relaxed == ["spec"] and result.hits[0].relaxed is True
 
 
+async def test_a_slow_relaxed_pass_keeps_the_hits_the_stricter_pass_found(monkeypatch):
+    monkeypatch.setattr(kb, "SEARCH_TIMEOUT_S", 0.2)
+
+    async def runner(query, vector, filters, tenant_id, legs):
+        if _strictness(filters) < 4:
+            await asyncio.sleep(5)  # every relaxed pass hangs
+        return [cand("strict")]
+
+    result = await kb.search(request(filters=ALL_SOFT, k=8), runner=runner, embedder=FakeEmbedder())
+    assert [h.source for h in result.hits] == [{"id": "strict"}]
+    assert result.relaxed == []  # no hit came from a relaxed pass
+    assert "did not finish in time" in result.note and "spec" in result.note
+    assert payload(result)["status"] == "success"
+
+
+async def test_a_timed_out_relaxed_pass_with_no_hits_still_returns_a_note(monkeypatch):
+    monkeypatch.setattr(kb, "SEARCH_TIMEOUT_S", 0.2)
+
+    async def runner(query, vector, filters, tenant_id, legs):
+        if _strictness(filters) < 4:
+            await asyncio.sleep(5)
+        return []
+
+    result = await kb.search(request(filters=ALL_SOFT), runner=runner, embedder=FakeEmbedder())
+    assert result.hits == [] and kb.NO_HITS_NOTE in result.note and "did not finish" in result.note
+
+
+async def test_a_timed_out_first_pass_is_still_an_error(monkeypatch):
+    monkeypatch.setattr(kb, "SEARCH_TIMEOUT_S", 0.1)
+
+    async def runner(query, vector, filters, tenant_id, legs):
+        await asyncio.sleep(5)
+
+    with pytest.raises(TimeoutError):
+        await kb.search(request(filters=ALL_SOFT), runner=runner, embedder=FakeEmbedder())
+
+
 async def test_no_relaxation_when_k_is_met():
     runner = FakeRunner(lambda q, f, legs: [cand(f"c{i}") for i in range(8)])
     result = await kb.search(request(filters=ALL_SOFT), runner=runner, embedder=FakeEmbedder())
@@ -444,18 +482,34 @@ async def test_newlines_and_tabs_in_queries_are_whitespace(identity, fake_search
     assert result["status"] == "success" and fake_search[0].queries == ("arms opener glyphs",)
 
 
-def test_eval_cli_refuses_the_apps_database(monkeypatch):
-    from backend.app.config import settings
-    from backend.evals.kb.__main__ import _parser, refuse_app_database
+def test_eval_cli_only_accepts_a_kbeval_database():
+    from backend.evals.kb.__main__ import _parser, refuse_database
 
-    monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://wcl_app:x@db:5432/wcl")
-    monkeypatch.setattr(settings, "database_owner_url", "postgresql+asyncpg://wcl:y@db:5432/wcl")
-    assert refuse_app_database("postgresql+asyncpg://other:z@db/wcl")  # same DB, other role
-    assert refuse_app_database("postgresql://wcl@db:5432/wcl")
-    assert refuse_app_database("postgresql+asyncpg://wcl_app:x@localhost:15444/wcl") is None
-    assert refuse_app_database("postgresql+asyncpg://wcl_app:x@db:5432/kbeval") is None
+    assert refuse_database("kbeval") is None and refuse_database("kbeval_2") is None
+    for name in ("wcl", "postgres", "mykbeval", "", None):  # the app's database, whatever its URL says
+        assert refuse_database(name)
     with pytest.raises(SystemExit):  # run and live need an explicit --db
         _parser().parse_args(["run"])
     with pytest.raises(SystemExit):
         _parser().parse_args(["live"])
     assert _parser().parse_args(["record"]).cmd == "record"
+
+
+async def test_eval_cli_checks_the_database_it_reached_not_the_url(monkeypatch, tmp_path):
+    """localhost, 127.0.0.1, ::1 and socket URLs all reach the same server: only the name counts."""
+    from backend.app.db import session as db_session
+    from backend.evals.kb import __main__ as cli
+
+    before = db_session.SessionLocal
+    for reached in ("wcl", None):  # the app's database, or a server that cannot say (fail closed)
+        async def fake(engine, reached=reached):
+            return reached
+
+        monkeypatch.setattr(cli, "_connected_database", fake)
+        args = cli._parser().parse_args(["run", "--db", "postgresql+asyncpg://u:p@127.0.0.1:5432/kbeval"])
+        assert await cli._main(args) == 2  # a kbeval-looking URL does not help
+        assert db_session.SessionLocal is before  # nothing was pointed at it, nothing seeded
+    # not Postgres, or unreachable: fail closed
+    args = cli._parser().parse_args(["run", "--db", f"sqlite+aiosqlite:///{tmp_path}/kbeval.db"])
+    monkeypatch.undo()
+    assert await cli._main(args) == 2
