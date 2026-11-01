@@ -66,10 +66,22 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   minutes when something moved. Arm a `Monitor` with
   `tail -n0 -F .git/team-board/<board>.jsonl | python3 -u .claude/team/boardwatch.py`
   (handoff, merge, escalation) and a 30-minute timeout, and re-arm on expiry; the expiry is
-  the heartbeat. Live pass: `.claude/team/livecheck.py`. Don't relay idle notifications.
-- **Completion notices of developers come to you**, not to the product owner. Forward
-  each in one message (branch, head, tests, anything new) and tell the product owner to
-  merge.
+  the heartbeat. Don't relay idle notifications.
+- **Wake the merger on every hand-off.** An idle agent sees no board entries until a
+  message wakes it. On each board `handoff`, send whoever merges (scrum master in tier L,
+  product owner otherwise) one line: the board number, branch, head and agent id. Don't
+  forward the developer's full result; forward only what it adds beyond the board. Skip the
+  wake-up when that agent has said it runs its own board watcher, unless it stalls.
+- **Completion notices of developers come to you**, not to the merger. Use them only to
+  catch a developer that stopped without posting a hand-off.
+- **Live pass** (`.claude/team/livecheck.py`, stack from the sprint worktree with
+  `-p warcraftlogs-agent` and a symlinked `.env`):
+  - First check `gcloud auth application-default print-access-token >/dev/null`; if it
+    fails, ask the owner for `! gcloud auth application-default login`. After a login,
+    recreate the backend (`up -d --force-recreate backend`): the bind-mounted credentials
+    file keeps the old copy.
+  - Remove the symlinked `.env` before running the test suite in that worktree: the
+    settings read it and 22 tests go red.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on

@@ -311,6 +311,17 @@ What each option costs, using the 10-31 numbers:
   the same run. The end-of-sprint sweep stays as the gate.
 - **Measure:** Highs still found by the end sweep, and the cost of the rework round
   compared with the scoped review (about 0.2 M units).
+- **Result (sprint 2026-11-01):** four runs at 0.31–0.53 M units each (1.61 M, 4% of the
+  sprint). They found 2 Mediums and about 12 Lows, all fixed or ticketed, and no visibility
+  bypass. The end sweep still found one cross-workspace High, in 045 (cache single-flight),
+  which was not on the P7 list. The independent pass the scrum master prompted from the code
+  found the two most useful issues; the developer-prompted pass anchored on the
+  developer's model.
+- **Recommendation (team-lead, Ilse, Maren):** adopt. The merger (scrum master in tier L,
+  product owner otherwise) writes the prompt from the code and design, never from the
+  developer's notes, one run per security-core hand-off. Widen security-core to any change
+  to a shared cache, single-flight or Redis key path. Waiting on the owner's yes before it
+  goes into the agent files.
 
 ### P8. Report team-lead spend by activity (2026-11-01)
 
@@ -463,3 +474,11 @@ through respawns as the same named member, with its own small, curated memory. I
   rules in the three agent files: cut what an agent file or skill already says, and post
   `skill:<name>` for what every agent should know. Measure at the next wrap-up: lines in
   member memories that repeat the shared files (feeds open question 3).
+- **2026-11-01 (sprint 2026-11-01 wrap-up):** First tier-L run under the autonomy grant:
+  33/33 pts at 1.18 M/pt, coordination 26%. P7 result and adopt recommendation recorded
+  above. Shared-vs-memory measure: about 9 member-memory lines repeat the shared files
+  (`env -i`, the mutation-check recipe, the Postgres image, zsh word-splitting); the
+  missing ones moved into `developer.md`. Applied: `developer.md` (pgvector image recipe,
+  feature.json trap, grep guard tests before a plan gate, paste the clean-run tail, mutation
+  restore from a backup); `team-launch` (one-line wake-ups for the idle merger, gcloud
+  pre-flight, recreate the backend after login, no `.env` symlink during suite runs).

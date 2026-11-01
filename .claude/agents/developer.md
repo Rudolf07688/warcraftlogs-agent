@@ -109,15 +109,21 @@ python3 .claude/team/board.py log --since <id>   # the raw history
     (`B() { python3 .claude/team/board.py post "$@" --as <you>; }`), never a variable.
   - Vitest only picks up `src/**/*.test.tsx`; a `.test.ts` file is silently skipped.
   - Postgres-only tests are skipped under SQLite. Prove RLS or migration work on a
-    throwaway `postgres:17` on your brief's port (recipe: `specs/039-local-first-data/quickstart.md` §2).
+    throwaway `pgvector/pgvector:pg17-trixie` on your brief's port, never plain `pg17` (its
+    older glibc gives a collation mismatch on the owner's volume). Migrate it with
+    `backend.cli.init_db`, set `TEST_DATABASE_URL` and run the full suite (0 skipped);
+    recipe in `specs/044-kb-search/quickstart.md`. Remove the container afterwards.
 
 ## File ownership (hard rule)
 
 - Edit only the files in your brief's footprint (the board's `owner:` keys). Anything else
   needs a `blocker`, as described above.
 - Never commit `CLAUDE.md`, `AGENTS.md`, `todo.md`, `.specify/memory/constitution.md` or
-  `.specify/feature.json`. Spec Kit rewrites some of them, so restore them before each
-  commit with `git checkout -- CLAUDE.md .specify/feature.json`.
+  `.specify/feature.json`. Spec Kit rewrites some of them, so restore them right before each
+  commit with `git checkout -- CLAUDE.md .specify/feature.json`. Point `feature.json` back at
+  your feature before the next Spec Kit step: the plan setup reads it, and with main's value
+  it writes its template over another feature's `plan.md`. If `git status` shows a changed
+  file under another `specs/NNN-*`, check it out before committing.
 - A lockfile, a manifest or a new Alembic migration needs an explicit grant in your brief.
   The brief gives the revision number and `down_revision`.
 - Before each commit, check that `git diff --name-only <base>...HEAD` plus your
@@ -131,6 +137,9 @@ python3 .claude/team/board.py log --since <id>   # the raw history
   - Record HIGH or CRITICAL risk, with your mitigation, as a `notice` on the board and in
     the hand-off.
   - `UNKNOWN` risk is unresolved: confirm it with a text search.
+  - Before a plan gate, grep the tests your design must leave unchanged, and the guard
+    tests that pin architecture (`grep -rn "only the" backend/tests`): a "no change needed
+    in X" claim or a new stored-data shape has broken one of them twice.
   - Before you commit, index your worktree and run change detection:
     `node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`,
     then `detect-changes --scope all --repo .`. A `partial` or `truncated` result isn't
@@ -174,6 +183,8 @@ python3 .claude/team/board.py log --since <id>   # the raw history
 
 **Hand-off (your final result).**
 - **Checks:** run change detection, check ownership, and make sure everything is green.
+  Read the final pass/fail line of the clean `env -i` run yourself, and paste the command
+  plus that line into the hand-off: a "green" that was only counted once cost a rework round.
 - **Board:** move your stories to **Under Review**, then post a `handoff` entry.
 - **Memory:** update it now if something lasting came out of this run (see above).
 - **Return:**
@@ -211,7 +222,10 @@ Constitution first:
 
 Security decisions about external data (WCL, model output) rest on what the server
 returned, never on the query or prompt text: aliases, directives and null propagation make
-text parsing lie. Prove a new test bites with a quick mutation of the code it guards.
+text parsing lie. Prove a new test bites with a quick mutation of the code it guards:
+`cp` the file to a backup, mutate, run, then restore from the backup (`git checkout` silently
+does nothing for an untracked new file) and re-run the suite before committing. Never chain
+`pytest … | tail && git commit`: the pipe's exit status is `tail`'s, so a red suite commits.
 
 Match the surrounding code's style and comment density. No dead code, no secrets. When you
 rework something, fix the root cause rather than the symptom.
