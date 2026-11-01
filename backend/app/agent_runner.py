@@ -280,7 +280,8 @@ async def _run_turn(
       payload. When a per-turn `scratch` store is supplied, the full result is also
       written to disk keyed by the call id and `result_path` points at that file, so
       large concurrent outputs are preserved and picked up after all calls finish (US2).
-    - `{"type": "token", "text"}` — a streamed answer chunk.
+    - `{"type": "token", "text"}` — a streamed answer chunk; the closing no-answer message
+      (below) also carries `"empty": True`, so the caller can tell it from model text (048).
 
     The agent uses the native thinking planner, so reasoning arrives as separate
     `thought`-marked parts which we skip — only the answer text is streamed.
@@ -409,4 +410,5 @@ async def _run_turn(
     if not answered and not pending_args and user_id != USER_ID:
         if stats is not None:
             stats.outcome = "empty"
-        yield {"type": "token", "text": PARAGRAPH + EMPTY_ANSWER_MESSAGE if text_sent else EMPTY_ANSWER_MESSAGE}
+        closing = PARAGRAPH + EMPTY_ANSWER_MESSAGE if text_sent else EMPTY_ANSWER_MESSAGE
+        yield {"type": "token", "text": closing, "empty": True}

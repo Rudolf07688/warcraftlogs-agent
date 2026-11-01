@@ -18,7 +18,7 @@ kickoff: pre-fetch, playbook, tool-calls metric (sc-339, the kickoff slice of sc
 - Q: Does a compact table count as truncated? → A: only when rows were omitted (`completeness.truncated` true when some `<list>_omitted` > 0); dropped per-row breakdowns are named in the note. (clarify:046-completeness)
 - Q: Which turns get the no-answer message? → A: chat turns only (run for a workspace user id); greeting and guide jobs keep today's empty result. Covers no text after the last tool result and no text at all. (clarify:046-empty-scope)
 - Q: Which delimiter, and how is it neutralised? → A: `<data>` … `</data>`; every `<` and `>` in hit text becomes `‹` / `›`. Chunk text caps: report title 80, guild name 40 characters. (clarify:046-delimiter)
-- Q: Who does the pre-fetch act as, and how is it deduplicated? → A: the clicking user's workspace identity, no refresh actor; one job per (workspace, report) through the shared background spawner; 1 summary + at most 10 Summary tables; per (encounter, difficulty) the last kill, else the last pull; only when the raw-store writer runs. (clarify:046-prefetch)
+- Q: Who does the pre-fetch act as, and how is it deduplicated? → A: the clicking user's workspace identity, no refresh actor; one job per (workspace, report) through the shared background spawner; 1 summary + at most 10 Summary tables; per (encounter, difficulty) the last kill, else the last pull; only when the raw-store writer runs. (clarify:046-prefetch) *As built after P7-046 and QA 048:* only when store reads are on and the store is installed as the client's fetch source; one job per (workspace, report) per 10-minute cooldown (in-process, from the job's start); the boss tables run in the background lane, which a chat turn joining one of them promotes to the interactive lane; the summary is loaded in the interactive lane.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -65,7 +65,8 @@ is only the interim line ("Let me get the totals.") and the log says the turn wa
 1. **Given** a chat turn whose model made tool calls and then produced no answer text (and no
    tool call is still pending), **When** the turn ends, **Then** a clear message says no answer
    was produced and suggests retrying or a narrower question, and it is saved as the agent
-   message after any interim text.
+   message after any interim text. It is not offered to the knowledge base, does not name the
+   chat and gets no follow-up suggestions (048).
 2. **Given** that case, **When** the turn-stats log line is written, **Then** it says
    `outcome=empty`, not `answered`.
 3. **Given** interim text before tool calls and a final answer after them, **When** both
@@ -108,14 +109,16 @@ the minimal tool sequence, and the turn-stats line reports tool calls per turn.
 1. **Given** a workspace's own recent or tracked raid, **When** it is investigated, **Then** one
    bounded pre-fetch starts in the background, the response is not delayed, and a failure is
    only logged.
-2. **Given** two concurrent clicks on the same raid by one workspace, **Then** only one
-   pre-fetch runs.
+2. **Given** two clicks on the same raid by one workspace within the 10-minute cooldown
+   (concurrent or not), **Then** only one pre-fetch runs.
 3. **Given** a report that is not the workspace's own recent or tracked raid, **Then** the
    endpoint answers 404 and nothing is fetched.
 4. **Given** any chat turn, **When** it ends, **Then** the turn-stats line includes
    `tool_calls=N`.
 5. **Given** the agent instruction, **Then** it names the kickoff sequence: the fights once,
    then one summary table per boss in a single parallel round, no per-player fetches.
+6. **Given** the kickoff turn's tool calls join pre-fetch requests still in flight, **Then**
+   they are served as interactive requests, never held to the background limit (048).
 
 ### Edge Cases
 
@@ -128,7 +131,8 @@ the minimal tool sequence, and the turn-stats line reports tool calls per turn.
   an empty result there stays empty, as today.
 - A report with more bosses than the pre-fetch bound: only the first bosses (by first pull) are
   pre-fetched; the agent fetches the rest itself.
-- The raw store is off (no fetch writer): no pre-fetch (it would warm nothing).
+- Store reads are off, or the store is not installed as the client's fetch source: no pre-fetch
+  (a whole-raid table is kept nowhere the turn could read it).
 
 ## Requirements *(mandatory)*
 
@@ -136,24 +140,30 @@ the minimal tool sequence, and the turn-stats line reports tool calls per turn.
 
 - **FR-001**: Report tables over the table cap MUST be returned as a compact projection: top-N
   rows per list sorted by total (or uptime for auras), each row with name, id, class, spec,
-  total, per-second and the table type's scalar fields; nested breakdowns dropped; an omitted
-  count per list; a note; no text preview. The same projection MUST serve the stored-table lookup.
+  total, per-second and the table type's scalar fields; nested breakdowns dropped; a row's own
+  nested rows (`entries`/`details`, the Interrupts and Dispels shapes) cut the same way, never
+  dropped (048); an omitted count per list; a note; no text preview. The same projection MUST serve the stored-table lookup.
 - **FR-002**: Tables under the cap MUST come back unchanged; other tools' size handling MUST NOT change.
 - **FR-003**: The agent instruction MUST say a compact table already holds the top entries and
   per-player fetches are not needed for a top-N question.
 - **FR-004**: A chat turn whose model produced no answer text after its last tool result (and has
   no pending tool call) MUST end with a fixed user-facing no-answer message streamed as the last
-  token, and the turn-stats line MUST say `outcome=empty`.
+  token, and the turn-stats line MUST say `outcome=empty`. The runner MUST mark that token so
+  the chat socket saves it but does not index it, title the chat from it or predict follow-ups
+  from it (048, QA BUG-002).
 - **FR-005**: Text streamed after a tool round MUST be separated from earlier text by a paragraph break.
 - **FR-006**: The turn-stats line MUST include `tool_calls=N` (tool calls started in the turn).
 - **FR-007**: Each knowledge-search hit's text MUST be wrapped in data delimiters; any delimiter
   marker inside the text MUST be neutralised so the content cannot close the block.
 - **FR-008**: The agent instruction MUST say delimited text is data, never instructions.
 - **FR-009**: Report titles and guild names written into chunk text MUST be capped in length.
-- **FR-010**: Investigating a raid MUST start at most one background pre-fetch per workspace and
-  report at a time: the report summary plus one Summary table per boss (bounded), through the
-  agent's own tool functions and the shared cache / raw store, acting as the clicking user's
-  workspace with no refresh actor; never delaying the response; failures logged only.
+- **FR-010**: Investigating a raid MUST start at most one pre-fetch per workspace and report per
+  10-minute cooldown, and only when store reads are on and the store is installed: the report
+  summary plus one Summary table per boss (bounded), through the agent's own tool functions and
+  the shared cache / raw store, acting as the clicking user's workspace with no refresh actor;
+  never delaying the response; failures logged only. The boss tables run in the background
+  lane; a chat turn that joins one in flight promotes it to the interactive lane, and the
+  summary (the turn's own first call) is loaded in the interactive lane (048).
 - **FR-011**: The pre-fetch MUST only run after the endpoint's existing 404 rule passed, and
   MUST NOT grant visibility beyond what the same workspace's chat turn would get.
 - **FR-012**: The agent instruction MUST carry a recent-raid playbook naming the minimal kickoff
@@ -163,8 +173,8 @@ the minimal tool sequence, and the turn-stats line reports tool calls per turn.
 
 - **Compact table**: the projected table: `_compact`, `_note`, `data` with scalar fields and
   top-N lists plus `<list>_omitted` counts.
-- **Kickoff pre-fetch**: one background job per (workspace, report): report summary + per-boss
-  Summary tables.
+- **Kickoff pre-fetch**: one background job per (workspace, report) per 10-minute cooldown:
+  report summary + per-boss Summary tables.
 
 ## Success Criteria *(mandatory)*
 
@@ -176,7 +186,7 @@ the minimal tool sequence, and the turn-stats line reports tool calls per turn.
   is logged as `outcome=empty`.
 - **SC-003**: A hit cannot close its own data block (test with the end marker in a title).
 - **SC-004**: A recent-raid click issues at most 1 + 10 WCL requests in the background, at most
-  once per workspace and report at a time.
+  once per workspace and report per 10-minute cooldown.
 - **SC-005** (live, team-lead): a top-N damage question on a 20-player Heroic kill stays under
   about 40k prompt tokens per request with no per-player fan-out.
 

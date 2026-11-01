@@ -273,8 +273,8 @@ async def _handle_turn(
     *,
     fallback_model: str | None = None,
 ) -> asyncio.Task | None:
-    """Run one chat turn. Returns the follow-up suggestions task when the turn finished,
-    else ``None``; the caller owns it (and cancels it when the next turn starts).
+    """Run one chat turn. Returns the follow-up suggestions task when the turn finished with
+    an answer, else ``None``; the caller owns it (and cancels it when the next turn starts).
 
     ``fallback_model`` is the same-class sibling the turn may switch to once when its
     model stays rate limited (feature 021).
@@ -322,6 +322,7 @@ async def _handle_turn(
     # US2: a per-turn scratch store holds each tool's full output on disk so large
     # concurrent results are preserved and picked up after every call completes.
     tokens: list[str] = []
+    empty = False  # 048: the turn ended with the runner's no-answer message, not model text
     proposal_ids: list[uuid.UUID] = []  # feature 031: proposals sent this turn
     switched = False  # feature 021: the turn moved to the sibling model
     scratch = TurnScratch(str(conv_id))
@@ -341,6 +342,7 @@ async def _handle_turn(
         ):
             kind = record.get("type")
             if kind == "token":
+                empty = record.pop("empty", False) or empty
                 tokens.append(record["text"])
                 await ws.send_json(record)
             elif kind == "tool_start":
@@ -397,8 +399,9 @@ async def _handle_turn(
     agent_msg_id, agent_seq = await _save_answer(identity, conv_id, final_text, proposal_ids)
 
     # Feature 043: the saved exchange becomes a workspace chat chunk in the background (enqueue
-    # only). Only the streamed answer goes in: tool results never reach ``tokens``.
-    if tokens:
+    # only). Only the streamed answer goes in: tool results never reach ``tokens``. A no-answer
+    # turn (048) is saved for the user but never indexed, titled or given follow-ups.
+    if tokens and not empty:
         kb_indexer.offer_exchange(
             ExchangeJob(tenant_id, conv_id, agent_seq, turn.content, final_text, datetime.now(UTC))
         )
@@ -408,7 +411,7 @@ async def _handle_turn(
 
     # Feature 019 / sc-155: name the chat from this first complete exchange, in the
     # background; the next turn doesn't cancel it, and the frame shares the socket lock.
-    if title_eligible:
+    if title_eligible and not empty:
 
         async def notify_title(title: str) -> None:
             await _send(ws, ConversationTitleFrame(conversation_id=conv_id, title=title))
@@ -419,6 +422,8 @@ async def _handle_turn(
 
     # US1: predict up to 3 follow-up questions in the background (PERF-102), so the socket
     # can read the player's next message straight away; that next turn cancels this task.
+    if empty:
+        return None
     return asyncio.create_task(_send_suggestions(ws, turn, final_text, agent_msg_id))
 
 
