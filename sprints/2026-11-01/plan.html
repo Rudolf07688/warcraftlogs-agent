@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-01 Plan</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px;align-content:start}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:grid;gap:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
+.checks .no{font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted)}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Sprint plan · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-01: semantic knowledge base</h1>
+  <div class="meta">
+    <span>Branch <b class="mono">sprint-2026-11-01</b></span>
+    <span>Base <b class="mono">ec966c5</b> (main)</span>
+    <span>Iteration <b>WCL App Q4 2026</b> (Shortcut 161)</span>
+    <span>PO <b>Maren</b> · SM (new seat) · devs <b>Ansel</b>, <b>Tomas</b>, new dev-3</span>
+  </div>
+  <p>The agent searches what the app already knows (stored Warcraft Logs fetches, the grounded class guides and the workspace's past chats) before it calls Warcraft Logs. It can run several searches at once, and every result is one the asking user is allowed to see. This is the next step toward the epic 103 goal: answer 80% of questions without an external API call.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Planned</span><span class="v">33<small> pts</small></span><span class="s">11 stories, 3 features, tier L</span></div>
+  <div class="kpi"><span class="eyebrow">043 store + embed</span><span class="v">13<small> pts</small></span><span class="s">Ansel · tier L · opus/high</span></div>
+  <div class="kpi"><span class="eyebrow">044 search</span><span class="v">10<small> pts</small></span><span class="s">new dev-3 · tier L · opus/high</span></div>
+  <div class="kpi"><span class="eyebrow">045 local reads</span><span class="v">10<small> pts</small></span><span class="s">Tomas · tier M · opus/medium</span></div>
+  <div class="kpi"><span class="eyebrow">Migration</span><span class="v">0019</span><span class="s">down_revision 0018_raw_store_visibility</span></div>
+</div>
+
+<section>
+  <h2>User flow after this sprint</h2>
+  <div class="flow"><span>Ask about a report</span><i>→</i><span>fetch stored (039)</span><i>→ background →</i><span>fights and tables chunked as text, embedded (Vertex, 768-d)</span></div>
+  <div class="flow"><span>Each saved chat exchange</span><i>→ background →</i><span>chunk in the workspace's own table</span></div>
+  <div class="flow"><span>Later, a related question</span><i>→</i><span><code>search_knowledge</code>: 1–5 queries + typed filters, in parallel</span><i>→</i><span>vector + full-text, fused by RRF, visible-only</span><i>→</i><span>answer, often without a WCL call</span></div>
+  <p class="small muted">Visibility never changes: WCL chunks follow the 039 sharing rule (public, or granted to the workspace, within the re-verify window); guides are global; chat chunks are workspace-scoped under tenant RLS, exactly like conversations today. Deleting a chat, a stored fetch or a guide deletes its chunks. Embedding never runs inside a chat turn.</p>
+</section>
+
+<section>
+  <h2>043 store + embed (Ansel, dev-1, worktree dev-a)</h2>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>Acceptance criteria (short)</th></tr>
+    <tr><td>sc-111 Vector store setup <span class="tag t-bad">P7</span></td><td><span class="pts p3">3</span></td><td>Image <code>pgvector/pgvector:pg17</code>, data volume proved on a copy; migration 0019 with <code>kb_chunks</code> (global) and <code>kb_chat_chunks</code> (forced tenant RLS); vector(768), generated tsvector, typed filters, <code>extra jsonb</code>; HNSW + GIN + B-tree indexes; pgvector ≥ 0.8; up/down/up clean; cross-workspace and cascade tests on Postgres.</td></tr>
+    <tr><td>sc-112 Embed WCL fetches and guides on write <span class="tag t-bad">P7</span></td><td><span class="pts p5">5</span></td><td>Readable text chunks (fight summary, fight × metric, player × fight); filters from structure via the resolver; one chunk per guide section, replaced on regeneration; <code>gemini-embedding-001</code> 768-d, normalised, <code>RETRIEVAL_DOCUMENT</code>; background queue, batched, retried, rate-limited; no re-embed of an unchanged hash; CI never calls Vertex.</td></tr>
+    <tr><td>sc-305 Embed past conversations <span class="tag t-bad">P7</span></td><td><span class="pts p3">3</span></td><td>One chunk per exchange, no tool payloads; tenant id, conversation, seq, characters mentioned; background only; delete cascades; other workspaces never see them (Postgres tests).</td></tr>
+    <tr><td>sc-113 Backfill</td><td><span class="pts p2">2</span></td><td>CLI over all three kinds; prints count and cost estimate, needs a confirm flag; resumable and idempotent; rate-limited; not a startup task.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>044 search (new dev-3, worktree dev-b)</h2>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>Acceptance criteria (short)</th></tr>
+    <tr><td>sc-304 Shared name resolver</td><td><span class="pts p2">2</span></td><td>One resolver for encounter, class, spec, difficulty, character, reusing <code>normalize_class_name</code> / <code>resolve_spec</code>; case/accent/apostrophe-insensitive; common abbreviations; unknown values give a correctable error with close matches. First milestone merge.</td></tr>
+    <tr><td>sc-114 Parallel hybrid search tool <span class="tag t-bad">P7</span></td><td><span class="pts p5">5</span></td><td><code>search_knowledge</code> with 1–5 parallel queries and enum filters; vector top N + <code>ts_rank_cd</code> top N fused by RRF, then across queries, deduped; visibility inside the SQL; hard vs soft filters with a fixed relaxation order reported back; compact, capped output; keyword-only fallback when embeddings are missing.</td></tr>
+    <tr><td>sc-115 Search-first prompting + eval</td><td><span class="pts p3">3</span></td><td>Instruction: search locally before a WCL fetch; ~30-question eval (recall@k hybrid vs vector, latency) in CI on recorded embeddings; live mode for filter accuracy and local-answer rate (team-lead runs it); recommendation on model and BM25.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>045 local data reads (Tomas, dev-2, worktree dev-c)</h2>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>Acceptance criteria (short)</th></tr>
+    <tr><td>sc-295 QA: cheap, fail-fast raw-store probe and writer</td><td><span class="pts p3">3</span></td><td>≤ 500 ms timeout + 30 s breaker; row first, one statement on a hit; no connection held across a fan-out; writer skips unchanged scope/grant; no JSONB re-serialise on the loop; PERF-007 decision from counters; 039 visibility tests stay green.</td></tr>
+    <tr><td>sc-296 QA: revocation lag and gone-vs-write races</td><td><span class="pts p2">2</span></td><td>No shared-Redis back-fill for granted-only rows; a stale write after ReportGone can't resurrect a row or grant; no Redis refill after eviction (or "not reproduced, with evidence").</td></tr>
+    <tr><td>sc-132 Local-answer hit rate</td><td><span class="pts p2">2</span></td><td>hit / miss / not_visible / timeout counters in the cache stats; local-answer rate (turns with no external WCL call).</td></tr>
+    <tr><td>sc-131 Exact lookups in stored data</td><td><span class="pts p3">3</span></td><td>Tools for stored fights, a stored fight table, reports stored for a character; only through the <code>read_visible_fetch</code> rule; "not stored locally" for invisible and missing alike; resolver-normalised args; bounded output.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Order and dependencies</h2>
+  <div class="flow"><span>sc-304 resolver</span><span>sc-111 schema</span><i>(milestone merges first)</i></div>
+  <div class="flow"><span>sc-111</span><i>→</i><span>sc-112</span><i>→</i><span>sc-305</span><i>→</i><span>sc-113</span><i>(043, one developer)</i></div>
+  <div class="flow"><span>sc-304</span><i>→</i><span>sc-114</span><i>→</i><span>sc-115</span><i>(044; sc-114 needs the 0019 schema, tests insert chunks directly)</i></div>
+  <div class="flow"><span>sc-295</span><i>→</i><span>sc-296</span><i>→</i><span>sc-132</span><i>→</i><span>sc-131</span><i>(045; sc-131 sits on the reworked <code>read_visible_fetch</code> and needs the resolver)</i></div>
+  <p class="small muted">The scrum master sequences three shared hot spots: <code>wcl_agent/agent.py</code> (044 and 045 tools), <code>fetch_persistence.py</code> (043 embed hook, 045 writer) and the chat-turn persistence path (043 chat chunks, 045 local-answer signal). The lockfile, <code>docker-compose.yml</code> and migration 0019 belong to 043 alone.</p>
+</section>
+
+<section>
+  <h2>Key decisions</h2>
+  <div class="grid2">
+    <div class="card"><h3>Three chains, one developer each</h3><p class="small">Dependent work stays with one developer (lead lesson). sc-131 goes with the raw-store QA work, because sc-295 rewrites the read path sc-131 sits on, and sc-132 shares its counters with PERF-007.</p></div>
+    <div class="card"><h3>Resolver and schema merge first</h3><p class="small">Every stream needs one of them. Merging them early lets the others rebase instead of stubbing.</p></div>
+    <div class="card"><h3>P7 trial on four stories</h3><p class="small">sc-111, sc-112, sc-305 and sc-114 get a scoped <code>qa-security</code> review at hand-off plus bypass attempts (invisible fetch, foreign chat, widening filters, deleted chat). Findings and cost go on the board so the team can judge P7.</p></div>
+    <div class="card"><h3>No scope added</h3><p class="small">Exactly the owner's 11 stories and 33 points. Ideas that come up go to the backlog.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Risks, and what goes first if we run late</h2>
+  <div class="grid2">
+    <div class="card"><h3>Risks</h3><ul class="small">
+      <li>Critical path sc-111 → sc-112 → real chunks for the eval. Mitigated: search and eval test on directly inserted chunks.</li>
+      <li>The image swap touches the owner's data volume: proved on a copy first; team-lead backs up the database before the switch.</li>
+      <li>Search results flooding the model's context (compare sc-302): hard output cap.</li>
+      <li>Disk at 21 GB free: throwaway pgvector containers are removed after use.</li>
+    </ul></div>
+    <div class="card"><h3>Drop order</h3><ol class="small">
+      <li>sc-115 live-mode measures (keep the prompt and the CI recall eval).</li>
+      <li>sc-296 (an accepted risk today; the window is tunable).</li>
+      <li>sc-113 backfill (new data still embeds).</li>
+    </ol><p class="small muted">Security-core stories are never dropped.</p></div>
+  </div>
+</section>
+
+<footer>Written by Maren (product owner) on 2026-11-01. The plan doesn't block delivery. Full ACs: <code>sprints/2026-11-01/plan.md</code> and the story comments on the Team 1 board.</footer>
+</div>
+</body>
+</html>
