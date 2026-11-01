@@ -21,13 +21,21 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Float, Integer, String, Text, and_, cast, func, literal, null, or_, select, text, union_all
+from sqlalchemy.dialects.postgresql import JSONB, REGCONFIG, TSQUERY
+from sqlalchemy.sql.elements import ColumnElement
+
+from ..config import settings
+from ..db import session as db_session
+from ..db.models import KB_DIMENSIONS, KbChatChunk, KbChunk
+from ..repositories.raw_fetches import fetch_visible_clause
 from ..services.name_resolver import ClassSpec, spec_pairs
-
-if TYPE_CHECKING:
-    from .embedder import Embedder
+from ..tenancy.context import set_scope
+from .embedder import Embedder
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +141,184 @@ class SearchResult:
 QueryRunner = Callable[
     [str, list[float] | None, SearchFilters, uuid.UUID, frozenset[Leg]], Awaitable[list[Candidate]]
 ]
+
+
+class SearchUnavailable(RuntimeError):
+    """The database can't run knowledge search (not Postgres)."""
+
+
+# --- The SQL legs -----------------------------------------------------------------------
+#
+# One statement per query: a UNION ALL of branches, one per (kind, leg), each with its own
+# ORDER BY ... LIMIT so the HNSW and GIN indexes serve it. Every branch carries its kind's
+# visibility predicate; filters are ANDed onto it, so no filter can widen the scope.
+
+
+def _tsquery(config: str, query: str) -> ColumnElement:
+    """The query's lexemes OR-ed: natural questions rarely contain every word of a chunk.
+    ``plainto_tsquery`` sanitises the text (a bound parameter); ``config`` is a constant."""
+    plain = func.plainto_tsquery(cast(literal(config), REGCONFIG), query)
+    return cast(func.replace(cast(plain, Text), " & ", " | "), TSQUERY)
+
+
+def _contains(column, value: list[dict[str, str]]) -> ColumnElement[bool]:
+    return column.op("@>")(literal(value, JSONB))
+
+
+def _class_spec(filters: SearchFilters, class_col, spec_col, players=None) -> list[ColumnElement]:
+    """The class/spec filter for one table; ``players`` also matches any player in a WCL chunk."""
+    if filters.spec:
+        options = []
+        for pair in filters.pairs():
+            options.append(and_(class_col == pair.class_name, spec_col == pair.spec))
+            if players is not None:
+                options.append(_contains(players, [{"class": pair.class_name, "spec": pair.spec}]))
+        return [or_(*options)]
+    if filters.class_name:
+        options = [class_col == filters.class_name]
+        if players is not None:
+            options.append(_contains(players, [{"class": filters.class_name}]))
+        return [or_(*options)]
+    return []
+
+
+def _dates(filters: SearchFilters, column) -> list[ColumnElement]:
+    out = []
+    if filters.since is not None:
+        out.append(column >= filters.since)
+    if filters.until is not None:
+        out.append(column < filters.until)
+    return out
+
+
+def _chunk_where(kind: Kind, filters: SearchFilters, tenant_id: uuid.UUID, since: datetime) -> list:
+    """Visibility first, then the filters that apply to ``kind`` (spec: filter applicability)."""
+    if kind == "guide":
+        return [KbChunk.kind == "guide", *_class_spec(filters, KbChunk.class_name, KbChunk.spec)]
+    where = [
+        KbChunk.kind == "wcl",
+        fetch_visible_clause(KbChunk.raw_fetch_id, tenant_id=tenant_id, since=since),
+        *_class_spec(filters, KbChunk.class_name, KbChunk.spec, KbChunk.players),
+        *_dates(filters, KbChunk.start_time),
+    ]
+    if filters.report_code is not None:
+        where.append(KbChunk.report_code == filters.report_code)
+    if filters.encounter_id is not None:
+        where.append(KbChunk.encounter_id == filters.encounter_id)
+    if filters.difficulty is not None:
+        where.append(KbChunk.difficulty == filters.difficulty)
+    if filters.character_key is not None:
+        where.append(_contains(KbChunk.players, [{"key": filters.character_key}]))
+    return where
+
+
+def _chat_where(filters: SearchFilters, tenant_id: uuid.UUID) -> list:
+    # RLS scopes the session; the explicit predicate is defence in depth.
+    where = [KbChatChunk.tenant_id == tenant_id, *_dates(filters, KbChatChunk.created_at)]
+    if filters.character_key is not None:
+        where.append(_contains(KbChatChunk.characters, [{"key": filters.character_key}]))
+    return where
+
+
+def _chunk_columns(kind: Kind) -> list:
+    return [
+        cast(KbChunk.id, String).label("id"), literal(kind).label("kind"), KbChunk.text,
+        KbChunk.label, KbChunk.report_code, KbChunk.fight_id, cast(KbChunk.guide_id, String).label("guide_id"),
+        KbChunk.class_name, KbChunk.spec, KbChunk.content_type, KbChunk.section,
+        cast(null(), String).label("conversation_id"), cast(null(), Integer).label("message_seq"),
+    ]
+
+
+def _chat_columns() -> list:
+    return [
+        cast(KbChatChunk.id, String).label("id"), literal("chat").label("kind"), KbChatChunk.text,
+        KbChatChunk.label, cast(null(), String).label("report_code"), cast(null(), Integer).label("fight_id"),
+        cast(null(), String).label("guide_id"), cast(null(), String).label("class_name"),
+        cast(null(), String).label("spec"), cast(null(), String).label("content_type"),
+        cast(null(), String).label("section"), cast(KbChatChunk.conversation_id, String).label("conversation_id"),
+        KbChatChunk.message_seq,
+    ]
+
+
+def _branches(
+    query: str,
+    vector: list[float] | None,
+    filters: SearchFilters,
+    tenant_id: uuid.UUID,
+    legs: frozenset[Leg],
+    since: datetime,
+) -> list:
+    kinds = [filters.kind] if filters.kind else list(KINDS)
+    out = []
+    for kind in kinds:
+        if kind == "chat":
+            model, columns, where, config = KbChatChunk, _chat_columns(), _chat_where(filters, tenant_id), "english"
+        else:
+            model, columns = KbChunk, _chunk_columns(kind)
+            where, config = _chunk_where(kind, filters, tenant_id, since), "simple" if kind == "wcl" else "english"
+        if "vector" in legs and vector is not None:
+            distance = model.embedding.op("<=>", return_type=Float)(literal(vector, Vector(KB_DIMENSIONS)))
+            out.append(
+                select(*columns, literal("vector").label("leg"), distance.label("score"))
+                .where(model.embedding.isnot(None), *where)
+                .order_by(distance)
+                .limit(LEG_LIMIT)
+            )
+        if "keyword" in legs:
+            tsq = _tsquery(config, query)
+            rank = func.ts_rank_cd(model.tsv, tsq)
+            out.append(
+                select(*columns, literal("keyword").label("leg"), rank.label("score"))
+                .where(model.tsv.op("@@")(tsq), *where)
+                .order_by(rank.desc())
+                .limit(LEG_LIMIT)
+            )
+    return out
+
+
+def _candidate(row) -> Candidate:
+    if row.kind == "chat":
+        source: dict[str, Any] = {"conversation_id": row.conversation_id, "message_seq": row.message_seq}
+        key: tuple = ("chat", row.conversation_id, row.message_seq)
+    elif row.kind == "guide":
+        source = {
+            "class_name": row.class_name, "spec": row.spec, "content_type": row.content_type,
+            "section": row.section or row.label,
+        }
+        key = ("guide", row.guide_id, row.section or row.label)
+    else:
+        source = {"report_code": row.report_code, "fight_id": row.fight_id, "label": row.label}
+        key = ("wcl", row.report_code, row.fight_id, row.label)
+    return Candidate(row.id, row.kind, row.text, key, source)
+
+
+async def run_query(
+    query: str,
+    vector: list[float] | None,
+    filters: SearchFilters,
+    tenant_id: uuid.UUID,
+    legs: frozenset[Leg],
+) -> list[Candidate]:
+    """One query's legs in one statement, in a session scoped to ``tenant_id`` (RLS)."""
+    since = datetime.now(UTC) - timedelta(days=settings.raw_store_reverify_days)
+    branches = _branches(query, vector, filters, tenant_id, legs, since)
+    if not branches:
+        return []
+    async with db_session.SessionLocal() as session:
+        if session.get_bind().dialect.name != "postgresql":
+            raise SearchUnavailable("knowledge search needs Postgres")
+        await set_scope(session, tenant_id=tenant_id)
+        # pgvector >= 0.8: keep scanning the HNSW index until the WHERE clause is satisfied.
+        await session.execute(text("SET LOCAL hnsw.iterative_scan = strict_order"))
+        rows = (await session.execute(union_all(*branches))).all()
+    out: list[Candidate] = []
+    for leg in ("vector", "keyword"):
+        mine = sorted(
+            (r for r in rows if r.leg == leg),
+            key=lambda r: (r.score if leg == "vector" else -r.score, r.id),
+        )[:LEG_LIMIT]
+        out += [replace(_candidate(r), leg=leg, rank=i) for i, r in enumerate(mine, start=1)]
+    return out
 
 
 @dataclass(frozen=True)

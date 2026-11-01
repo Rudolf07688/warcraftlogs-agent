@@ -303,7 +303,7 @@ def identity():
 def fake_search(monkeypatch):
     seen: list[SearchRequest] = []
 
-    monkeypatch.setattr(kb_tools, "_embedder", lambda: None)
+    monkeypatch.setattr(kb_tools, "get_embedder", lambda: None)
 
     async def fake(req, *, embedder, runner=None, mode="hybrid"):
         seen.append(req)
@@ -386,6 +386,23 @@ async def test_search_failure_is_a_plain_error(identity, monkeypatch, patched_db
         raise RuntimeError("db exploded: password=hunter2")
 
     monkeypatch.setattr(kb_tools.kb_search, "search", boom)
-    monkeypatch.setattr(kb_tools, "_embedder", lambda: None)
+    monkeypatch.setattr(kb_tools, "get_embedder", lambda: None)
     result = await search_knowledge(["arms opener"], _ctx())
     assert result == {"status": "error", "error_message": "Knowledge search failed; use the Warcraft Logs tools."}
+
+
+def test_only_the_kb_package_reads_the_chunk_tables():
+    """P7 SEC-002: kb_chunks holds private-report text; the search runner (with the 039 rule)
+    is the only read path for the agent, so nothing outside backend/app/kb touches the models."""
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "app"
+    offenders = [
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if path.parent != root / "kb"
+        and path != root / "db" / "models.py"
+        and re.search(r"\bKbChunk\b|\bKbChatChunk\b|(?i:\b(?:from|join)\s+kb_(?:chat_)?chunks\b)", path.read_text())
+    ]
+    assert offenders == []

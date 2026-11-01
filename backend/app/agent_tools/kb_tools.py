@@ -21,6 +21,7 @@ from wcl_agent.game.constants import CLASS_SPECS
 
 from ..db import session as db_session
 from ..kb import search as kb_search
+from ..kb.embedder import get_embedder
 from ..services.name_resolver import (
     DIFFICULTY_NAMES,
     ResolutionError,
@@ -47,12 +48,6 @@ _CHARACTER_HINT = (
     " If this is a player in a stored log, drop `character` and put the name in a query instead."
 )
 _REPORT_CODE = re.compile(r"[A-Za-z0-9]{1,32}")
-
-
-def _embedder():
-    from ..kb.embedder import get_embedder  # 043's seam (contract 2)
-
-    return get_embedder()
 
 
 class _BadArgument(ValueError):
@@ -196,7 +191,7 @@ async def search_knowledge(
         logger.exception("search_knowledge argument resolution failed")
         return {"status": "error", "error_message": _FAILED}
     try:
-        result = await kb_search.search(request, embedder=_embedder())
+        result = await kb_search.search(request, embedder=get_embedder())
     except Exception:  # noqa: BLE001 - never the exception text; the turn goes on
         logger.exception("search_knowledge failed")
         return {"status": "error", "error_message": _FAILED}
