@@ -269,7 +269,8 @@ def _branches(
     legs: frozenset[Leg],
     since: datetime,
 ) -> list:
-    kinds = [filters.kind] if filters.kind else list(KINDS)
+    # A report code is a WCL filter: it never lets guides or chats through (board #117).
+    kinds = [filters.kind] if filters.kind else ["wcl"] if filters.report_code else list(KINDS)
     out = []
     for kind in kinds:
         if kind == "chat":

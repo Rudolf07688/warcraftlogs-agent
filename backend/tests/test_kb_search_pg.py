@@ -355,3 +355,18 @@ async def test_a_chunk_whose_code_its_fetch_does_not_name_is_invisible(pg, tenan
     result = await search(a, f"Smuggled Codeless Honest {public} {private}", kind="wcl", k=15)
     assert codes_of(result) & {public, private, None} == {public}
     assert all("Smuggled" not in h.text and "Codeless" not in h.text for h in result.hits)
+
+
+async def test_a_report_code_excludes_guides_and_chats(pg, tenants):
+    """Board #117: report_code implies kind=wcl, even when kind is unset."""
+    a, _ = tenants
+    code = fresh()
+    await set_status(pg, code, "public")
+    await add_wcl(pg, await add_fetch(pg, [code]), code, f"Report {code} Heroic Ulatek kill")
+    content_type = await add_guide(pg, f"Guide that mentions {code}")
+    conv = await add_chat(pg, a, f"User: about {code}? Agent: it was a kill.")
+    result = await search(a, f"{code} kill", report_code=code, k=15)
+    assert {h.kind for h in result.hits} == {"wcl"} and code in codes_of(result)
+    unfiltered = await search(a, f"{code} kill", k=15)
+    assert conv in convs_of(unfiltered)
+    assert content_type in {h.source.get("content_type") for h in unfiltered.hits}

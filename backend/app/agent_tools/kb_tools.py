@@ -123,6 +123,8 @@ async def _request(
     stated = list(user_stated or [])
     if any(s not in kb_search.RELAX_ORDER for s in stated):
         raise _BadArgument(f"user_stated takes {', '.join(kb_search.RELAX_ORDER)}.")
+    if report_code is not None and kind in ("guide", "chat"):
+        raise _BadArgument("report_code only applies to kind \"wcl\"; drop one of them.")
     if report_code is not None and not (isinstance(report_code, str) and _REPORT_CODE.fullmatch(report_code)):
         raise _BadArgument("report_code is the report's letters and digits only.")
     for name, value in (("encounter", encounter), ("character", character)):
@@ -189,7 +191,7 @@ async def search_knowledge(
     are merged. Filters narrow only the kinds that carry them: guides have class/spec only,
     chats have character and dates only. kind: "wcl", "guide" or "chat". encounter: a boss
     name; character: one of the user's characters, friends or known players ("Name" or
-    "Name-Realm"); report_code: one report; since/until: ISO dates. List in ``user_stated`` the
+    "Name-Realm"); report_code: one report (WCL hits only); since/until: ISO dates. List in ``user_stated`` the
     filters the user said explicitly (class_name, spec, encounter, dates); the others are
     relaxed in the order spec, class_name, encounter, dates when fewer than k (default 8, max
     15) hits come back, and ``relaxed`` names them. Each hit has kind, a source pointer, short

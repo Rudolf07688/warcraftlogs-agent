@@ -281,12 +281,15 @@ clause; run the eval in CI and check it reports recall@k for both modes and late
 | Filter | wcl chunks | guide chunks | chat chunks |
 |---|---|---|---|
 | `class_name`, `spec` | chunk class/spec or any player's | guide class/spec | not applicable |
-| `encounter`, `difficulty`, `report_code` | yes | not applicable | not applicable |
+| `encounter`, `difficulty` | yes | not applicable | not applicable |
+| `report_code` | yes | excluded | excluded |
 | `character` | a player in the chunk | not applicable | a mentioned character |
 | `since`, `until` | fight/report start time | not applicable | message time |
 | `kind` | yes | yes | yes |
 
-"Not applicable" means the filter does not exclude that kind. Visibility applies to every row
+"Not applicable" means the filter does not exclude that kind. A `report_code` implies kind
+`wcl`: guide and chat hits are excluded, and `kind` guide or chat with a `report_code` is a
+correctable error (board #117). Visibility applies to every row
 regardless of filters.
 
 ### Key Entities

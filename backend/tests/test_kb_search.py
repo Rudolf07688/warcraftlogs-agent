@@ -356,6 +356,8 @@ async def test_resolves_filters_into_canonical_values(identity, fake_search, pat
         ({"report_code": "*"}, "report_code"),
         ({"report_code": "A" * 33}, "report_code"),
         ({"kind": "raw_fetches"}, "kind must be"),
+        ({"kind": "guide", "report_code": "ABC"}, "only applies to kind"),
+        ({"kind": "chat", "report_code": "ABC"}, "only applies to kind"),
         ({"k": 0}, "k must be"),
         ({"k": 16}, "k must be"),
         ({"since": "last week"}, "ISO date"),
