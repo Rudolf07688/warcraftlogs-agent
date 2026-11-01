@@ -97,9 +97,8 @@ async def investigate_raid(
         db, model=model, title=raid.label[:60], tenant_id=identity.tenant_id
     )
     # 046 sc-339: warm the kickoff turn's data in the background, only past the 404 rule
-    # above and only with the raw store running (without it the tables would warm nothing).
-    if getattr(request.app.state, "fetch_writer", None) is not None:
-        kickoff_prefetch.schedule(identity, report_code)
+    # above (schedule() checks store reads and the per-report cooldown).
+    kickoff_prefetch.schedule(identity, report_code)
     return InvestigateResponse(
         conversation_id=conv.id,
         model=model,

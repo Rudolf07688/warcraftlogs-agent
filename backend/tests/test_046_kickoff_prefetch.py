@@ -1,8 +1,8 @@
 """Recent-raid kickoff pre-fetch, playbook and tool-call count (046, sc-339).
 
-The WCL tool functions are faked: the pre-fetch must call them as the clicking workspace,
-once per click, never twice at once for one workspace and report, and never for a report the
-endpoint refuses. Failures are logged, never raised.
+The WCL tool functions are faked: the pre-fetch must call them as the clicking workspace, in the
+background lane, at most once per workspace and report per cooldown, only with store reads on,
+and never for a report the endpoint refuses. Failures are logged, never raised.
 """
 
 from __future__ import annotations
@@ -13,13 +13,14 @@ import uuid
 
 import pytest
 
-from backend.app.main import app
+from backend.app.config import settings
 from backend.app.services import background, kickoff_prefetch
 from backend.app.services.kickoff_prefetch import MAX_BOSS_TABLES, pick_boss_fights
 from backend.app.tenancy.context import RequestIdentity, current_identity
 from backend.tests.test_raids import _store_recent
 from wcl_agent.agent import INSTRUCTION
 from wcl_agent.cache.cache_models import FightSummary, ReportSummary
+from wcl_agent.client import wcl_client
 
 
 def _summary(*fights: tuple[int, int, int | None, bool]) -> ReportSummary:
@@ -51,11 +52,13 @@ class _FakeWcl:
     def __init__(self, monkeypatch, summary=None, fail: Exception | None = None):
         self.summaries: list[uuid.UUID | None] = []
         self.tables: list[tuple[str, str, int, uuid.UUID | None]] = []
+        self.lanes: set[str] = set()
         self.gate: asyncio.Event | None = None
         self.summary = summary or _summary((2, 100, 4, True), (5, 200, 4, False))
 
         async def load(code):
             self.summaries.append(_tenant())
+            self.lanes.add(wcl_client._lane.get())
             if self.gate is not None:
                 await self.gate.wait()
             if fail is not None:
@@ -64,6 +67,7 @@ class _FakeWcl:
 
         async def table(code, data_type, fight_id=0, **_kwargs):
             self.tables.append((code, data_type, fight_id, _tenant()))
+            self.lanes.add(wcl_client._lane.get())
             return {"status": "success"}
 
         monkeypatch.setattr(kickoff_prefetch, "load_report_summary", load)
@@ -80,9 +84,16 @@ async def _drain():
         await asyncio.gather(*list(background._bg_tasks))
 
 
+@pytest.fixture(autouse=True)
+def fresh_cooldowns(monkeypatch):
+    monkeypatch.setattr(kickoff_prefetch, "_started", {})
+
+
 @pytest.fixture
 def store_running(monkeypatch):
-    monkeypatch.setattr(app.state, "fetch_writer", object(), raising=False)
+    """Store reads on and the store installed as the client's fetch source (main.lifespan)."""
+    monkeypatch.setattr(settings, "wcl_store_reads_enabled", True)
+    monkeypatch.setattr(wcl_client, "_fetch_source", object())
 
 
 async def test_a_click_pre_fetches_once_as_the_workspace(as_user, session_factory, store_running, monkeypatch):
@@ -94,11 +105,26 @@ async def test_a_click_pre_fetches_once_as_the_workspace(as_user, session_factor
     assert wcl.summaries == [as_user.tenant_id]
     assert wcl.tables == [("RECENT1", "Summary", 2, as_user.tenant_id), ("RECENT1", "Summary", 5, as_user.tenant_id)]
     assert current_identity.get() is None  # nothing leaks into the request's own context
+    assert wcl.lanes == {"background"}  # capped, and yields to chat turns (P7-046 SEC-001)
 
-    again = await as_user.client.post("/api/raids/RECENT1/investigate", json={})
-    assert again.status_code == 201
+
+async def test_a_repeat_click_within_the_cooldown_starts_nothing(
+    as_user, session_factory, store_running, monkeypatch
+):
+    wcl = _FakeWcl(monkeypatch)
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(kickoff_prefetch.time, "monotonic", lambda: clock["now"])
+    await _store_recent(session_factory, as_user.tenant_id)
+    for _ in range(3):  # the first job is long finished: still no second one
+        assert (await as_user.client.post("/api/raids/RECENT1/investigate", json={})).status_code == 201
+        await _drain()
+        clock["now"] += 60
+    assert len(wcl.summaries) == 1
+    clock["now"] = 1000.0 + kickoff_prefetch.COOLDOWN_S
+    assert (await as_user.client.post("/api/raids/RECENT1/investigate", json={})).status_code == 201
     await _drain()
-    assert len(wcl.summaries) == 2  # once per click
+    assert len(wcl.summaries) == 2  # after the cooldown a click warms the report again
+    assert len(kickoff_prefetch._started) == 1  # expired entries are dropped
 
 
 async def test_a_click_while_the_pre_fetch_runs_starts_no_second_one(as_user, session_factory, store_running, monkeypatch):
@@ -140,21 +166,27 @@ async def test_a_refused_report_fetches_nothing(as_user, make_authed_client, ses
     assert wcl.summaries == [] and wcl.tables == []
 
 
-async def test_no_pre_fetch_without_the_raw_store(as_user, session_factory, monkeypatch):
+@pytest.mark.parametrize("reads_on, source", [(False, object()), (True, None)])
+async def test_no_pre_fetch_without_store_reads(as_user, session_factory, monkeypatch, reads_on, source):
+    # Whole-raid tables are kept only in the store: without reads from it the fetch is wasted.
     wcl = _FakeWcl(monkeypatch)
+    monkeypatch.setattr(settings, "wcl_store_reads_enabled", reads_on)
+    monkeypatch.setattr(wcl_client, "_fetch_source", source)
     await _store_recent(session_factory, as_user.tenant_id)
     assert (await as_user.client.post("/api/raids/RECENT1/investigate", json={})).status_code == 201
     await _drain()
-    assert wcl.summaries == []
+    assert wcl.summaries == [] and kickoff_prefetch._started == {}
 
 
-async def test_prefetch_sets_the_identity_only_in_its_own_task(monkeypatch):
+async def test_prefetch_sets_the_identity_only_in_its_own_task(store_running, monkeypatch):
     wcl = _FakeWcl(monkeypatch)
     identity = RequestIdentity(uuid.uuid4(), uuid.uuid4(), "member", False, uuid.uuid4())
-    kickoff_prefetch.schedule(identity, "RECENT1")
-    kickoff_prefetch.schedule(identity, "RECENT1")  # the same workspace and report: deduplicated
+    assert kickoff_prefetch.schedule(identity, "RECENT1") is True
+    assert kickoff_prefetch.schedule(identity, "RECENT1") is False  # the same workspace and report
+    other = RequestIdentity(uuid.uuid4(), uuid.uuid4(), "member", False, uuid.uuid4())
+    assert kickoff_prefetch.schedule(other, "RECENT1") is True  # another workspace has its own
     await _drain()
-    assert wcl.summaries == [identity.tenant_id]
+    assert sorted(map(str, wcl.summaries)) == sorted([str(identity.tenant_id), str(other.tenant_id)])
     assert current_identity.get() is None
 
 
