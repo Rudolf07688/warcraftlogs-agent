@@ -245,7 +245,7 @@ async def stream_response(
             current_turn.set(None)
         logger.info(
             "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
-            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d fallback=%s tool_calls=%d",
+            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d tool_calls=%d fallback=%s",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
@@ -256,8 +256,8 @@ async def stream_response(
             stats.max_prompt_tokens,
             stats.last_cached_tokens,
             stats.trimmed_results,
-            stats.switched_to or "-",
             tool_calls,
+            stats.switched_to or "-",
         )
 
 
