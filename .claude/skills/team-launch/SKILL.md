@@ -86,6 +86,10 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
     file keeps the old copy.
   - The symlinked `.env` is harmless to the test suite since 047 (the conftest sets
     `WCL_LOAD_DOTENV=0`); remove it with the worktrees at wrap-up.
+  - **Judge answers, not just arrival.** Add an `EXPECT` entry for every prompt whose answer
+    the stored report fixes. Take the facts from `livecheck.py --facts <code>`, never from a
+    model. The run prints PASS/FAIL per turn and a `LIVE RESULT` line, and exits 1 on any FAIL
+    or EMPTY. Report a FAIL as a finding with a ticket.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on
@@ -99,11 +103,12 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    move a fact that several members share into the agent file or a skill instead.
 2. **Close the board:** stop all agents, then run
    `python3 .claude/team/board.py close --export meta/sprints/<date>/board.jsonl`.
-3. **Team-pattern report:** `meta/sprints/<date>/team-report.html`, in the same
-   standalone style as the sprint review.
+3. **Team-pattern report:** `meta/sprints/<date>/team-report.html`: write the body, then
+   `python3 .claude/team/report.py build <body> <out> --title "Team Report <date>"`.
    - **Data:**
      - `python3 .claude/team/usage.py ~/.claude/projects/-home-rudolf-dev-warcraftlogs-agent/<this session id>`
-       for tokens, calls and messages per agent
+       for tokens, calls and messages per agent; add `--context` to see where each agent's
+       new context came from (P10: the product owner's Shortcut and report share)
      - the board export, for entries by kind and author, and for decisions overridden
      - git, for lines of code against lines of Spec Kit documents
    - **Contents:**

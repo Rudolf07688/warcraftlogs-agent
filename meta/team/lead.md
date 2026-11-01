@@ -31,3 +31,4 @@ Owner, 2026-11-01: "Don't be too hard on yourself. You have the most difficult j
 - Planning with the PO in the room (owner's idea, 2026-11-01b) beat my solo pick: Maren read the code and corrected two of my claims before launch, for under 2% of the sprint. Brief her to challenge my view, read-only, and relay both views side by side.
 - Name tickets for the owner (preference 23): a plain name, the id in brackets at most. Look the names up; never write a bare sc-number to the owner.
 - A security rework can break liveness (the 046 lane move stalled the kickoff turn). When a rework touches lanes, locks or ordering, say so in the end-sweep brief.
+- Measure before choosing a lever. After 2026-11-01b I guessed that the PO's cost came from file-ownership entries. `usage.py --context` showed Shortcut re-reads (36%) and report copying (10%) instead. Run the measurement first, then write the proposal.

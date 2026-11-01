@@ -1,6 +1,8 @@
 """Team-lead live checks: logs in from .env (never prints values), runs chat turns over /ws/chat, prints frame counts, tool starts per name and reload artifacts, cancels proposals.
-Usage: uv run --with httpx --with websockets python .claude/team/livecheck.py SLOT:prompt_key ... (same SLOT = same conversation). Edit PROMPTS per sprint; defaults to the haiku model."""
-import asyncio, json, sys, re
+Usage: uv run --with httpx --with websockets python .claude/team/livecheck.py SLOT:prompt_key ... (same SLOT = same conversation). Edit PROMPTS per sprint; defaults to the haiku model.
+Each turn is judged: PASS/FAIL against EXPECT (answers known from the stored report, never from a model), else ANSWERED or EMPTY. Exit 1 on any FAIL or EMPTY.
+  livecheck.py --facts CODE   prints the stored fights of a report (from Postgres), to write EXPECT entries from."""
+import asyncio, json, sys, re, subprocess
 import httpx, websockets
 
 ENV = {}
@@ -59,7 +61,7 @@ async def main():
     _, models = await get("/api/models", cookie)
     lst = models.get("models", models); ids=[m if isinstance(m,str) else (m.get("id") or m.get("name")) for m in lst]
     model = next((m for m in ids if "haiku" in m), ids[0]); print("using", model)
-    convs = {}
+    convs, results = {}, []
     for name in sys.argv[1:]:
         slot, key = name.split(":")
         prompt = PROMPTS.get(key)
@@ -88,6 +90,8 @@ async def main():
             if f["type"]=="proposal":
                 pid=f["proposal"]["id"]; print("  proposal cancelled:", (await post(f"/api/profile/proposals/{pid}/cancel", cookie, csrf))[0])
         print("TEXT:", text[:700])
+        results.append((name, judge(key, frames, text)))
+        print("CHECK", *results[-1][1])
     for slot,cid in convs.items():
         code, body = await get(f"/api/conversations/{cid}", cookie)
         arts=[]
@@ -95,11 +99,52 @@ async def main():
             for a in (m.get("artifacts") or []): arts.append((m.get("seq"), m.get("role"), a.get("kind") or a.get("type")))
         top=body.get("artifacts")
         print(f"reload {slot}: {code} message artifacts={arts} top-level artifacts={[ (a.get('message_seq'), a.get('kind')) for a in top] if isinstance(top,list) else None}")
+    tally = {}
+    for _, (v, _why) in results: tally[v] = tally.get(v, 0) + 1
+    print("\nLIVE RESULT:", ", ".join(f"{n} {v}" for v, n in sorted(tally.items())),
+          "|", "; ".join(f"{n}={v}" for n, (v, _w) in results))
+    return 1 if tally.get("FAIL") or tally.get("EMPTY") else 0
+
+
+def judge(key, frames, text):
+    """PASS/FAIL against EXPECT, else ANSWERED/EMPTY. Checks the answer text plus any
+    artifact/chart frames, not tool frames (a fight list there names every boss)."""
+    if any(f.get("type") == "error" for f in frames) or not text.strip():
+        return "EMPTY", "no answer text" if not any(f.get("type") == "error" for f in frames) else "error frame"
+    exp = EXPECT.get(key)
+    if not exp:
+        return "ANSWERED", "no EXPECT entry"
+    skip = {"token", "tool_start", "tool_end", "meta", "done", "status", "thinking"}
+    hay = text + " " + json.dumps([f for f in frames if f.get("type") not in skip])
+    missing = [r for r in exp.get("all", []) if not re.search(r, hay, re.I)]
+    wrong = [r for r in exp.get("none", []) if re.search(r, text, re.I)]
+    if missing or wrong:
+        return "FAIL", f"missing {missing} wrong {wrong}".strip()
+    return "PASS", exp.get("why", "")
+
+
+def facts(code):
+    """The stored fights of a report, read inside the db container (no secrets printed)."""
+    sql = ("select payload->'data'->'reportData'->'report'->'fights' from raw_fetches "
+           f"where report_code='{re.sub(r'[^A-Za-z0-9]', '', code)}' and operation_name='ReportSummary' "
+           "order by fetched_at desc limit 1")
+    out = subprocess.run(["docker", "exec", "warcraftlogs-agent-db-1", "sh", "-c",
+                          f'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "{sql}"'],
+                         capture_output=True, text=True).stdout.strip()
+    if not out:
+        print(f"no stored ReportSummary for {code}"); return
+    fights = json.loads(out)
+    for f in fights:
+        print(f"{f['id']:3} {f.get('name')!s:40} kill={f.get('kill')} difficulty={f.get('difficulty')} encounter={f.get('encounterID')}")
+    kills = [f for f in fights if f.get("kill") and f.get("encounterID")]
+    if kills:
+        k = kills[-1]
+        print(f"last boss kill: fight {k['id']} {k['name']} (difficulty {k.get('difficulty')})")
 
 
 PROMPTS = {
     # sprint 2026-11-01b: big-report turns (046/048), clean-up (047/049). "kickoff" is built in above.
-    "chart5": "In report BKNtypgnhrxXvj84, make a bar chart of the top 5 damage dealers on the last boss kill. Keep the text to one line.",
+    "chart5": "In report BKNtypgnhrxXvj84, make a bar chart of the top 5 damage dealers on the last boss kill. Keep the text to one line that names the boss.",
     # sprint 2026-11-01: knowledge base (043/044/045)
     "stored": "Which fights are stored for report BKNtypgnhrxXvj84? Use only data we already have stored; one short line per fight.",
     "guide": "From our class guides only (search the knowledge base), how should an arms warr open? Two lines.",
@@ -112,5 +157,20 @@ PROMPTS = {
     "recall": "Search our past conversations: what was the raid codeword for the next pull? One line.",
 }
 
+# Expected answers: regexes on the answer ("all" may also match a chart/artifact frame).
+# BKNtypgnhrxXvj84 (--facts): fights 1-2 are timed M+ keys; the last boss kill is fight 32,
+# Ula'tek heroic. sc-365 ("Agent picks the wrong last boss kill") is caught here.
+LAST_KILL = {"all": [r"ula.?tek"], "none": [r"nalorakk", r"blinding vale", r"kith.?ix"],
+             "why": "last boss kill = Ula'tek heroic (fight 32)"}
+EXPECT = {
+    "topdmg": LAST_KILL,
+    "chart5": LAST_KILL,
+    "related": {"all": [r"\w"], "none": [r"kith.?ix"], "why": "answers about Ula'tek, not Kith'ix"},
+    "recall": {"all": [r"PURPLE-OTTER-42"], "why": "recalls the codeword"},
+}
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    if sys.argv[1:2] == ["--facts"]:
+        facts(sys.argv[2])
+    else:
+        sys.exit(asyncio.run(main()))

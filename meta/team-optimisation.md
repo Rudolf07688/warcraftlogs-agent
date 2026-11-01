@@ -364,6 +364,50 @@ compares team coordination only.
 - **Measure next sprint:** "green that wasn't" count (target 0); team-lead wake-ups (target
   only fallbacks); merges that reused a receipt; memory lines flagged by `lint` before and
   after wrap-up.
+- **Result (2026-11-01b):** held on every measure: 0 green-that-wasn't, 0 wake-ups, 1 of 3
+  merges reused a receipt (the other two were mixed trees, as designed), and lint 14 → 3.
+
+### P10. Lighter product-owner admin (owner go 2026-11-01; built, trial next sprint)
+
+- **Evidence:** Maren's delivery run is the largest coordination item: 3.45 M of 5.39 M,
+  0.17 M per point, and 43% of it is cache writes (1.19 M), meaning new context. Against
+  the earlier tier-M sprints (0.83, 0.92), this sprint's 1.03 per point is higher, and
+  P7 (0.05/pt) plus the planning run (0.02/pt) explain only part of the gap.
+- **Measured before changing anything** (`usage.py --context`). Her new context came from:
+  - Shortcut reads: 36%. These were full story reads (about 5,700 characters each) of
+    tickets the planning run had already read, which in turn spent 89% of its context on
+    Shortcut.
+  - Developer hand-offs: 18%. Needed.
+  - Source reads: 17%. Her judgement work: briefs and the flake diagnosis.
+  - Board: 10%.
+  - Copying old HTML reports for their style: 10%, plus about 60k characters of markup
+    she re-typed, at the 5× output weight.
+
+  Her 32 per-file `owner:` entries (a third of the board) cost her little, but the hook
+  delivers every entry to every agent. Shortcut *writes* are cheap (about 100 characters each).
+- **Built / changed:**
+  - `report.py build` wraps a body fragment in the shared shell (`report-shell.html`).
+    It rebuilds the 2026-11-01b review byte for byte. `report.py classes` prints the
+    class vocabulary.
+  - `product-owner.md`:
+    - Read each ticket once; `plan.md` is the ticket source after that.
+    - Reports go through `report.py`, without opening an old one.
+    - One `owner:<glob>` per stream; per-file keys only for shared files.
+    - Ticket writes go in one batch per milestone.
+  - The team-launch skill builds the team report with `report.py` and reads `--context`.
+- **Measure next sprint:** Maren's delivery cost per point (0.17, target ≤ 0.12); her Shortcut
+  share (36%, target < 15%); html share (10%, target ≈ 0); `change` entries per stream.
+
+### P11. Live checks judge the answer (built 2026-11-01, owner go)
+
+The live pass counted a turn as passed when an answer came back. "Agent picks the wrong
+last boss kill" (sc-365) surfaced only because two turns disagreed.
+- `livecheck.py` now judges each turn against `EXPECT`: PASS, FAIL, ANSWERED (no
+  expectation) or EMPTY. It prints a `LIVE RESULT` line and exits 1 on a FAIL or EMPTY.
+- Expectations come from the stored report (`livecheck.py --facts <code>`), never from a
+  model. For the test report the last boss kill is fight 32, Ula'tek heroic.
+- The chart prompt now asks the agent to name the boss, so it can be checked.
+- Measure: wrong answers caught by the run rather than by eye.
 
 ## What changed in the agent setup (2026-10-31)
 
@@ -551,3 +595,13 @@ through respawns as the same named member, with its own small, curated memory. I
   preference 23: name tickets, not bare ids. The QA High came from our own P7 rework (a lane
   move stalled the kickoff turn). Live pass 3/3. Team report:
   `meta/sprints/2026-11-01b/team-report.html`.
+- **2026-11-01 (retro with the owner, after 2026-11-01b):** the owner asked how the team did,
+  what was better and worse, and how I'll evolve it. Honest framing: 1.03 M/pt is cheaper than
+  the tier-L sprint (1.18) but dearer than the earlier tier-M sprints (0.83, 0.92). Proposed
+  P10 (lighter PO admin in tier M). Moved the liveness lesson from my memory into
+  `product-owner.md` (the end-sweep prompt is hers to write, so my memory alone never
+  reached it).
+- **2026-11-01 (owner: "Go ahead with both, and commit it"):** measured Maren's context
+  before changing anything. The lever wasn't ownership entries but Shortcut re-reads (36%)
+  and report copying (10%). Built `report.py` and the shell, `usage.py --context`, and
+  expected answers in `livecheck.py` (P11). Updated `product-owner.md` and team-launch.

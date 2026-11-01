@@ -102,6 +102,11 @@ Your board decisions replace `decisions.md`; key them `decision:<topic>`.
    - The owner has delegated Shortlist authority to you: move the sprint stories to
      Shortlist and set the sprint iteration, creating the iteration if the brief says so.
    - Never move anything to Done.
+   - **Read each ticket once (P10).** Copy each story's name, points and acceptance criteria
+     into `plan.md` as you read it. From then on `plan.md` and the briefs are your ticket
+     source. Fetch a story again only when you need its *current* state, never to re-read
+     the text. A full story read is about 5,700 characters, and in 2026-11-01b re-reads
+     were the largest share (36%) of your new context.
 3. **Features.** One feature is one developer's run.
    - **Dependent work stays together:** if B can't start until A merges, give A and B to
      the same developer.
@@ -131,7 +136,10 @@ Your board decisions replace `decisions.md`; key them `decision:<topic>`.
 
 Write `<sprint-dir>/plan.md` (short) and `<sprint-dir>/plan.html`. The HTML is a polished,
 standalone page for the owner: no network requests, light and dark tokens, readable at
-390px. Use `sprints/2026-10-31/sprint-report.html` as the style reference. It covers:
+390px. **Don't open or copy an old report for its style (P10).** Write only the body
+fragment, then run `python3 .claude/team/report.py build <body.html> plan.html --title "WCL
+Sprint <date> Plan"`. `report.py classes` prints the class vocabulary (KPIs, tabs, cards,
+tables, tags, flow, timeline). It covers:
 - the goal
 - the user flow
 - the features, each with its stories, points, tier, model and acceptance criteria
@@ -171,8 +179,11 @@ work. Open a new seat only when every existing one is busy.
 - the seat, and the other developer's name if two run in parallel
 - whether the feature is **security-core** (see the security review below)
 
-Before launch, post `owner:<path-or-glob>` keys for each footprint. Lockfiles, manifests
-and migrations go to one developer at a time.
+Before launch, post `owner:<glob>` keys: **one per stream** that covers its footprint
+(for example `owner:backend/app/services/kb/**`), not one per file. Every entry reaches every
+agent through the hook. In 2026-11-01b, 32 per-file entries made up a third of the board for two
+streams that never shared a file. Add a per-file key only for a shared file: lockfiles,
+manifests and migrations go to one developer at a time.
 
 **Wait on the board yourself, don't wait to be woken.** A developer's completion notice goes
 to team-lead, not to you, and an idle agent sees no board entries. So right after each
@@ -228,7 +239,9 @@ Anything else becomes a Backlog ticket.
 
 **Tickets.** Developers move their own stories to In Progress when they start and to Under
 Review in their hand-off. You move a story back to In Progress if you reject it. With
-several developers, you own cross-feature ticket hygiene.
+several developers, you own cross-feature ticket hygiene. Do your own ticket writes in one
+batch at each milestone (launch, each merge, wrap-up). Comment only with what the owner
+will read: the merge commit, a deferred finding, a changed AC.
 
 **Protected files.** Developers never commit `CLAUDE.md`, `AGENTS.md`, `todo.md`,
 `.specify/memory/constitution.md` or `.specify/feature.json`. You own them in tiers S and
@@ -238,7 +251,10 @@ M, and the scrum master owns them in tier L.
 
 1. **QA sweep:** run one `/qa-sweep` (`Skill` tool) from the sprint worktree, scoped to the
    sprint's changes (base...tip). For a sprint of tier-S work only, you may limit it to
-   `bugs` and `security`.
+   `bugs` and `security`. If a security rework round touched lanes, locks, queues or
+   ordering, add one line to the sweep's prompt: "re-check the <feature> rework for
+   liveness: can any turn now wait behind another?" (2026-11-01b: our own P7 rework left
+   the kickoff turn stuck behind the background lane, and only the end sweep caught it.)
 2. **Fix only the crucial findings:** correctness bugs in new code, security, data loss,
    broken acceptance criteria and regressions. Use one fix developer, as a tier S brief.
 3. **Defer everything else to the board, without duplicates** (the owner's rule):
@@ -256,7 +272,7 @@ M, and the scrum master owns them in tier L.
    Record this triage in `<sprint-dir>/qa-triage.md`.
 4. **Board sync:** run `/shortcut-sync` (the `shortcut-sync` sub-agent type) and a final
    change detection on the sprint branch.
-5. **Sprint review:** write `<sprint-dir>/sprint-report.html` in the same style as the plan.
+5. **Sprint review:** write `<sprint-dir>/sprint-report.html` with `report.py build`, like the plan.
    Use tabs for the work groups, and include delivered against planned, each story's state,
    the QA triage, deferred tickets, decisions, risks and the owner's live-check list.
    Commit it.
