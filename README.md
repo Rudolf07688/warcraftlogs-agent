@@ -317,6 +317,14 @@ tracked raid in the sidebar.
   global `raw_fetches` table by a bounded background writer, so a fetch never waits on it.
   Settings: `WCL_FETCH_PERSIST_ENABLED` (default on), `WCL_FETCH_PERSIST_QUEUE_MAX` (500
   responses) and `WCL_FETCH_PERSIST_QUEUE_MB` (64 MB). Nothing reads the table yet.
+- **Knowledge base store** (feature 043): stored WCL responses, published class guides and
+  finished chat exchanges become short readable chunks (`kb_chunks`, global; `kb_chat_chunks`,
+  per workspace under row-level security) that a background queue embeds with Vertex
+  `gemini-embedding-001` (768 dimensions). Deleting a fetch, guide or chat deletes its chunks.
+  The database image is `pgvector/pgvector:pg17-trixie` (Postgres 17 plus pgvector, same OS
+  as `postgres:17`, so an existing volume starts as is). Fill it with what was stored before:
+  `uv run python -m backend.cli.kb_backfill` prints counts and an estimated cost; add
+  `--confirm` to write and embed (resumable). Settings: `KB_*` in `.env.example`.
 - The refresh claim is a database row, so only one instance refreshes a workspace at a
   time, and a refresh that never finishes is reclaimed after 5 minutes. **Retry** appears
   when a refresh fails.

@@ -21,6 +21,11 @@ const TOOL_LABELS: Record<string, string> = {
   check_rate_limit: "Checking API budget",
   run_wcl_graphql: "Querying Warcraft Logs",
   propose_profile_changes: "Preparing profile changes",
+  // Stored data (sprint 2026-11-01): local reads, no Warcraft Logs call
+  search_knowledge: "Searching what we already know",
+  list_stored_fights: "Checking stored fights",
+  get_stored_fight_table: "Reading the stored fight",
+  list_stored_reports_for_character: "Finding stored reports",
 };
 
 export const THINKING_DEFAULT = "Thinking";

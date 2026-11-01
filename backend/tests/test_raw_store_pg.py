@@ -160,5 +160,74 @@ async def test_db_first_read_as_the_runtime_role(pg, tenants):
         finally:
             current_identity.reset(token)
 
-    assert json.loads(await as_tenant(a)) == {"data": {"reportData": {"report": {"table": 1}}}}
+    assert json.loads((await as_tenant(a)).content) == {"data": {"reportData": {"report": {"table": 1}}}}
     assert await as_tenant(b) is None
+
+
+async def test_the_045_probe_budget_and_visibility_clause_on_postgres(pg, tenants):
+    """045 sc-295: a miss is one statement, a granted hit at most four (with one set_config),
+    the payload comes back as bytes, and the clause works as the runtime role under RLS."""
+    from sqlalchemy import event, select
+
+    from backend.app.repositories.raw_fetches import fetch_visible_clause, probe_visible_fetch
+
+    a, b = tenants
+    c, p = code(), code()
+    ended = int((NOW - timedelta(days=2)).timestamp() * 1000)
+    status = lambda x, v: fetched(REPORT_SUMMARY, {"code": x},  # noqa: E731
+                                  {"reportData": {"report": {"code": x, "visibility": v, "endTime": ended}}})
+    own = fetched(TABLE_Q, {"code": c}, {"reportData": {"report": {"table": c}}})
+    pub = fetched(TABLE_Q, {"code": p}, {"reportData": {"report": {"table": p}}})
+    await store_batch([PendingWrite(status(c, "unlisted")), PendingWrite(status(p, "public")),
+                       PendingWrite(own, a), PendingWrite(pub, a)])
+    since = NOW - timedelta(days=1)
+    seen: list[str] = []
+    engine = pg.kw["bind"].sync_engine
+    listener = lambda conn, cur, stmt, params, ctx, many: seen.append(stmt)  # noqa: E731
+    event.listen(engine, "before_cursor_execute", listener)
+    try:
+        async with pg() as db:
+            miss = await probe_visible_fetch(db, "no-such-key", tenant_id=a, since=since, fresh=lambda f, s: True)
+            assert miss.outcome == "miss" and len(seen) == 1
+            seen.clear()
+            hit = await probe_visible_fetch(db, own.query_key, tenant_id=a, since=since, fresh=lambda f, s: True)
+            assert hit.outcome == "hit" and not hit.shared and isinstance(hit.body, bytes)
+            assert len(seen) == 4 and sum("set_config" in s for s in seen) == 1
+            assert json.loads(hit.body) == {"data": {"reportData": {"report": {"table": c}}}}
+        async with pg() as db:
+            seen.clear()
+            shared = await probe_visible_fetch(db, pub.query_key, tenant_id=b, since=since, fresh=lambda f, s: True)
+            assert shared.outcome == "hit" and shared.shared and len(seen) == 3  # public: no set_config
+        async with pg() as db:
+            hidden = await probe_visible_fetch(db, own.query_key, tenant_id=b, since=since, fresh=lambda f, s: True)
+            assert hidden.outcome == "not_visible"
+    finally:
+        event.remove(engine, "before_cursor_execute", listener)
+    async with pg() as db:  # the clause by column, scoped to B: A's grant is invisible under RLS
+        await set_scope(db, tenant_id=b)
+        keys = set(await db.scalars(select(sa.literal_column("query_key")).select_from(sa.table("raw_fetches")).where(
+            fetch_visible_clause(sa.literal_column("raw_fetches.query_key"), tenant_id=b, since=since),
+            sa.literal_column("raw_fetches.query_key").in_([own.query_key, pub.query_key]),
+        )))
+    assert keys == {pub.query_key}
+
+
+async def test_the_045_visible_summaries_list_on_postgres(pg, tenants):
+    """045 sc-131: the summaries list goes through the clause; under RLS B never sees A's grant."""
+    from backend.app.repositories.raw_fetches import list_visible_summaries
+
+    a, b = tenants
+    own, pub = code(), code()
+    status = lambda x, v: fetched(REPORT_SUMMARY, {"code": x},  # noqa: E731
+                                  {"reportData": {"report": {"code": x, "visibility": v, "endTime": 1}}})
+    await store_batch([PendingWrite(status(own, "unlisted"), a), PendingWrite(status(pub, "public"), a)])
+    since = NOW - timedelta(days=1)
+
+    async def listed(tenant):
+        async with pg() as db:
+            await set_scope(db, tenant_id=tenant)
+            bodies = await list_visible_summaries(db, tenant_id=tenant, since=since, limit=500)
+        return {json.loads(x)["data"]["reportData"]["report"]["code"] for x in bodies} & {own, pub}
+
+    assert await listed(a) == {own, pub}
+    assert await listed(b) == {pub}

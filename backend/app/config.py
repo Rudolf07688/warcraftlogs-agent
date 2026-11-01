@@ -199,6 +199,24 @@ class Settings(BaseSettings):
     # most this plus the Redis TTL (24 h), so keep it short (039 research R9).
     wcl_store_reads_enabled: bool = True
     raw_store_reverify_days: int = 1
+    # feature 045 (PERF-001): a store read costs at most this, then the query goes to WCL; a
+    # timeout or connection error also keeps the store out of the way for 30 s.
+    raw_store_probe_timeout_ms: int = 400
+    # feature 043: the knowledge base. Stored WCL fetches, published guides and finished chat
+    # exchanges become chunks in a background queue (bounded; a full queue drops the job, and
+    # the backfill only picks up sources with no chunks yet: a dropped update stays stale),
+    # embedded with `kb_embed_model` at 768 dimensions. Without embeddings chunks stay
+    # keyword-searchable; rows still missing a vector are retried every
+    # `kb_embed_sweep_s`. `kb_embed_request_batch` texts go in one Vertex request; the price
+    # (USD per 1M input tokens) only feeds the backfill's cost estimate.
+    kb_index_enabled: bool = True
+    kb_embed_enabled: bool = True
+    kb_embed_model: str = "gemini-embedding-001"
+    kb_index_queue_max: int = 1000
+    kb_embed_batch: int = 32
+    kb_embed_request_batch: int = 1
+    kb_embed_sweep_s: int = 600
+    kb_embed_price_per_mtok: float = 0.15
 
     # feature 013: welcome-page recent raids. A refresh starts at most every
     # `refresh_min_s`; a `running` claim older than `stale_s` is reclaimable (crash/restart).

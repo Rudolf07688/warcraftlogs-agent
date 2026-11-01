@@ -10,8 +10,10 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -24,13 +26,16 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
     mapped_column,
     relationship,
 )
+from sqlalchemy.sql.functions import FunctionElement
 
 # JSONB on PostgreSQL, plain JSON on SQLite (so the same model backs tests too).
 _JSON = JSON().with_variant(JSONB(), "postgresql")
@@ -267,7 +272,12 @@ class AuthAuditEvent(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
-    __table_args__ = (Index("ix_conversations_tenant_updated", "tenant_id", "updated_at"),)
+    __table_args__ = (
+        Index("ix_conversations_tenant_updated", "tenant_id", "updated_at"),
+        # feature 043: the target of kb_chat_chunks' composite FK. FK checks bypass RLS, so a
+        # chunk names its conversation together with its tenant (migration 0019).
+        UniqueConstraint("id", "tenant_id", name="uq_conversations_id_tenant"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
     # feature 006: owning workspace. Denormalized onto every tenant-owned table so one RLS
@@ -856,3 +866,189 @@ class RecentMplusRunCharacter(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
+
+
+# =============================================================================
+# Knowledge base (feature 043) — see specs/043-kb-store-embed/data-model.md
+#
+# Short readable chunks of what the app already knows, each with a keyword index and, once the
+# background indexer has embedded it, a 768-d vector (NULL = not embedded yet, keyword only).
+# ``kb_chunks`` is global like its sources (stored WCL fetches, class guides); 044's search
+# joins WCL rows through the 039 visibility rule. ``kb_chat_chunks`` is tenant-scoped under the
+# standard RLS policy (migration 0019). Deleting a source deletes its chunks (FK cascades).
+# =============================================================================
+
+KB_DIMENSIONS = 768
+_TSV = TSVECTOR().with_variant(Text(), "sqlite")
+
+
+class _TsVector(FunctionElement):
+    """The generated keyword column's expression: ``to_tsvector`` on Postgres, ``NULL`` on
+    SQLite, which has no full-text types and refuses unknown functions in a generated column.
+    Subclasses set ``sql``."""
+
+    inherit_cache = True
+    sql = ""
+
+
+class _KbChunkTsv(_TsVector):
+    # No stemming for WCL text (names, spells and report codes stay intact), English for guides.
+    sql = (
+        "to_tsvector(CASE WHEN kind = 'wcl' THEN 'simple'::regconfig "
+        "ELSE 'english'::regconfig END, text)"
+    )
+
+
+class _KbChatTsv(_TsVector):
+    sql = "to_tsvector('english'::regconfig, text)"
+
+
+@compiles(_TsVector)
+def _tsvector_sql(element: _TsVector, compiler, **kw) -> str:
+    return element.sql
+
+
+@compiles(_TsVector, "sqlite")
+def _tsvector_sqlite(element: _TsVector, compiler, **kw) -> str:
+    return "NULL"
+
+
+class KbChunk(Base):
+    """One chunk of a stored WCL fetch (``kind`` ``wcl``) or a published guide (``guide``).
+
+    ``raw_fetch_id`` is the fetch's ``query_key`` (``raw_fetches`` has no other key; the name
+    follows the visibility-clause contract). ``chunk_key`` is stable within its source, so a
+    re-index keeps unchanged chunks and their vectors; ``label`` is the short pointer shown with
+    a search hit. The filter columns come from the source data, never from a model.
+    """
+
+    __tablename__ = "kb_chunks"
+    __table_args__ = (
+        CheckConstraint(
+            "(kind = 'wcl' AND raw_fetch_id IS NOT NULL AND guide_id IS NULL)"
+            " OR (kind = 'guide' AND guide_id IS NOT NULL AND raw_fetch_id IS NULL)",
+            name="ck_kb_chunks_source",
+        ),
+        UniqueConstraint("raw_fetch_id", "chunk_key", name="uq_kb_chunks_fetch_key"),
+        UniqueConstraint("guide_id", "chunk_key", name="uq_kb_chunks_guide_key"),
+        Index(
+            "ix_kb_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index("ix_kb_chunks_tsv", "tsv", postgresql_using="gin"),
+        Index("ix_kb_chunks_extra", "extra", postgresql_using="gin"),
+        Index(
+            "ix_kb_chunks_players",
+            "players",
+            postgresql_using="gin",
+            postgresql_ops={"players": "jsonb_path_ops"},
+        ),
+        Index("ix_kb_chunks_report_code", "report_code"),
+        Index("ix_kb_chunks_encounter", "encounter_id"),
+        Index("ix_kb_chunks_class_spec", "class_name", "spec"),
+        Index("ix_kb_chunks_kind", "kind"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(8))  # "wcl" | "guide"
+    raw_fetch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("raw_fetches.query_key", ondelete="CASCADE"), nullable=True
+    )
+    guide_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("spec_guides.id", ondelete="CASCADE"), nullable=True
+    )
+    chunk_key: Mapped[str] = mapped_column(String(200))
+    label: Mapped[str] = mapped_column(String(200))
+    text: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(KB_DIMENSIONS), nullable=True)
+    embed_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tsv: Mapped[str | None] = mapped_column(
+        _TSV, Computed(_KbChunkTsv(), persisted=True), deferred=True
+    )
+    # WCL filters (from the query variables and the response)
+    report_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    zone_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    encounter_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)  # WCL id
+    fight_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kill: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # [{"name", "key", "class", "spec"}]; ``key`` is the resolver's normalised name.
+    players: Mapped[list | None] = mapped_column(_JSON, nullable=True)
+    region: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    realm: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    guild: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Guide filters (class/spec also on per-player WCL chunks)
+    class_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    spec: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    patch: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    section: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    extra: Mapped[dict | None] = mapped_column(_JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class KbChatChunk(Base):
+    """One finished chat exchange (the user message and the agent's final answer) of a workspace.
+
+    Tenant-scoped (RLS ``tenant_isolation``, migration 0019). The conversation is referenced
+    together with the tenant, so a chunk can't name another workspace's conversation even
+    though FK checks bypass RLS. ``message_seq`` is the agent answer's ``messages.seq``.
+    """
+
+    __tablename__ = "kb_chat_chunks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["conversation_id", "tenant_id"],
+            ["conversations.id", "conversations.tenant_id"],
+            ondelete="CASCADE",
+            name="fk_kb_chat_chunks_conversation",
+        ),
+        # With the tenant in the key, a foreign conversation id hits the FK, never this key
+        # (no cross-tenant existence oracle; P7 SEC-001).
+        UniqueConstraint(
+            "tenant_id", "conversation_id", "message_seq", name="uq_kb_chat_chunks_message"
+        ),
+        Index(
+            "ix_kb_chat_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index("ix_kb_chat_chunks_tsv", "tsv", postgresql_using="gin"),
+        Index("ix_kb_chat_chunks_extra", "extra", postgresql_using="gin"),
+        Index(
+            "ix_kb_chat_chunks_characters",
+            "characters",
+            postgresql_using="gin",
+            postgresql_ops={"characters": "jsonb_path_ops"},
+        ),
+        Index("ix_kb_chat_chunks_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(_UUID, nullable=False)
+    message_seq: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    characters: Mapped[list | None] = mapped_column(_JSON, nullable=True)  # [{"name", "key"}]
+    label: Mapped[str] = mapped_column(String(200))
+    text: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(KB_DIMENSIONS), nullable=True)
+    embed_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tsv: Mapped[str | None] = mapped_column(
+        _TSV, Computed(_KbChatTsv(), persisted=True), deferred=True
+    )
+    extra: Mapped[dict | None] = mapped_column(_JSON, nullable=True)

@@ -1,0 +1,604 @@
+{
+ "wcl": [
+  {
+   "id": "w01",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 12,
+   "encounter_id": 3101,
+   "difficulty": 4,
+   "kill": true,
+   "start_time": "2026-10-21T19:40:00Z",
+   "label": "fight 12 summary",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    },
+    {
+     "name": "Lumi",
+     "class": "Priest",
+     "spec": "Holy"
+    },
+    {
+     "name": "Brakka",
+     "class": "Paladin",
+     "spec": "Protection"
+    }
+   ],
+   "text": "Report Ev4kAbyssA1x9Qz, fight 12, Heroic Ula'tek, kill, 412 s. 20 players. Tanks Brakka (Protection Paladin) and Morrow (Blood Death Knight); healers Lumi (Holy Priest), Tessa (Restoration Shaman)."
+  },
+  {
+   "id": "w02",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 12,
+   "encounter_id": 3101,
+   "difficulty": 4,
+   "kill": true,
+   "start_time": "2026-10-21T19:40:00Z",
+   "label": "fight 12 Damage done",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    },
+    {
+     "name": "Kaelis",
+     "class": "Mage",
+     "spec": "Fire"
+    },
+    {
+     "name": "Shadra",
+     "class": "Warlock",
+     "spec": "Destruction"
+    }
+   ],
+   "text": "Report Ev4kAbyssA1x9Qz, fight 12, Heroic Ula'tek, kill. Damage done: Kaelis (Fire Mage) 141.2M, Vagxsu (Arms Warrior) 139.1M, Shadra (Destruction Warlock) 131.8M, Fenn (Beast Mastery Hunter) 127.0M."
+  },
+  {
+   "id": "w03",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 12,
+   "encounter_id": 3101,
+   "difficulty": 4,
+   "kill": true,
+   "start_time": "2026-10-21T19:40:00Z",
+   "label": "Vagxsu fight 12 Damage done",
+   "class_name": "Warrior",
+   "spec": "Arms",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    }
+   ],
+   "text": "Vagxsu (Arms Warrior) on Heroic Ula'tek fight 12: 139.1M damage, 337.6k DPS. Top abilities Mortal Strike 24%, Execute 19%, Overpower 14%. Colossus Smash used 7 times, Avatar 3 times."
+  },
+  {
+   "id": "w04",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 12,
+   "encounter_id": 3101,
+   "difficulty": 4,
+   "kill": true,
+   "start_time": "2026-10-21T19:40:00Z",
+   "label": "fight 12 Deaths",
+   "players": [
+    {
+     "name": "Fenn",
+     "class": "Hunter",
+     "spec": "BeastMastery"
+    },
+    {
+     "name": "Tessa",
+     "class": "Shaman",
+     "spec": "Restoration"
+    }
+   ],
+   "text": "Report Ev4kAbyssA1x9Qz, fight 12, Heroic Ula'tek. Deaths: Fenn (Beast Mastery Hunter) at 3:12 to Venom Nova, Tessa (Restoration Shaman) at 5:40 to Toxic Pool."
+  },
+  {
+   "id": "w05",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 9,
+   "encounter_id": 3101,
+   "difficulty": 4,
+   "kill": false,
+   "start_time": "2026-10-21T19:20:00Z",
+   "label": "fight 9 summary",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    },
+    {
+     "name": "Lumi",
+     "class": "Priest",
+     "spec": "Holy"
+    }
+   ],
+   "text": "Report Ev4kAbyssA1x9Qz, fight 9, Heroic Ula'tek, wipe at 38% after 301 s, during the second Venom Nova."
+  },
+  {
+   "id": "w06",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 15,
+   "encounter_id": 3102,
+   "difficulty": 4,
+   "kill": true,
+   "start_time": "2026-10-21T20:30:00Z",
+   "label": "fight 15 summary",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    },
+    {
+     "name": "Brakka",
+     "class": "Paladin",
+     "spec": "Protection"
+    }
+   ],
+   "text": "Report Ev4kAbyssA1x9Qz, fight 15, Heroic Queen Ansurek, kill, 655 s. Bloodlust at pull, intermission at 2:50."
+  },
+  {
+   "id": "w07",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 15,
+   "encounter_id": 3102,
+   "difficulty": 4,
+   "kill": true,
+   "start_time": "2026-10-21T20:30:00Z",
+   "label": "fight 15 Healing",
+   "players": [
+    {
+     "name": "Lumi",
+     "class": "Priest",
+     "spec": "Holy"
+    },
+    {
+     "name": "Tessa",
+     "class": "Shaman",
+     "spec": "Restoration"
+    }
+   ],
+   "text": "Report Ev4kAbyssA1x9Qz, fight 15, Heroic Queen Ansurek. Healing: Lumi (Holy Priest) 98.4M, Tessa (Restoration Shaman) 91.0M, Orwin (Restoration Druid) 84.7M."
+  },
+  {
+   "id": "w08",
+   "report_code": "Ev4kAbyssB2y8Wp",
+   "fight_id": 3,
+   "encounter_id": 3101,
+   "difficulty": 5,
+   "kill": false,
+   "start_time": "2026-10-28T20:05:00Z",
+   "label": "fight 3 summary",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    },
+    {
+     "name": "Kaelis",
+     "class": "Mage",
+     "spec": "Fire"
+    }
+   ],
+   "text": "Report Ev4kAbyssB2y8Wp, fight 3, Mythic Ula'tek, wipe at 61% after 188 s. Two players died to Toxic Pool before the first Venom Nova."
+  },
+  {
+   "id": "w09",
+   "report_code": "Ev4kAbyssB2y8Wp",
+   "fight_id": 7,
+   "encounter_id": 3101,
+   "difficulty": 5,
+   "kill": true,
+   "start_time": "2026-10-28T21:10:00Z",
+   "label": "fight 7 Damage done",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    },
+    {
+     "name": "Kaelis",
+     "class": "Mage",
+     "spec": "Fire"
+    }
+   ],
+   "text": "Report Ev4kAbyssB2y8Wp, fight 7, Mythic Ula'tek, kill, 497 s. Damage done: Vagxsu (Arms Warrior) 171.3M, Kaelis (Fire Mage) 168.9M, Riven (Havoc Demon Hunter) 160.2M."
+  },
+  {
+   "id": "w10",
+   "report_code": "Ev4kAbyssB2y8Wp",
+   "fight_id": 7,
+   "encounter_id": 3101,
+   "difficulty": 5,
+   "kill": true,
+   "start_time": "2026-10-28T21:10:00Z",
+   "label": "Riven fight 7 Damage done",
+   "class_name": "DemonHunter",
+   "spec": "Havoc",
+   "players": [
+    {
+     "name": "Riven",
+     "class": "DemonHunter",
+     "spec": "Havoc"
+    }
+   ],
+   "text": "Riven (Havoc Demon Hunter) on Mythic Ula'tek fight 7: 160.2M damage. Eye Beam 21%, Blade Dance 18%. Metamorphosis used twice."
+  },
+  {
+   "id": "w11",
+   "report_code": "Ev4kAbyssC3z7Mn",
+   "fight_id": 2,
+   "encounter_id": 3103,
+   "difficulty": 3,
+   "kill": true,
+   "start_time": "2026-10-30T19:00:00Z",
+   "label": "fight 2 summary",
+   "players": [
+    {
+     "name": "Fenn",
+     "class": "Hunter",
+     "spec": "BeastMastery"
+    },
+    {
+     "name": "Orwin",
+     "class": "Druid",
+     "spec": "Restoration"
+    }
+   ],
+   "text": "Report Ev4kAbyssC3z7Mn, fight 2, Normal Queen Ylva, kill, 280 s. Alt night with 15 players."
+  },
+  {
+   "id": "w12",
+   "report_code": "Ev4kAbyssC3z7Mn",
+   "fight_id": 2,
+   "encounter_id": 3103,
+   "difficulty": 3,
+   "kill": true,
+   "start_time": "2026-10-30T19:00:00Z",
+   "label": "Fenn fight 2 Damage done",
+   "class_name": "Hunter",
+   "spec": "BeastMastery",
+   "players": [
+    {
+     "name": "Fenn",
+     "class": "Hunter",
+     "spec": "BeastMastery"
+    }
+   ],
+   "text": "Fenn (Beast Mastery Hunter) on Normal Queen Ylva fight 2: 61.4M damage. Kill Command 26%, Barbed Shot 22%. Bestial Wrath used 3 times."
+  },
+  {
+   "id": "w13",
+   "report_code": "Ev4kAbyssC3z7Mn",
+   "fight_id": 2,
+   "encounter_id": 3103,
+   "difficulty": 3,
+   "kill": true,
+   "start_time": "2026-10-30T19:00:00Z",
+   "label": "fight 2 Damage taken",
+   "players": [
+    {
+     "name": "Orwin",
+     "class": "Druid",
+     "spec": "Restoration"
+    }
+   ],
+   "text": "Report Ev4kAbyssC3z7Mn, fight 2, Normal Queen Ylva. Damage taken: Frost Lance 31%, Glacial Spike 24%, melee 20%."
+  },
+  {
+   "id": "w14",
+   "report_code": "Ev4kAbyssB2y8Wp",
+   "fight_id": 7,
+   "encounter_id": 3101,
+   "difficulty": 5,
+   "kill": true,
+   "start_time": "2026-10-28T21:10:00Z",
+   "label": "Vagxsu fight 7 Casts",
+   "class_name": "Warrior",
+   "spec": "Arms",
+   "players": [
+    {
+     "name": "Vagxsu",
+     "class": "Warrior",
+     "spec": "Arms"
+    }
+   ],
+   "text": "Vagxsu (Arms Warrior) on Mythic Ula'tek fight 7 casts: Mortal Strike 61, Overpower 74, Execute 38, Colossus Smash 9, Bladestorm 4, Avatar 4."
+  },
+  {
+   "id": "w15",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "fight_id": 15,
+   "encounter_id": 3102,
+   "difficulty": 4,
+   "kill": true,
+   "start_time": "2026-10-21T20:30:00Z",
+   "label": "fight 15 Deaths",
+   "players": [
+    {
+     "name": "Kaelis",
+     "class": "Mage",
+     "spec": "Fire"
+    }
+   ],
+   "text": "Report Ev4kAbyssA1x9Qz, fight 15, Heroic Queen Ansurek. Deaths: Kaelis (Fire Mage) at 7:02 to Royal Condemnation."
+  }
+ ],
+ "guide": [
+  {
+   "id": "g01",
+   "class_name": "Warrior",
+   "spec": "Arms",
+   "content_type": "raid",
+   "section": "Rotation",
+   "text": "Arms Warrior raid rotation: keep Rend up, use Colossus Smash on cooldown and pair it with Avatar; Mortal Strike on cooldown, Overpower to build Martial Prowess, Execute below 35% health with Sudden Death procs."
+  },
+  {
+   "id": "g02",
+   "class_name": "Warrior",
+   "spec": "Arms",
+   "content_type": "raid",
+   "section": "Opener",
+   "text": "Arms Warrior opener: Charge, Rend, Avatar, Colossus Smash, Mortal Strike, Bladestorm inside the Colossus Smash window, then Overpower and Mortal Strike."
+  },
+  {
+   "id": "g03",
+   "class_name": "Warrior",
+   "spec": "Arms",
+   "content_type": "raid",
+   "section": "Stat priority",
+   "text": "Arms Warrior stat priority: Strength, then Critical Strike, Haste, Mastery and Versatility close together."
+  },
+  {
+   "id": "g04",
+   "class_name": "Warrior",
+   "spec": "Fury",
+   "content_type": "raid",
+   "section": "Rotation",
+   "text": "Fury Warrior rotation: keep Enrage up with Rampage and Bloodthirst, use Recklessness with Avatar, Raging Blow as filler."
+  },
+  {
+   "id": "g05",
+   "class_name": "Paladin",
+   "spec": "Protection",
+   "content_type": "raid",
+   "section": "Defensives",
+   "text": "Protection Paladin defensives: keep Shield of the Righteous active on tank-buster casts, Ardent Defender for spikes, Guardian of Ancient Kings for the largest hits."
+  },
+  {
+   "id": "g06",
+   "class_name": "Paladin",
+   "spec": "Holy",
+   "content_type": "raid",
+   "section": "Healing priorities",
+   "text": "Holy Paladin healing: Holy Shock on cooldown, Beacon of Light on the active tank, Light of Dawn for group damage, Avenging Wrath for heavy phases."
+  },
+  {
+   "id": "g07",
+   "class_name": "Priest",
+   "spec": "Holy",
+   "content_type": "raid",
+   "section": "Healing priorities",
+   "text": "Holy Priest healing: Prayer of Mending on cooldown, Holy Word: Sanctify for groups, Divine Hymn for raid-wide damage spikes."
+  },
+  {
+   "id": "g08",
+   "class_name": "Priest",
+   "spec": "Discipline",
+   "content_type": "raid",
+   "section": "Atonement",
+   "text": "Discipline Priest: apply Atonement with Power Word: Radiance before damage, then Penance and Mind Blast to heal through Atonement."
+  },
+  {
+   "id": "g09",
+   "class_name": "Hunter",
+   "spec": "BeastMastery",
+   "content_type": "raid",
+   "section": "Rotation",
+   "text": "Beast Mastery Hunter rotation: keep Barbed Shot charges rolling to maintain Frenzy, Kill Command on cooldown, Bestial Wrath with Call of the Wild."
+  },
+  {
+   "id": "g10",
+   "class_name": "Hunter",
+   "spec": "Marksmanship",
+   "content_type": "raid",
+   "section": "Rotation",
+   "text": "Marksmanship Hunter rotation: Aimed Shot with Precise Shots, Rapid Fire on cooldown, Trueshot for burst windows."
+  },
+  {
+   "id": "g11",
+   "class_name": "Mage",
+   "spec": "Fire",
+   "content_type": "raid",
+   "section": "Combustion",
+   "text": "Fire Mage Combustion: pool Fire Blast charges, enter Combustion with Pyroblast, chain Hot Streak procs and Phoenix Flames."
+  },
+  {
+   "id": "g12",
+   "class_name": "DemonHunter",
+   "spec": "Havoc",
+   "content_type": "raid",
+   "section": "Rotation",
+   "text": "Havoc Demon Hunter rotation: Eye Beam on cooldown, Blade Dance when available, Metamorphosis for burst, Immolation Aura for Fury."
+  },
+  {
+   "id": "g13",
+   "class_name": "Shaman",
+   "spec": "Restoration",
+   "content_type": "raid",
+   "section": "Healing priorities",
+   "text": "Restoration Shaman healing: Riptide on cooldown, Healing Rain stacked, Spirit Link Totem for raid-wide damage, Healing Tide Totem for the heaviest phase."
+  },
+  {
+   "id": "g14",
+   "class_name": "Warrior",
+   "spec": "Arms",
+   "content_type": "mplus",
+   "section": "Mythic+ rotation",
+   "text": "Arms Warrior Mythic+ rotation: Sweeping Strikes and Cleave on packs, Bladestorm on big pulls, Thunderous Roar with Avatar."
+  },
+  {
+   "id": "g15",
+   "class_name": "DeathKnight",
+   "spec": "Blood",
+   "content_type": "raid",
+   "section": "Defensives",
+   "text": "Blood Death Knight defensives: Death Strike after damage, Vampiric Blood and Icebound Fortitude for spikes, Bone Shield stacks above five."
+  }
+ ],
+ "chat": [
+  {
+   "id": "c01",
+   "conversation": "conv-a",
+   "message_seq": 2,
+   "created_at": "2026-10-22T10:00:00Z",
+   "text": "User: why did my arms warrior do less damage on ula'tek than kaelis? Agent: Vagxsu lost Colossus Smash uptime during Venom Nova movement; Kaelis kept Combustion inside Bloodlust.",
+   "characters": [
+    "Vagxsu",
+    "Kaelis"
+   ]
+  },
+  {
+   "id": "c02",
+   "conversation": "conv-a",
+   "message_seq": 4,
+   "created_at": "2026-10-22T10:05:00Z",
+   "text": "User: what should I change in my opener? Agent: Cast Avatar before Colossus Smash and keep Bladestorm inside the Smash window; you used Bladestorm after Smash ended.",
+   "characters": [
+    "Vagxsu"
+   ]
+  },
+  {
+   "id": "c03",
+   "conversation": "conv-b",
+   "message_seq": 2,
+   "created_at": "2026-10-23T18:00:00Z",
+   "text": "User: who died first on the heroic ula'tek kill? Agent: Fenn died first at 3:12 to Venom Nova, then Tessa at 5:40 to Toxic Pool.",
+   "characters": [
+    "Fenn",
+    "Tessa"
+   ]
+  },
+  {
+   "id": "c04",
+   "conversation": "conv-b",
+   "message_seq": 4,
+   "created_at": "2026-10-23T18:04:00Z",
+   "text": "User: was the healing assignment ok on queen ansurek? Agent: Lumi and Tessa carried healing; Orwin was low because he was on dispels during the intermission.",
+   "characters": [
+    "Lumi",
+    "Tessa",
+    "Orwin"
+   ]
+  },
+  {
+   "id": "c05",
+   "conversation": "conv-c",
+   "message_seq": 2,
+   "created_at": "2026-10-29T09:00:00Z",
+   "text": "User: why did we wipe on mythic ula'tek pull 3? Agent: Two players stood in Toxic Pool before the first Venom Nova, so the raid lacked damage for the 61% transition.",
+   "characters": []
+  },
+  {
+   "id": "c06",
+   "conversation": "conv-c",
+   "message_seq": 4,
+   "created_at": "2026-10-29T09:06:00Z",
+   "text": "User: compare Riven and Vagxsu on the mythic kill. Agent: Vagxsu out-damaged Riven by about 11M thanks to Execute; Riven delayed his second Metamorphosis.",
+   "characters": [
+    "Riven",
+    "Vagxsu"
+   ]
+  },
+  {
+   "id": "c07",
+   "conversation": "conv-d",
+   "message_seq": 2,
+   "created_at": "2026-10-30T20:00:00Z",
+   "text": "User: is my beast mastery hunter gearing right? Agent: Fenn should favour Haste to Critical Strike for Barbed Shot uptime; his Mastery is too high.",
+   "characters": [
+    "Fenn"
+   ]
+  },
+  {
+   "id": "c08",
+   "conversation": "conv-d",
+   "message_seq": 4,
+   "created_at": "2026-10-30T20:03:00Z",
+   "text": "User: what kills us on queen ylva normal? Agent: Frost Lance and Glacial Spike do over half the damage taken; spread for Glacial Spike.",
+   "characters": []
+  },
+  {
+   "id": "c09",
+   "conversation": "conv-e",
+   "message_seq": 2,
+   "created_at": "2026-10-31T12:00:00Z",
+   "text": "User: which defensives should Brakka use on ansurek? Agent: Brakka should save Guardian of Ancient Kings for Royal Condemnation and Ardent Defender for the intermission.",
+   "characters": [
+    "Brakka"
+   ]
+  },
+  {
+   "id": "c10",
+   "conversation": "conv-e",
+   "message_seq": 4,
+   "created_at": "2026-10-31T12:02:00Z",
+   "text": "User: and Morrow on blood? Agent: Morrow should keep Bone Shield above five and use Vampiric Blood for the tank buster.",
+   "characters": [
+    "Morrow"
+   ]
+  },
+  {
+   "id": "c11",
+   "conversation": "conv-f",
+   "message_seq": 2,
+   "created_at": "2026-10-25T08:00:00Z",
+   "text": "User: holy priest or holy paladin for this tier? Agent: Both are strong; Holy Priest has the better raid cooldown with Divine Hymn, Holy Paladin the stronger tank healing.",
+   "characters": []
+  },
+  {
+   "id": "c12",
+   "conversation": "conv-f",
+   "message_seq": 4,
+   "created_at": "2026-10-25T08:05:00Z",
+   "text": "User: what about disc? Agent: Discipline is fine if the raid can plan Atonement windows before damage; it is weaker on random damage.",
+   "characters": []
+  },
+  {
+   "id": "c13",
+   "conversation": "conv-g",
+   "message_seq": 2,
+   "created_at": "2026-10-26T14:00:00Z",
+   "text": "User: best arms warrior stats? Agent: Strength first, then Critical Strike; Haste, Mastery and Versatility are close.",
+   "characters": []
+  },
+  {
+   "id": "c14",
+   "conversation": "conv-g",
+   "message_seq": 4,
+   "created_at": "2026-10-26T14:02:00Z",
+   "text": "User: and for mythic plus? Agent: In Mythic+ Arms leans on Sweeping Strikes and Bladestorm for packs; Haste helps with more Bladestorms.",
+   "characters": []
+  },
+  {
+   "id": "c15",
+   "conversation": "conv-h",
+   "message_seq": 2,
+   "created_at": "2026-10-27T16:00:00Z",
+   "text": "User: how was Kaelis's combustion on ansurek? Agent: Kaelis died at 7:02 to Royal Condemnation, so his second Combustion was lost.",
+   "characters": [
+    "Kaelis"
+   ]
+  }
+ ]
+}

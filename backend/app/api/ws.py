@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
@@ -24,6 +25,8 @@ from ..auth.csrf import origin_matches
 from ..auth.dependencies import authenticate_session
 from ..config import settings
 from ..db import repository as repo
+from ..kb import indexer as kb_indexer
+from ..kb.chat_chunker import ExchangeJob
 from ..repositories import profile_proposals as proposal_rows
 from ..model_state import fallback_model_for, resolve_chat_model
 from ..scratch import TurnScratch
@@ -400,6 +403,14 @@ async def _handle_turn(
             session, proposal_ids, agent_msg.seq, tenant_id=tenant_id, user_id=identity.user_id
         )
         agent_msg_id = agent_msg.id
+        agent_seq = agent_msg.seq
+
+    # Feature 043: the saved exchange becomes a workspace chat chunk in the background (enqueue
+    # only). Only the streamed answer goes in: tool results never reach ``tokens``.
+    if tokens:
+        kb_indexer.offer_exchange(
+            ExchangeJob(tenant_id, conv_id, agent_seq, turn.content, final_text, datetime.now(UTC))
+        )
 
     # PERF-005: the turn is done as soon as the answer is saved; the composer unlocks now.
     await _send(ws, DoneFrame(message_id=agent_msg_id))

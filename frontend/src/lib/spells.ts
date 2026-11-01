@@ -167,6 +167,31 @@ export const SPELLS: Record<string, Spell> = {
     verb: "Inscribing the changes",
     flavor: ["Drafting the roster changes…", "Awaiting your seal…"],
   },
+  // --- Stored knowledge (sprint 2026-11-01): local reads, no Warcraft Logs call ---
+  search_knowledge: {
+    icon: GiMagnifyingGlass,
+    hue: VERDANT,
+    verb: "Searching the archives",
+    flavor: ["Leafing through past chronicles…", "Recalling what was written…"],
+  },
+  list_stored_fights: {
+    icon: GiScrollUnfurled,
+    hue: VERDANT,
+    verb: "Opening the kept chronicles",
+    flavor: ["Reading the stored pulls…", "No courier needed…"],
+  },
+  get_stored_fight_table: {
+    icon: GiScrollQuill,
+    hue: VERDANT,
+    verb: "Reading the kept ledger",
+    flavor: ["Summing deeds already recorded…", "Straight from the archive…"],
+  },
+  list_stored_reports_for_character: {
+    icon: GiPerson,
+    hue: VERDANT,
+    verb: "Tracing the hero in the archives",
+    flavor: ["Finding past battles on record…", "Searching the kept rolls…"],
+  },
   // --- Grounding ---
   web_search: {
     icon: GiCrystalBall,

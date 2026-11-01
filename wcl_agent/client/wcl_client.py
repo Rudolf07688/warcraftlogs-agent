@@ -27,16 +27,24 @@ import re
 import time
 import weakref
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import httpx
 
-from ..cache.cache import CacheFamily, _env_int, aclose_redis, get_or_load, keys
+from ..cache.cache import (
+    CacheFamily,
+    _env_int,
+    aclose_redis,
+    get_or_load,
+    keys,
+    mark_unshareable,
+    note_external_call,
+)
 from ..cache.cache_models import OAuthToken
 from .queries import REPORT_SUMMARY
 
@@ -56,6 +64,8 @@ HTTP_TIMEOUT = httpx.Timeout(60, connect=5)
 _PARSE_OFF_LOOP_BYTES = 256_000
 
 Lane = Literal["interactive", "background"]
+# Where a query's body came from: WCL, or the store (public, or visible through a grant only).
+Origin = Literal["network", "shared", "private"]
 _lane: ContextVar[Lane] = ContextVar("wcl_lane", default="interactive")
 
 
@@ -388,6 +398,9 @@ class FetchedResponse:
     variables: dict[str, Any]
     content: bytes
     fetched_at: datetime
+    # Feature 045 (sc-296): when the request was sent, so the writer can tell a fetch that was
+    # already under way when its report went away from a newer one. None: not known.
+    requested_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -410,9 +423,27 @@ def set_fetch_sink(sink: FetchSink | None) -> None:
     _fetch_sink = sink
 
 
-# Feature 039 (DB-first reads): ``source(query_key, query, variables)`` returns a stored body
-# the caller may be served, or None. Set by the backend app; None in the CLI, evals and tests.
-FetchSource = Callable[[str, str, dict[str, Any]], Awaitable[bytes | None]]
+@dataclass(frozen=True)
+class StoredFetch:
+    """A stored body the caller may be served (feature 039). ``shared``: every report it
+    names is public, so it may also go to the shared, tenant-less Redis cache (045 sc-296)."""
+
+    content: bytes
+    shared: bool
+
+
+class FetchSource(Protocol):
+    """Feature 039 (DB-first reads), 045 contracts/fetch-source.md. Set by the backend app;
+    None in the CLI, evals and tests."""
+
+    async def __call__(self, query_key: str, query: str, variables: dict[str, Any]) -> StoredFetch | None:
+        """A stored body for the current caller, or None (a failure is a None too)."""
+
+    def scope(self) -> str:
+        """Whose visibility the answer depends on (the turn's tenant): callers with another
+        scope must never share its single-flight."""
+
+
 _fetch_source: FetchSource | None = None
 
 
@@ -421,7 +452,9 @@ def set_fetch_source(source: FetchSource | None) -> None:
     _fetch_source = source
 
 
-async def _stored(source: FetchSource, key: str, query: str, variables: dict[str, Any]) -> bytes | None:
+async def _stored(
+    source: FetchSource, key: str, query: str, variables: dict[str, Any]
+) -> StoredFetch | None:
     """The source's answer; any failure is a miss, so a broken store never fails a query."""
     try:
         return await source(key, query, variables)
@@ -441,9 +474,13 @@ def _deliver(item: FetchedResponse | ReportGone) -> None:
         logger.debug("wcl fetch sink failed: %s", exc)
 
 
-def _offer(key: str, query: str, variables: dict[str, Any], content: bytes) -> None:
+def _offer(
+    key: str, query: str, variables: dict[str, Any], content: bytes, requested_at: datetime | None = None
+) -> None:
     if _fetch_sink is not None:
-        _deliver(FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc)))
+        _deliver(
+            FetchedResponse(key, query, dict(variables), content, datetime.now(timezone.utc), requested_at)
+        )
 
 
 # A "gone" answer is tiny; bigger bodies are never parsed for it.
@@ -530,36 +567,44 @@ class AsyncWCLClient:
         ``cache.get_or_load`` with a typed key family. Identical concurrent queries still
         share one request (single-flight).
 
-        Feature 039: with a fetch source set, the stored copy is asked first, in the caller's
-        own context (its tenant), before joining any shared request. A stored answer makes no
-        network call and is not offered to the sink again.
+        Feature 039/045: with a fetch source set, the stored copy is asked first, once per
+        single-flight and inside a lane slot (PERF-004). Its answer depends on the caller's
+        tenant, so the flight is shared only by callers of the same source scope. A stored
+        answer makes no network call and is not offered to the sink again; when it isn't
+        public, each caller's cache load is marked so it stays out of the shared cache.
         """
         variables = variables or {}
         key = _flight_key(query, variables)
         source = _fetch_source
-        if source is not None and (stored := await _stored(source, key, query, variables)) is not None:
-            return await _loads(stored)
+        flight_key = key if source is None else f"{key}:{source.scope()}"
         while True:
-            flight = self._flights.get(key)
+            flight = self._flights.get(flight_key)
             if flight is None:
-                task = asyncio.ensure_future(self._fetch(query, variables, key))
-                flight = self._flights[key] = [task, 0]
-                task.add_done_callback(lambda t, k=key: self._drop_flight(k, t))
+                task = asyncio.ensure_future(self._fetch(query, variables, key, source))
+                flight = self._flights[flight_key] = [task, 0]
+                task.add_done_callback(lambda t, k=flight_key: self._drop_flight(k, t))
             task = flight[0]
             flight[1] += 1
             try:
-                content = await asyncio.shield(task)
+                content, origin = await asyncio.shield(task)
             except asyncio.CancelledError:
                 me = asyncio.current_task()
                 if me is not None and me.cancelling():
                     raise
                 continue  # the shared fetch was abandoned by its other waiters: start over
+            except Exception:
+                note_external_call()  # it went to (or was refused by) WCL: not answered locally
+                raise
             finally:
                 flight[1] -= 1
                 if flight[1] == 0 and not task.done():
                     # The last waiter left: stop the fetch and free its slot (G4).
-                    self._drop_flight(key, task)
+                    self._drop_flight(flight_key, task)
                     task.cancel()
+            if origin == "network":
+                note_external_call()  # in this caller's own context: its own turn (sc-132)
+            elif origin == "private":
+                mark_unshareable()  # in this caller's own context: its own cache load
             return await _loads(content)
 
     def _drop_flight(self, key: str, task: asyncio.Future[Any]) -> None:
@@ -620,17 +665,36 @@ class AsyncWCLClient:
             headers={"Authorization": f"Bearer {token}"},
         )
 
-    async def _fetch(self, query: str, variables: dict[str, Any], key: str) -> bytes:
+    async def _fetch(
+        self, query: str, variables: dict[str, Any], key: str, source: FetchSource | None
+    ) -> tuple[bytes, Origin]:
+        """(body, where it came from).
+
+        With a source, the store is asked first, in the lane slot the first request then uses:
+        a fan-out holds at most that many DB connections, and a miss doesn't queue twice (045
+        PERF-004). It comes before the token and the spent-budget check, so stored answers
+        keep working while WCL refuses us.
+        """
         global _blocked_until
-        if time.monotonic() < _blocked_until:
+        if source is None and time.monotonic() < _blocked_until:
             _blocked_response().raise_for_status()
         sent = _with_cost(query)
+        requested_at: datetime | None = None
         async with asyncio.timeout(_query_timeout()) as deadline:
             limiter = _limiter()
             for attempt in range(MAX_RETRIES + 1):
-                token = await self._token()
+                probe = attempt == 0 and source is not None
+                token = "" if probe else await self._token()
                 async with limiter.slot() as lane:
+                    if probe:
+                        stored = await _stored(source, key, query, variables)
+                        if stored is not None:
+                            return stored.content, "shared" if stored.shared else "private"
+                        if time.monotonic() < _blocked_until:
+                            _blocked_response().raise_for_status()
+                        token = await self._token()
                     logger.debug("wcl inflight=%d lane=%s", limiter.in_use, lane)
+                    requested_at = requested_at or datetime.now(timezone.utc)
                     resp = await self._post(sent, variables, token)
                     if resp.status_code == 401:  # expired or revoked: refresh once and retry
                         token = await self._token(stale=token)
@@ -662,8 +726,8 @@ class AsyncWCLClient:
         if gone := _gone_codes(query, variables, content):
             _deliver(ReportGone(tuple(gone), datetime.now(timezone.utc)))  # instead of storing it
         else:
-            _offer(key, query, variables, content)
-        return content
+            _offer(key, query, variables, content, requested_at)
+        return content, "network"
 
 
 _clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncWCLClient] = (

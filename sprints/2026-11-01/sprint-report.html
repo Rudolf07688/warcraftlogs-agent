@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-01 Review</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px;align-content:start}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:grid;gap:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
+.checks .no{font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted)}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Sprint review · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-01: semantic knowledge base</h1>
+  <div class="meta">
+    <span>Branch <b class="mono">sprint-2026-11-01</b></span>
+    <span>Base <b class="mono">ec966c5</b></span>
+    <span>Code tip <b class="mono">b7a3eda</b></span>
+    <span>Iteration <b>WCL App Q4 2026</b> (Shortcut 161)</span>
+    <span>Not merged to <b class="mono">main</b> · not pushed</span>
+  </div>
+  <p>The agent can now search what the app already knows before it calls Warcraft Logs: stored report data, the grounded class guides and the workspace's earlier chats. In the background, every stored fetch, published guide and saved chat exchange is cut into short, readable chunks and embedded with Vertex <code>gemini-embedding-001</code> (768 dimensions) into pgvector. A new <code>search_knowledge</code> tool runs up to five queries in parallel. Each query combines vector and full-text search, fused by RRF, with typed filters that the server resolves, and visibility is checked inside the SQL. Three exact-lookup tools read stored fights and tables directly. The raw-store probe is now cheap and fails fast, private reports no longer leak through Redis, and the cache stats show hit/miss counters and the local-answer rate. All 33 points are delivered and Under Review. The live checks are batched for team-lead.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">33<small> / 33 pts</small></span><span class="s">11 stories, 3 features, tier L; nothing dropped</span></div>
+  <div class="kpi"><span class="eyebrow">Backend tests</span><span class="v">1744<small> pass</small></span><span class="s">from 1472; 64 skipped (Postgres-only)</span></div>
+  <div class="kpi"><span class="eyebrow">Full suite on Postgres</span><span class="v">1808<small> pass</small></span><span class="s">pgvector:pg17-trixie, 0 skipped; 0019 down/up clean</span></div>
+  <div class="kpi"><span class="eyebrow">P7 security reviews</span><span class="v">4</span><span class="s">0 bypasses; 2 Medium fixed; ~363k tokens</span></div>
+  <div class="kpi"><span class="eyebrow">QA sweep</span><span class="v">0<small> crit</small> · 5<small> high</small></span><span class="s">7 fixed in one round; 12 qa-deferred tickets</span></div>
+  <div class="kpi"><span class="eyebrow">Escalations</span><span class="v">0</span><span class="s">0 owner questions; 1 grant blocker (solved by the SM)</span></div>
+</div>
+
+<nav class="tabs" aria-label="Report sections">
+  <div class="tablist" role="tablist">
+    <button class="tab" role="tab" id="tab-overview" aria-controls="p-overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" id="tab-043" aria-controls="p-043" aria-selected="false" tabindex="-1">043 store + embed <span class="count">13 pts</span></button>
+    <button class="tab" role="tab" id="tab-044" aria-controls="p-044" aria-selected="false" tabindex="-1">044 search <span class="count">10 pts</span></button>
+    <button class="tab" role="tab" id="tab-045" aria-controls="p-045" aria-selected="false" tabindex="-1">045 local reads <span class="count">10 pts</span></button>
+    <button class="tab" role="tab" id="tab-qa" aria-controls="p-qa" aria-selected="false" tabindex="-1">QA triage <span class="count">34</span></button>
+    <button class="tab" role="tab" id="tab-live" aria-controls="p-live" aria-selected="false" tabindex="-1">Live checks <span class="count">18</span></button>
+    <button class="tab" role="tab" id="tab-decisions" aria-controls="p-decisions" aria-selected="false" tabindex="-1">Decisions &amp; risks</button>
+    <button class="tab" role="tab" id="tab-process" aria-controls="p-process" aria-selected="false" tabindex="-1">P7 &amp; process</button>
+  </div>
+</nav>
+
+<!-- ============================ OVERVIEW ============================ -->
+<div role="tabpanel" id="p-overview" aria-labelledby="tab-overview" tabindex="0">
+<h2 class="panel-title">Overview</h2>
+<section>
+  <h2>Delivered against planned</h2>
+  <div class="tbl"><table>
+    <tr><th>Feature</th><th>Developer</th><th>Tier · model</th><th>Planned</th><th>Delivered</th><th>Merges</th></tr>
+    <tr><td>043 kb store + embed (epic 100)</td><td>Ansel (dev-1)</td><td>L · opus/high</td><td class="num">13</td><td class="num">13</td><td class="mono">5e55731, 19249bb, 84c0937</td></tr>
+    <tr><td>044 kb search (epic 100)</td><td>Nils (dev-3, new)</td><td>L · opus/high</td><td class="num">10</td><td class="num">10</td><td class="mono">5ea52d8, 7bfc119</td></tr>
+    <tr><td>045 local data reads (epic 103)</td><td>Tomas (dev-2)</td><td>M · opus/medium</td><td class="num">10</td><td class="num">10</td><td class="mono">1805178, f072c50</td></tr>
+    <tr><td>QA fix round (no new points)</td><td>Ansel, Nils, Tomas in parallel</td><td>S · sonnet/high, opus/medium</td><td class="num">—</td><td class="num">7 findings</td><td class="mono">935b3e5, bd52d48, 94c25e9, b7a3eda</td></tr>
+  </table></div>
+  <p class="small muted">All 11 stories are <b>Under Review</b> in iteration 161; nothing moved to Done. The sprint changes 110 files (+13,708/−163) over 44 commits and adds migration <code>0019_kb_chunks</code> (down_revision <code>0018_raw_store_visibility</code>). Ilse (scrum master, new seat) ran the gates, the file grants and the feature merges. I ran the QA sweep and the fix round.</p>
+</section>
+<section>
+  <h2>How a question flows now</h2>
+  <div class="flow"><span>Report fetched</span><i>→</i><span>stored (039)</span><i>→ background →</i><span>fight and table chunks as text</span><i>→</i><span>Vertex embedding, 768-d, normalised</span></div>
+  <div class="flow"><span>Chat turn saved</span><i>→ background →</i><span>one chunk per exchange, workspace-scoped (RLS)</span></div>
+  <div class="flow"><span>Later question</span><i>→</i><span><code>search_knowledge</code>: 1–5 queries, enum filters</span><i>→</i><span>vector top N + <code>ts_rank_cd</code> top N, RRF, visible only</span><i>→</i><span>soft filters relax if &lt; k</span><i>→</i><span>compact hits (≤ 6,000 chars)</span></div>
+  <div class="flow"><span>"Which fights are stored for X?"</span><i>→</i><span><code>list_stored_fights</code> / <code>get_stored_fight_table</code> / <code>list_stored_reports_for_character</code></span><i>→</i><span>"not stored locally" → WCL tools</span></div>
+  <p class="small muted">Embedding never runs inside a chat turn. When embeddings are unavailable, search falls back to keyword-only and says so. A deleted chat, stored fetch or guide takes its chunks with it (FK cascade).</p>
+</section>
+<section>
+  <h2>Timeline (UTC)</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">09:01–09:07</span> Steer (board #1). Scope, order, tiers, staffing and drop order decided (#2–#9). Plan, ACs on all 11 tickets, iteration 161. SM requested.</div>
+    <div class="tl"><span class="t">09:11</span> Ilse posts the briefs and the cross-feature contracts: the resolver, the embedder protocol, <code>fetch_visible_clause</code> and the tool names (#15–#16).</div>
+    <div class="tl"><span class="t">09:18–09:26</span> Spec and plan gates for 043 and 044 and the plan gate for 045: each passed in one round.</div>
+    <div class="tl ok"><span class="t">09:42–09:59</span> Milestone merges: sc-304 resolver, sc-111 schema, 045 part 1 (sc-295, sc-296).</div>
+    <div class="tl warn"><span class="t">09:47</span> Blocker: the embedder needed <code>wcl_agent/llm/generation.py</code>, because a provider guard test allows model clients only there. Ilse granted it.</div>
+    <div class="tl ok"><span class="t">10:13–10:57</span> 045 final, 043 final plus its P7 follow-up, and 044 final with its P7 rework are merged. Tier-L hand-off (#123).</div>
+    <div class="tl warn"><span class="t">11:00–11:16</span> QA sweep: 0 Critical, 5 High, 9 Medium, 20 Low. Fix round split by author (#124).</div>
+    <div class="tl ok"><span class="t">11:22–11:42</span> Three fix branches. One test-only rework (Tomas). Merged at b7a3eda, full suite green on Postgres (#138).</div>
+  </div>
+</section>
+</div>
+
+<!-- ============================ 043 ============================ -->
+<div role="tabpanel" id="p-043" aria-labelledby="tab-043" tabindex="0" hidden>
+<h2 class="panel-title">043 store + embed</h2>
+<section>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What shipped</th></tr>
+    <tr><td>sc-111 Vector store setup <span class="tag t-bad">P7</span></td><td><span class="pts p3">3</span></td><td><span class="tag t-acc">Under Review</span></td><td>Image <code>pgvector/pgvector:pg17-trixie</code>, proved on a copy of an old volume. Migration 0019 creates <code>kb_chunks</code> (global) and <code>kb_chat_chunks</code> (forced tenant RLS, composite FK <code>(conversation_id, tenant_id)</code>). Also vector(768), a generated <code>tsv</code>, typed filters plus <code>extra</code>, HNSW + GIN + B-tree indexes, and a pgvector ≥ 0.8 check. Down/up is clean. A mutation that drops the FK and RLS fails 5 PG tests.</td></tr>
+    <tr><td>sc-112 Embed WCL fetches and guides on write <span class="tag t-bad">P7</span></td><td><span class="pts p5">5</span></td><td><span class="tag t-acc">Under Review</span></td><td>WCL chunker (fight summary, fight × metric, player × fight) and guide chunker (one chunk per section). Filters come from the data's structure via the resolver. The embedder is <code>embed_texts</code> in <code>generation.py</code> with the <code>RETRIEVAL_DOCUMENT</code> task type, normalised. A background indexer queue (DB-as-backlog) is batched, retried and rate-limited. An unchanged hash is never re-embedded. P7 follow-up: jobs carry the key, never the body; only chunkable fetches are queued; an empty re-chunk deletes the old chunks.</td></tr>
+    <tr><td>sc-305 Embed past conversations <span class="tag t-bad">P7</span></td><td><span class="pts p3">3</span></td><td><span class="tag t-acc">Under Review</span></td><td>One chunk per exchange, queued after the final save, with no tool payloads. It records the tenant, conversation, seq and the characters mentioned. Delete cascades. Another workspace never sees the chunks (PG tests), including an UPDATE across workspaces and a tenant delete. The unique key includes the tenant (P7 SEC-001).</td></tr>
+    <tr><td>sc-113 Backfill</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td><code>python -m backend.cli.kb_backfill</code>: a dry run prints the counts and a cost estimate; <code>--confirm</code> embeds. It is resumable, skips sources that already have chunks, is rate-limited, and is not a startup task.</td></tr>
+  </table></div>
+  <div class="callout"><b>QA fixes:</b> an ability-filtered table is no longer chunked as the full table (BUG-001), and a very long guide heading can't freeze the event loop any more (BUG-004). The docs now say honestly that a dropped job of an already-indexed source stays stale until sc-320 lands.</div>
+</section>
+</div>
+
+<!-- ============================ 044 ============================ -->
+<div role="tabpanel" id="p-044" aria-labelledby="tab-044" tabindex="0" hidden>
+<h2 class="panel-title">044 search</h2>
+<section>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What shipped</th></tr>
+    <tr><td>sc-304 Shared name resolver</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td><code>backend/app/services/name_resolver.py</code> resolves class, class+spec, spec-only pairs, difficulty, encounter and character. It is case-, accent- and apostrophe-insensitive and knows the abbreviations. <code>ResolutionError</code> carries the close matches. 68 tests. Used by the chunkers (via <code>kb/names.py</code>), by search and by the 045 tools.</td></tr>
+    <tr><td>sc-114 Parallel hybrid search tool <span class="tag t-bad">P7</span></td><td><span class="pts p5">5</span></td><td><span class="tag t-acc">Under Review</span></td><td><code>search_knowledge</code> runs 1–5 concurrent queries with enum filters. Each query fuses vector and <code>ts_rank_cd</code> results by RRF, then the queries are fused and deduplicated. Visibility is checked in SQL through <code>fetch_visible_clause</code>, plus a check that the chunk's report code is one the fetch names. Hard and soft filters relax in a fixed order. Output is capped at 6,000 characters, with an "untrusted" notice and a keyword-only fallback. A process-wide 5-session pool with a 3 s statement timeout came from P7.</td></tr>
+    <tr><td>sc-115 Search-first prompting + eval</td><td><span class="pts p3">3</span></td><td><span class="tag t-acc">Under Review</span></td><td>An instruction clause tells the agent to search locally before a WCL fetch. A labelled eval (<code>backend.evals.kb</code>) offers record, run and live modes, for a throwaway DB only. The write-up keeps <code>gemini-embedding-001</code> and no BM25 for now; the numbers on real vectors are pending the live check.</td></tr>
+  </table></div>
+  <div class="callout"><b>QA fixes:</b> a timed-out relaxation pass now returns the hits found so far, with a note (BUG-002). The eval connects first and accepts only a database named <code>kbeval*</code>; the old check compared URL strings, which a host alias could slip past (SEC-006).</div>
+</section>
+</div>
+
+<!-- ============================ 045 ============================ -->
+<div role="tabpanel" id="p-045" aria-labelledby="tab-045" tabindex="0" hidden>
+<h2 class="panel-title">045 local data reads</h2>
+<section>
+  <div class="tbl"><table>
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What shipped</th></tr>
+    <tr><td>sc-295 QA: cheap, fail-fast raw-store probe and writer</td><td><span class="pts p3">3</span></td><td><span class="tag t-acc">Under Review</span></td><td>A 400 ms probe timeout and a 30 s breaker. The row is looked up first: a miss costs 1–2 statements, a hit 3–4, with a one-statement tenant scope. The probe runs inside single-flight and the lane slot. The writer skips an unchanged scope or grant, and <code>store_batch</code> returns <code>BatchResult</code>. PERF-007: keep probing for now and revisit with 7 days of counters (#66).</td></tr>
+    <tr><td>sc-296 QA: revocation lag and gone-vs-write races</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td>A granted-only store hit never back-fills shared Redis. Race 1: the writer keeps a 10-minute tombstone in process. Race 2: eviction after commit. Gaps go to sc-322.</td></tr>
+    <tr><td>sc-132 Local-answer hit rate</td><td><span class="pts p2">2</span></td><td><span class="tag t-acc">Under Review</span></td><td><code>store.{hits,misses,not_visible,timeouts}</code> and <code>local_answers.{turns,local_turns,rate}</code> in <code>/api/admin/cache-stats</code>.</td></tr>
+    <tr><td>sc-131 Exact lookups in stored data</td><td><span class="pts p3">3</span></td><td><span class="tag t-acc">Under Review</span></td><td><code>list_stored_fights</code>, <code>get_stored_fight_table</code> and <code>list_stored_reports_for_character</code>, read only through the 039 rule. "Not stored locally" is returned for invisible and missing data alike. Arguments go through the resolver.</td></tr>
+  </table></div>
+  <div class="callout"><b>QA fix:</b> the cache-layer single-flight could hand workspace A's grant-only stored copy to workspace B if both asked at the same moment (SEC-001, found by three QA agents). Now a joiner of an unshareable load loads for itself, and public loads stay shared.</div>
+</section>
+</div>
+
+<!-- ============================ QA ============================ -->
+<div role="tabpanel" id="p-qa" aria-labelledby="tab-qa" tabindex="0" hidden>
+<h2 class="panel-title">QA triage</h2>
+<section>
+  <h2>Sweep at 7bfc119 (sprint diff only)</h2>
+  <div class="tbl"><table>
+    <tr><th>Report</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th></tr>
+    <tr><td>Spec conformance</td><td class="num">0</td><td class="num">0</td><td class="num">2</td><td class="num">6</td></tr>
+    <tr><td>Bugs</td><td class="num">0</td><td class="num">1</td><td class="num">3</td><td class="num">5</td></tr>
+    <tr><td>Performance</td><td class="num">0</td><td class="num">4</td><td class="num">3</td><td class="num">4</td></tr>
+    <tr><td>Security</td><td class="num">0</td><td class="num">0</td><td class="num">1</td><td class="num">5</td></tr>
+    <tr><td><b>Total</b></td><td class="num">0</td><td class="num">5</td><td class="num">9</td><td class="num">20</td></tr>
+  </table></div>
+  <p class="small muted">Index: <code>qa-reports/2026-11-01-1258/README.md</code> (gitignored, sprint worktree). Triage: <code>sprints/2026-11-01/qa-triage.md</code>.</p>
+</section>
+<section>
+  <h2>Fixed now</h2>
+  <ul class="small">
+    <li><b>SEC-001</b> (= BUG-007 = SPEC-003), Medium: grant-only store hit shared across workspaces by the cache single-flight. Fixed by Tomas.</li>
+    <li><b>BUG-001</b>, High: ability-filtered tables stored as full tables. Fixed by Ansel.</li>
+    <li><b>BUG-004</b>, Medium: guide-heading infinite loop. Fixed by Ansel.</li>
+    <li><b>BUG-002</b>, Medium: a search timeout dropped hits already found. Fixed by Nils.</li>
+    <li><b>SEC-006</b>, Low: eval DB guard by URL string. Fixed by Nils, because team-lead runs the eval this sprint.</li>
+    <li><b>SPEC-006</b>, Low: 0019 and the specs named the rejected image tag. Fixed by Ansel and me.</li>
+    <li><b>SPEC-001</b>, Medium: false "recovered by backfill" docs. Fixed by Ansel; the recovery itself is sc-320.</li>
+  </ul>
+</section>
+<section>
+  <h2>Deferred (Backlog, <code>qa-deferred</code>)</h2>
+  <div class="tbl"><table>
+    <tr><th>Ticket</th><th>Findings</th><th>Pts</th></tr>
+    <tr><td>sc-318</td><td>PERF-001/002/003/006/008 + P7 search pool: search cost grows with the corpus. HNSW is skipped because of the code check, and the OR'd keyword leg is slow (0.9 s per query at 60k chunks).</td><td class="num">5</td></tr>
+    <tr><td>sc-319</td><td>PERF-004: query embeddings are sent one after another.</td><td class="num">1</td></tr>
+    <tr><td>sc-320</td><td>BUG-003, SPEC-008, PERF-011, P7 043 backfill items: stale sources are never re-chunked; backfill hardening.</td><td class="num">3</td></tr>
+    <tr><td>sc-321</td><td>PERF-005/009: indexer throughput of 3–6 texts per second.</td><td class="num">2</td></tr>
+    <tr><td>sc-322</td><td>SEC-002/SPEC-004: tombstone gaps; it lives in memory only.</td><td class="num">2</td></tr>
+    <tr><td>sc-323</td><td>SEC-003: one slow probe opens the shared breaker.</td><td class="num">1</td></tr>
+    <tr><td>sc-324</td><td>SEC-004/005, PERF-007: the character lookup tool.</td><td class="num">2</td></tr>
+    <tr><td>sc-325</td><td>BUG-005/006/008, P7 realm: chunk identity and robustness.</td><td class="num">3</td></tr>
+    <tr><td>sc-326</td><td>BUG-009: local-answer attribution.</td><td class="num">1</td></tr>
+    <tr><td>sc-327</td><td>SPEC-005/007: docs for 044/045 and the task checkboxes.</td><td class="num">1</td></tr>
+    <tr><td>sc-328</td><td>P7 044 SEC-004: delimit hit text and cap report titles.</td><td class="num">1</td></tr>
+    <tr><td>sc-329</td><td>P7 043 SEC-003 + hide_parameters: Postgres hygiene.</td><td class="num">1</td></tr>
+  </table></div>
+  <p class="small muted">No duplicates among the 36 open QA tickets. A breadcrumb was added on sc-270 (set_config round trips). Board backlog notices that aren't QA became sc-330 (one difficulty map), sc-331 (<code>find_encounter</code> through the shared matcher) and sc-332 (store counters per operation). SPEC-002, the eval on real vectors, is covered by live check 044(6).</p>
+</section>
+</div>
+
+<!-- ============================ LIVE ============================ -->
+<div role="tabpanel" id="p-live" aria-labelledby="tab-live" tabindex="0" hidden>
+<h2 class="panel-title">Live checks</h2>
+<section>
+  <div class="callout warn"><b>Owner setup first (team-lead):</b> back up the database. Switch the image to <code>pgvector/pgvector:pg17-trixie</code>, not plain <code>pg17</code>, which gives a collation mismatch on the existing volume (#82). Then run <code>bin/01_start_app.sh --build</code>, check that alembic is at <code>0019_kb_chunks</code>, and check that the existing data survived.</div>
+  <h2>043 store + embed (#104)</h2>
+  <ol class="checks">
+    <li><span class="no">1</span><div>Batch probe: <code>KB_EMBED_REQUEST_BATCH=8 uv run python -m backend.cli.kb_backfill --kinds guide --limit 2 --confirm</code>. If Vertex refuses multi-input, keep 1. Then check the counts per kind in <code>kb_chunks</code>.</div></li>
+    <li><span class="no">2</span><div>Price: confirm about USD 0.15 per 1M input tokens, or set <code>KB_EMBED_PRICE_PER_MTOK</code>.</div></li>
+    <li><span class="no">3</span><div>Report question: within seconds, a <code>kind='wcl'</code> row with a vector exists for that report code.</div></li>
+    <li><span class="no">4</span><div>A finished chat turn appears in <code>kb_chat_chunks</code> (owner role). Delete the chat and the row is gone.</div></li>
+    <li><span class="no">5</span><div>Republish a guide: its section chunks are replaced.</div></li>
+    <li><span class="no">6</span><div>Full backfill: dry run, read the estimate, <code>--confirm</code>. A rerun prints 0 new chunks.</div></li>
+    <li><span class="no">7</span><div>No chat turn is slower than before.</div></li>
+  </ol>
+  <h2>044 search (#112, eval DB now named <code>kbeval</code>, #133)</h2>
+  <ol class="checks">
+    <li><span class="no">1</span><div>New chat, a question about a stored report: a <code>search_knowledge</code> card in hybrid mode, compact, with no full table in the turn.</div></li>
+    <li><span class="no">2</span><div>"How should an arms warr open?": guide hits with <code>class_name=Warrior spec=Arms</code>.</div></li>
+    <li><span class="no">3</span><div>Chat B recalls chat A. Delete chat A: no hit any more.</div></li>
+    <li><span class="no">4</span><div>Another workspace never sees step 3's chat.</div></li>
+    <li><span class="no">5</span><div>With embeddings unavailable, the result says keyword-only.</div></li>
+    <li><span class="no">6</span><div>Eval on a throwaway <code>kbeval</code> container: <code>record</code>, <code>run</code>, optionally <code>live --max-questions 30</code>. Commit <code>embeddings.json</code> if the numbers are kept.</div></li>
+  </ol>
+  <h2>045 local reads (#95)</h2>
+  <ol class="checks">
+    <li><span class="no">1</span><div><code>/api/admin/cache-stats?days=1</code> shows the store counters and <code>local_answers</code>. A greeting counts as local; a fresh report question doesn't.</div></li>
+    <li><span class="no">2</span><div>The same finished-report table question twice in new chats: the second is answered locally.</div></li>
+    <li><span class="no">3</span><div>"Which fights are stored for report X?" calls <code>list_stored_fights</code>. A never-fetched code falls back to WCL.</div></li>
+    <li><span class="no">4</span><div>Unlisted report: no shared Redis summary key after a store hit.</div></li>
+    <li><span class="no">5</span><div><code>docker pause</code> the db and ask a report question: at most 0.5 s extra and one warning. Then unpause.</div></li>
+  </ol>
+  <p class="small muted">The cheapest path: steps 043(3) and 044(1) together are one report question in two new chats. 043(4), 044(3) and 044(4) need two chats and a second workspace.</p>
+</section>
+</div>
+
+<!-- ============================ DECISIONS ============================ -->
+<div role="tabpanel" id="p-decisions" aria-labelledby="tab-decisions" tabindex="0" hidden>
+<h2 class="panel-title">Decisions &amp; risks</h2>
+<section>
+  <div class="grid2">
+    <div class="card"><h3>Three chains, one developer each (#2)</h3><p class="small">sc-131 went with the raw-store QA work, because sc-295 rewrote the read path it sits on. No feature waited on another longer than one milestone merge.</p></div>
+    <div class="card"><h3>Contracts fixed up front (#15)</h3><p class="small">Ilse fixed four contracts: the resolver module, the embedder protocol, <code>fetch_visible_clause</code> (one definition of the 039 rule for both the probe and search), and the tool names. Parallel work never had to guess an interface.</p></div>
+    <div class="card"><h3>Image pg17-trixie (#82)</h3><p class="small">The steer said <code>pg17</code>. Ansel found that plain <code>pg17</code> is Debian 12 and causes a collation mismatch on the owner's volume. A deviation with a reason, posted on the board.</p></div>
+    <div class="card"><h3>report_code implies wcl (#117)</h3><p class="small">A hard report filter that let guide and chat hits through would read as a widened result.</p></div>
+    <div class="card"><h3>PERF-007: keep probing (#66)</h3><p class="small">After sc-295 a miss costs one statement. Revisit with 7 days of counters (sc-332).</p></div>
+    <div class="card"><h3>Joiners load for themselves (#134)</h3><p class="small">The SEC-001 fix reads the rule from what the store returned (unshareable), not from who asked. Public loads stay shared.</p></div>
+  </div>
+</section>
+<section>
+  <h2>Risks to watch</h2>
+  <ul class="small">
+    <li><b>Search at scale</b> (sc-318): about 1 s per query at 60k chunks, extrapolated to the 3 s statement timeout around 100–250k. Count <code>kb_chunks</code> after the backfill to see where the owner's corpus sits.</li>
+    <li><b>Stale chunks after a dropped job</b> (sc-320): the indexer queue is bounded, so heavy load or a restart can leave an old report or guide version searchable.</li>
+    <li><b>Eval quality unmeasured</b> until live check 044(6) records real embeddings.</li>
+    <li><b>Single-process assumptions</b>: the tombstone and the search pool are per process. That's fine with one uvicorn worker (the Dockerfile has no <code>--workers</code>).</li>
+  </ul>
+</section>
+</div>
+
+<!-- ============================ PROCESS ============================ -->
+<div role="tabpanel" id="p-process" aria-labelledby="tab-process" tabindex="0" hidden>
+<h2 class="panel-title">P7 &amp; process</h2>
+<section>
+  <h2>P7 trial: scoped security review at hand-off</h2>
+  <div class="tbl"><table>
+    <tr><th>Run</th><th>Cost</th><th>Result</th></tr>
+    <tr><td>sc-111 (Ilse)</td><td class="num">77k tokens · ~4 min</td><td>No Critical, High or Medium. The chat unique key now includes the tenant.</td></tr>
+    <tr><td>sc-114 (Nils's own)</td><td class="num">89k · ~5 min</td><td>Medium: search pool exhaustion, fixed with bounded sessions and a statement timeout.</td></tr>
+    <tr><td>sc-114 (Ilse, independent)</td><td class="num">87k · ~5 min</td><td>Two findings fixed: the eval seeded the app DB, and a chunk's report code wasn't checked against its fetch.</td></tr>
+    <tr><td>sc-112 + sc-305 (Ilse)</td><td class="num">110k · ~7 min</td><td>Medium: the indexer queue held full bodies, fixed. Stale chunks on an empty re-chunk, fixed.</td></tr>
+  </table></div>
+  <p class="small">Total about 363k tokens and 21 minutes. No visibility bypass was found, and every bypass named in the steer has a Postgres test. Ilse's lesson: a review prompt written by the developer anchors on the developer's own model of the code; the independent pass found the two most useful issues. Recommendation: keep P7, launched by the SM from the code, once per security-core hand-off. The final QA sweep still found SEC-001 in 045, which P7 didn't cover because it isn't security-core. Worth considering: classify any change to a shared cache or flight path as security-core.</p>
+</section>
+<section>
+  <h2>What worked, what didn't</h2>
+  <ul class="small">
+    <li><b>Worked:</b> milestone merges first (resolver and schema within 57 minutes). Gates passed in one round each. Splitting the QA fix round by author meant three parallel branches done in about 20 minutes.</li>
+    <li><b>Didn't:</b> Tomas's new test was green only in his environment, because it patched a different FakeRedis instance. It cost one rework round. The rule to run every suite under <code>env -i</code> exists, and the hand-off should prove it.</li>
+    <li><b>Skill notices for team-lead:</b> <code>skill:developer-postgres-image</code> (#72, pg17-trixie in recipes) and <code>skill:developer-mutation-checks</code> (#103, restore from a cp backup; never <code>pytest | tail &amp;&amp; git commit</code>).</li>
+    <li><b>Board hygiene for the owner:</b> four active iterations (161, 254, 266, 290). Stories from earlier sprints stay in their sprint iterations. Team 1's default workflow is still The Classic. Both are the owner's call.</li>
+  </ul>
+</section>
+</div>
+
+<footer>Written by Maren (product owner) on 2026-11-01. Sprint branch <code>sprint-2026-11-01</code> at <code>b7a3eda</code>; not merged to main, not pushed. Plan: <code>sprints/2026-11-01/plan.html</code>.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>

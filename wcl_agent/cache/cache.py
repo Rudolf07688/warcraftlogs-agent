@@ -32,7 +32,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel
 from redis.asyncio import Redis
@@ -234,8 +234,15 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
         return f"lock:{key}"
 
     @staticmethod
-    def metrics(family: CacheFamily, day: str) -> str:
-        return f"wcl:metrics:v1:{family.value}:{day}"
+    def gone(code: str) -> str:
+        # Feature 045 (sc-296): set while a gone report's keys are evicted; no report entry may
+        # be written while it exists. Outside ``wcl:v1:report:`` so the eviction SCAN skips it.
+        return f"wcl:v1:gone:{code.strip()}"
+
+    @staticmethod
+    def metrics(family: CacheFamily | str, day: str) -> str:
+        # ``family`` is a cache family or LOCAL_METRICS (the raw store and turn counters, 045).
+        return f"wcl:metrics:v1:{family}:{day}"
 
     @staticmethod
     def refresh(user_id: str, char_id: int) -> str:
@@ -332,7 +339,11 @@ def _memo_put(key: str, value: BaseModel, ttl_s: int) -> None:
 # (PERF-007): a hit costs no extra Redis round trip, and counts survive a failed flush.
 
 _FLUSH_S = 2.0
-_counts: Counter[tuple[CacheFamily, str]] = Counter()
+# Feature 045: the raw-store probe outcomes (sc-295) and chat turns (sc-132) are counted like
+# the families, in one more hash.
+LOCAL_METRICS = "local"
+StoreOutcome = Literal["hit", "miss", "not_visible", "timeout"]
+_counts: Counter[tuple[CacheFamily | str, str]] = Counter()
 _flush_tasks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task[None]] = (
     weakref.WeakKeyDictionary()
 )
@@ -348,7 +359,20 @@ def _record(family: CacheFamily, outcome: Outcome, load_ms: int | None = None) -
     if load_ms is not None:
         _counts[(family, "load_ms_sum")] += load_ms
         _counts[(family, "load_count")] += 1
-    loop = asyncio.get_running_loop()
+    _schedule_flush()
+
+
+def record_store(outcome: StoreOutcome) -> None:
+    """Count one raw-store probe (feature 045): hit, miss, not_visible or timeout."""
+    _counts[(LOCAL_METRICS, f"store_{outcome}")] += 1
+    _schedule_flush()
+
+
+def _schedule_flush() -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # counted outside a loop (a sync caller): flushed with the next count
+        return
     task = _flush_tasks.get(loop)
     if task is None or task.done():
         _flush_tasks[loop] = loop.create_task(_flush_later())
@@ -404,6 +428,63 @@ _MISSING = b'{"_missing":true}'
 _POLL_S = 0.1
 _DECODE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big values are parsed off the loop
 
+class _Load:
+    """One ``get_or_load`` / ``get_many_or_load`` call. Shared by its loader's sub-tasks
+    through the copied context, so a mark set anywhere in the load is seen here."""
+
+    __slots__ = ("unshareable",)
+
+    def __init__(self) -> None:
+        self.unshareable = False
+
+
+_current_load: ContextVar[_Load | None] = ContextVar("wcl_cache_load", default=None)
+
+
+def mark_unshareable() -> None:
+    """The running load served data some tenants may not see (a raw-store hit for a report
+    visible only through the tenant's own grant, 045 sc-296): don't put it in the shared
+    cache or the process memo. A no-op outside a load."""
+    load = _current_load.get()
+    if load is not None:
+        load.unshareable = True
+
+
+def _unshareable() -> bool:
+    load = _current_load.get()
+    return load is not None and load.unshareable
+
+
+_REPORT_PREFIX = "wcl:v1:report:"
+
+
+def _report_code(key: str) -> str | None:
+    """The report a ``wcl:v1:report:<code>:…`` key belongs to, else None."""
+    return key[len(_REPORT_PREFIX):].split(":", 1)[0] if key.startswith(_REPORT_PREFIX) else None
+
+
+async def _drop_if_gone(client: Redis, written: Sequence[str]) -> None:
+    """Delete report entries just written whose report is being evicted (045 sc-296).
+
+    Write-then-check: :func:`evict_report` sets the gone marker before its SCAN, so a write
+    either lands before the SCAN (which deletes it) or after the marker (deleted here).
+    """
+    by_code: dict[str, list[str]] = {}
+    for key in written:
+        if (code := _report_code(key)) is not None:
+            by_code.setdefault(code, []).append(key)
+    if not by_code:
+        return
+    codes = list(by_code)
+    pipe = client.pipeline(transaction=False)
+    for code in codes:
+        pipe.exists(keys.gone(code))
+    marked = await pipe.execute()
+    doomed = [key for code, gone in zip(codes, marked) if gone for key in by_code[code]]
+    if doomed:
+        await client.delete(*doomed)
+
+
 # Same-process single-flight (PERF-006): key -> [shared load task, waiter count], per loop.
 _flights: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, list[Any]]] = (
     weakref.WeakKeyDictionary()
@@ -454,8 +535,13 @@ async def get_or_load(
         memoised = _memo_get(key)
         if memoised is not None:
             return memoised  # type: ignore[return-value]
-    value = await _shared(family, key, model, loader, ttl, force_refresh)
-    if memo_s and value is not None:
+    load = _Load()
+    token = _current_load.set(load)
+    try:
+        value = await _shared(family, key, model, loader, ttl, force_refresh)
+    finally:
+        _current_load.reset(token)
+    if memo_s and value is not None and not load.unshareable:
         _memo_put(key, value, memo_s)
     return value
 
@@ -468,7 +554,10 @@ async def _shared(
     ttl: int | Callable[[M], int] | None,
     force_refresh: bool,
 ) -> M | None:
-    """The Redis layer, with concurrent same-process lookups of one key sharing one call."""
+    """The Redis layer, with concurrent same-process lookups of one key sharing one call.
+
+    A load marked unshareable served its first caller through that caller's own grant (QA
+    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone."""
     settings = cache_settings()
     if not settings.active:
         return await loader()
@@ -478,21 +567,37 @@ async def _shared(
     flight = flights.get(key)
     joined = flight is not None
     if flight is None:
-        task = asyncio.ensure_future(_lookup(settings, family, key, model, loader, ttl, False))
+        task = asyncio.ensure_future(_flight(settings, family, key, model, loader, ttl))
         flight = flights[key] = [task, 0]
         task.add_done_callback(functools.partial(_drop_flight, flights, key))
     task = flight[0]
     flight[1] += 1
     try:
-        value = await asyncio.shield(task)
+        value, unshareable = await asyncio.shield(task)
     finally:
         flight[1] -= 1
         if flight[1] == 0 and not task.done():
             _drop_flight(flights, key, task)  # a new caller starts afresh, never joins this
             task.cancel()  # every caller left: stop the load (and release its lock)
+    if joined and unshareable:
+        return await _lookup(settings, family, key, model, loader, ttl, False)
     if joined:
         _record(family, Outcome.NEG_HIT if value is None else Outcome.HIT)
     return value
+
+
+async def _flight(
+    settings: CacheSettings,
+    family: CacheFamily,
+    key: str,
+    model: type[M],
+    loader: Callable[[], Awaitable[M | None]],
+    ttl: int | Callable[[M], int] | None,
+) -> tuple[M | None, bool]:
+    """The shared load: its value, and whether the load was marked unshareable (read here, in
+    the task's context, which holds the first caller's ``_Load``)."""
+    value = await _lookup(settings, family, key, model, loader, ttl, False)
+    return value, _unshareable()
 
 
 async def _lookup(
@@ -556,9 +661,10 @@ async def _load_and_store(
             raise
         _record(family, Outcome.MISS, int((time.perf_counter() - started) * 1000))
         payload, expiry = _encode(settings, family, value, ttl)
-        if expiry > 0:
+        if expiry > 0 and not _unshareable():
             try:
                 await client.set(key, payload, ex=expiry)
+                await _drop_if_gone(client, [key])
             except RedisError as exc:
                 _redis_failed(family, exc)
         return value
@@ -612,6 +718,22 @@ async def get_many_or_load(
     single-flight already joins identical in-flight requests. Same outcomes, metrics,
     memo and fail-open behaviour as ``get_or_load``.
     """
+    load = _Load()
+    token = _current_load.set(load)
+    try:
+        return await _get_many(family, keys_, model, batch_loader, ttl, load)
+    finally:
+        _current_load.reset(token)
+
+
+async def _get_many(
+    family: CacheFamily,
+    keys_: Sequence[str],
+    model: type[M],
+    batch_loader: Callable[[list[int]], Awaitable[list[M | None]]],
+    ttl: int | Callable[[M], int] | None,
+    load: _Load,
+) -> list[M | None]:
     results: list[M | None] = [None] * len(keys_)
     missing = list(range(len(keys_)))
     memo_s = FAMILIES[family].memo_s
@@ -661,19 +783,23 @@ async def get_many_or_load(
             _record(family, Outcome.MISS, int((time.perf_counter() - started) * 1000))
             for _ in missing[1:]:
                 _record(family, Outcome.MISS)
-        pipe = client.pipeline(transaction=False) if client is not None else None
+        shareable = not load.unshareable
+        pipe = client.pipeline(transaction=False) if client is not None and shareable else None
+        written: list[str] = []
         for i, value in zip(missing, loaded):
             results[i] = value
             if pipe is not None:
                 payload, expiry = _encode(settings, family, value, ttl)
                 if expiry > 0:
                     pipe.set(keys_[i], payload, ex=expiry)
-        if pipe is not None:
+                    written.append(keys_[i])
+        if pipe is not None and client is not None:
             try:
                 await pipe.execute()
+                await _drop_if_gone(client, written)
             except RedisError as exc:
                 _redis_failed(family, exc)
-    if memo_s:
+    if memo_s and not load.unshareable:
         for i in range(len(keys_)):
             if results[i] is not None:
                 _memo_put(keys_[i], results[i], memo_s)  # type: ignore[arg-type]
@@ -699,6 +825,9 @@ async def evict_report(code: str) -> int:
     escaped = _GLOB_SPECIAL.sub(r"\\\1", code)  # a code is data, never a SCAN pattern
     pattern = f"wcl:v1:report:{escaped}:*"
     try:
+        # First, so a load that read the old data can't write it back after the SCAN (045
+        # sc-296, see _drop_if_gone). Longer than a WCL query may take.
+        await client.set(keys.gone(code), b"1", px=cache_settings().lock_ms)
         found = [key async for key in client.scan_iter(match=pattern, count=500)]
         return int(await client.delete(*found)) if found else 0
     except RedisError as exc:
@@ -760,11 +889,14 @@ async def read_stats(days: int) -> dict[str, Any]:
         "available": False,
         "families": summarize({}),
         "redis": None,
+        **summarize_local([]),
     }
     client = _client() if settings.active else None
     if client is None:
         return result
-    slots = [(family, keys.metrics(family, day)) for family in CacheFamily for day in _window(days)]
+    slots: list[tuple[CacheFamily | str, str]] = [
+        (family, keys.metrics(family, day)) for family in (*CacheFamily, LOCAL_METRICS) for day in _window(days)
+    ]
     try:
         pipe = client.pipeline(transaction=False)
         for _, key in slots:
@@ -773,13 +905,50 @@ async def read_stats(days: int) -> dict[str, Any]:
     except RedisError as exc:
         logger.warning("wcl cache: stats unavailable: %s", exc)
         return result
-    per_day: dict[CacheFamily, list[dict[str, int]]] = {}
+    per_day: dict[CacheFamily | str, list[dict[str, int]]] = {}
     for (family, _), raw in zip(slots, hashes):
         per_day.setdefault(family, []).append(
             {(k.decode() if isinstance(k, bytes) else k): int(v) for k, v in raw.items()}
         )
-    result.update(available=True, families=summarize(per_day), redis=await _redis_health(client))
+    local = per_day.pop(LOCAL_METRICS, [])
+    result.update(
+        available=True,
+        families=summarize(per_day),  # type: ignore[arg-type]
+        redis=await _redis_health(client),
+        **summarize_local(local),
+    )
     return result
+
+
+def _rate(part: int, whole: int) -> float | None:
+    return round(part / whole, 3) if whole else None
+
+
+def summarize_local(days: list[dict[str, int]]) -> dict[str, dict[str, Any]]:
+    """The raw-store probe counts and the local-answer rate over the window (feature 045).
+
+    ``store.hit_rate`` is hits over probes that reached the store (timeouts excluded: the
+    store didn't answer); ``local_answers.rate`` is chat turns with no network WCL call over
+    all turns. Pure, so it is testable without Redis.
+    """
+    total = Counter[str]()
+    for day in days:
+        total.update({k: int(v) for k, v in day.items()})
+    hits, misses, hidden = total["store_hit"], total["store_miss"], total["store_not_visible"]
+    return {
+        "store": {
+            "hits": hits,
+            "misses": misses,
+            "not_visible": hidden,
+            "timeouts": total["store_timeout"],
+            "hit_rate": _rate(hits, hits + misses + hidden),
+        },
+        "local_answers": {
+            "turns": total["turns"],
+            "local_turns": total["local_turns"],
+            "rate": _rate(total["local_turns"], total["turns"]),
+        },
+    }
 
 
 async def _redis_health(client: Redis) -> dict[str, Any] | None:
@@ -805,8 +974,39 @@ _refresh_actor: ContextVar[str | None] = ContextVar("wcl_refresh_actor", default
 REFRESH_WINDOW_S = 60
 
 
+class _Turn:
+    """One chat turn's WCL usage (feature 045, sc-132); shared by its tools' copied contexts."""
+
+    __slots__ = ("external",)
+
+    def __init__(self) -> None:
+        self.external = False
+
+
+_turn: ContextVar[_Turn | None] = ContextVar("wcl_turn", default=None)
+
+
 def set_refresh_actor(user_id: str | None) -> None:
+    """Set (at turn start) or clear (at turn end) the turn's user.
+
+    It is also the chat turn's boundary for the local-answer rate (045 sc-132): a user opens
+    a turn, None closes the open one and counts it, as local when it made no network WCL call.
+    """
     _refresh_actor.set(user_id or None)
+    previous = _turn.get()
+    if previous is not None:
+        _counts[(LOCAL_METRICS, "turns")] += 1
+        if not previous.external:
+            _counts[(LOCAL_METRICS, "local_turns")] += 1
+        _schedule_flush()
+    _turn.set(_Turn() if user_id else None)
+
+
+def note_external_call() -> None:
+    """The running turn asked Warcraft Logs itself (any network call, failed ones too)."""
+    turn = _turn.get()
+    if turn is not None:
+        turn.external = True
 
 
 def get_refresh_actor() -> str | None:

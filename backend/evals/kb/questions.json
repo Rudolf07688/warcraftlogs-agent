@@ -1,0 +1,355 @@
+[
+ {
+  "id": "q01",
+  "question": "How much damage did Vagxsu do on the heroic Ula'tek kill?",
+  "expected": [
+   "w03",
+   "w02"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "character": "Vagxsu",
+   "encounter": "Ula'tek",
+   "difficulty": "Heroic"
+  }
+ },
+ {
+  "id": "q02",
+  "question": "Who died on heroic Ula'tek fight 12 and to what?",
+  "expected": [
+   "w04"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "encounter": "Ula'tek",
+   "difficulty": "Heroic",
+   "report_code": "Ev4kAbyssA1x9Qz"
+  }
+ },
+ {
+  "id": "q03",
+  "question": "Why did we wipe on Ula'tek fight 9?",
+  "expected": [
+   "w05"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "report_code": "Ev4kAbyssA1x9Qz",
+   "encounter": "Ula'tek"
+  }
+ },
+ {
+  "id": "q04",
+  "question": "How long was the Queen Ansurek heroic kill?",
+  "expected": [
+   "w06"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "encounter": "Queen Ansurek",
+   "difficulty": "Heroic"
+  }
+ },
+ {
+  "id": "q05",
+  "question": "Top healers on Queen Ansurek heroic",
+  "expected": [
+   "w07"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "encounter": "Queen Ansurek",
+   "difficulty": "Heroic"
+  }
+ },
+ {
+  "id": "q06",
+  "question": "What happened on the first mythic Ula'tek pull that wiped at 61%?",
+  "expected": [
+   "w08",
+   "c05"
+  ],
+  "filters": {
+   "encounter": "Ula'tek",
+   "difficulty": "Mythic"
+  }
+ },
+ {
+  "id": "q07",
+  "question": "Damage meter for the mythic Ula'tek kill",
+  "expected": [
+   "w09"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "encounter": "Ula'tek",
+   "difficulty": "Mythic"
+  }
+ },
+ {
+  "id": "q08",
+  "question": "How did Riven the havoc demon hunter do on mythic Ula'tek?",
+  "expected": [
+   "w10",
+   "c06"
+  ],
+  "filters": {
+   "character": "Riven",
+   "encounter": "Ula'tek"
+  }
+ },
+ {
+  "id": "q09",
+  "question": "Fenn's damage on normal Queen Ylva",
+  "expected": [
+   "w12"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "character": "Fenn",
+   "encounter": "Queen Ylva"
+  }
+ },
+ {
+  "id": "q10",
+  "question": "What damage did the raid take on Queen Ylva normal?",
+  "expected": [
+   "w13",
+   "c08"
+  ],
+  "filters": {
+   "encounter": "Queen Ylva",
+   "difficulty": "Normal"
+  }
+ },
+ {
+  "id": "q11",
+  "question": "How many Colossus Smash and Bladestorm casts did Vagxsu have on the mythic kill?",
+  "expected": [
+   "w14"
+  ],
+  "filters": {
+   "kind": "wcl",
+   "character": "Vagxsu",
+   "difficulty": "Mythic"
+  }
+ },
+ {
+  "id": "q12",
+  "question": "How did Kaelis die on Queen Ansurek?",
+  "expected": [
+   "w15",
+   "c15"
+  ],
+  "filters": {
+   "character": "Kaelis",
+   "encounter": "Queen Ansurek"
+  }
+ },
+ {
+  "id": "q13",
+  "question": "What is the arms warrior raid rotation?",
+  "expected": [
+   "g01"
+  ],
+  "filters": {
+   "kind": "guide",
+   "class_name": "Warrior",
+   "spec": "Arms"
+  }
+ },
+ {
+  "id": "q14",
+  "question": "Arms warr opener",
+  "expected": [
+   "g02",
+   "c02"
+  ],
+  "filters": {
+   "class_name": "Warrior",
+   "spec": "Arms"
+  }
+ },
+ {
+  "id": "q15",
+  "question": "Stat priority for arms warrior",
+  "expected": [
+   "g03",
+   "c13"
+  ],
+  "filters": {
+   "class_name": "Warrior",
+   "spec": "Arms"
+  }
+ },
+ {
+  "id": "q16",
+  "question": "How do I play fury warrior?",
+  "expected": [
+   "g04"
+  ],
+  "filters": {
+   "kind": "guide",
+   "class_name": "Warrior",
+   "spec": "Fury"
+  }
+ },
+ {
+  "id": "q17",
+  "question": "Which defensives should a protection paladin use on tank busters?",
+  "expected": [
+   "g05",
+   "c09"
+  ],
+  "filters": {
+   "class_name": "Paladin",
+   "spec": "Protection"
+  }
+ },
+ {
+  "id": "q18",
+  "question": "Holy paladin healing priorities",
+  "expected": [
+   "g06"
+  ],
+  "filters": {
+   "kind": "guide",
+   "class_name": "Paladin",
+   "spec": "Holy"
+  }
+ },
+ {
+  "id": "q19",
+  "question": "How does a disc priest heal with atonement?",
+  "expected": [
+   "g08",
+   "c12"
+  ],
+  "filters": {
+   "class_name": "Priest",
+   "spec": "Discipline"
+  }
+ },
+ {
+  "id": "q20",
+  "question": "BM hunter rotation and Barbed Shot",
+  "expected": [
+   "g09"
+  ],
+  "filters": {
+   "kind": "guide",
+   "class_name": "Hunter",
+   "spec": "BeastMastery"
+  }
+ },
+ {
+  "id": "q21",
+  "question": "How should a fire mage use Combustion?",
+  "expected": [
+   "g11"
+  ],
+  "filters": {
+   "kind": "guide",
+   "class_name": "Mage",
+   "spec": "Fire"
+  }
+ },
+ {
+  "id": "q22",
+  "question": "Arms warrior in mythic plus",
+  "expected": [
+   "g14",
+   "c14"
+  ],
+  "filters": {
+   "class_name": "Warrior",
+   "spec": "Arms"
+  }
+ },
+ {
+  "id": "q23",
+  "question": "Blood death knight defensives and Bone Shield",
+  "expected": [
+   "g15",
+   "c10"
+  ],
+  "filters": {
+   "class_name": "DeathKnight",
+   "spec": "Blood"
+  }
+ },
+ {
+  "id": "q24",
+  "question": "What did we say about my arms warrior losing damage to Kaelis?",
+  "expected": [
+   "c01"
+  ],
+  "filters": {
+   "kind": "chat",
+   "character": "Vagxsu"
+  }
+ },
+ {
+  "id": "q25",
+  "question": "Earlier advice on my opener",
+  "expected": [
+   "c02"
+  ],
+  "filters": {
+   "kind": "chat"
+  }
+ },
+ {
+  "id": "q26",
+  "question": "Who died first on the heroic Ula'tek kill, as discussed before?",
+  "expected": [
+   "c03",
+   "w04"
+  ],
+  "filters": {
+   "encounter": "Ula'tek"
+  }
+ },
+ {
+  "id": "q27",
+  "question": "What did we conclude about the healing assignment on Ansurek?",
+  "expected": [
+   "c04"
+  ],
+  "filters": {
+   "kind": "chat"
+  }
+ },
+ {
+  "id": "q28",
+  "question": "Gearing advice for my beast mastery hunter Fenn",
+  "expected": [
+   "c07"
+  ],
+  "filters": {
+   "kind": "chat",
+   "character": "Fenn"
+  }
+ },
+ {
+  "id": "q29",
+  "question": "Holy priest versus holy paladin this tier",
+  "expected": [
+   "c11",
+   "g07",
+   "g06"
+  ],
+  "filters": {}
+ },
+ {
+  "id": "q30",
+  "question": "What should Morrow do on blood?",
+  "expected": [
+   "c10",
+   "g15"
+  ],
+  "filters": {
+   "character": "Morrow"
+  }
+ }
+]

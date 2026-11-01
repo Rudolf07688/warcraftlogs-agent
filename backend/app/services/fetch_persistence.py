@@ -15,6 +15,11 @@ report's visibility and end time. A :class:`ReportGone` (WCL answered ``report: 
 through the same FIFO queue and deletes the report's stored rows, then evicts its Redis keys
 (specs/039-local-first-data/contracts/raw-store.md W6/W7).
 
+Feature 045: the tenant scope is set once per tenant per transaction and a grant is rewritten
+only when an hour older (PERF-005); each batch reports which items changed the stored payload
+(:class:`BatchResult`, contract 5); and a fetch whose request was already under way when its
+report went away is not written (sc-296, :data:`_tombstones`).
+
 Only the app's lifespan starts a writer. The CLI, eval scripts and tests leave the sink
 unset, so nothing is persisted there.
 """
@@ -28,8 +33,10 @@ import logging
 import math
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,14 +52,18 @@ from wcl_agent.client.wcl_client import (
 )
 
 from ..db import session as db_session
+from ..kb import indexer as kb_indexer
 from ..repositories.raw_fetches import (
+    GRANT_REFRESH,
     ReportStatus,
     delete_report,
     grant_codes,
     record_report_status,
+    scope_tenant,
+    stored_codes,
     upsert_raw_fetch,
 )
-from ..tenancy.context import current_identity, set_scope
+from ..tenancy.context import current_identity
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +74,47 @@ _LOG_EVERY_S = 60.0
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
 BATCH_MAX = 20  # items per transaction (sc-177): one commit, bounded by the write timeout
 BATCH_MAX_BYTES = 8 * 1024 * 1024  # and body bytes per transaction (041 fix 3)
+# Gone reports this process saw (code -> when), so a fetch already under way then isn't written
+# back afterwards (045 sc-296). Kept well past the longest WCL query (75 s) plus queueing.
+TOMBSTONE_TTL = timedelta(minutes=10)
+TOMBSTONE_MAX = 1024
+_tombstones: OrderedDict[str, datetime] = OrderedDict()
+
+
+@dataclass(frozen=True)
+class BatchResult:
+    """One written batch: the gone reports (to evict from Redis) and the fetches whose stored
+    payload changed (contract 5: 043's post-store hook)."""
+
+    gone: list[str] = field(default_factory=list)
+    changed: list[FetchedResponse] = field(default_factory=list)
+
+
+@dataclass
+class _Txn:
+    """What one transaction already did: the tenant its scope is set to, and the grants it
+    wrote (tenant, code) -> at, so neither is repeated per item (045 PERF-005)."""
+
+    scoped: uuid.UUID | None = None
+    granted: dict[tuple[uuid.UUID, str], datetime] = field(default_factory=dict)
+
+
+def _bury(codes: Sequence[str], seen_at: datetime) -> None:
+    for code in codes:
+        if code not in _tombstones or seen_at > _tombstones[code]:
+            _tombstones[code] = seen_at
+            _tombstones.move_to_end(code)
+    horizon = seen_at - TOMBSTONE_TTL
+    while _tombstones and (len(_tombstones) > TOMBSTONE_MAX or next(iter(_tombstones.values())) < horizon):
+        _tombstones.popitem(last=False)
+
+
+def _stale(item: FetchedResponse) -> bool:
+    """The fetch was requested before (or as) one of its reports was seen gone."""
+    if item.requested_at is None or not _tombstones:
+        return False
+    codes = stored_codes(item.query, item.variables)
+    return any((t := _tombstones.get(c)) is not None and item.requested_at <= t for c in codes)
 
 
 @dataclass(frozen=True)
@@ -113,20 +165,27 @@ async def _report_statuses(
     return statuses, private
 
 
-async def _store_one(session: AsyncSession, pending: PendingWrite) -> list[str]:
-    """Write one item in the open transaction; returns the codes whose Redis keys must go.
+async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, result: BatchResult) -> None:
+    """Write one item in the open transaction, adding to ``result``.
 
     Grants come from what WCL returned, never from the query text alone (041 fix 2, decision
     scope:041:grant-rule): our summary queries grant each code whose report object came back
     with that code; any other query grants its one code only when it is plain and its body
-    holds the report (:func:`returned_report_code`).
+    holds the report (:func:`returned_report_code`). A fetch requested before one of its
+    reports was seen gone writes nothing: not its row, its statuses or its grant (045 sc-296).
     """
     item = pending.item
     if isinstance(item, ReportGone):
+        _bury(item.codes, item.seen_at)
         for code in item.codes:
             await delete_report(session, code)
-        return list(item.codes)
-    await upsert_raw_fetch(session, item)
+        result.gone.extend(item.codes)
+        return
+    if _stale(item):
+        logger.info("fetch persistence: skipped a fetch requested before its report was gone")
+        return
+    if await upsert_raw_fetch(session, item):
+        result.changed.append(item)
     codes = exact_report_codes(item.query, item.variables) or []
     gone: list[str] = []
     if codes and _is_summary(item, codes):
@@ -134,26 +193,38 @@ async def _store_one(session: AsyncSession, pending: PendingWrite) -> list[str]:
         await record_report_status(session, statuses)
         for code in gone:
             await delete_report(session, code)
+        result.gone.extend(gone)
         granted = [s.code for s in statuses]
     else:
         code = returned_report_code(item.query, item.variables, item.content)
         granted = [code] if code else []
-    if pending.tenant_id is not None and granted:
+    tenant = pending.tenant_id
+    if tenant is None:
+        return
+    at = item.fetched_at
+    fresh = [c for c in granted if (prev := txn.granted.get((tenant, c))) is None or at - prev >= GRANT_REFRESH]
+    if not fresh:
+        return
+    if txn.scoped != tenant:
         # Grants are RLS'd per tenant; set_config(..., true) may be re-set inside a transaction.
-        await set_scope(session, tenant_id=pending.tenant_id)
-        await grant_codes(session, pending.tenant_id, granted, item.fetched_at)
-    return gone
+        await scope_tenant(session, tenant)
+        txn.scoped = tenant
+    await grant_codes(session, tenant, fresh, at)
+    txn.granted.update({(tenant, c): at for c in fresh})
 
 
-async def store_batch(batch: Sequence[PendingWrite]) -> list[str]:
-    """Write queued items in one transaction; returns the codes of gone reports, whose Redis
-    keys the writer evicts after this timed DB part (041 fix 3)."""
-    gone: list[str] = []
+async def store_batch(batch: Sequence[PendingWrite]) -> BatchResult:
+    """Write queued items in one transaction. The gone reports' Redis keys are evicted by the
+    writer after this timed DB part (041 fix 3). After the commit, each item whose stored payload
+    changed goes to the knowledge base indexer (043; only enqueued, a no-op without one)."""
+    result, txn = BatchResult(), _Txn()
     async with db_session.SessionLocal() as session:
         for pending in batch:
-            gone += await _store_one(session, pending)
+            await _store_one(session, pending, txn, result)
         await session.commit()
-    return gone
+    for item in result.changed:
+        kb_indexer.offer_fetch(item)
+    return result
 
 
 def _describe(exc: BaseException) -> str:
@@ -192,12 +263,19 @@ class _Throttle:
             self._pending = 0
 
 
+def _gone_of(result: BatchResult | list[str] | None) -> list[str]:
+    """The gone codes of a store's result (an injected store may return just the codes)."""
+    if isinstance(result, BatchResult):
+        return list(result.gone)
+    return list(result or [])
+
+
 class FetchWriter:
     """Bounded queue + one consumer task writing fetched responses to the database."""
 
     def __init__(
         self,
-        store: Callable[[Sequence[PendingWrite]], Awaitable[list[str] | None]] = store_batch,
+        store: Callable[[Sequence[PendingWrite]], Awaitable[BatchResult | list[str] | None]] = store_batch,
         *,
         max_items: int,
         max_bytes: int,
@@ -283,7 +361,7 @@ class FetchWriter:
         (041 fix 3). Order is kept. Returns the gone codes. Nothing ever reaches a caller."""
         try:
             async with asyncio.timeout(_WRITE_TIMEOUT_S):
-                return list(await self._store(batch) or [])
+                return _gone_of(await self._store(batch))
         except Exception as exc:  # noqa: BLE001 - TimeoutError too (FR-007)
             if len(batch) == 1:
                 self._failures.hit(_describe(exc))
@@ -292,7 +370,7 @@ class FetchWriter:
         for pending in batch:
             try:
                 async with asyncio.timeout(_WRITE_TIMEOUT_S):
-                    gone += await self._store([pending]) or []
+                    gone += _gone_of(await self._store([pending]))
             except Exception as exc:  # noqa: BLE001
                 self._failures.hit(_describe(exc))
         return gone
