@@ -133,6 +133,16 @@ def test_source_filtered_table_lists_that_players_abilities():
     assert chunk.players[0].key == "vagxsu" and chunk.extra["source_id"] == 1
 
 
+def test_an_ability_filtered_table_is_not_chunked_as_the_metric_table():
+    abilities = [{"name": "Bladestorm", "total": 11_500_000}]
+    source = table_source({"entries": abilities})
+    assert chunk_fetch(source, CONTEXT)  # the same body unfiltered does chunk
+    for source_id in (None, 1):  # with or without a source: still one ability's numbers
+        filtered = table_source({"entries": abilities}, source_id=source_id)
+        filtered.variables["abilityID"] = 6343
+        assert chunk_fetch(filtered, CONTEXT) == []
+
+
 def test_deaths_summary_and_aura_tables():
     deaths = {"entries": [
         {"name": "Lumi", "type": "Priest", "icon": "Priest-Holy", "deathTime": 151_000, "ability": {"name": "Spray"}},

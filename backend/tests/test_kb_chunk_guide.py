@@ -12,7 +12,7 @@ from backend.app.db import session as db_session
 from backend.app.db.models import KbChunk
 from backend.app.kb import indexer as kb_indexer
 from backend.app.kb.embedder import set_embedder
-from backend.app.kb.guide_chunker import MAX_PARTS, GuideJob, chunk_guide
+from backend.app.kb.guide_chunker import MAX_PARTS, GuideJob, _parts, chunk_guide
 from backend.app.kb.indexer import KbIndexer
 from backend.app.services.guide_pipeline import llm, run_guide_generation
 from backend.app.services.guide_pipeline.llm import GuideModelError
@@ -49,6 +49,17 @@ def test_mythic_plus_guides_say_so_and_long_sections_split_into_bounded_parts():
     assert drafts[0].text.startswith("Holy Priest (healer) Mythic+ guide, section Healing (1/")
     assert 1 < len(drafts) <= MAX_PARTS and all(len(d.text) <= 2000 for d in drafts)
     assert drafts[0].label.startswith("Healing (1/")
+
+
+@pytest.mark.parametrize("title_length", [150, 1_940, 3_000])
+def test_a_very_long_heading_still_chunks_within_bounds(title_length):
+    drafts = chunk_guide(job(f"## {'T' * title_length}\n\n" + "word " * 1000))
+    assert drafts and len(drafts) <= MAX_PARTS
+    assert all(len(d.text) <= 2000 for d in drafts)
+
+
+def test_parts_always_advance_even_for_no_room():
+    assert _parts("word " * 50, 0) and _parts("word " * 50, -5)
 
 
 @pytest.fixture

@@ -156,13 +156,14 @@ def needed_fights(source: FetchSource) -> tuple[str | None, list[int]]:
 
 
 def chunk_fetch(source: FetchSource, contexts: Mapping[int, FightContext] | None = None) -> list[ChunkDraft]:
-    """The chunks of one stored fetch; ``[]`` for shapes this module doesn't know."""
+    """The chunks of one stored fetch; ``[]`` for shapes this module doesn't know (an
+    ability-filtered table included: it must not pass for the full metric table)."""
     if not source.report_codes:
         return []  # 039 never serves a row that names no report
     table = _table(source)
     if table is not None:
-        if len(source.report_codes) != 1:
-            return []
+        if len(source.report_codes) != 1 or source.variables.get("abilityID"):
+            return []  # an ability-filtered table is one ability's numbers, not the metric's table
         metric = source.metric or infer_metric(table)
         if metric is None:
             return []

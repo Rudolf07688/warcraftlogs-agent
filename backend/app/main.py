@@ -331,7 +331,7 @@ async def lifespan(app: FastAPI):
         set_fetch_source(None)
         await fetch_writer.stop()  # bounded drain while the DB engine is still open (FR-011)
     if kb_indexer is not None:
-        await kb_indexer.stop()  # bounded drain too; anything left is picked up by the backfill
+        await kb_indexer.stop()  # bounded drain; a job left over is lost (the backfill only covers new sources)
     with contextlib.suppress(Exception):
         await aclose_clients()  # WCL HTTP pools (feature 013)
     await engine.dispose()
