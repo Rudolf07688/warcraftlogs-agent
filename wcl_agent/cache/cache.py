@@ -32,7 +32,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel
 from redis.asyncio import Redis
@@ -234,8 +234,15 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
         return f"lock:{key}"
 
     @staticmethod
-    def metrics(family: CacheFamily, day: str) -> str:
-        return f"wcl:metrics:v1:{family.value}:{day}"
+    def gone(code: str) -> str:
+        # Feature 045 (sc-296): set while a gone report's keys are evicted; no report entry may
+        # be written while it exists. Outside ``wcl:v1:report:`` so the eviction SCAN skips it.
+        return f"wcl:v1:gone:{code.strip()}"
+
+    @staticmethod
+    def metrics(family: CacheFamily | str, day: str) -> str:
+        # ``family`` is a cache family or LOCAL_METRICS (the raw store and turn counters, 045).
+        return f"wcl:metrics:v1:{family}:{day}"
 
     @staticmethod
     def refresh(user_id: str, char_id: int) -> str:
@@ -332,7 +339,11 @@ def _memo_put(key: str, value: BaseModel, ttl_s: int) -> None:
 # (PERF-007): a hit costs no extra Redis round trip, and counts survive a failed flush.
 
 _FLUSH_S = 2.0
-_counts: Counter[tuple[CacheFamily, str]] = Counter()
+# Feature 045: the raw-store probe outcomes (sc-295) and chat turns (sc-132) are counted like
+# the families, in one more hash.
+LOCAL_METRICS = "local"
+StoreOutcome = Literal["hit", "miss", "not_visible", "timeout"]
+_counts: Counter[tuple[CacheFamily | str, str]] = Counter()
 _flush_tasks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task[None]] = (
     weakref.WeakKeyDictionary()
 )
@@ -348,6 +359,16 @@ def _record(family: CacheFamily, outcome: Outcome, load_ms: int | None = None) -
     if load_ms is not None:
         _counts[(family, "load_ms_sum")] += load_ms
         _counts[(family, "load_count")] += 1
+    _schedule_flush()
+
+
+def record_store(outcome: StoreOutcome) -> None:
+    """Count one raw-store probe (feature 045): hit, miss, not_visible or timeout."""
+    _counts[(LOCAL_METRICS, f"store_{outcome}")] += 1
+    _schedule_flush()
+
+
+def _schedule_flush() -> None:
     loop = asyncio.get_running_loop()
     task = _flush_tasks.get(loop)
     if task is None or task.done():
@@ -404,6 +425,63 @@ _MISSING = b'{"_missing":true}'
 _POLL_S = 0.1
 _DECODE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big values are parsed off the loop
 
+class _Load:
+    """One ``get_or_load`` / ``get_many_or_load`` call. Shared by its loader's sub-tasks
+    through the copied context, so a mark set anywhere in the load is seen here."""
+
+    __slots__ = ("unshareable",)
+
+    def __init__(self) -> None:
+        self.unshareable = False
+
+
+_current_load: ContextVar[_Load | None] = ContextVar("wcl_cache_load", default=None)
+
+
+def mark_unshareable() -> None:
+    """The running load served data some tenants may not see (a raw-store hit for a report
+    visible only through the tenant's own grant, 045 sc-296): don't put it in the shared
+    cache or the process memo. A no-op outside a load."""
+    load = _current_load.get()
+    if load is not None:
+        load.unshareable = True
+
+
+def _unshareable() -> bool:
+    load = _current_load.get()
+    return load is not None and load.unshareable
+
+
+_REPORT_PREFIX = "wcl:v1:report:"
+
+
+def _report_code(key: str) -> str | None:
+    """The report a ``wcl:v1:report:<code>:…`` key belongs to, else None."""
+    return key[len(_REPORT_PREFIX):].split(":", 1)[0] if key.startswith(_REPORT_PREFIX) else None
+
+
+async def _drop_if_gone(client: Redis, written: Sequence[str]) -> None:
+    """Delete report entries just written whose report is being evicted (045 sc-296).
+
+    Write-then-check: :func:`evict_report` sets the gone marker before its SCAN, so a write
+    either lands before the SCAN (which deletes it) or after the marker (deleted here).
+    """
+    by_code: dict[str, list[str]] = {}
+    for key in written:
+        if (code := _report_code(key)) is not None:
+            by_code.setdefault(code, []).append(key)
+    if not by_code:
+        return
+    codes = list(by_code)
+    pipe = client.pipeline(transaction=False)
+    for code in codes:
+        pipe.exists(keys.gone(code))
+    marked = await pipe.execute()
+    doomed = [key for code, gone in zip(codes, marked) if gone for key in by_code[code]]
+    if doomed:
+        await client.delete(*doomed)
+
+
 # Same-process single-flight (PERF-006): key -> [shared load task, waiter count], per loop.
 _flights: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, list[Any]]] = (
     weakref.WeakKeyDictionary()
@@ -454,8 +532,13 @@ async def get_or_load(
         memoised = _memo_get(key)
         if memoised is not None:
             return memoised  # type: ignore[return-value]
-    value = await _shared(family, key, model, loader, ttl, force_refresh)
-    if memo_s and value is not None:
+    load = _Load()
+    token = _current_load.set(load)
+    try:
+        value = await _shared(family, key, model, loader, ttl, force_refresh)
+    finally:
+        _current_load.reset(token)
+    if memo_s and value is not None and not load.unshareable:
         _memo_put(key, value, memo_s)
     return value
 
@@ -556,9 +639,10 @@ async def _load_and_store(
             raise
         _record(family, Outcome.MISS, int((time.perf_counter() - started) * 1000))
         payload, expiry = _encode(settings, family, value, ttl)
-        if expiry > 0:
+        if expiry > 0 and not _unshareable():
             try:
                 await client.set(key, payload, ex=expiry)
+                await _drop_if_gone(client, [key])
             except RedisError as exc:
                 _redis_failed(family, exc)
         return value
@@ -612,6 +696,22 @@ async def get_many_or_load(
     single-flight already joins identical in-flight requests. Same outcomes, metrics,
     memo and fail-open behaviour as ``get_or_load``.
     """
+    load = _Load()
+    token = _current_load.set(load)
+    try:
+        return await _get_many(family, keys_, model, batch_loader, ttl, load)
+    finally:
+        _current_load.reset(token)
+
+
+async def _get_many(
+    family: CacheFamily,
+    keys_: Sequence[str],
+    model: type[M],
+    batch_loader: Callable[[list[int]], Awaitable[list[M | None]]],
+    ttl: int | Callable[[M], int] | None,
+    load: _Load,
+) -> list[M | None]:
     results: list[M | None] = [None] * len(keys_)
     missing = list(range(len(keys_)))
     memo_s = FAMILIES[family].memo_s
@@ -661,19 +761,23 @@ async def get_many_or_load(
             _record(family, Outcome.MISS, int((time.perf_counter() - started) * 1000))
             for _ in missing[1:]:
                 _record(family, Outcome.MISS)
-        pipe = client.pipeline(transaction=False) if client is not None else None
+        shareable = not load.unshareable
+        pipe = client.pipeline(transaction=False) if client is not None and shareable else None
+        written: list[str] = []
         for i, value in zip(missing, loaded):
             results[i] = value
             if pipe is not None:
                 payload, expiry = _encode(settings, family, value, ttl)
                 if expiry > 0:
                     pipe.set(keys_[i], payload, ex=expiry)
-        if pipe is not None:
+                    written.append(keys_[i])
+        if pipe is not None and client is not None:
             try:
                 await pipe.execute()
+                await _drop_if_gone(client, written)
             except RedisError as exc:
                 _redis_failed(family, exc)
-    if memo_s:
+    if memo_s and not load.unshareable:
         for i in range(len(keys_)):
             if results[i] is not None:
                 _memo_put(keys_[i], results[i], memo_s)  # type: ignore[arg-type]
@@ -699,6 +803,9 @@ async def evict_report(code: str) -> int:
     escaped = _GLOB_SPECIAL.sub(r"\\\1", code)  # a code is data, never a SCAN pattern
     pattern = f"wcl:v1:report:{escaped}:*"
     try:
+        # First, so a load that read the old data can't write it back after the SCAN (045
+        # sc-296, see _drop_if_gone). Longer than a WCL query may take.
+        await client.set(keys.gone(code), b"1", px=cache_settings().lock_ms)
         found = [key async for key in client.scan_iter(match=pattern, count=500)]
         return int(await client.delete(*found)) if found else 0
     except RedisError as exc:

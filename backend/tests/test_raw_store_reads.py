@@ -40,9 +40,9 @@ def fetched(query: str, variables: dict, data: dict, at: datetime = NOW) -> Fetc
     return FetchedResponse(_flight_key(query, variables), query, variables, body, at)
 
 
-def summary(code: str, end: int, at: datetime = NOW) -> FetchedResponse:
+def summary(code: str, end: int, at: datetime = NOW, visibility: str = "unlisted") -> FetchedResponse:
     report = {
-        "code": code, "visibility": "unlisted", "title": "Raid", "startTime": end - 1000, "endTime": end,
+        "code": code, "visibility": visibility, "title": "Raid", "startTime": end - 1000, "endTime": end,
         "zone": {"id": 1, "name": "Zone"}, "guild": {"name": "G"}, "masterData": {"actors": []}, "fights": [],
     }
     return fetched(REPORT_SUMMARY, {"code": code}, {"reportData": {"report": report}}, at)
@@ -57,6 +57,12 @@ def turn(tenant: uuid.UUID | None):
         yield
     finally:
         current_identity.reset(token)
+
+
+@pytest.fixture(autouse=True)
+def closed_breaker(monkeypatch):
+    """The breaker is process-wide: every test starts (and leaves others) with it closed."""
+    monkeypatch.setattr(raw_fetch_reads, "breaker", raw_fetch_reads.Breaker())
 
 
 @pytest.fixture
@@ -149,19 +155,20 @@ async def test_a_joined_caller_of_another_tenant_never_rides_the_first_callers_s
     assert mine == {"data": STORED} and theirs == NETWORK and calls["n"] == 1
 
 
-# --- AC3: a store hit back-fills Redis -----------------------------------------------------
+# --- AC3: a store hit of a public report back-fills Redis (045 sc-296: only a public one) ---
 
 
 async def test_a_store_hit_back_fills_redis(patched_db, wcl, fake_redis, monkeypatch, tenant_id):
     _, calls = wcl
-    await store_batch([PendingWrite(summary("Redis1", ENDED), tenant_id)])
+    await store_batch([PendingWrite(summary("Redis1", ENDED, visibility="public"), tenant_id)])
     reads = {"n": 0}
 
-    async def counting(*args):
-        reads["n"] += 1
-        return await read_stored_fetch(*args)
+    class Counting(raw_fetch_reads.StoreSource):
+        async def __call__(self, *args):
+            reads["n"] += 1
+            return await read_stored_fetch(*args)
 
-    monkeypatch.setattr(wcl_client, "_fetch_source", counting)
+    monkeypatch.setattr(wcl_client, "_fetch_source", Counting())
     with turn(tenant_id):
         first = await load_report_summary("Redis1")
         second = await load_report_summary("Redis1")
@@ -188,7 +195,7 @@ async def test_a_store_error_falls_back_to_wcl(patched_db, wcl, monkeypatch, ten
 
 async def test_a_slow_store_falls_back_to_wcl_within_the_timeout(patched_db, wcl, monkeypatch, tenant_id):
     client, calls = wcl
-    monkeypatch.setattr(raw_fetch_reads, "READ_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(raw_fetch_reads.settings, "raw_store_probe_timeout_ms", 50)
 
     @contextlib.asynccontextmanager
     async def hung():
