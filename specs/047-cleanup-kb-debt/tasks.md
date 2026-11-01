@@ -12,14 +12,14 @@
 
 ## Phase 2: US2 sc-322 Private report stays gone (P1)
 
-- [ ] T005 [US2] `backend/app/services/fetch_persistence.py`: bury the codes a summary finds private
-- [ ] T006 [US2] `backend/tests/test_047_private_tombstone.py`: the race (table requested before, written after the summary) and the grant can't serve
-- [ ] T007 [US2] `specs/045-local-data-reads/spec.md` FR-010 as built; mutate; commit
+- [X] T005 [US2] `backend/app/services/fetch_persistence.py`: bury the codes a summary finds private
+- [X] T006 [US2] `backend/tests/test_047_private_tombstone.py`: the race (table requested before, written after the summary) and the grant can't serve
+- [X] T007 [US2] `specs/045-local-data-reads/spec.md` FR-010 as built; mutate; commit
 
 ## Phase 3: US3 sc-323 Breaker counts timeouts (P2)
 
-- [ ] T008 [US3] `backend/app/services/raw_fetch_reads.py`: consecutive timeouts, connection errors open at once
-- [ ] T009 [US3] `backend/tests/test_047_breaker.py`: one timeout closed, 3 open, connection error opens, success resets; mutate; commit
+- [X] T008 [US3] `backend/app/services/raw_fetch_reads.py`: consecutive timeouts, connection errors open at once
+- [X] T009 [US3] `backend/tests/test_047_breaker.py`: one timeout closed, 3 open, connection error opens, success resets; mutate; commit
 
 ## Phase 4: US4 sc-324 Strict, bounded lookup (P2)
 
