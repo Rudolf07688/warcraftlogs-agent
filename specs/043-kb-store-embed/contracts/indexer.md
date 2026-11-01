@@ -24,7 +24,7 @@ def offer_exchange(job: ExchangeJob) -> None        # ws.py, after the final ans
 
 | Hook | File | Where | Condition |
 |---|---|---|---|
-| fetch | `backend/app/services/fetch_persistence.py` | after the batch commit, from `BatchResult.changed` (contract 5) | `exact_report_codes(query, variables)` non-empty (checked inside `offer_fetch`) |
+| fetch | `backend/app/services/fetch_persistence.py` | after the batch commit, from `BatchResult.changed` (contract 5) | inside `offer_fetch`: `exact_report_codes(query, variables)` non-empty and `chunkable_query(query)` (a summary or `table` query); the queued `FetchJob` holds key, query, variables and codes only, and the consumer re-reads the stored body (P7 043 SEC-001) |
 | guide | `backend/app/services/guide_pipeline/__init__.py` `_run` | after `publish_spec_guide` + commit | published only (held / failed never) |
 | exchange | `backend/app/api/ws.py` `_handle_turn` | after the final `add_message` transaction closes | completed turn with streamed text; never on partial / error / rate-limit paths |
 | lifecycle | `backend/app/main.py` `lifespan` | start next to the fetch writer; stop before `engine.dispose()` | `settings.kb_index_enabled` |
@@ -34,7 +34,8 @@ def offer_exchange(job: ExchangeJob) -> None        # ws.py, after the final ans
 - Queue bounded by `kb_index_queue_max`; a full queue drops the job and logs a throttled
   warning (recovered by the backfill: `backlog:kb-dropped-jobs`).
 - Each job: chunk (WCL parse off the loop above 256 kB), then one short transaction:
-  - fetch / guide: `replace_source_chunks` (global table). An FK failure (fetch deleted or
+  - fetch / guide: `replace_source_chunks` (global table), also with no drafts, so a body that
+    now yields none drops its old chunks (P7 SEC-002a). An FK failure (fetch deleted or
     report gone meanwhile) drops the job quietly.
   - exchange: under `tenant_scope(job.tenant_id)`: mentioned characters, then upsert the chat
     chunk; the composite FK refuses a conversation of another tenant or one deleted meanwhile.

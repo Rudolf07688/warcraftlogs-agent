@@ -294,6 +294,12 @@ def summary_fetched(code: str):
     return FetchedResponse(_flight_key(REPORT_SUMMARY, {"code": code}), REPORT_SUMMARY, {"code": code}, body, NOW)
 
 
+def _job(fetched, code: str):
+    from backend.app.kb.indexer import FetchJob
+
+    return FetchJob(fetched.query_key, fetched.query, fetched.variables, (code,))
+
+
 @pytest.fixture
 async def app_db(pg, monkeypatch):
     from backend.app.db import session as db_session
@@ -314,7 +320,7 @@ async def test_a_stored_fetch_is_indexed_and_a_gone_report_takes_its_chunks(app_
     fetched = summary_fetched(code)
     result = await store_batch([PendingWrite(fetched, None)])
     assert result.changed == [fetched]
-    await KbIndexer(max_items=5, batch=8, sweep_s=600).handle(fetched)
+    await KbIndexer(max_items=5, batch=8, sweep_s=600).handle(_job(fetched, code))
     assert await count(app_db, KbChunk, KbChunk.report_code == code, KbChunk.embedding.is_not(None)) == 1
     await store_batch([PendingWrite(ReportGone((code,), NOW), None)])
     assert await count(app_db, KbChunk, KbChunk.report_code == code) == 0
@@ -323,6 +329,7 @@ async def test_a_stored_fetch_is_indexed_and_a_gone_report_takes_its_chunks(app_
 async def test_an_index_job_for_a_fetch_that_is_already_gone_writes_nothing(app_db):
     from backend.app.kb.indexer import KbIndexer
 
-    fetched = summary_fetched(fresh())  # never stored: the FK refuses its chunks
-    await KbIndexer(max_items=5, batch=8, sweep_s=600).handle(fetched)
+    code = fresh()
+    fetched = summary_fetched(code)  # never stored: nothing to read, nothing written
+    await KbIndexer(max_items=5, batch=8, sweep_s=600).handle(_job(fetched, code))
     assert await count(app_db, KbChunk, KbChunk.raw_fetch_id == fetched.query_key) == 0

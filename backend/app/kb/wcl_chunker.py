@@ -27,6 +27,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from wcl_agent.client.wcl_client import operation_name
+
+from ..repositories.raw_fetches import SUMMARY_OPERATIONS
 from .chunks import MAX_TEXT, ChunkDraft, PlayerRef, bounded, humanise
 from .names import class_spec, difficulty_name, name_key, player
 
@@ -99,6 +102,13 @@ def source_from_query(
         raw_fetch_id, tuple(codes), dict(variables), body,
         metric.group(1) if metric else None, hostility.group(1) if hostility else None,
     )
+
+
+def chunkable_query(query: str) -> bool:
+    """Whether a response to ``query`` can yield chunks: our report summary queries or a
+    ``table`` query. A cost filter for the indexer queue only; what is chunked is still
+    decided from the response."""
+    return operation_name(query) in SUMMARY_OPERATIONS or bool(_DATA_TYPE_RE.search(query))
 
 
 def _report_objects(source: FetchSource) -> list[tuple[str, dict]]:
