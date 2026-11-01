@@ -36,7 +36,15 @@ from typing import Any, Literal, Protocol
 
 import httpx
 
-from ..cache.cache import CacheFamily, _env_int, aclose_redis, get_or_load, keys, mark_unshareable
+from ..cache.cache import (
+    CacheFamily,
+    _env_int,
+    aclose_redis,
+    get_or_load,
+    keys,
+    mark_unshareable,
+    note_external_call,
+)
 from ..cache.cache_models import OAuthToken
 from .queries import REPORT_SUMMARY
 
@@ -584,13 +592,18 @@ class AsyncWCLClient:
                 if me is not None and me.cancelling():
                     raise
                 continue  # the shared fetch was abandoned by its other waiters: start over
+            except Exception:
+                note_external_call()  # it went to (or was refused by) WCL: not answered locally
+                raise
             finally:
                 flight[1] -= 1
                 if flight[1] == 0 and not task.done():
                     # The last waiter left: stop the fetch and free its slot (G4).
                     self._drop_flight(flight_key, task)
                     task.cancel()
-            if origin == "private":
+            if origin == "network":
+                note_external_call()  # in this caller's own context: its own turn (sc-132)
+            elif origin == "private":
                 mark_unshareable()  # in this caller's own context: its own cache load
             return await _loads(content)
 

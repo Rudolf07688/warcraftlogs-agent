@@ -803,9 +803,29 @@ class RedisHealth(BaseModel):
     used_memory_mb: float
 
 
+class StoreStats(BaseModel):
+    """Raw-store probes over the window (feature 045, sc-132)."""
+
+    hits: int = 0
+    misses: int = 0  # no row, or not fresh
+    not_visible: int = 0  # a row the tenant may not be served
+    timeouts: int = 0  # timeout or connection error
+    hit_rate: float | None = None  # hits / (hits + misses + not_visible); None without probes
+
+
+class LocalAnswerStats(BaseModel):
+    """Chat turns answered without a network WCL call (feature 045, sc-132)."""
+
+    turns: int = 0
+    local_turns: int = 0
+    rate: float | None = None  # local_turns / turns; None without turns
+
+
 class CacheStats(BaseModel):
     window_days: int
     enabled: bool  # WCL_CACHE_ENABLED and REDIS_URL set
     available: bool  # Redis reachable right now
     families: dict[str, FamilyStats]  # all seven families, always present
     redis: RedisHealth | None
+    store: StoreStats = StoreStats()
+    local_answers: LocalAnswerStats = LocalAnswerStats()

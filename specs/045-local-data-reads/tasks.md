@@ -37,8 +37,8 @@ Run suites in a clean env: `env -i HOME=$HOME PATH=$PATH uv run --extra test pyt
 
 ## Phase 5: US3 sc-132 local-answer rate (P2)
 
-- [ ] T016 [US3] Turn holder opened/closed by `set_refresh_actor`, `turns`/`local_turns` counted, in `wcl_agent/cache/cache.py`; client marks network calls (success or failure) in `wcl_agent/client/wcl_client.py`; tests (no WCL call → local; one network call → not; stored hit → local; failed call → not; thread/sub-task marking) in `backend/tests/test_local_answer.py`
-- [ ] T017 [US3] `read_stats` adds `store` and `local_answers`; `StoreStats`, `LocalAnswerStats` and the `CacheStats` fields in `backend/app/schemas.py`; tests (window sums, rates, degraded shape) in `backend/tests/test_cache_stats.py`
+- [X] T016 [US3] Turn holder opened/closed by `set_refresh_actor`, `turns`/`local_turns` counted, in `wcl_agent/cache/cache.py`; client marks network calls (success or failure) in `wcl_agent/client/wcl_client.py`; tests (no WCL call → local; one network call → not; stored hit → local; failed call → not; thread/sub-task marking) in `backend/tests/test_local_answer.py`
+- [X] T017 [US3] `read_stats` adds `store` and `local_answers`; `StoreStats`, `LocalAnswerStats` and the `CacheStats` fields in `backend/app/schemas.py`; tests (window sums, rates, degraded shape) in `backend/tests/test_cache_stats.py`
 
 ## Phase 6: US4 sc-131 exact lookups (P3) — after resolver merge + `raw_fetches.py` back from Ansel
 
