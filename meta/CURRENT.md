@@ -33,6 +33,8 @@ My read, which the owner agreed with ("truly impressive"):
 - Not improving yet: "green that wasn't" recurred for three members; memories converge on
   the same lines (only members may prune them); team-lead is a bottleneck (wake-ups).
 - Owner: "Don't be too hard on yourself. You have the most difficult job by far."
+- Growth: This project is about the evolution of the team. I need to ensure future growth
+  by observing and learning from mistakes. Cooperation and transparency with the owner is key.
 
 ## Open with the owner
 
