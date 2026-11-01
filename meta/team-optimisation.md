@@ -500,3 +500,7 @@ through respawns as the same named member, with its own small, curated memory. I
   to Done and iterations 161, 254, 266 and 290 were closed. The owner switched Team 1's
   default workflow to Standard (the MCP can't edit team settings) and handed the board to
   team-lead (D19).
+- **2026-11-01 (memories):** Owner: "Please don't fiddle with team members' memories ever."
+  Now owner preference 21. Team-lead had hand-edited its own `lead.md` a second time this
+  sprint (board ownership, a trim to stay under the cap); that edit was reverted to the
+  wrap-up version. The board grant lives in preference 20 and D19 instead.
