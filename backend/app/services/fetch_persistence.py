@@ -74,8 +74,9 @@ _LOG_EVERY_S = 60.0
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
 BATCH_MAX = 20  # items per transaction (sc-177): one commit, bounded by the write timeout
 BATCH_MAX_BYTES = 8 * 1024 * 1024  # and body bytes per transaction (041 fix 3)
-# Gone reports this process saw (code -> when), so a fetch already under way then isn't written
-# back afterwards (045 sc-296). Kept well past the longest WCL query (75 s) plus queueing.
+# Gone or private reports this process saw (code -> when), so a fetch already under way then isn't
+# written back afterwards (045 sc-296, 047 sc-322). Per process and lost on restart (045 FR-010).
+# Kept well past the longest WCL query (75 s) plus queueing.
 TOMBSTONE_TTL = timedelta(minutes=10)
 TOMBSTONE_MAX = 1024
 _tombstones: OrderedDict[str, datetime] = OrderedDict()
@@ -172,7 +173,8 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
     scope:041:grant-rule): our summary queries grant each code whose report object came back
     with that code; any other query grants its one code only when it is plain and its body
     holds the report (:func:`returned_report_code`). A fetch requested before one of its
-    reports was seen gone writes nothing: not its row, its statuses or its grant (045 sc-296).
+    reports was seen gone or private writes nothing: not its row, its statuses or its grant (045
+    sc-296, 047 sc-322).
     """
     item = pending.item
     if isinstance(item, ReportGone):
@@ -190,6 +192,7 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
     gone: list[str] = []
     if codes and _is_summary(item, codes):
         statuses, gone = await _report_statuses(item, codes)
+        _bury(gone, item.fetched_at)  # found private: a fetch already under way is stale too (sc-322)
         await record_report_status(session, statuses)
         for code in gone:
             await delete_report(session, code)
