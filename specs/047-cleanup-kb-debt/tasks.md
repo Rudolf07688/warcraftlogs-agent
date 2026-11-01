@@ -31,9 +31,9 @@
 
 ## Phase 5: US5 sc-326 Local-answer rate (P3)
 
-- [ ] T015 [US5] `wcl_agent/cache/cache.py`: `_Load.external`, joiners and lock waiters note external
-- [ ] T016 [US5] `backend/app/api/ws.py`: open the turn before the preamble
-- [ ] T017 [US5] `backend/tests/test_047_local_rate.py`: joiner counted, lock waiter counted, preamble call counted; mutate; commit
+- [X] T015 [US5] `wcl_agent/cache/cache.py`: `_Load.external`, joiners and lock waiters note external
+- [X] T016 [US5] `backend/app/api/ws.py`: open the turn before the preamble
+- [X] T017 [US5] `backend/tests/test_047_local_rate.py`: joiner counted, lock waiter counted, preamble call counted; mutate; commit
 
 ## Phase 6: US6 sc-255 Message numbering race (P3)
 

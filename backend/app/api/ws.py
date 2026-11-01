@@ -307,7 +307,16 @@ async def _handle_turn(
         user_seq = user_msg.seq
         await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_seq))
 
-        preamble = await _build_turn_preamble(session, tenant_id, turn.content)
+        # WCL data is public and cached for every tenant alike (feature 014 supersedes FR-019);
+        # only the forced-refresh limit is per user, for this turn (US4). The turn opens before
+        # its preamble, so WCL calls made building it count for it (047 sc-326). Cleared with
+        # the identity (sc-276), so the follow-up suggestions task never acts as this turn's user.
+        set_refresh_actor(str(identity.user_id))
+        try:
+            preamble = await _build_turn_preamble(session, tenant_id, turn.content)
+        except BaseException:
+            set_refresh_actor(None)
+            raise
 
     # Stream the agent response, accumulating tokens into the final content.
     # US2: a per-turn scratch store holds each tool's full output on disk so large
@@ -319,10 +328,6 @@ async def _handle_turn(
     # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)
-    # WCL data is public and cached for every tenant alike (feature 014 supersedes FR-019);
-    # only the forced-refresh limit is per user, for this turn (US4). Cleared with the
-    # identity (sc-276), so the follow-up suggestions task never acts as this turn's user.
-    set_refresh_actor(str(identity.user_id))
     try:
         async for record in stream_response(
             turn.model,
