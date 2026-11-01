@@ -36,7 +36,7 @@ To decide with data, team-lead runs:
 
 ```bash
 uv run python -m backend.evals.kb record          # writes embeddings.json, set vertex:<model>
-TEST_DATABASE_URL=… uv run --extra test pytest -q -s backend/tests/test_kb_eval.py   # on a fresh DB
+uv run python -m backend.evals.kb run --db <throwaway eval DB>   # never the app DB (refused)
 ```
 
 Repeat with the embedder model switched to `text-embedding-005` to compare. Switch only if its
@@ -64,7 +64,7 @@ Revisit when the recorded eval or live use shows keyword ranking as the weak leg
 
 ## Live mode (team-lead)
 
-`uv run python -m backend.evals.kb live --max-questions 30` (cheapest chat model,
+`uv run python -m backend.evals.kb live --db <throwaway eval DB> --max-questions 30` (cheapest chat model,
 `ModelRole.FAST` unless `--model`) asks each question twice: with the search-first clause and
 without it. It reports `local_answer_rate` (turns with no Warcraft Logs tool call),
 `search_rate` and `filter_accuracy` (the first `search_knowledge` call's filters against the
