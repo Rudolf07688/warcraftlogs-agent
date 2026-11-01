@@ -506,3 +506,7 @@ through respawns as the same named member, with its own small, curated memory. I
   wrap-up version. The board grant lives in preference 20 and D19 instead.
   Owner, straight after: the lead is exempt from the once-per-sprint rule and its cap rises
   to 1000 words. `member.py` now caps per seat (lead 1000, others 500); team-launch updated.
+- **2026-11-01 (board tidy, D19 in use):** Default workflow confirmed Standard. Archived the
+  26 auto-generated "2025-04-DD Epic" placeholders (ids 36–61; only 37 held stories, three
+  archived 2025 setup stories). Epic states now match their stories: 100, 103, 105 and 203
+  in progress; 99, 104 and 248 done; the rest to do.

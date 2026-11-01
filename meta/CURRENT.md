@@ -29,7 +29,9 @@ The agent-team redesign: persistence and autonomy. Full record in
 - All 41 Under Review stories moved to Done on the owner's word (iterations 161, 254, 266,
   290; includes the 9 epic-203 stories from 2026-10-26). All four iterations closed (end
   dates 10-31 / 11-01). No active iteration until the next sprint creates one.
-- Team 1 default workflow: owner switching it to Standard (MCP can't edit team settings).
+- Team 1 default workflow is now Standard (owner switched it). 26 placeholder epics
+  "2025-04-DD Epic" (ids 36–61) archived. 13 project epics remain; 100, 103, 105, 203 set
+  to in progress (shipped work plus open backlog).
 - D19: team-lead owns the board (iterations, workflows, epics, labels, Shortlist, meta
   notes there). Done stays the owner's.
   Epics 100 and 203 stay open: backlog QA tickets sc-318..329 and sc-214.
