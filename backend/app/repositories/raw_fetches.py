@@ -336,6 +336,17 @@ def fetch_visible_clause(
     )
 
 
+def fetch_names_code(
+    raw_fetch_id: ColumnElement[str], code: ColumnElement[str]
+) -> ColumnElement[bool]:
+    """True when the ``raw_fetches`` row ``raw_fetch_id`` lists ``code`` among its report codes
+    (feature 044, P7 SEC-001): a row derived from a fetch may only carry a code that fetch names,
+    so :func:`fetch_visible_clause` covers it. NULL ``code`` is false. Postgres only (JSONB
+    ``?``, the GIN index): knowledge search runs only there."""
+    row = aliased(RawFetch, name="code_fetch")
+    return exists().where(row.query_key == raw_fetch_id, row.report_codes.op("?")(code))
+
+
 ProbeOutcome = Literal["hit", "miss", "not_visible"]
 
 

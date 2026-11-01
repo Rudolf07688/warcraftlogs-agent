@@ -182,7 +182,8 @@ async def run(maker, *, k: int = 8) -> dict[str, Any]:
     """Seed the corpus, ask every question in every mode, report recall@k and latency.
 
     Only eval sources count, in the order they ranked: other rows already in the database are
-    skipped, so use a fresh database for numbers worth comparing (quickstart.md).
+    skipped, so use a fresh database for numbers worth comparing (quickstart.md). It seeds fake
+    public reports and global guide chunks: never the app's database (the CLI refuses it).
     """
     import time
 

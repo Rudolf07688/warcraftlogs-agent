@@ -34,7 +34,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from ..config import settings
 from ..db import session as db_session
 from ..db.models import KB_DIMENSIONS, KbChatChunk, KbChunk
-from ..repositories.raw_fetches import fetch_visible_clause
+from ..repositories.raw_fetches import fetch_names_code, fetch_visible_clause
 from ..services.name_resolver import ClassSpec, spec_pairs
 from ..tenancy.context import set_scope
 from .embedder import Embedder
@@ -216,6 +216,9 @@ def _chunk_where(kind: Kind, filters: SearchFilters, tenant_id: uuid.UUID, since
     where = [
         KbChunk.kind == "wcl",
         fetch_visible_clause(KbChunk.raw_fetch_id, tenant_id=tenant_id, since=since),
+        # The chunk's own code must be one its fetch names, or it would ride on that fetch's
+        # visibility (P7 SEC-001).
+        fetch_names_code(KbChunk.raw_fetch_id, KbChunk.report_code),
         *_class_spec(filters, KbChunk.class_name, KbChunk.spec, KbChunk.players),
         *_dates(filters, KbChunk.start_time),
     ]

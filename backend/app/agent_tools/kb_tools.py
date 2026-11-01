@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -56,12 +57,20 @@ class _BadArgument(ValueError):
     """A correctable argument error; the text is shown to the agent."""
 
 
+def _printable(value: str) -> bool:
+    """No control characters (NUL included) and no lone surrogates (P7 SEC-003): Postgres
+    rejects them, and the failed statement would log the text."""
+    return not any(unicodedata.category(c) in ("Cc", "Cs") for c in value)
+
+
 def _queries(queries: list[str]) -> tuple[str, ...]:
     if not isinstance(queries, list) or not 1 <= len(queries) <= kb_search.MAX_QUERIES:
         raise _BadArgument(f"Pass 1 to {kb_search.MAX_QUERIES} queries.")
     cleaned: list[str] = []
     for query in queries:
-        text = " ".join(str(query).split())
+        if not isinstance(query, str) or not _printable(query.replace("\n", " ").replace("\t", " ")):
+            raise _BadArgument("Queries must be plain text without control characters.")
+        text = " ".join(query.split())
         if not any(c.isalnum() for c in text) or len(text) > kb_search.MAX_QUERY_CHARS:
             raise _BadArgument(
                 f"Each query needs words and at most {kb_search.MAX_QUERY_CHARS} characters."
@@ -117,8 +126,12 @@ async def _request(
     if report_code is not None and not (isinstance(report_code, str) and _REPORT_CODE.fullmatch(report_code)):
         raise _BadArgument("report_code is the report's letters and digits only.")
     for name, value in (("encounter", encounter), ("character", character)):
-        if value is not None and (not isinstance(value, str) or len(value) > _MAX_NAME_CHARS):
-            raise _BadArgument(f"{name} must be a name of at most {_MAX_NAME_CHARS} characters.")
+        if value is not None and (
+            not isinstance(value, str) or len(value) > _MAX_NAME_CHARS or not _printable(value)
+        ):
+            raise _BadArgument(
+                f"{name} must be a plain name of at most {_MAX_NAME_CHARS} characters."
+            )
     lower = _date(since, "since") if since else None
     upper = _until(until) if until else None
     if lower and upper and lower >= upper:

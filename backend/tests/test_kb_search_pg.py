@@ -340,3 +340,18 @@ async def test_stopwords_do_not_match_every_wcl_chunk(pg, tenants):
     assert hits.hits == []
     found = await search(a, f"the {code}", embedder=None, kind="wcl", report_code=code)
     assert code in codes_of(found)
+
+
+async def test_a_chunk_whose_code_its_fetch_does_not_name_is_invisible(pg, tenants):
+    """P7 SEC-001 (independent pass): a chunk may not ride on another report's visibility."""
+    a, _ = tenants
+    public, private = fresh(), fresh()
+    await set_status(pg, public, "public")
+    await set_status(pg, private, "private")
+    key = await add_fetch(pg, [public])
+    await add_wcl(pg, key, private, f"Smuggled {private} text under {public}")
+    await add_wcl(pg, key, None, f"Codeless {public} chunk")  # type: ignore[arg-type]
+    await add_wcl(pg, key, public, f"Honest {public} chunk")
+    result = await search(a, f"Smuggled Codeless Honest {public} {private}", kind="wcl", k=15)
+    assert codes_of(result) & {public, private, None} == {public}
+    assert all("Smuggled" not in h.text and "Codeless" not in h.text for h in result.hits)

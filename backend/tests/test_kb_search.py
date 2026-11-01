@@ -369,6 +369,14 @@ async def test_resolves_filters_into_canonical_values(identity, fake_search, pat
         ({"report_code": 12345}, "report_code"),
         ({"encounter": "x" * 101}, "at most 100"),
         ({"character": "y" * 101}, "at most 100"),
+        # P7 SEC-003: control characters and lone surrogates never reach Postgres
+        ({"queries": ["arms\x00opener"]}, "control characters"),
+        ({"queries": ["arms\x07opener"]}, "control characters"),
+        ({"queries": ["arms \ud800 opener"]}, "control characters"),
+        ({"encounter": "ula\x00tek"}, "plain name"),
+        ({"encounter": "ula\udfff"}, "plain name"),
+        ({"character": "Vag\x1bxsu"}, "plain name"),
+        ({"character": "Vag\ud83dxsu"}, "plain name"),
     ],
 )
 async def test_bad_arguments_are_correctable_errors(identity, fake_search, patched_db, kwargs, message):
@@ -427,3 +435,25 @@ async def test_unicode_digits_are_not_encounter_ids(session, tenant_id, monkeypa
     monkeypatch.setattr(nr, "load_world_zones", zones)
     with pytest.raises(nr.ResolutionError):
         await nr.resolve_encounter("\u0663", session=session, tenant_id=tenant_id)  # Arabic-Indic 3
+
+
+async def test_newlines_and_tabs_in_queries_are_whitespace(identity, fake_search, patched_db):
+    result = await search_knowledge(["arms\nopener\tglyphs"], _ctx())
+    assert result["status"] == "success" and fake_search[0].queries == ("arms opener glyphs",)
+
+
+def test_eval_cli_refuses_the_apps_database(monkeypatch):
+    from backend.app.config import settings
+    from backend.evals.kb.__main__ import _parser, refuse_app_database
+
+    monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://wcl_app:x@db:5432/wcl")
+    monkeypatch.setattr(settings, "database_owner_url", "postgresql+asyncpg://wcl:y@db:5432/wcl")
+    assert refuse_app_database("postgresql+asyncpg://other:z@db/wcl")  # same DB, other role
+    assert refuse_app_database("postgresql://wcl@db:5432/wcl")
+    assert refuse_app_database("postgresql+asyncpg://wcl_app:x@localhost:15444/wcl") is None
+    assert refuse_app_database("postgresql+asyncpg://wcl_app:x@db:5432/kbeval") is None
+    with pytest.raises(SystemExit):  # run and live need an explicit --db
+        _parser().parse_args(["run"])
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["live"])
+    assert _parser().parse_args(["record"]).cmd == "record"
