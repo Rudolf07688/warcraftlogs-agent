@@ -139,6 +139,10 @@ standalone page for the owner: no network requests, light and dark tokens, reada
 - the key decisions with their reasons
 - the risks, and what you'd drop first
 
+In everything the owner reads (this plan, the sprint review, questions, your final report), name
+each ticket by a short plain name, with the id in brackets if at all: "big-report prompt blow-up
+(sc-334)", never a bare "sc-334" (owner preference 23).
+
 Post a `notice` with the path. **Start delivery straight away.** The owner reads the plan
 but doesn't approve it.
 

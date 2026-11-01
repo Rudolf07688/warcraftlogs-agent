@@ -67,6 +67,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   `tail -n0 -F .git/team-board/<board>.jsonl | python3 -u .claude/team/boardwatch.py`
   (handoff, merge, escalation) and a 30-minute timeout, and re-arm on expiry; the expiry is
   the heartbeat. Don't relay idle notifications.
+- **Name tickets for the owner (preference 23):** a short plain name, id in brackets at most,
+  never a bare `sc-NNN`.
 - **The merger wakes itself.** The product owner and scrum master arm
   `board.py wait --kind handoff --author <dev>` in the background after each launch (tested
   2026-11-01: a sub-agent's own background job re-invokes it within seconds). Expect their
