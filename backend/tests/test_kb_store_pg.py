@@ -209,3 +209,120 @@ async def test_an_unscoped_chat_chunk_insert_is_refused(pg, tenants):
         db.add(chat_chunk(a, conv))
         with pytest.raises(DBAPIError, match="row-level security"):
             await db.commit()
+
+
+async def test_backfill_iterator_reads_keys_and_bodies_on_postgres(pg):
+    from backend.app.repositories.raw_fetches import list_fetch_keys, load_fetch_for_index
+
+    code = fresh()
+    key = await add_fetch(pg, code)
+    async with pg() as db:
+        keys = await list_fetch_keys(db, after=key[:-1], limit=5, summaries=False)
+        row = await load_fetch_for_index(db, key)
+    assert key in keys
+    assert row.report_codes == [code] and row.body.startswith(b"{")
+
+
+async def test_a_foreign_conversation_fails_on_the_fk_even_when_its_seq_is_taken(pg, tenants):
+    """P7 SEC-001: the unique key leads with the tenant, so B learns nothing about A's chat."""
+    a, b = tenants
+    conv = await add_conversation(pg, a)
+    async with pg() as db:
+        await set_scope(db, tenant_id=a)
+        db.add(chat_chunk(a, conv, seq=2))
+        await db.commit()
+    async with pg() as db:
+        await set_scope(db, tenant_id=b)
+        db.add(chat_chunk(b, conv, seq=2))
+        with pytest.raises(IntegrityError, match="fk_kb_chat_chunks_conversation"):
+            await db.commit()
+
+
+@pytest.mark.parametrize("move", ["tenant", "conversation"])
+async def test_an_update_cannot_move_a_chat_chunk_to_another_workspace(pg, tenants, move):
+    """P7 (f): neither the tenant id nor the conversation can be rewritten across workspaces."""
+    a, b = tenants
+    conv_a, conv_b = await add_conversation(pg, a), await add_conversation(pg, b)
+    async with pg() as db:
+        await set_scope(db, tenant_id=a)
+        db.add(chat_chunk(a, conv_a))
+        await db.commit()
+    values = {"tenant_id": b} if move == "tenant" else {"conversation_id": conv_b}
+    async with pg() as db:
+        await set_scope(db, tenant_id=a)
+        with pytest.raises((DBAPIError, IntegrityError)):
+            await db.execute(sa.update(KbChatChunk).where(KbChatChunk.conversation_id == conv_a).values(**values))
+            await db.commit()
+    assert await count(pg, KbChatChunk, KbChatChunk.conversation_id == conv_a, tenant=a) == 1
+
+
+async def test_deleting_a_workspace_deletes_its_chat_chunks(pg):
+    async with pg() as db:
+        tenant = (await tenants_repo.create_tenant(db, name="kb-043-gone")).id
+        await db.commit()
+    conv = await add_conversation(pg, tenant)
+    async with pg() as db:
+        await set_scope(db, tenant_id=tenant)
+        db.add(chat_chunk(tenant, conv))
+        await db.commit()
+    async with pg() as db:
+        await db.execute(sa.text("DELETE FROM tenants WHERE id = :t"), {"t": tenant})
+        await db.commit()
+    assert await count(pg, KbChatChunk, KbChatChunk.tenant_id == tenant, tenant=tenant) == 0
+
+
+# --- the indexer through the 039 writer (sc-112 AC7) ------------------------------------------
+
+
+class _Unit:
+    model = "fake-embed"
+
+    async def embed(self, texts, *, task):
+        return [unit(0) for _ in texts]
+
+
+def summary_fetched(code: str):
+    import json as _json
+
+    from wcl_agent.client.queries import REPORT_SUMMARY
+    from wcl_agent.client.wcl_client import FetchedResponse, _flight_key
+
+    report = {"code": code, "visibility": "public", "title": "t", "startTime": 1_760_000_000_000,
+              "masterData": {"actors": []},
+              "fights": [{"id": 1, "name": "Boss", "encounterID": 3001, "difficulty": 4, "kill": True}]}
+    body = _json.dumps({"data": {"reportData": {"report": report}}}).encode()
+    return FetchedResponse(_flight_key(REPORT_SUMMARY, {"code": code}), REPORT_SUMMARY, {"code": code}, body, NOW)
+
+
+@pytest.fixture
+async def app_db(pg, monkeypatch):
+    from backend.app.db import session as db_session
+    from backend.app.kb.embedder import set_embedder
+
+    monkeypatch.setattr(db_session, "SessionLocal", pg)
+    set_embedder(_Unit())
+    yield pg
+    set_embedder(None)
+
+
+async def test_a_stored_fetch_is_indexed_and_a_gone_report_takes_its_chunks(app_db):
+    from backend.app.kb.indexer import KbIndexer
+    from backend.app.services.fetch_persistence import PendingWrite, store_batch
+    from wcl_agent.client.wcl_client import ReportGone
+
+    code = fresh()
+    fetched = summary_fetched(code)
+    result = await store_batch([PendingWrite(fetched, None)])
+    assert result.changed == [fetched]
+    await KbIndexer(max_items=5, batch=8, sweep_s=600).handle(fetched)
+    assert await count(app_db, KbChunk, KbChunk.report_code == code, KbChunk.embedding.is_not(None)) == 1
+    await store_batch([PendingWrite(ReportGone((code,), NOW), None)])
+    assert await count(app_db, KbChunk, KbChunk.report_code == code) == 0
+
+
+async def test_an_index_job_for_a_fetch_that_is_already_gone_writes_nothing(app_db):
+    from backend.app.kb.indexer import KbIndexer
+
+    fetched = summary_fetched(fresh())  # never stored: the FK refuses its chunks
+    await KbIndexer(max_items=5, batch=8, sweep_s=600).handle(fetched)
+    assert await count(app_db, KbChunk, KbChunk.raw_fetch_id == fetched.query_key) == 0

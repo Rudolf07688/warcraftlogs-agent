@@ -52,6 +52,7 @@ from wcl_agent.client.wcl_client import (
 )
 
 from ..db import session as db_session
+from ..kb import indexer as kb_indexer
 from ..repositories.raw_fetches import (
     GRANT_REFRESH,
     ReportStatus,
@@ -214,12 +215,15 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
 
 async def store_batch(batch: Sequence[PendingWrite]) -> BatchResult:
     """Write queued items in one transaction. The gone reports' Redis keys are evicted by the
-    writer after this timed DB part (041 fix 3)."""
+    writer after this timed DB part (041 fix 3). After the commit, each item whose stored payload
+    changed goes to the knowledge base indexer (043; only enqueued, a no-op without one)."""
     result, txn = BatchResult(), _Txn()
     async with db_session.SessionLocal() as session:
         for pending in batch:
             await _store_one(session, pending, txn, result)
         await session.commit()
+    for item in result.changed:
+        kb_indexer.offer_fetch(item)
     return result
 
 
