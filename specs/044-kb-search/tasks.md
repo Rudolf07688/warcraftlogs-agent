@@ -6,7 +6,7 @@ Stories: US1 = sc-304, US2 = sc-114, US3 = sc-115.
 
 ## Phase 1: Setup
 
-- [ ] T001 Write `specs/044-kb-search/checkpoint.md` (decisions, files, where implementation starts) and confirm the SQLite baseline count with `env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q`
+- [X] T001 Write `specs/044-kb-search/checkpoint.md` (decisions, files, where implementation starts) and confirm the SQLite baseline count with `env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q`
 
 ## Phase 2: Foundational
 
@@ -18,9 +18,9 @@ None: no shared infrastructure beyond the stories (no migration; 043 owns the sc
 character, with `name_key` and a typed `ResolutionError`.
 **Independent test**: `pytest backend/tests/test_name_resolver.py`.
 
-- [ ] T002 [US1] Write tests first in `backend/tests/test_name_resolver.py`: `name_key` (accents, apostrophes, case, hyphens, spaces); one test per abbreviation `warr, dh, dk, ret, prot, resto, disc, bm, mm, sv`; "arms warr"/"warrior arms"/"bm hunter"/"beast mastery hunter" phrases; "prot" ambiguous in `resolve_class_spec`, both pairs in `spec_pairs`; class+spec mismatch error; difficulty names/abbreviations/ids incl. Mythic+; encounter "Ula'tek"/"ulatek"/"ULATEK" same id via patched `load_world_zones`, "heroic ulatek" returns difficulty 4, typo gives close matches, ambiguous across ids, zone list failure falls back to `known_encounters`; character from own/friend/known player, "Name-Realm" disambiguation, another tenant's rows never used; every error carries field/value/reason/matches
-- [ ] T003 [US1] Implement `backend/app/services/name_resolver.py` per `contracts/name-resolver.md`: `name_key`, `ResolutionError`, `ClassSpec`, `ResolvedEncounter`, `ResolvedDifficulty`, `ResolvedCharacter`, alias tables checked against `roster_snapshot()`, `resolve_class`, `resolve_class_spec`, `spec_pairs`, `resolve_difficulty` (reusing `_DIFFICULTY_NAMES` and `MYTHIC_PLUS_DIFFICULTY_ID`), async `resolve_encounter` (zone list + `known_encounters`), async `resolve_character` (`user_characters` + `known_players`, explicit tenant predicate)
-- [ ] T004 [US1] Run the resolver tests + full SQLite suite; mutation-check two tests (drop the accent strip; drop the tenant predicate) and confirm they fail; GitNexus `detect-changes`; commit; post `backlog:difficulty-names` and `backlog:find-encounter-resolver`; return the stop-3 hand-off
+- [X] T002 [US1] Write tests first in `backend/tests/test_name_resolver.py`: `name_key` (accents, apostrophes, case, hyphens, spaces); one test per abbreviation `warr, dh, dk, ret, prot, resto, disc, bm, mm, sv`; "arms warr"/"warrior arms"/"bm hunter"/"beast mastery hunter" phrases; "prot" ambiguous in `resolve_class_spec`, both pairs in `spec_pairs`; class+spec mismatch error; difficulty names/abbreviations/ids incl. Mythic+; encounter "Ula'tek"/"ulatek"/"ULATEK" same id via patched `load_world_zones`, "heroic ulatek" returns difficulty 4, typo gives close matches, ambiguous across ids, zone list failure falls back to `known_encounters`; character from own/friend/known player, "Name-Realm" disambiguation, another tenant's rows never used; every error carries field/value/reason/matches
+- [X] T003 [US1] Implement `backend/app/services/name_resolver.py` per `contracts/name-resolver.md`: `name_key`, `ResolutionError`, `ClassSpec`, `ResolvedEncounter`, `ResolvedDifficulty`, `ResolvedCharacter`, alias tables checked against `roster_snapshot()`, `resolve_class`, `resolve_class_spec`, `spec_pairs`, `resolve_difficulty` (reusing `_DIFFICULTY_NAMES` and `MYTHIC_PLUS_DIFFICULTY_ID`), async `resolve_encounter` (zone list + `known_encounters`), async `resolve_character` (`user_characters` + `known_players`, explicit tenant predicate)
+- [X] T004 [US1] Run the resolver tests + full SQLite suite; mutation-check two tests (drop the accent strip; drop the tenant predicate) and confirm they fail; GitNexus `detect-changes`; commit; post `backlog:difficulty-names` and `backlog:find-encounter-resolver`; return the stop-3 hand-off
 
 ## Phase 4: US2 — parallel hybrid search tool (sc-114, P1)
 
