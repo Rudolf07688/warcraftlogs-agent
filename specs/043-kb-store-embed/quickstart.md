@@ -9,11 +9,14 @@ env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q
 ## 2. Postgres tests (pgvector image, migration 0019, RLS, cascades)
 
 Throwaway container on port 15443 (never `docker compose`, never 5432). The image is
-`pgvector/pgvector:pg17`, which replaces `postgres:17` in every recipe from now on.
+`pgvector/pgvector:pg17-trixie`, which replaces `postgres:17` in every recipe from now on. Use the
+`-trixie` tag: plain `pg17` is Debian 12 (glibc 2.36) while `postgres:17` is Debian 13 (glibc
+2.41), and a database created under one and opened under the other warns about a collation
+version mismatch (text indexes may sort differently).
 
 ```bash
 docker run -d --rm --name wcl-043-pg -e POSTGRES_USER=wcl -e POSTGRES_PASSWORD=wcl \
-  -e POSTGRES_DB=wcl -p 15443:5432 pgvector/pgvector:pg17
+  -e POSTGRES_DB=wcl -p 15443:5432 pgvector/pgvector:pg17-trixie
 env -i HOME=$HOME PATH=$PATH APP_DB_USER=wcl_app APP_DB_PASSWORD=wcl_app \
 BOOTSTRAP_ADMIN_EMAIL=founder@example.com BOOTSTRAP_ADMIN_PASSWORD=throwaway-founder-pass \
 DATABASE_OWNER_URL=postgresql+asyncpg://wcl:wcl@localhost:15443/wcl \
@@ -40,7 +43,7 @@ docker exec wcl-043-old psql -U wcl -d wcl -c "CREATE TABLE marker(v text); INSE
 docker stop wcl-043-old
 docker run --rm -v wcl-043-old:/from -v wcl-043-copy:/to alpine sh -c 'cp -a /from/. /to'
 docker run -d --rm --name wcl-043-new -e POSTGRES_USER=wcl -e POSTGRES_PASSWORD=wcl \
-  -e POSTGRES_DB=wcl -v wcl-043-copy:/var/lib/postgresql/data pgvector/pgvector:pg17
+  -e POSTGRES_DB=wcl -v wcl-043-copy:/var/lib/postgresql/data pgvector/pgvector:pg17-trixie
 docker exec wcl-043-new psql -U wcl -d wcl -c "SELECT v FROM marker; CREATE EXTENSION vector; SELECT extversion FROM pg_extension WHERE extname='vector';"
 docker stop wcl-043-new && docker volume rm wcl-043-old wcl-043-copy
 ```

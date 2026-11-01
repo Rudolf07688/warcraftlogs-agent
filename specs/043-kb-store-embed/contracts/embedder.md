@@ -16,12 +16,14 @@ def set_embedder(embedder: Embedder | None) -> None   # test injection (None cle
 def normalise(vector: Sequence[float]) -> list[float]  # L2; a zero vector is returned as is
 ```
 
-- `get_embedder()` order: the injected embedder, else `None` when `kb_embed_enabled` is off or
-  the genai client can't be built, else one cached `VertexEmbedder(settings.kb_embed_model)`.
-  Until `config.py` is granted (sc-112) the model defaults to `gemini-embedding-001` and
-  "enabled" means "a genai client can be built".
-- `VertexEmbedder.embed` sends at most `kb_embed_request_batch` texts per request with
+- **sc-111 milestone (shipped):** the protocol, `normalise`, `set_embedder`, and `get_embedder()`
+  returning the injected embedder or `None`.
+- **sc-112:** `get_embedder()` order becomes: the injected embedder, else `None` when
+  `kb_embed_enabled` is off or `generation.embeddings_available()` is false, else one cached
+  `VertexEmbedder(settings.kb_embed_model)`. `VertexEmbedder.embed` sends at most
+  `kb_embed_request_batch` texts per request through `wcl_agent.llm.generation.embed_texts`
+  (provider layer: only it may build model clients, `test_provider_e2e`), with
   `output_dimensionality=768`, `auto_truncate=True` and the task type, through the shared
-  rate-limit loop; raises `ModelRateLimited` or the SDK error when it gives up. It checks each
-  returned vector has 768 values.
+  rate-limit loop; raises `ModelRateLimited` or the SDK error when it gives up; checks each
+  vector has 768 values and normalises it.
 - Callers never pass an empty list (returns `[]` without a call).

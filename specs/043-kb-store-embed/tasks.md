@@ -6,8 +6,8 @@ US1 = sc-111, US2 = sc-112, US3 = sc-305, US4 = sc-113. Commit per story.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add the `pgvector` dependency with `uv add pgvector` (updates `pyproject.toml`, `uv.lock`); run the SQLite suite once for the "before" count
-- [ ] T002 Switch the `db` service image to `pgvector/pgvector:pg17` in `docker-compose.yml`
+- [X] T001 Add the `pgvector` dependency with `uv add pgvector` (updates `pyproject.toml`, `uv.lock`); run the SQLite suite once for the "before" count
+- [X] T002 Switch the `db` service image to `pgvector/pgvector:pg17-trixie` (matches postgres:17's glibc) in `docker-compose.yml`
 
 ## Phase 2: Foundational
 
@@ -18,13 +18,13 @@ US1 = sc-111, US2 = sc-112, US3 = sc-305, US4 = sc-113. Commit per story.
 **Goal**: pgvector image, migration 0019 with `kb_chunks` + `kb_chat_chunks`, models, embedder contract.
 **Independent test**: SQLite schema builds; on the container, 0019 up/down/up, RLS and cascades hold as the runtime role.
 
-- [ ] T003 [US1] Add `KbChunk`, `KbChatChunk` (columns, CHECK, unique keys, indexes per data-model.md), the tsvector `@compiles` expression (Postgres `to_tsvector`, SQLite `NULL`) and `UniqueConstraint("id", "tenant_id", name="uq_conversations_id_tenant")` on `Conversation` in `backend/app/db/models.py`
-- [ ] T004 [US1] Write migration `backend/migrations/versions/0019_kb_chunks.py` (`down_revision = "0018_raw_store_visibility"`): extension + version check ≥ 0.8, conversations unique, both tables, indexes (HNSW cosine, GIN tsv/extra/players/characters, B-trees), RLS enable+force+`tenant_isolation` on `kb_chat_chunks`, grants; downgrade in reverse; Postgres only
-- [ ] T005 [P] [US1] Create `backend/app/kb/__init__.py` and `backend/app/kb/embedder.py` per contracts/embedder.md (`EmbedTask`, `DIMENSIONS`, `Embedder`, `normalise`, `VertexEmbedder` over `provider.genai_client()` + `generation._with_retry`, `get_embedder`, `set_embedder`)
-- [ ] T006 [P] [US1] SQLite tests in `backend/tests/test_kb_store.py`: schema builds, a wcl and a guide chunk round-trip (vector value too), the kind/source CHECK and unique `(raw_fetch_id, chunk_key)` refuse bad rows
-- [ ] T007 [P] [US1] Embedder tests in `backend/tests/test_kb_embed.py`: unit norm, injection and clearing, `get_embedder()` is None without a client, `VertexEmbedder` with a fake genai client (task type, 768 dims, per-request batching, a wrong dimension raises, a 429 is retried through the shared loop)
-- [ ] T008 [US1] Postgres tests in `backend/tests/test_kb_store_pg.py` (skipped without `TEST_DATABASE_URL`): extension ≥ 0.8; tsv config per kind; an HNSW-ordered query runs; deleting a raw fetch, a guide and a conversation deletes their chunks; workspace B reads none of A's chat chunks, can't insert one with A's tenant id, can't insert one naming A's conversation under its own tenant id, and an unscoped insert is refused
-- [ ] T009 [US1] On `wcl-043-pg` (port 15443): `init_db`, run T008 + `test_rls.py` + `test_raw_store_pg.py`, 0019 down/up/down/up; old-volume copy proof (quickstart §3); record results in `specs/043-kb-store-embed/quickstart.md`; stop the container
+- [X] T003 [US1] Add `KbChunk`, `KbChatChunk` (columns, CHECK, unique keys, indexes per data-model.md), the tsvector `@compiles` expression (Postgres `to_tsvector`, SQLite `NULL`) and `UniqueConstraint("id", "tenant_id", name="uq_conversations_id_tenant")` on `Conversation` in `backend/app/db/models.py`
+- [X] T004 [US1] Write migration `backend/migrations/versions/0019_kb_chunks.py` (`down_revision = "0018_raw_store_visibility"`): extension + version check ≥ 0.8, conversations unique, both tables, indexes (HNSW cosine, GIN tsv/extra/players/characters, B-trees), RLS enable+force+`tenant_isolation` on `kb_chat_chunks`, grants; downgrade in reverse; Postgres only
+- [X] T005 [P] [US1] Create `backend/app/kb/__init__.py` and `backend/app/kb/embedder.py` per contracts/embedder.md (`EmbedTask`, `DIMENSIONS`, `Embedder`, `normalise`, `get_embedder`, `set_embedder`; the Vertex implementation moves to T019a)
+- [X] T006 [P] [US1] SQLite tests in `backend/tests/test_kb_store.py`: schema builds, a wcl and a guide chunk round-trip (vector value too), the kind/source CHECK and unique `(raw_fetch_id, chunk_key)` refuse bad rows
+- [X] T007 [P] [US1] Embedder contract tests in `backend/tests/test_kb_embed.py`: unit norm, injection and clearing, `get_embedder()` None without one
+- [X] T008 [US1] Postgres tests in `backend/tests/test_kb_store_pg.py` (skipped without `TEST_DATABASE_URL`): extension ≥ 0.8; tsv config per kind; an HNSW-ordered query runs; deleting a raw fetch, a guide and a conversation deletes their chunks; workspace B reads none of A's chat chunks, can't insert one with A's tenant id, can't insert one naming A's conversation under its own tenant id, and an unscoped insert is refused
+- [X] T009 [US1] On `wcl-043-pg` (port 15443): `init_db`, run T008 + `test_rls.py` + `test_raw_store_pg.py`, 0019 down/up/down/up; old-volume copy proof (quickstart §3); record results in `specs/043-kb-store-embed/quickstart.md`; stop the container
 - [ ] T010 [US1] Detect-changes, ownership check, commit; post `skill:` notice for the image change; **Stop 3** hand-off for the milestone
 
 ## Phase 4: User Story 2 - Embed WCL fetches and guides on write (sc-112, P1)
@@ -43,6 +43,7 @@ Own files first (no waiting):
 - [ ] T017 [P] [US2] `backend/tests/test_kb_chunk_wcl.py`: design-format summary text + filters, batch summary, table top-N + per-player chunks + bounds, source-filtered table, fight context copied, unknown shapes / no report code → none, backfill inference (Summary/Deaths/Auras yes, plain entries no)
 - [ ] T018 [P] [US2] `backend/tests/test_kb_chunk_guide.py`: one chunk per section with the labels in the text; republish with fewer sections leaves no stale chunk (through `replace_source_chunks`)
 - [ ] T019 [US2] Extend `backend/tests/test_kb_embed.py`: indexer embeds pending rows (unit norm stored, model + time); unchanged hash → zero embed calls on re-index; failing embedder → NULL rows, no exception to the offerer, sweep embeds them later; changed text mid-embed → stale vector not stored; full queue drops and counts; `offer_*` without an indexer is a no-op; CI never builds a Vertex client (fake injected)
+- [ ] T019a [US2] (grant: `wcl_agent/llm/generation.py`) `embed_texts` + `embeddings_available` in the provider layer; `VertexEmbedder` in `backend/app/kb/embedder.py` (batching, 768-d check, normalise); tests with a fake genai client in `backend/tests/test_kb_embed.py` (task type, dims, batching, wrong dimension raises, 429 retried through the shared loop, `get_embedder` None without credentials)
 - [ ] T020 [US2] (after 045 part 1 merges: rebase) KB settings in `backend/app/config.py` (`kb_index_enabled`, `kb_embed_enabled`, `kb_embed_model`, `kb_index_queue_max`, `kb_embed_batch`, `kb_embed_request_batch`, `kb_embed_sweep_s`, `kb_embed_price_per_mtok`); point `kb_settings()` at them
 - [ ] T021 [US2] (after 045 part 1) post-commit `offer_fetch` for each `BatchResult.changed` item in `backend/app/services/fetch_persistence.py`; writer test for the offer in `backend/tests/test_kb_embed.py`; Postgres cascade-through-writer test (fetch deleted by ReportGone / private summary loses its chunks) in `backend/tests/test_kb_store_pg.py`
 - [ ] T022 [US2] (Gate-2 grant) `offer_guide(GuideJob(...))` after the publish commit in `_run` of `backend/app/services/guide_pipeline/__init__.py`; test that a published run offers and a held run doesn't in `backend/tests/test_kb_chunk_guide.py`

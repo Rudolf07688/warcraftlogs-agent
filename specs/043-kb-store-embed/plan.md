@@ -87,8 +87,7 @@ specs/043-kb-store-embed/
   `Conversation` unique constraint)
 - `backend/app/kb/__init__.py`, `backend/app/kb/embedder.py` (new; contract 2)
 - `backend/tests/test_kb_store.py` (SQLite: schema builds, constraints, model round trip),
-  `backend/tests/test_kb_embed.py` (embedder: normalise, injection, `get_embedder` None,
-  Vertex embedder against a fake client), `backend/tests/test_kb_store_pg.py` (new; Postgres:
+  `backend/tests/test_kb_embed.py` (embedder contract: normalise, injection, `get_embedder` None), `backend/tests/test_kb_store_pg.py` (new; Postgres:
   extension ≥ 0.8, columns/indexes, HNSW + tsv work, cascades, chat RLS read/insert/foreign
   conversation/no scope)
 - `specs/043-kb-store-embed/**`
@@ -125,7 +124,10 @@ specs/043-kb-store-embed/
 - **sequenced**: `backend/app/repositories/raw_fetches.py` (`list_fetch_keys`,
   `load_fetch_for_index`; released straight after the commit)
 
-Not touched: `wcl_agent/llm/**` (reused as is), `backend/app/repositories/raw_fetches.py`
+- **grant requested (found at sc-111)**: `wcl_agent/llm/generation.py` (`embed_texts`,
+  `embeddings_available`: only the provider layer may call model clients, `test_provider_e2e`)
+
+Not touched: `backend/app/repositories/raw_fetches.py`
 upsert (Tomas, contract 5), `backend/app/db/repository.py`, `conftest.py`, `kb/search.py`.
 
 **Structure Decision**: a new backend package `backend/app/kb/` holds everything KB-specific

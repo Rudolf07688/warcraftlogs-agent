@@ -61,9 +61,11 @@ SM's Gate 1 notes (#44, #45) are binding here.
 - **`get_embedder()`**: the injected embedder when one is set (tests), else `None` when
   `kb_embed_enabled` is off or the client can't be built (no credentials), else a cached
   `VertexEmbedder(settings.kb_embed_model)`. Never raises.
-- **No change in `wcl_agent/llm`** (no Gate-2 grant needed there): reuse `provider.genai_client`
-  and `generation._with_retry` (private import, precedent: `raw_fetches` imports
-  `wcl_client._COST_RE`).
+- **Provider layer (corrected at sc-111):** `test_provider_e2e` allows only `provider.py` and
+  `generation.py` to build or call model clients. So the SDK call goes into
+  `wcl_agent/llm/generation.py` as `embed_texts(model, texts, *, task, dimensions, policy)` (raw
+  vectors, one request, through `_with_retry`) plus `embeddings_available()`; `kb/embedder.py`
+  keeps batching, dimension checks and normalisation. Grant requested for sc-112.
 - **Alternatives**: `text-embedding-005` (sc-115 may switch; `embed_model` per row makes that a
   re-embed); SDK retries (off project-wide, feature 011).
 
