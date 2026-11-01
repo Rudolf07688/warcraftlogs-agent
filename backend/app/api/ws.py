@@ -394,21 +394,7 @@ async def _handle_turn(
         scratch.cleanup()
 
     final_text = "".join(tokens) or "(no response)"
-    async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
-        agent_msg = await repo.add_message(
-            session, conv_id, "agent", final_text, tenant_id=tenant_id
-        )
-        # US2/US5: link this turn's captures (artifacts + graphs) to the agent message
-        # so per-message reports and reload-time rendering can scope them correctly.
-        await repo.assign_message_seq_to_turn_captures(
-            session, conv_id, agent_msg.seq, tenant_id=tenant_id
-        )
-        # Feature 031: this turn's confirmation cards belong under this answer too.
-        await proposal_rows.set_message_seq(
-            session, proposal_ids, agent_msg.seq, tenant_id=tenant_id, user_id=identity.user_id
-        )
-        agent_msg_id = agent_msg.id
-        agent_seq = agent_msg.seq
+    agent_msg_id, agent_seq = await _save_answer(identity, conv_id, final_text, proposal_ids)
 
     # Feature 043: the saved exchange becomes a workspace chat chunk in the background (enqueue
     # only). Only the streamed answer goes in: tool results never reach ``tokens``.
@@ -458,6 +444,34 @@ async def _start_turn(
     """Start a turn on this socket: drop the previous turn's pending suggestions first."""
     sock.cancel_suggestions()
     sock.suggestions = await _handle_turn(sock, turn, identity, fallback_model=fallback_model)
+
+
+async def _save_answer(
+    identity: RequestIdentity, conv_id: uuid.UUID, final_text: str, proposal_ids: list[uuid.UUID]
+) -> tuple[uuid.UUID, int]:
+    """Save the turn's answer and link its captures and cards to it; returns (id, seq)."""
+    tenant_id = identity.tenant_id
+    async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
+        # Lock this turn's cards before add_message locks the conversation: the order a card
+        # decision takes them (approve/cancel lock the card, then save their line), so a click
+        # during this save waits instead of deadlocking (047 P7 SEC-005).
+        for proposal_id in sorted(proposal_ids):
+            await proposal_rows.get_proposal_row(
+                session, proposal_id, tenant_id=tenant_id, user_id=identity.user_id, for_update=True
+            )
+        agent_msg = await repo.add_message(
+            session, conv_id, "agent", final_text, tenant_id=tenant_id
+        )
+        # US2/US5: link this turn's captures (artifacts + graphs) to the agent message
+        # so per-message reports and reload-time rendering can scope them correctly.
+        await repo.assign_message_seq_to_turn_captures(
+            session, conv_id, agent_msg.seq, tenant_id=tenant_id
+        )
+        # Feature 031: this turn's confirmation cards belong under this answer too.
+        await proposal_rows.set_message_seq(
+            session, proposal_ids, agent_msg.seq, tenant_id=tenant_id, user_id=identity.user_id
+        )
+        return agent_msg.id, agent_msg.seq
 
 
 async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
