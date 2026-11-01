@@ -31,7 +31,7 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Open threads
 
-- 31 stories Under Review (iterations 161, 266, 290) until the owner names Done.
+- 32 stories Under Review (iterations 161, 266, 290; sc-335 included) until the owner names Done.
 - New bug sc-334 (397k-token request from truncated tables) is a good next-sprint candidate.
 
 ## How to resume
