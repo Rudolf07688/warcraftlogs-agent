@@ -72,6 +72,8 @@ Ticket IDs refer to the Shortcut "Team 1" board.
   - Also include a simple selector to select their main class
     - Also select main content (Raid / M+ or both)
     - This will start generating guides for that spec in the background.
+- Fetch character icon or "profile pic" from their battle.net or somewhere.
+  - Render it almost everywhere where the character has a space for it.
 
 ## QA Hits
 Medium findings still open:
