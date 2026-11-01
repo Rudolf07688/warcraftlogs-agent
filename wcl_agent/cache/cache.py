@@ -430,12 +430,14 @@ _DECODE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big values are parsed o
 
 class _Load:
     """One ``get_or_load`` / ``get_many_or_load`` call. Shared by its loader's sub-tasks
-    through the copied context, so a mark set anywhere in the load is seen here."""
+    through the copied context, so a mark set anywhere in the load is seen here. ``external``:
+    the load asked Warcraft Logs itself (:func:`note_external_call`; 047 sc-326)."""
 
-    __slots__ = ("unshareable",)
+    __slots__ = ("unshareable", "external")
 
     def __init__(self) -> None:
         self.unshareable = False
+        self.external = False
 
 
 _current_load: ContextVar[_Load | None] = ContextVar("wcl_cache_load", default=None)
@@ -541,6 +543,8 @@ async def get_or_load(
         value = await _shared(family, key, model, loader, ttl, force_refresh)
     finally:
         _current_load.reset(token)
+    if load.external:
+        note_external_call()  # an enclosing load (a loader calling get_or_load) went external too
     if memo_s and value is not None and not load.unshareable:
         _memo_put(key, value, memo_s)
     return value
@@ -557,7 +561,9 @@ async def _shared(
     """The Redis layer, with concurrent same-process lookups of one key sharing one call.
 
     A load marked unshareable served its first caller through that caller's own grant (QA
-    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone."""
+    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone. A
+    shared load that asked Warcraft Logs counts as external for every caller that waited on it,
+    not only the first (047 sc-326)."""
     settings = cache_settings()
     if not settings.active:
         return await loader()
@@ -573,12 +579,14 @@ async def _shared(
     task = flight[0]
     flight[1] += 1
     try:
-        value, unshareable = await asyncio.shield(task)
+        value, unshareable, external = await asyncio.shield(task)
     finally:
         flight[1] -= 1
         if flight[1] == 0 and not task.done():
             _drop_flight(flights, key, task)  # a new caller starts afresh, never joins this
             task.cancel()  # every caller left: stop the load (and release its lock)
+    if external:
+        note_external_call()  # in this caller's own context: its turn and its load
     if joined and unshareable:
         return await _lookup(settings, family, key, model, loader, ttl, False)
     if joined:
@@ -593,11 +601,12 @@ async def _flight(
     model: type[M],
     loader: Callable[[], Awaitable[M | None]],
     ttl: int | Callable[[M], int] | None,
-) -> tuple[M | None, bool]:
-    """The shared load: its value, and whether the load was marked unshareable (read here, in
-    the task's context, which holds the first caller's ``_Load``)."""
+) -> tuple[M | None, bool, bool]:
+    """The shared load: its value, whether the load was marked unshareable, and whether it asked
+    Warcraft Logs (read here, in the task's context, which holds the first caller's ``_Load``)."""
     value = await _lookup(settings, family, key, model, loader, ttl, False)
-    return value, _unshareable()
+    load = _current_load.get()
+    return value, _unshareable(), load is not None and load.external
 
 
 async def _lookup(
@@ -683,7 +692,10 @@ async def _wait_for_winner(
     model: type[M],
     loader: Callable[[], Awaitable[M | None]],
 ) -> M | None:
-    """Lock loser (another process loads it): poll for its value, then load without writing (C4)."""
+    """Lock loser (another process loads it): poll for its value, then load without writing (C4).
+
+    A value the winner wrote counts as an external call for this caller: it waited on a load
+    that most likely asked Warcraft Logs, and can't tell otherwise (047 sc-326)."""
     deadline = time.monotonic() + settings.lock_wait_ms / 1000
     try:
         while (remaining := deadline - time.monotonic()) > 0:
@@ -693,6 +705,7 @@ async def _wait_for_winner(
                 valid, value = await _adecode(raw, model)
                 if valid:
                     _record(family, Outcome.NEG_HIT if value is None else Outcome.HIT)
+                    note_external_call()
                     return value
                 break
     except RedisError as exc:
@@ -1003,10 +1016,15 @@ def set_refresh_actor(user_id: str | None) -> None:
 
 
 def note_external_call() -> None:
-    """The running turn asked Warcraft Logs itself (any network call, failed ones too)."""
+    """The running turn asked Warcraft Logs itself (any network call, failed ones too), or
+    waited on a load that did. Also marks the running cache load, so a shared load passes it to
+    every caller that joined it (047 sc-326)."""
     turn = _turn.get()
     if turn is not None:
         turn.external = True
+    load = _current_load.get()
+    if load is not None:
+        load.external = True
 
 
 def get_refresh_actor() -> str | None:

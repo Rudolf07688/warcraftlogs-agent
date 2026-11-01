@@ -185,9 +185,17 @@ not visible (another workspace's grant), not stored, stale.
 - **FR-009**: A store answer carries whether every code is public. When not, the value is not
   written to the shared Redis cache or the process memo by the loading `get_or_load` /
   `get_many_or_load`.
-- **FR-010**: A ReportGone leaves a tombstone status for each code (seen time). The writer stores no
-  row and no grant for a fetch naming a tombstoned code whose request started at or before the
-  tombstone; a later successful summary replaces the tombstone.
+- **FR-010**: Every gone or private signal leaves a tombstone for each code (the time WCL said so):
+  a ReportGone (`report: null`, its seen time) and a summary that finds a report private (its fetch
+  time, 047 sc-322). The writer stores no row, status or grant for a fetch naming a tombstoned code
+  whose request started at or before the tombstone; a fetch requested later is written as usual
+  (the report came back). As built (047, owner's choice, no migration): the tombstone lives in the
+  writer's process memory (`fetch_persistence._tombstones`), per process, kept 10 minutes
+  (`TOMBSTONE_TTL`, well past the 75 s WCL query timeout plus queueing) and capped at 1024 codes
+  (`TOMBSTONE_MAX`, oldest dropped first), and lost on restart. That is accepted for the single
+  uvicorn worker the app runs (board #63): the one writer sees every signal. This supersedes the
+  `raw_reports` `gone` status in the clarification above and the "tombstones reuse `raw_reports`"
+  assumption.
 - **FR-011**: Evicting a report's Redis keys first sets a short Redis tombstone for the code; a
   report-family cache write checks it after writing and removes its own write when present.
 

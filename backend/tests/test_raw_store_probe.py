@@ -240,7 +240,7 @@ async def source(item: FetchedResponse) -> StoredFetch | None:
     return await read_stored_fetch(item.query_key, item.query, item.variables)
 
 
-async def test_a_hung_store_costs_one_timeout_then_the_breaker_skips_it(monkeypatch, clock, tenant_id):
+async def test_a_hung_store_costs_a_few_timeouts_then_the_breaker_skips_it(monkeypatch, clock, tenant_id):
     monkeypatch.setattr(raw_fetch_reads.settings, "raw_store_probe_timeout_ms", 50)
     opened = {"n": 0}
 
@@ -253,10 +253,12 @@ async def test_a_hung_store_costs_one_timeout_then_the_breaker_skips_it(monkeypa
         started = time.monotonic()
         assert await source(table("Hang1")) is None
         assert time.monotonic() - started < 0.5
+        for _ in range(raw_fetch_reads.TIMEOUTS_TO_OPEN - 1):  # 047 sc-323: N in a row open it
+            assert await source(table("Hang1")) is None
         assert await source(table("Hang1")) is None  # breaker open: no session at all
         clock.now += BREAKER_S - 1
         assert await source(table("Hang1")) is None
-    assert opened["n"] == 1
+    assert opened["n"] == raw_fetch_reads.TIMEOUTS_TO_OPEN
 
 
 async def test_after_the_breaker_one_trial_probes_and_its_success_closes_it(
@@ -356,10 +358,12 @@ async def test_every_probe_is_counted_once(patched_db, monkeypatch, tenant_id, o
     monkeypatch.setattr(raw_fetch_reads.settings, "raw_store_probe_timeout_ms", 20)
     monkeypatch.setattr(db_session, "SessionLocal", hung)
     with turn(tenant_id):
-        await source(row)  # timeout
+        for _ in range(raw_fetch_reads.TIMEOUTS_TO_OPEN):
+            await source(row)  # timeouts, the last opens the breaker (047 sc-323)
         await source(row)  # skipped by the breaker: not counted
     counts = {k[1]: v for k, v in wcl_cache._counts.items() if k[0] == wcl_cache.LOCAL_METRICS}
-    assert counts == {"store_hit": 1, "store_miss": 1, "store_not_visible": 1, "store_timeout": 1}
+    assert counts == {"store_hit": 1, "store_miss": 1, "store_not_visible": 1,
+                      "store_timeout": raw_fetch_reads.TIMEOUTS_TO_OPEN}
 
 
 # --- AC3: the probe runs inside single-flight and a lane slot -----------------------------------

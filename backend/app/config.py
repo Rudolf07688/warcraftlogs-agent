@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -22,13 +23,17 @@ from wcl_agent.llm.provider import ModelRole, role_model
 
 # Populate os.environ from a local .env so ADK / wcl_client (which use os.getenv)
 # work in local dev. Harmless in containers/Cloud Run where env is already set.
-load_dotenv()
+# WCL_LOAD_DOTENV=0 switches both this and the settings' env file off: the test suite sets it
+# before importing the app, so a checkout's .env never reaches a test (sc-336).
+LOAD_DOTENV = os.getenv("WCL_LOAD_DOTENV", "1").strip().lower() not in ("0", "false", "no")
+if LOAD_DOTENV:
+    load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env" if LOAD_DOTENV else None, extra="ignore")
 
     # Database
     # `database_url` is the **runtime** role (non-superuser, no BYPASSRLS — RLS applies).

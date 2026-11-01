@@ -74,8 +74,9 @@ _LOG_EVERY_S = 60.0
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
 BATCH_MAX = 20  # items per transaction (sc-177): one commit, bounded by the write timeout
 BATCH_MAX_BYTES = 8 * 1024 * 1024  # and body bytes per transaction (041 fix 3)
-# Gone reports this process saw (code -> when), so a fetch already under way then isn't written
-# back afterwards (045 sc-296). Kept well past the longest WCL query (75 s) plus queueing.
+# Gone or private reports this process saw (code -> when), so a fetch already under way then isn't
+# written back afterwards (045 sc-296, 047 sc-322). Per process and lost on restart (045 FR-010).
+# Kept well past the longest WCL query (75 s) plus queueing.
 TOMBSTONE_TTL = timedelta(minutes=10)
 TOMBSTONE_MAX = 1024
 _tombstones: OrderedDict[str, datetime] = OrderedDict()
@@ -172,7 +173,10 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
     scope:041:grant-rule): our summary queries grant each code whose report object came back
     with that code; any other query grants its one code only when it is plain and its body
     holds the report (:func:`returned_report_code`). A fetch requested before one of its
-    reports was seen gone writes nothing: not its row, its statuses or its grant (045 sc-296).
+    reports was seen gone or private writes nothing: not its row, its statuses or its grant (045
+    sc-296, 047 sc-322). Only the private findings of our own summaries still count when stale:
+    they are what WCL said at ``fetched_at``, so their codes are tombstoned and deleted anyway
+    (047 P7 SEC-001).
     """
     item = pending.item
     if isinstance(item, ReportGone):
@@ -181,19 +185,25 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
             await delete_report(session, code)
         result.gone.extend(item.codes)
         return
-    if _stale(item):
+    stale = _stale(item)
+    codes = exact_report_codes(item.query, item.variables) or []
+    summary = bool(codes) and _is_summary(item, codes)
+    if stale and not summary:
         logger.info("fetch persistence: skipped a fetch requested before its report was gone")
         return
-    if await upsert_raw_fetch(session, item):
+    if not stale and await upsert_raw_fetch(session, item):
         result.changed.append(item)
-    codes = exact_report_codes(item.query, item.variables) or []
-    gone: list[str] = []
-    if codes and _is_summary(item, codes):
+    if summary:
         statuses, gone = await _report_statuses(item, codes)
-        await record_report_status(session, statuses)
+        _bury(gone, item.fetched_at)  # found private: a fetch already under way is stale too (sc-322)
+        if not stale:
+            await record_report_status(session, statuses)
         for code in gone:
             await delete_report(session, code)
         result.gone.extend(gone)
+        if stale:
+            logger.info("fetch persistence: kept only the private findings of a stale summary")
+            return
         granted = [s.code for s in statuses]
     else:
         code = returned_report_code(item.query, item.variables, item.content)

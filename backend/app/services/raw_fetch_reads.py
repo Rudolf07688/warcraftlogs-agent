@@ -33,7 +33,8 @@ from ..tenancy.context import current_identity
 
 logger = logging.getLogger(__name__)
 
-BREAKER_S = 30.0  # after a timeout or connection error, no probe for this long
+BREAKER_S = 30.0  # once open, no probe for this long
+TIMEOUTS_TO_OPEN = 3  # consecutive timeouts that open it; one slow read doesn't (047 sc-323)
 
 
 def is_fresh(fetched_at: datetime, statuses: list[ReportStatus | None], *, now: datetime) -> bool:
@@ -58,14 +59,17 @@ def is_fresh(fetched_at: datetime, statuses: list[ReportStatus | None], *, now: 
 class Breaker:
     """Keeps a failing store out of the hot path (045 PERF-001). Process-wide.
 
-    Closed (``open_until`` 0): every call probes. A timeout or connection error opens it for
-    :data:`BREAKER_S`: no probe at all. After that it is half-open: one call probes (the
-    trial) while the others skip; the trial's success closes it, its failure opens it again,
-    and a trial that ends otherwise (cancelled, another error) frees the trial for the next.
+    Closed (``open_until`` 0): every call probes. A connection error, or the
+    :data:`TIMEOUTS_TO_OPEN`-th timeout in a row (a slow read or a wait for a pool connection),
+    opens it for :data:`BREAKER_S`: no probe at all; a success resets the count (047 sc-323).
+    After that it is half-open: one call probes (the trial) while the others skip; the trial's
+    success closes it, its failure (a timeout too) opens it again, and a trial that ends
+    otherwise (cancelled, another error) frees the trial for the next.
     """
 
     open_until: float = 0.0
     trial: bool = False
+    timeouts: int = 0  # consecutive, while closed
     clock: Callable[[], float] = field(default=time.monotonic, repr=False)
 
     def admit(self) -> bool | None:
@@ -78,13 +82,21 @@ class Breaker:
         return True
 
     def succeeded(self, trial: bool) -> None:
+        self.timeouts = 0
         if trial:
             self.open_until, self.trial = 0.0, False
+
+    def timed_out(self, trial: bool) -> None:
+        """One probe timed out: opens on the :data:`TIMEOUTS_TO_OPEN`-th in a row, or at once
+        for the half-open trial (the store was just failing)."""
+        self.timeouts += 1
+        if trial or self.timeouts >= TIMEOUTS_TO_OPEN:
+            self.failed()
 
     def failed(self) -> None:
         if not self.open_until:
             logger.warning("raw store unavailable, skipping it for %.0fs", BREAKER_S)
-        self.open_until, self.trial = self.clock() + BREAKER_S, False
+        self.open_until, self.trial, self.timeouts = self.clock() + BREAKER_S, False, 0
 
     def released(self, trial: bool) -> None:
         if trial:
@@ -94,9 +106,15 @@ class Breaker:
 breaker = Breaker()
 
 
+def _is_timeout(exc: BaseException) -> bool:
+    """The probe's own timeout or the pool's wait for a connection: the store may only be slow."""
+    return isinstance(exc, TimeoutError | PoolTimeout)
+
+
 def _is_outage(exc: BaseException) -> bool:
-    """A timeout or a connection-class failure, as opposed to a bug or a bad row."""
-    if isinstance(exc, TimeoutError | OSError | PoolTimeout | OperationalError | InterfaceError):
+    """A connection-class failure, as opposed to a slow read, a bug or a bad row. Checked after
+    :func:`_is_timeout` (``TimeoutError`` is an ``OSError``)."""
+    if isinstance(exc, OSError | OperationalError | InterfaceError):
         return True
     return isinstance(exc, DBAPIError) and exc.connection_invalidated
 
@@ -131,7 +149,10 @@ class StoreSource:
             breaker.released(trial)
             raise
         except Exception as exc:  # noqa: BLE001 - a turn never fails because of the store (FR-015)
-            if _is_outage(exc):
+            if _is_timeout(exc):
+                breaker.timed_out(trial)
+                record_store("timeout")
+            elif _is_outage(exc):
                 breaker.failed()
                 record_store("timeout")
             else:
