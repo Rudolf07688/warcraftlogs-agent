@@ -273,8 +273,8 @@ async def _handle_turn(
     *,
     fallback_model: str | None = None,
 ) -> asyncio.Task | None:
-    """Run one chat turn. Returns the follow-up suggestions task when the turn finished,
-    else ``None``; the caller owns it (and cancels it when the next turn starts).
+    """Run one chat turn. Returns the follow-up suggestions task when the turn finished with
+    an answer, else ``None``; the caller owns it (and cancels it when the next turn starts).
 
     ``fallback_model`` is the same-class sibling the turn may switch to once when its
     model stays rate limited (feature 021).
@@ -307,22 +307,28 @@ async def _handle_turn(
         user_seq = user_msg.seq
         await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_seq))
 
-        preamble = await _build_turn_preamble(session, tenant_id, turn.content)
+        # WCL data is public and cached for every tenant alike (feature 014 supersedes FR-019);
+        # only the forced-refresh limit is per user, for this turn (US4). The turn opens before
+        # its preamble, so WCL calls made building it count for it (047 sc-326). Cleared with
+        # the identity (sc-276), so the follow-up suggestions task never acts as this turn's user.
+        set_refresh_actor(str(identity.user_id))
+        try:
+            preamble = await _build_turn_preamble(session, tenant_id, turn.content)
+        except BaseException:
+            set_refresh_actor(None)
+            raise
 
     # Stream the agent response, accumulating tokens into the final content.
     # US2: a per-turn scratch store holds each tool's full output on disk so large
     # concurrent results are preserved and picked up after every call completes.
     tokens: list[str] = []
+    empty = False  # 048: the turn ended with the runner's no-answer message, not model text
     proposal_ids: list[uuid.UUID] = []  # feature 031: proposals sent this turn
     switched = False  # feature 021: the turn moved to the sibling model
     scratch = TurnScratch(str(conv_id))
     # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)
-    # WCL data is public and cached for every tenant alike (feature 014 supersedes FR-019);
-    # only the forced-refresh limit is per user, for this turn (US4). Cleared with the
-    # identity (sc-276), so the follow-up suggestions task never acts as this turn's user.
-    set_refresh_actor(str(identity.user_id))
     try:
         async for record in stream_response(
             turn.model,
@@ -336,6 +342,7 @@ async def _handle_turn(
         ):
             kind = record.get("type")
             if kind == "token":
+                empty = record.pop("empty", False) or empty
                 tokens.append(record["text"])
                 await ws.send_json(record)
             elif kind == "tool_start":
@@ -389,25 +396,12 @@ async def _handle_turn(
         scratch.cleanup()
 
     final_text = "".join(tokens) or "(no response)"
-    async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
-        agent_msg = await repo.add_message(
-            session, conv_id, "agent", final_text, tenant_id=tenant_id
-        )
-        # US2/US5: link this turn's captures (artifacts + graphs) to the agent message
-        # so per-message reports and reload-time rendering can scope them correctly.
-        await repo.assign_message_seq_to_turn_captures(
-            session, conv_id, agent_msg.seq, tenant_id=tenant_id
-        )
-        # Feature 031: this turn's confirmation cards belong under this answer too.
-        await proposal_rows.set_message_seq(
-            session, proposal_ids, agent_msg.seq, tenant_id=tenant_id, user_id=identity.user_id
-        )
-        agent_msg_id = agent_msg.id
-        agent_seq = agent_msg.seq
+    agent_msg_id, agent_seq = await _save_answer(identity, conv_id, final_text, proposal_ids)
 
     # Feature 043: the saved exchange becomes a workspace chat chunk in the background (enqueue
-    # only). Only the streamed answer goes in: tool results never reach ``tokens``.
-    if tokens:
+    # only). Only the streamed answer goes in: tool results never reach ``tokens``. A no-answer
+    # turn (048) is saved for the user but never indexed, titled or given follow-ups.
+    if tokens and not empty:
         kb_indexer.offer_exchange(
             ExchangeJob(tenant_id, conv_id, agent_seq, turn.content, final_text, datetime.now(UTC))
         )
@@ -417,7 +411,7 @@ async def _handle_turn(
 
     # Feature 019 / sc-155: name the chat from this first complete exchange, in the
     # background; the next turn doesn't cancel it, and the frame shares the socket lock.
-    if title_eligible:
+    if title_eligible and not empty:
 
         async def notify_title(title: str) -> None:
             await _send(ws, ConversationTitleFrame(conversation_id=conv_id, title=title))
@@ -428,6 +422,8 @@ async def _handle_turn(
 
     # US1: predict up to 3 follow-up questions in the background (PERF-102), so the socket
     # can read the player's next message straight away; that next turn cancels this task.
+    if empty:
+        return None
     return asyncio.create_task(_send_suggestions(ws, turn, final_text, agent_msg_id))
 
 
@@ -453,6 +449,34 @@ async def _start_turn(
     """Start a turn on this socket: drop the previous turn's pending suggestions first."""
     sock.cancel_suggestions()
     sock.suggestions = await _handle_turn(sock, turn, identity, fallback_model=fallback_model)
+
+
+async def _save_answer(
+    identity: RequestIdentity, conv_id: uuid.UUID, final_text: str, proposal_ids: list[uuid.UUID]
+) -> tuple[uuid.UUID, int]:
+    """Save the turn's answer and link its captures and cards to it; returns (id, seq)."""
+    tenant_id = identity.tenant_id
+    async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
+        # Lock this turn's cards before add_message locks the conversation: the order a card
+        # decision takes them (approve/cancel lock the card, then save their line), so a click
+        # during this save waits instead of deadlocking (047 P7 SEC-005).
+        for proposal_id in sorted(proposal_ids):
+            await proposal_rows.get_proposal_row(
+                session, proposal_id, tenant_id=tenant_id, user_id=identity.user_id, for_update=True
+            )
+        agent_msg = await repo.add_message(
+            session, conv_id, "agent", final_text, tenant_id=tenant_id
+        )
+        # US2/US5: link this turn's captures (artifacts + graphs) to the agent message
+        # so per-message reports and reload-time rendering can scope them correctly.
+        await repo.assign_message_seq_to_turn_captures(
+            session, conv_id, agent_msg.seq, tenant_id=tenant_id
+        )
+        # Feature 031: this turn's confirmation cards belong under this answer too.
+        await proposal_rows.set_message_seq(
+            session, proposal_ids, agent_msg.seq, tenant_id=tenant_id, user_id=identity.user_id
+        )
+        return agent_msg.id, agent_msg.seq
 
 
 async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:

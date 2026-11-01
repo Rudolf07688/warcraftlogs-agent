@@ -761,6 +761,10 @@ class RecentRaidRefresh(Base):
     character_set: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+# The rows of our two report summary queries (operation names; 047 sc-324, migration 0020).
+RAW_SUMMARY_PREDICATE = "operation_name IN ('ReportSummary', 'ReportsBatch')"
+
+
 class RawFetch(Base):
     """One Warcraft Logs GraphQL response, kept for DB-first reads (feature 020).
 
@@ -773,6 +777,13 @@ class RawFetch(Base):
     __tablename__ = "raw_fetches"
     __table_args__ = (
         Index("ix_raw_fetches_report_codes", "report_codes", postgresql_using="gin"),
+        # Our report summaries, newest first: the stored-reports lookup (047 sc-324, 0020).
+        Index(
+            "ix_raw_fetches_summaries",
+            text("fetched_at DESC"),
+            postgresql_where=text(RAW_SUMMARY_PREDICATE),
+            sqlite_where=text(RAW_SUMMARY_PREDICATE),
+        ),
     )
 
     query_key: Mapped[str] = mapped_column(String(64), primary_key=True)

@@ -13,14 +13,14 @@ Ticket IDs refer to the Shortcut "Team 1" board.
 - API rate limits `sc-163`
   - The agent is making too many requests to build the class guides, running out of request before completing the guide.
   - We must put together some agent skill or pattern to help the agent find the information it needs quicker and easier.
-- If current model returns 429 errors, switch to the second available model in class `sc-164` `sc-176`
-  - If already switch, switch back to the first model
-    - If it still gives 429s then report that to the user and ask to try again in a bit.
+- ~~If current model returns 429 errors, switch to the second available model in class `sc-164` `sc-176`~~
+  - ~~If already switch, switch back to the first model~~
+    - ~~If it still gives 429s then report that to the user and ask to try again in a bit.~~
 - Self-aware agent `epic-203`
   - Agent must be "self aware" of the harness it operates in, for example:
     - When asked "Add the characters from the dungeon to my friends, except the shamen" it should be able to add it to your character profile
-  - Design docs: HTML architecture report with diagrams, animated arrows and the technologies per layer with the reasoning behind each choice `sc-209` `sc-210`
-  - Feature design docs for the epic-203 build tickets (capabilities + profile tools; participants + in-chat confirmation) `sc-211` `sc-212`
+  - ~~Design docs: HTML architecture report with diagrams, animated arrows and the technologies per layer with the reasoning behind each choice `sc-209` `sc-210`~~
+  - ~~Feature design docs for the epic-203 build tickets (capabilities + profile tools; participants + in-chat confirmation) `sc-211` `sc-212`~~
 
 ## Data / Caching
 - Implement redis - confirm browser cache usage. `sc-147`
@@ -49,8 +49,8 @@ Ticket IDs refer to the Shortcut "Team 1" board.
 ## UI / Design
 - Chat interface redesign `epic-105`
   - mayby rather single-lane chat
-  - Scroll to top of the question-message once answer is fully complete.
-  - Chat bubbles to scale to a percentage of the width of screen, not fixed amount `sc-208`
+  - ~~Scroll to top of the question-message once answer is fully complete.~~
+  - ~~Chat bubbles to scale to a percentage of the width of screen, not fixed amount `sc-208`~~
 - ~~Slightly increase default font size `sc-152`~~
 - ~~Showing to many recent raids in the welcome chat `sc-153`~~
   - ~~Rather include some recent m+ runs as well when available~~
@@ -78,8 +78,8 @@ Ticket IDs refer to the Shortcut "Team 1" board.
 ## QA Hits
 Medium findings still open:
 - PERF-001: the app waits for model discovery before serving anything. `sc-156`
-- SEC-003: remote images in model output can leak data. `sc-157`
-- SEC-004: the login rate limit is shared by all users behind the proxy. `sc-158`
+- ~~SEC-003: remote images in model output can leak data. `sc-157`~~
+- ~~SEC-004: the login rate limit is shared by all users behind the proxy. `sc-158`~~
 - ~~SPEC-002 and SPEC-004: the missing startup log line, and a catalog response without models being read as empty. `sc-159`~~
 
 ---

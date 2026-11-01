@@ -44,6 +44,12 @@ logger = logging.getLogger(__name__)
 
 APP_NAME = "wcl_app"
 USER_ID = "local_user"
+# sc-302: the closing token of a chat turn whose model produced no answer after its tools.
+EMPTY_ANSWER_MESSAGE = (
+    "I couldn't put an answer together this time: the lookups ran, but no answer came back. "
+    "Please try again, or ask a narrower question (one boss, one player or one metric)."
+)
+PARAGRAPH = "\n\n"
 
 # The session service is installed at startup (lifespan) via set_session_service —
 # a DatabaseSessionService so conversation *context* survives a restart (US2). If
@@ -208,6 +214,7 @@ async def stream_response(
             queue.put_nowait(_DONE)
 
     producer = asyncio.create_task(produce())
+    tool_calls = 0
     try:
         while True:
             item = await queue.get()
@@ -215,8 +222,10 @@ async def stream_response(
                 break
             if isinstance(item, _Failure):
                 raise item.exc
+            if item.get("type") == "tool_start":
+                tool_calls += 1
             yield item
-        stats.outcome = "answered"
+        stats.outcome = stats.outcome or "answered"  # _run_turn may have said "empty"
     except ModelRateLimited:
         stats.outcome = "rate_limited"
         raise
@@ -236,7 +245,7 @@ async def stream_response(
             current_turn.set(None)
         logger.info(
             "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
-            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d fallback=%s",
+            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d tool_calls=%d fallback=%s",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
@@ -247,6 +256,7 @@ async def stream_response(
             stats.max_prompt_tokens,
             stats.last_cached_tokens,
             stats.trimmed_results,
+            tool_calls,
             stats.switched_to or "-",
         )
 
@@ -270,11 +280,18 @@ async def _run_turn(
       payload. When a per-turn `scratch` store is supplied, the full result is also
       written to disk keyed by the call id and `result_path` points at that file, so
       large concurrent outputs are preserved and picked up after all calls finish (US2).
-    - `{"type": "token", "text"}` — a streamed answer chunk.
+    - `{"type": "token", "text"}` — a streamed answer chunk; the closing no-answer message
+      (below) also carries `"empty": True`, so the caller can tell it from model text (048).
 
     The agent uses the native thinking planner, so reasoning arrives as separate
     `thought`-marked parts which we skip — only the answer text is streamed.
     Concatenating all `token` records yields the answer.
+
+    sc-302: text after a tool round starts a new paragraph when text came before it, so an
+    interim line ("Let me get the totals.") never runs into the answer. A chat turn (one run
+    for a workspace, not the default local user of the greeting and guide jobs) whose model
+    gives no answer text after its last tool result, with no call left pending, ends with
+    :data:`EMPTY_ANSWER_MESSAGE` as its last token and the outcome ``empty``.
     """
     runner = _get_runner(model)
     await _ensure_session(session_id, user_id)
@@ -284,8 +301,12 @@ async def _run_turn(
     # stores only what the user typed.
     message = types.Content(role="user", parts=[types.Part(text=user_text)])
     stats = current_turn.get()
-    streamed_any = False
+    # Per round, i.e. since the last tool result: streamed text, a final (non-partial) text,
+    # and whether either was more than whitespace. ``text_sent``: any text this turn.
+    streamed = False
     final_text = ""
+    answered = False
+    text_sent = False
     grounding_emitted = False
     # Correlate function_response back to its originating function_call by id, so
     # tool_end can carry the arguments (e.g. report_code) the call was made with.
@@ -365,6 +386,7 @@ async def _run_turn(
                         record["result_path"] = await asyncio.to_thread(scratch.write, key, record)
                     except OSError:
                         pass  # scratch is a durability aid; never fail the turn over it
+                streamed, final_text, answered = False, "", False  # a new round starts
                 yield record
                 continue
             if getattr(part, "thought", False):
@@ -373,11 +395,20 @@ async def _run_turn(
             if not text:
                 continue
             if getattr(event, "partial", False):
-                streamed_any = True
+                if text_sent and not streamed:
+                    text = PARAGRAPH + text
+                streamed = text_sent = True
+                answered = answered or bool(text.strip())
                 yield {"type": "token", "text": text}
             elif event.is_final_response():
                 final_text = text
 
-    # If text only arrived in the final (non-partial) event, emit it once.
-    if not streamed_any and final_text:
-        yield {"type": "token", "text": final_text}
+    # If the last round's text only arrived in the final (non-partial) event, emit it once.
+    if not streamed and final_text.strip():
+        yield {"type": "token", "text": PARAGRAPH + final_text if text_sent else final_text}
+        answered = True
+    if not answered and not pending_args and user_id != USER_ID:
+        if stats is not None:
+            stats.outcome = "empty"
+        closing = PARAGRAPH + EMPTY_ANSWER_MESSAGE if text_sent else EMPTY_ANSWER_MESSAGE
+        yield {"type": "token", "text": closing, "empty": True}

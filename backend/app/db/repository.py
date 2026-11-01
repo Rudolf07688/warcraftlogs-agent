@@ -168,6 +168,14 @@ async def set_generated_title(
 
 
 async def _next_seq(session: AsyncSession, conv_id: uuid.UUID, *, tenant_id: uuid.UUID) -> int:
+    # Lock the conversation row first (Postgres; SQLite ignores FOR UPDATE), so concurrent adds
+    # to one conversation number one after another instead of colliding on uq_message_conv_seq
+    # (sc-255). Under READ COMMITTED the max below then sees the other add's committed row.
+    await session.execute(
+        select(Conversation.id)
+        .where(Conversation.id == conv_id, Conversation.tenant_id == tenant_id)
+        .with_for_update()
+    )
     result = await session.execute(
         select(func.coalesce(func.max(Message.seq), -1)).where(
             Message.conversation_id == conv_id, Message.tenant_id == tenant_id

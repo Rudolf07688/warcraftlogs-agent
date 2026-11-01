@@ -101,8 +101,9 @@ async def test_a_finished_reports_data_is_served_with_no_wcl_call(patched_db, wc
 
 async def test_live_data_is_served_only_inside_the_live_window(patched_db, wcl, tenant_id):
     client, calls = wcl
-    await seed("Live1", tenant_id, end=LIVE, row_at=NOW - timedelta(minutes=5))
-    await seed("Live2", tenant_id, end=LIVE, row_at=NOW - timedelta(seconds=30))
+    now = datetime.now(UTC)  # not the import-time NOW: a long run outlasts the live window
+    await seed("Live1", tenant_id, end=LIVE, row_at=now - timedelta(minutes=5))
+    await seed("Live2", tenant_id, end=LIVE, row_at=now - timedelta(seconds=30))
     with turn(tenant_id):
         assert await client.query(TABLE_Q, {"code": "Live1"}) == NETWORK  # stale: refetched
         assert await client.query(TABLE_Q, {"code": "Live2"}) == {"data": STORED}

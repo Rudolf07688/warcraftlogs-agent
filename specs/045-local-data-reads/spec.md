@@ -14,7 +14,7 @@ in the DB"). Design: `documentation/designs/20261101_semantic_knowledge_base.md`
 
 ### Session 2026-11-01 (self-answered, board #39-#43)
 
-- Q: Probe timeout default and breaker trigger? → A: 400 ms setting; 30 s breaker; opens on timeouts and connection-class errors only; half-open lets one trial through (`clarify:045-breaker`).
+- Q: Probe timeout default and breaker trigger? → A: 400 ms setting; 30 s breaker; opens on 3 consecutive timeouts (first answer: one; changed by 047 sc-323, a single slow read must not disable the store) or one connection-class error; half-open lets one trial through (`clarify:045-breaker`).
 - Q: How can the probe run inside single-flight when its answer depends on the workspace? → A: the flight key includes the store's workspace scope whenever a store is installed (`clarify:045-flight-scope`).
 - Q: Where is the per-turn boundary without touching `ws.py`? → A: the cache module's per-turn hook `set_refresh_actor` (`clarify:045-turn-seam`).
 - Q: How are gone-vs-write races ordered without a migration? → A: DB tombstone status `gone` in `raw_reports` + request start time on fetches; Redis tombstone key checked after each report-family write (`clarify:045-races`).
@@ -40,12 +40,13 @@ call skips the store.
 
 **Acceptance Scenarios**:
 
-1. **Given** the store hangs, **When** a report query runs, **Then** it waits at most the probe
-   timeout (default 400 ms, configurable, never over 500 ms by default) and goes to WCL, and for the
-   next ~30 s no probe runs at all (breaker open).
+1. **Given** the store hangs, **When** report queries run, **Then** each waits at most the probe
+   timeout (default 400 ms, configurable, never over 500 ms by default) and goes to WCL, and after
+   the 3rd consecutive timeout (or at once on a connection error) no probe runs for ~30 s (breaker
+   open; 047 sc-323).
 2. **Given** the breaker has been open for 30 s, **When** the next calls arrive, **Then** exactly
    one trial probe runs; others skip the store until it ends; success closes the breaker, a timeout
-   or connection error opens it again for 30 s.
+   or connection error opens it again for 30 s (the trial's single timeout is enough).
 3. **Given** no stored row for the query, **When** the store is probed, **Then** it costs one SQL
    statement (at most 2) and no tenant scope is set.
 4. **Given** a stored, fresh, visible row, **When** the store is probed, **Then** at most one
@@ -164,8 +165,9 @@ not visible (another workspace's grant), not stored, stale.
 
 **sc-295**
 - **FR-001**: The probe timeout is a setting (`RAW_STORE_PROBE_TIMEOUT_MS`, default 400). A breaker
-  opens for 30 s after a probe timeout or connection error; while open no probe runs; after it, one
-  trial probe (half-open) decides.
+  opens for 30 s after 3 consecutive probe timeouts (a success resets the count) or one connection
+  error; while open no probe runs; after it, one trial probe (half-open) decides, and a single
+  timeout of the trial opens it again.
 - **FR-002**: The probe looks up the row first. No row, invalid codes or not fresh end the probe
   without setting a tenant scope. A miss costs at most 2 SQL statements.
 - **FR-003**: On a hit the tenant scope is one `set_config` statement (skipped when every code is
@@ -185,9 +187,17 @@ not visible (another workspace's grant), not stored, stale.
 - **FR-009**: A store answer carries whether every code is public. When not, the value is not
   written to the shared Redis cache or the process memo by the loading `get_or_load` /
   `get_many_or_load`.
-- **FR-010**: A ReportGone leaves a tombstone status for each code (seen time). The writer stores no
-  row and no grant for a fetch naming a tombstoned code whose request started at or before the
-  tombstone; a later successful summary replaces the tombstone.
+- **FR-010**: Every gone or private signal leaves a tombstone for each code (the time WCL said so):
+  a ReportGone (`report: null`, its seen time) and a summary that finds a report private (its fetch
+  time, 047 sc-322). The writer stores no row, status or grant for a fetch naming a tombstoned code
+  whose request started at or before the tombstone; a fetch requested later is written as usual
+  (the report came back). As built (047, owner's choice, no migration): the tombstone lives in the
+  writer's process memory (`fetch_persistence._tombstones`), per process, kept 10 minutes
+  (`TOMBSTONE_TTL`, well past the 75 s WCL query timeout plus queueing) and capped at 1024 codes
+  (`TOMBSTONE_MAX`, oldest dropped first), and lost on restart. That is accepted for the single
+  uvicorn worker the app runs (board #63): the one writer sees every signal. This supersedes the
+  `raw_reports` `gone` status in the clarification above and the "tombstones reuse `raw_reports`"
+  assumption.
 - **FR-011**: Evicting a report's Redis keys first sets a short Redis tombstone for the code; a
   report-family cache write checks it after writing and removes its own write when present.
 

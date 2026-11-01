@@ -86,7 +86,7 @@ Probe statements (`read_visible_fetch`):
 Breaker (process-wide, `raw_fetch_reads.py`):
 
 ```
-        timeout / connection error
+        3rd consecutive timeout (a success resets the count) / connection error
 CLOSED ───────────────────────────────► OPEN(until = now + 30 s)
   ▲                                         │ now ≥ until
   │ trial succeeds (hit/miss/not_visible)   ▼

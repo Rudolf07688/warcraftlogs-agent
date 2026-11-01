@@ -82,7 +82,7 @@ class TurnStats:
     model_requests: int = 0
     retries: int = 0
     waited_s: float = 0.0
-    outcome: str | None = None  # answered | rate_limited | error | abandoned
+    outcome: str | None = None  # answered | empty | rate_limited | error | abandoned
     # PERF-004: per-turn standing context (KNOWN PLAYER CONTEXT), injected into each model
     # request by the before-model callback so it is never stored in the session history.
     preamble: str | None = None

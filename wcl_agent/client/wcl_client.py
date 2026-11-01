@@ -79,6 +79,19 @@ def background_lane() -> Iterator[None]:
         _lane.reset(token)
 
 
+class LaneTicket:
+    """One request's place in the limiter: its lane, and whether it holds a slot.
+
+    A single-flight shares one ticket among its callers, so an interactive caller that joins a
+    background flight can promote it (:meth:`LaneLimiter.promote`, 048)."""
+
+    __slots__ = ("lane", "held")
+
+    def __init__(self, lane: Lane):
+        self.lane: Lane = lane
+        self.held = False
+
+
 class LaneLimiter:
     """Caps WCL requests in flight, keeping background work out of the interactive lane's way.
 
@@ -86,6 +99,7 @@ class LaneLimiter:
     one is free; a background caller only when one is free, background holds fewer than
     ``background_cap`` and no interactive caller is waiting. Slots are handed to waiters in
     FIFO order on release. Release is synchronous, so a cancelled holder always frees its slot.
+    A promoted ticket (048) is interactive from then on, whether it waits or holds a slot.
     """
 
     def __init__(self, total: int, background_cap: int):
@@ -93,11 +107,11 @@ class LaneLimiter:
         self.background_cap = max(1, min(background_cap, self.total - 1)) if self.total > 1 else 1
         self.in_use = 0
         self.bg_in_use = 0
-        self._waiters: deque[tuple[Lane, asyncio.Future[None]]] = deque()
+        self._waiters: deque[tuple[LaneTicket, asyncio.Future[None]]] = deque()
 
     @property
     def interactive_waiting(self) -> int:
-        return sum(1 for lane, fut in self._waiters if lane == "interactive" and not fut.done())
+        return sum(1 for t, fut in self._waiters if t.lane == "interactive" and not fut.done())
 
     def _can_take(self, lane: Lane) -> bool:
         if self.in_use >= self.total:
@@ -106,60 +120,77 @@ class LaneLimiter:
             return self.bg_in_use < self.background_cap and self.interactive_waiting == 0
         return True
 
-    def _take(self, lane: Lane) -> None:
+    def _take(self, ticket: LaneTicket) -> None:
         self.in_use += 1
-        if lane == "background":
+        if ticket.lane == "background":
             self.bg_in_use += 1
+        ticket.held = True
 
     def _wake(self) -> None:
         """Hand free slots to waiters, oldest first, each by its own lane's rule."""
         progressed = True
         while progressed:
             progressed = False
-            for lane, fut in list(self._waiters):
+            for ticket, fut in list(self._waiters):
                 if fut.done():
-                    self._waiters.remove((lane, fut))
+                    self._waiters.remove((ticket, fut))
                     continue
-                if self._can_take(lane):
-                    self._waiters.remove((lane, fut))
-                    self._take(lane)
+                if self._can_take(ticket.lane):
+                    self._waiters.remove((ticket, fut))
+                    self._take(ticket)
                     fut.set_result(None)
                     progressed = True
                     break
 
-    async def acquire(self, lane: Lane | None = None) -> Lane:
-        lane = lane or _lane.get()
+    async def acquire(self, lane: Lane | LaneTicket | None = None) -> Lane:
+        """Wait for a slot in ``lane`` (default: this context's lane), or for ``ticket``'s
+        lane at the time a slot is free; returns the lane the slot was taken in."""
+        ticket = lane if isinstance(lane, LaneTicket) else LaneTicket(lane or _lane.get())
         # Only jump in when nobody is queued, so FIFO order holds within the rules.
-        if not self._waiters and self._can_take(lane):
-            self._take(lane)
-            return lane
+        if not self._waiters and self._can_take(ticket.lane):
+            self._take(ticket)
+            return ticket.lane
         fut: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        self._waiters.append((lane, fut))
+        self._waiters.append((ticket, fut))
         self._wake()  # queued waiters may all be ineligible (e.g. background at its cap)
         try:
             await fut
         except asyncio.CancelledError:
             if fut.done() and not fut.cancelled():
-                self.release(lane)  # granted just as we were cancelled: give it back
+                self.release(ticket)  # granted just as we were cancelled: give it back
             else:
                 fut.cancel()
                 self._wake()  # a leaving interactive waiter may unblock background
             raise
-        return lane
+        return ticket.lane
 
-    def release(self, lane: Lane) -> None:
+    def release(self, lane: Lane | LaneTicket) -> None:
+        if isinstance(lane, LaneTicket):
+            lane.held = False
+            lane = lane.lane
         self.in_use -= 1
         if lane == "background":
             self.bg_in_use -= 1
         self._wake()
 
+    def promote(self, ticket: LaneTicket) -> None:
+        """Make a background ticket interactive (048): a queued one is served by the
+        interactive rule from now on, a held slot stops counting against the background cap."""
+        if ticket.lane == "interactive":
+            return
+        ticket.lane = "interactive"
+        if ticket.held:
+            self.bg_in_use -= 1
+        self._wake()
+
     @asynccontextmanager
-    async def slot(self) -> AsyncIterator[Lane]:
-        lane = await self.acquire()
+    async def slot(self, ticket: LaneTicket | None = None) -> AsyncIterator[Lane]:
+        ticket = ticket or LaneTicket(_lane.get())
+        lane = await self.acquire(ticket)
         try:
             yield lane
         finally:
-            self.release(lane)
+            self.release(ticket)
 
 
 _limiters: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, LaneLimiter] = (
@@ -554,7 +585,7 @@ class AsyncWCLClient:
             timeout=HTTP_TIMEOUT, limits=httpx.Limits(max_connections=16), transport=transport
         )
         self._auth_lock = asyncio.Lock()
-        # Single-flight (G3/G4): request key -> [shared fetch task, waiter count].
+        # Single-flight (G3/G4): request key -> [shared fetch task, waiter count, lane ticket].
         self._flights: dict[str, list[Any]] = {}
 
     async def aclose(self) -> None:
@@ -572,6 +603,10 @@ class AsyncWCLClient:
         tenant, so the flight is shared only by callers of the same source scope. A stored
         answer makes no network call and is not offered to the sink again; when it isn't
         public, each caller's cache load is marked so it stays out of the shared cache.
+
+        048: a flight's slot is taken in its starter's lane; an interactive caller that joins a
+        background flight promotes it, so a chat turn is never held to the background limit
+        by a warm-up it happens to share a query with.
         """
         variables = variables or {}
         key = _flight_key(query, variables)
@@ -580,9 +615,12 @@ class AsyncWCLClient:
         while True:
             flight = self._flights.get(flight_key)
             if flight is None:
-                task = asyncio.ensure_future(self._fetch(query, variables, key, source))
-                flight = self._flights[flight_key] = [task, 0]
+                ticket = LaneTicket(_lane.get())
+                task = asyncio.ensure_future(self._fetch(query, variables, key, source, ticket))
+                flight = self._flights[flight_key] = [task, 0, ticket]
                 task.add_done_callback(lambda t, k=flight_key: self._drop_flight(k, t))
+            elif _lane.get() == "interactive":
+                _limiter().promote(flight[2])
             task = flight[0]
             flight[1] += 1
             try:
@@ -666,7 +704,12 @@ class AsyncWCLClient:
         )
 
     async def _fetch(
-        self, query: str, variables: dict[str, Any], key: str, source: FetchSource | None
+        self,
+        query: str,
+        variables: dict[str, Any],
+        key: str,
+        source: FetchSource | None,
+        ticket: LaneTicket,
     ) -> tuple[bytes, Origin]:
         """(body, where it came from).
 
@@ -685,7 +728,7 @@ class AsyncWCLClient:
             for attempt in range(MAX_RETRIES + 1):
                 probe = attempt == 0 and source is not None
                 token = "" if probe else await self._token()
-                async with limiter.slot() as lane:
+                async with limiter.slot(ticket) as lane:
                     if probe:
                         stored = await _stored(source, key, query, variables)
                         if stored is not None:

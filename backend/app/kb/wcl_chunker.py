@@ -38,6 +38,8 @@ MAX_PLAYERS = 40  # per-player chunks per table, and players listed per chunk
 MAX_FIGHTS = 60  # fight-summary chunks per report
 MAX_DEATHS = 20
 SUMMARY_TOP = 5  # per list in a Summary-table chunk
+MAX_TITLE = 80  # sc-328: report titles and guild names are uploader text; capped in chunk text
+MAX_GUILD = 40
 
 _DATA_TYPE_RE = re.compile(r"\btable\s*\(\s*[^)]*?\bdataType\s*:\s*(\w+)")
 _HOSTILITY_RE = re.compile(r"\btable\s*\(\s*[^)]*?\bhostilityType\s*:\s*(\w+)")
@@ -192,7 +194,16 @@ def _summary_chunks(code: str, report: dict) -> list[ChunkDraft]:
     by_id = {a["id"]: a for a in actors if isinstance(a, dict) and isinstance(a.get("id"), int) and a.get("name")}
     zone = report.get("zone") or {}
     guild = (report.get("guild") or {}).get("name")
-    head = ", ".join(p for p in (report.get("title"), zone.get("name"), f"guild {guild}" if guild else None) if p)
+    title = report.get("title")
+    head = ", ".join(
+        p
+        for p in (
+            bounded(title, MAX_TITLE) if isinstance(title, str) else None,
+            zone.get("name"),
+            f"guild {bounded(guild, MAX_GUILD)}" if isinstance(guild, str) and guild else None,
+        )
+        if p
+    )
     drafts = []
     fights = [f for f in report["fights"] if isinstance(f, dict) and f.get("encounterID") and isinstance(f.get("id"), int)]
     for fight in fights[:MAX_FIGHTS]:
