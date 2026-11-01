@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import math
+import os
+
+import pytest
 
 from backend.evals.kb import harness
 from backend.evals.kb.standin import DIMENSIONS, StandInEmbedder, embed_one
@@ -64,3 +67,65 @@ async def test_stand_in_is_deterministic_and_unit_norm():
     q = embed_one("arms warrior rotation")
     assert cos(q, embed_one("Arms Warrior raid rotation: Mortal Strike")) > cos(q, embed_one("Holy Priest Divine Hymn"))
 
+
+
+# --- the run, on Postgres (skipped without TEST_DATABASE_URL) ----------------------------------
+
+_PG_URL = os.getenv("TEST_DATABASE_URL", "")
+
+
+@pytest.mark.skipif(
+    not _PG_URL.startswith("postgresql"), reason="the eval run needs a migrated Postgres with pgvector"
+)
+async def test_eval_run_reports_recall_and_latency_per_mode(monkeypatch):
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from backend.app.db import session as db_session
+
+    engine = create_async_engine(_PG_URL, pool_pre_ping=True)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(db_session, "SessionLocal", maker)
+    try:
+        report = await harness.run(maker, k=8)
+    finally:
+        await engine.dispose()
+    print(report)  # visible with -s: the numbers the write-up quotes
+    assert report["questions"] == len(harness.load_questions())
+    assert set(report["modes"]) == {"hybrid", "vector", "keyword"}
+    for numbers in report["modes"].values():
+        assert 0.0 <= numbers["recall"] <= 1.0 and numbers["p95_ms"] >= numbers["p50_ms"] > 0
+    assert report["modes"]["hybrid"]["recall"] > 0.5  # the harness finds the labelled chunks
+    if harness.is_real(report["set"]):  # SC-004: asserted only on recorded real embeddings
+        assert report["modes"]["hybrid"]["recall"] >= report["modes"]["vector"]["recall"]
+
+
+# --- the live mode's pure helpers (the live calls themselves are team-lead's) -------------------
+
+
+def test_without_variant_drops_only_the_search_first_clause():
+    from backend.evals.kb.live import strip_search_first
+    from wcl_agent.agent import INSTRUCTION
+
+    stripped = strip_search_first(INSTRUCTION)
+    assert "Local first:" in INSTRUCTION and "Local first:" not in stripped
+    assert "search_knowledge" not in stripped
+    assert "Plan the evidence before the first lookup" in stripped
+    assert len(INSTRUCTION) - len(stripped) < 600
+
+
+def test_filter_accuracy_compares_resolved_values():
+    from backend.evals.kb.live import filter_matches
+
+    expected = {"kind": "wcl", "class_name": "Warrior", "encounter": "Ula'tek", "character": "Vagxsu"}
+    assert filter_matches({"kind": "wcl", "class_name": "warr", "encounter": "ulatek", "character": "vagxsu"}, expected) == (4, 4)
+    assert filter_matches({"kind": "guide", "class_name": "nonsense"}, expected) == (0, 4)
+
+
+async def test_record_refuses_without_an_embedder(monkeypatch, capsys):
+    from backend.app.kb import embedder
+    from backend.evals.kb import live
+
+    monkeypatch.setattr(embedder, "get_embedder", lambda: None)
+    assert await live.record() == 2
+    assert "nothing recorded" in capsys.readouterr().out
+    assert not harness.EMBEDDINGS.exists()
