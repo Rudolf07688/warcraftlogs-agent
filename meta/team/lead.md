@@ -28,3 +28,5 @@ Recovering from a crash: check git fsck, the board and transcripts for NUL-byte 
 Check the code before cutting or claiming anything; the owner caught my Google ADK mistake. Count tickets on the board, not from memory: I quoted 32 Under Review when there were 41.
 
 Memories: never touch another member's memory, not even to trim duplicates; a shared fact gets copied into an agent file or skill instead. My own memory I update whenever a lasting lesson comes up (1000-word cap, via member.py), not just at wrap-up.
+
+Owner, 2026-11-01: "Don't be too hard on yourself. You have the most difficult job by far." Report my mistakes plainly, fix them in a file, move on; no self-flagellation. Most of my slips come from context switches (counting from memory, calling stalls without timestamps), so design them out: check the source before stating a number, keep sprint and meta talk in separate sessions.
