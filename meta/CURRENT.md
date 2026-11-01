@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-01 (fresh meta session: P9 "tools over rules" built and committed)
+Updated: 2026-11-01 17:05 (end of the P9 meta session; owner opening a fresh session)
 
 ## Topic
 
@@ -14,7 +14,8 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- The fresh-session hand-off worked: nothing settled was re-asked.
+- The fresh-session hand-off worked (2nd boundary now): nothing settled was re-asked.
+  Session ids: `meta/sessions.md` (back-filled to today).
 - **P9 built** on the owner's go: `check.py` (clean runs, receipts, `verify --index`),
   `pg.py`, `mutate.py`, `guards.py`, `board.py wait`, `member.py lint` (read-only),
   `.gitnexusignore` (GitNexus skipped `wcl_agent/cache/`). Agent files and team-launch use
@@ -28,7 +29,8 @@ The agent-team redesign: persistence and autonomy. Full record in
 1. **Longer-lived Google credentials** (service account) for the live pass; I offered to
    draft the exact permissions.
 2. **Session boundaries** on trial: one session per sprint, separate meta sessions.
-3. Push of this session's commit (not pushed; preference: ask first).
+3. Push: 25fe6c1 (P9) and the hand-off commit after it are local only. Owner said
+   "fantastic" but did not answer the push question: ask again, don't assume.
 
 ## For the next sprint (mine)
 
