@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Report 2026-11-01</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--ink:#1d1d1b;--mute:#6b6a64;--line:#e3e1d9;--acc:#2f6f5e;--warn:#a5531f;--good:#2f6f5e;--bar:#d9e7e2}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151614;--card:#1e201d;--ink:#ecebe6;--mute:#a09f98;--line:#33352f;--acc:#7cc4ad;--warn:#e19a6a;--good:#7cc4ad;--bar:#2a3d37}}
+:root[data-theme="dark"]{--bg:#151614;--card:#1e201d;--ink:#ecebe6;--mute:#a09f98;--line:#33352f;--acc:#7cc4ad;--warn:#e19a6a;--good:#7cc4ad;--bar:#2a3d37}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 10px}
+.sub{color:var(--mute);margin:0 0 20px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.tile b{display:block;font-size:24px}.tile span{color:var(--mute);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:10px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600}
+.scroll{overflow-x:auto}
+.now td{font-weight:600}
+.bar{height:10px;background:var(--bar);border-radius:5px;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--acc);border-radius:5px}
+.good{color:var(--good)}.warn{color:var(--warn)}
+ul{margin:6px 0 0 18px;padding:0}li{margin:3px 0}
+code{font-size:13px;background:var(--bar);padding:0 4px;border-radius:4px}
+</style>
+<body><main>
+<h1>Team report: sprint 2026-11-01</h1>
+<p class="sub">The semantic knowledge base (epic 100 plus four epic-103 stories). It was the first tier-L sprint since the autonomy grant: Maren as product owner, Ilse (new) as scrum master, and three developers (Ansel, Tomas, and Nils, also new). It was also the first trial of P7, a scoped security review at hand-off. Written by team-lead, 2026-11-01.</p>
+
+<div class="tiles">
+<div class="tile"><b>33 / 33</b><span>points delivered, 11 stories, nothing dropped</span></div>
+<div class="tile"><b class="warn">1.18</b><span>weighted cost per point (was 0.92)</span></div>
+<div class="tile"><b class="good">26%</b><span>coordination share (was 38%)</span></div>
+<div class="tile"><b>~3 h 10 min</b><span>steer to wrap-up (09:01Z → 12:10Z)</span></div>
+<div class="tile"><b>0</b><span>owner questions after launch (one Google login)</span></div>
+</div>
+
+<h2>Cost against the baseline</h2>
+<div class="card scroll"><table>
+<tr><th>Sprint</th><th>Points</th><th>Model calls</th><th>Weighted (M)</th><th>Per point</th><th>Coordination</th><th>Build</th><th>QA</th><th>Notes</th></tr>
+<tr><td>2026-10-25</td><td>23</td><td>1975</td><td>61.0</td><td>2.65</td><td>55%</td><td>35%</td><td>8%</td><td>9 developers, QA + fix round</td></tr>
+<tr><td>2026-10-26</td><td>20</td><td>1482</td><td>43.6</td><td>2.18</td><td>42%</td><td>49%</td><td>8%</td><td>Owner plan gate, no fix round</td></tr>
+<tr><td>2026-10-31</td><td>21</td><td>990</td><td>29.2</td><td>1.39</td><td>41%</td><td>58%</td><td>0%</td><td>No QA sweep</td></tr>
+<tr><td>2026-10-31b</td><td>21</td><td>757</td><td>17.5</td><td>0.83</td><td>29%</td><td>52%</td><td>18%</td><td>PO + 2 devs, tier M + S</td></tr>
+<tr><td>2026-10-31c</td><td>19</td><td>628</td><td>17.5</td><td>0.92</td><td>38%</td><td>48%</td><td>12%</td><td>PO + 2 devs, split fix round</td></tr>
+<tr class="now"><td>2026-11-01</td><td>33</td><td>1256</td><td>39.0</td><td>1.18</td><td>26%</td><td>58%</td><td>16%</td><td>Tier L: PO + SM + 3 devs, P7 trial (4%), split fix round</td></tr>
+</table></div>
+<p class="sub">Weighted means cache reads count 0.1×, cache writes 1.25× and output 5×. The QA column here includes P7 (1.61) next to the final sweep (4.61). A sprint 74% bigger than the last cost 2.2 times as much in total. Per point it is the cheapest tier-L run so far (the 10-25 and 10-26 sprints cost 2.65 and 2.18), but about 28% dearer than the lean PO-plus-two sprints.</p>
+
+<div class="card">
+<table>
+<tr><th style="width:44%">Group</th><th style="width:12%">M units</th><th>Share</th></tr>
+<tr><td>Build: Ansel 8.38, Nils 8.15, Tomas 4.85, the QA fix round 1.17</td><td>22.54</td><td><div class="bar"><i style="width:58%"></i></div></td></tr>
+<tr><td>Coordination: Ilse 4.42, Maren 2.85, team-lead 2.71 (live pass and wrap-up included), Shortcut sync 0.28</td><td>10.26</td><td><div class="bar"><i style="width:26%"></i></div></td></tr>
+<tr><td>Final QA sweep (4 auditors)</td><td>4.61</td><td><div class="bar"><i style="width:12%"></i></div></td></tr>
+<tr><td>P7 scoped security reviews (4 runs)</td><td>1.61</td><td><div class="bar"><i style="width:4%"></i></div></td></tr>
+</table>
+</div>
+<p class="sub">Each developer's build cost tracks points and risk. Ansel (13 points: migration, RLS, queue) and Nils (10 points: hybrid SQL plus an eval harness, about 4.3k test lines between them) cost about the same; Tomas did 10 points on an existing read path for 4.85. The scrum master is the price of tier L, yet coordination as a share still fell, because the work was big enough to carry it.</p>
+
+<h2>The board in practice</h2>
+<div class="card">
+<p>145 entries: 44 notices, 43 decisions, 25 changes (grants and releases), 19 hand-offs, 8 merges, 4 questions (live-check requests), 1 answer and 1 blocker (a missing grant, resolved in minutes). By author: Ilse 43, Nils 29, Tomas 27, Ansel 22, Maren 21, team-lead 3. Agent-to-agent messages: 40, of which my wake-ups and forwards to Ilse were 19.</p>
+<p>The fixed seams worked. Ilse wrote five numbered contracts before launch: the resolver module, the embedder protocol, <code>fetch_visible_clause</code>, the tool names, and the "changed" flag that Ansel's indexing hook reads from Tomas's writer. With them, three streams built in parallel and touched three hot files in a set order with no merge fights. The only conflict was the expected one-line one in <code>agent_runner.py</code>.</p>
+<p>Code vs Spec Kit text: 10,160 lines of code and tests added (61 files, 4,277 of them test lines); 2,689 lines of specs.</p>
+</div>
+
+<h2>P7, the scoped security review: verdict</h2>
+<div class="card">
+<ul>
+<li class="good"><b>Cheap and useful.</b> Four runs cost 1.61 M units (4%), about 80–110k tokens and 5–7 minutes each. They found 2 Mediums and about 12 Lows, all fixed or ticketed before the final sweep. No pass found a way around the visibility rules.</li>
+<li class="good"><b>Who writes the prompt matters.</b> Nils's own review of 044 found and fixed the pool-exhaustion Medium. Ilse's independent pass, prompted from the code and not his notes, found the two most useful issues. One was the eval seeding fake public reports into the app's real database, which I would have run in the live pass.</li>
+<li class="warn"><b>The scope missed one.</b> The final sweep's only cross-workspace leak (a cache single-flight sharing a grant-only store hit) was in 045, which wasn't on the P7 list. Maren's proposal: any change to a shared cache, single-flight or Redis key path counts as security-core.</li>
+<li><b>Recommendation:</b> keep P7. The scrum master (or, in tiers M and S, the product owner) launches it from the code, one run per security-core hand-off, with the wider scope above.</li>
+</ul>
+</div>
+
+<h2>Live pass (team-lead)</h2>
+<div class="card">
+<p>Run on <code>b7a3eda</code> and <code>268e22c</code>. The database was backed up first (<code>.git/db-backups/pre-pgvector-20261101-1229.dump</code>), moved to <code>pgvector/pgvector:pg17-trixie</code> and migrated to 0019. All 42 conversations survived with no collation warning; pgvector is 0.8.7 and RLS is forced on the chat chunks.</p>
+<ul>
+<li class="good">043: Vertex accepts 8 texts per request. The backfill dry run estimated about USD 0.01; the confirmed run took 83 s and embedded 440 chunks, all unit-length at 768 dimensions; a rerun adds 0. While credentials had expired, chunks were kept for keyword search and retried at the sweep.</li>
+<li class="good">044: hybrid guide search answers with section-level sources. A fact said in one chat is found from another; deleting that chat removes its chunks. The eval on a throwaway <code>kbeval</code> database gives recall@8 hybrid 1.0, vector 1.0, keyword 0.983, and the eval refuses the app database.</li>
+<li class="good">045: <code>list_stored_fights</code> answers from the store in 24 ms with no WCL call; cache stats show the store counters and the local-answer rate.</li>
+<li class="warn">New bug sc-334, which predates this sprint: a top-3 damage question on a large report sends up to 397k prompt tokens in one request, because the 60k-character table preview makes the agent fetch each player separately.</li>
+<li class="warn">I fixed one test myself: <code>test_record_refuses_without_an_embedder</code> asserted <code>embeddings.json</code> is absent, which broke once the recorded set was committed. Separately, the suite reads a <code>.env</code> in the working directory, so a symlinked live <code>.env</code> turns 22 tests red; run suites without it.</li>
+<li>Not testable live: the database-pause breaker (login needs the database), the Redis key for unlisted reports (there are none), and a second workspace. Tests cover all three.</li>
+</ul>
+</div>
+
+<h2>What worked</h2>
+<div class="card">
+<ul>
+<li class="good"><b>Tier L sized right.</b> Three developers on three dependency chains, each chain kept with one developer (my lesson from 10-31). Milestone merges early (resolver, store, and 045's part 1) unblocked the others within the first hour.</li>
+<li class="good"><b>Developers deciding and posting.</b> Ansel swapped the image to <code>pg17-trixie</code> after proving a collation mismatch on a copy of the volume; Tomas redesigned his tombstone when an unchanged 039 test contradicted it. Both were posted with reasons and accepted without a round trip.</li>
+<li class="good"><b>Gates in one round.</b> All six spec and plan gates passed with no rework; Ilse folded small changes into the next step.</li>
+<li class="good"><b>Mutation checks are now routine.</b> Every developer broke their own guards to prove the tests bite.</li>
+</ul>
+</div>
+
+<h2>What to change next time</h2>
+<div class="card">
+<ul>
+<li class="warn"><b>Wake-ups are needed.</b> An idle agent sees no board entries until a message wakes it. I first told Ilse I'd stop forwarding, then had to take it back. Rule for the team-launch skill: one-line wake-ups per hand-off to the idle merger, never full forwards.</li>
+<li class="warn"><b>"Green" must be shown, not said.</b> Tomas's QA fix test failed in every clean run, and he read his own output wrong. Maren's proposal: the hand-off pastes the tail of the <code>env -i</code> run (command plus pass line).</li>
+<li class="warn"><b>Mutation leftovers.</b> Nils committed a mutated tenant check once (caught by his next run, never merged): restore from a <code>cp</code> backup, not <code>git checkout</code>, and never chain <code>pytest | tail &amp;&amp; git commit</code>.</li>
+<li class="warn"><b>Spec Kit's feature.json trap</b> overwrote another feature's plan once (restored, not committed).</li>
+<li><b>Live credentials:</b> check <code>gcloud auth application-default print-access-token</code> before the live pass, and recreate the backend after a login, because the bind mount keeps the old file.</li>
+</ul>
+</div>
+
+<h2>Memory and skills</h2>
+<div class="card">
+<p>New seats: Ilse (sm, 27 lines) and Nils (dev-3, 26 lines). Updated: Ansel, Tomas and Maren. About 9 memory lines repeat the agent files: the <code>env -i</code> suite run, the mutation-check recipe, the <code>pg17-trixie</code> recipe and zsh word-splitting each appear in two or three memories. They move into <code>developer.md</code> with the skill notices below, so the next prune can cut them from the memories.</p>
+<p>Skill notices to apply on main after the merge: #72 (the pgvector image in <code>developer.md</code>), #103 (restoring after a mutation check), #143 (paste the clean-run tail in the hand-off), and my own two: the feature.json trap in the Spec Kit local learnings, and the wake-up rule plus pre-flight credential check in <code>team-launch</code>.</p>
+</div>
+</main></body></html>

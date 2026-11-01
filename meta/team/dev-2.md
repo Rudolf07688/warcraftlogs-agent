@@ -9,17 +9,22 @@
 ## Memory
 
 Lessons (Tomas, dev-2):
-- GitNexus here over-reports: detect-changes and impact often say CRITICAL by attributing hundreds of flows to a new test function, or list unrelated files as direct callers of a private helper. Confirm with a text search, record the real caller set on the board, move on. Touching Settings always reads CRITICAL; additive fields with safe defaults are fine.
-- Run pytest in a clean env: env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q. Agent shells can inherit the app's WCL_*/GOOGLE_*/ANTHROPIC_* vars.
-- Process-wide module state (model_retry's 429 memory) needs an autouse reset fixture in backend/tests/conftest.py. And decide who may write to it: a helper call (greeting, retry=False) must not.
-- When a fix adds a new path through a shared function (may_switch=False), give it the same budget and memory rules as the main path. QA caught that I hadn't.
-- ADK sub-agent (AgentTool) exceptions reach the turn wrapped as DynamicNodeFailError with provider text. ws.py now sends a fixed message with a log ref (038).
-- Streamdown: sanitize keeps <picture><source srcset>, harden only checks img src; Streamdown uses href 'streamdown:incomplete-link' while streaming, so harden allowedProtocols can't be [] outright. In streaming render tests, useSmoothText shows partial text at first render.
-- Parsing client addresses: strip ports, normalise ::ffff:, and never key on a client-written XFF entry.
-- Reproduce with the real ADK Runner plus FakeGenai (test_model_fallback.py) before fixing.
-- Ansel (dev-1) posts thorough clarify decisions; a short board notice before touching a shared test file is enough.
+- GitNexus here over-reports: detect-changes/impact often say CRITICAL via name collisions or by attributing many flows to one hot function (query, _get_runner, Settings). Confirm with a text search, post the real caller set and mitigation on the board, move on. detect-changes ignores untracked new files: run impact on edited symbols instead.
+- Run pytest in a clean env: env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q. No ruff in the project venv: uvx ruff check --select F for unused imports.
+- Process-wide module state (breaker, tombstones, retry memory) needs a reset: an autouse fixture in my own test module when conftest.py isn't mine.
+- Before proposing a design that changes stored data shape, grep the tests that must stay unchanged (e.g. 039 visibility tests). In 045 my raw_reports tombstone broke an unchanged 039 assertion and I had to redesign after the gate.
+- Mutation-check every new guard with a tiny shell function (copy file, replace one line, run the test file, restore). It found a scope test that didn't bite.
+- Dialect-specific SQL inside a fixed-signature clause: a ColumnElement subclass with @compiles per dialect that builds the expression at compile time (raw_fetches._CodesVisible). Works for correlated json_each / jsonb_array_elements.
+- Per-call flags that must reach a loader across gather/threads: ContextVar holding a mutable object (cache._Load, cache._Turn), set at the boundary, marked deep inside.
+- When a shared single-flight's answer depends on the caller (tenant), key the flight by that scope, or have the shared task return its unshareable mark (read in the task's context) and let joiners reload. GitNexus doesn't index wcl_agent/cache/cache.py at all: text-search its callers.
+- A 'still shared' test must count Redis reads too. The fake_redis fixture's probe is not the cache's client: patch FakeAsyncRedis methods on the class. Read the final pass/fail line of every run before calling it green (I shipped a red test once).
+- Turn boundary without touching ws.py: cache.set_refresh_actor is called at turn start/end.
+- When a fix adds a new path through a shared function, give it the same budget and memory rules as the main path; check who may write shared state.
+- ADK: act on function_call parts from non-partial events only; read installed ADK source instead of guessing. Sub-agent exceptions reach the turn as DynamicNodeFailError.
+- Vitest includes only src/**/*.test.tsx. jsdom tests need ResizeObserver/scrollTo stubs.
+- Backend ws tests: reuse test_proposal_ws.py helpers. Tool tests: backend.tests.wcl_fakes.install captures the exact query a WCL tool sends (used to pin stored keys).
+- Throwaway PG for raw-store/RLS work: pgvector/pgvector:pg17-trixie, init via backend.cli.init_db, run every file mentioning TEST_DATABASE_URL, stop the container.
 
-Autonomy: deciding and recording reasons on the board as I went cost nothing and kept me moving; suggestions outside the AC went to backlog notices. The QA round showed where autonomy needs more self-review, not more asking: before hand-off, check each new code path against the invariants of the code it sits next to (budgets, who may write shared state, every attribute that can carry a URL). Post plan and decision as one entry.
-- ADK stream events: partial=True events carry only call fragments (Anthropic: will_continue, no args; Gemini progressive SSE: a copy the final event repeats). Act on function_call parts from the non-partial event only. Read the installed ADK source (.venv/.../google/adk) instead of guessing.
-- Vitest here includes only src/**/*.test.tsx (a .test.ts is silently skipped). Stubbing ResizeObserver, Element.scrollTo and mocking use-stick-to-bottom/plotly is how jsdom component tests work. Story text can name the wrong cause (sc-213): trace end to end before fixing; "not reproduced + tests" is a valid, honest outcome.
-- Backend ws tests: reuse test_proposal_ws.py helpers (_quiet, _ctx_stream, _run, _FakeSocket) to drive _handle_turn over the SQLite DB.
+Team: Ilse (SM) gates in one round, accepts reasoned deviations posted as decisions; Ansel and Nils post clear released/grant entries — insert my code away from their append points to keep merges trivial.
+
+Autonomy: deciding and recording on the board kept me moving; the one costly miss came from not checking unchanged tests before the plan gate, so self-review before a gate, not more asking.

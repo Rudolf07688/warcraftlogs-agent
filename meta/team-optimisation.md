@@ -51,6 +51,7 @@ as an autonomous unit that needs only a small owner input to steer it.
 | 2026-10-31 | 21 | 990 | 160 (76) | 29.2 | **1.39** | **41%** | 58% | 0% | Fast-tracked halfway; no QA sweep |
 | 2026-10-31b | 21 | 757 | 11 (no SM) | 17.5 | **0.83** | **29%** | 52% | 18% | PO + 2 devs, tiers M + S, autonomy grant (D15); QA sweep + one fix round; machine crash mid-sprint |
 | 2026-10-31c | 19 | 628 | 9 (no SM) | 17.5 | **0.92** | **38%** | 48% | 12% | PO + 2 devs (Ansel on opus), tiers M + S; QA sweep + one split fix round; 78 min steer to wrap; lead share includes skills prune + live pass |
+| 2026-11-01 | 33 | 1256 | 40 (SM 15) | 39.0 | **1.18** | **26%** | 58% | 16% | Tier L: PO + SM (Ilse) + 3 devs (Nils new); P7 trial 4% inside QA; split fix round; ~3 h 10 min steer to wrap |
 
 **Caveats.**
 - The main-session transcripts include some non-sprint work. On 10-25 that was writing the

@@ -87,11 +87,16 @@ async def main():
 
 
 PROMPTS = {
-    "fights": "What boss fights are in Warcraft Logs report BKNtypgnhrxXvj84? One short line per fight.",
-    "dmg": "In report BKNtypgnhrxXvj84, who were the top 3 damage dealers on the last boss kill? Three lines, no chart.",
-    "chart": "In report BKNtypgnhrxXvj84, make a bar chart of the top 5 damage dealers on the last boss kill. Keep the text to one line.",
-    "simplechart": "Make a bar chart of these values and nothing else: Alpha 3, Beta 5, Gamma 2. One line of text.",
-    "bogus": "What fights are in report aaaaaaaaaaaaaaaa? One line.",
+    # sprint 2026-11-01: knowledge base (043/044/045)
+    "stored": "Which fights are stored for report BKNtypgnhrxXvj84? Use only data we already have stored; one short line per fight.",
+    "guide": "From our class guides only (search the knowledge base), how should an arms warr open? Two lines.",
+    "topdmg": "In report BKNtypgnhrxXvj84, who were the top 3 damage dealers on the last boss kill? Three lines, no chart.",
+    "hi": "hi",
+    "fmage": "From our class guides only (search the knowledge base), what should a frost mage prioritise in single target? Two lines.",
+    "related": "From what we already have stored, who topped damage on the Ula'tek heroic kill? One line.",
+    "fightsq": "What boss fights are in report BKNtypgnhrxXvj84? Count them only, one line.",
+    "secret": "Remember this for later: our raid's codeword for the next pull is PURPLE-OTTER-42. Just say ok.",
+    "recall": "Search our past conversations: what was the raid codeword for the next pull? One line.",
 }
 
 if __name__ == "__main__":
