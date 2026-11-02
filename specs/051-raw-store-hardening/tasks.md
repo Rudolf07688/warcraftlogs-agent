@@ -31,8 +31,21 @@
 ## Phase 5: Polish
 
 - [X] T014 Migration up/down on throwaway Postgres from 0019 and 0020 (quickstart.md), statements logged
-- [ ] T015 `mutate.py` bites for the key guards (floor, signal bypass, null entry, own_summary filter)
-- [ ] T016 GitNexus detect-changes, ownership check, `check.py run --pg ansel` on the committed head, hand-off
+- [X] T015 `mutate.py` bites for the key guards. Run 2026-11-02, each `BITES` (logs under
+  `.git/team-checks/logs/*-mutate-*` in the main checkout; summary in board hand-offs #47, #54):
+  `fetch_persistence.py` floor raise, ReportGone cap bypass, salvage queueing, null-entry gone code,
+  salvage byte filter (`test_051_tombstones.py`); `raw_fetches.py` own_summary filter and write-time
+  flag (`test_051_own_summary.py`), GIN candidate driver (`test_047_stored_reports_pg.py`),
+  visibility clause in the lookup (`test_051_raw_store_pg.py`); 0021 backfill `exact == codes`
+  (`test_051_raw_store_pg.py`). QA fix round: unchanged-refetch flag (BUG-002), floor check before
+  parsing (PERF-008).
+- [X] T016 GitNexus detect-changes, ownership check, `check.py run --pg ansel` on the committed head,
+  hand-off (board #47, rework #54: RECEIPT head=61233bf844b2 pg=yes)
+
+## QA fix round (sweep 2026-11-02)
+
+- [X] T017 BUG-002: an unchanged refetch sets `own_summary` too — `backend/app/repositories/raw_fetches.py`, test in `backend/tests/test_051_own_summary.py`
+- [X] T018 PERF-008: `_stale` compares times before parsing the query — `backend/app/services/fetch_persistence.py`, test in `backend/tests/test_051_tombstones.py`
 
 ## Dependencies
 

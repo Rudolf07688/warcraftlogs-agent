@@ -203,3 +203,14 @@ def test_tombstone_entries_are_bounded():
     fetch_persistence._bury([uuid.uuid4().hex for _ in range(3 * fetch_persistence.TOMBSTONE_MAX)], now)
     assert len(fetch_persistence._tombstones) == fetch_persistence.TOMBSTONE_MAX
     assert fetch_persistence._tombstones.floor == now
+
+
+def test_a_fetch_after_the_floor_is_not_parsed_once_the_tombstones_are_gone(monkeypatch):
+    """PERF-008: a floor long past and no tombstones left: no query parsing per write."""
+    now = datetime.now(UTC)
+    fetch_persistence._tombstones.floor = now - timedelta(hours=1)
+    parsed: list[str] = []
+    monkeypatch.setattr(fetch_persistence, "stored_codes", lambda q, v: parsed.append(q) or ["X1"])
+    assert not fetch_persistence._stale(table("X1", now, requested_at=now))
+    assert parsed == []
+    assert fetch_persistence._stale(table("X1", now, requested_at=now - timedelta(hours=2)))  # under it: stale
