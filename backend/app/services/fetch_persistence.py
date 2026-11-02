@@ -20,6 +20,11 @@ only when an hour older (PERF-005); each batch reports which items changed the s
 (:class:`BatchResult`, contract 5); and a fetch whose request was already under way when its
 report went away is not written (sc-296, :data:`_tombstones`).
 
+Feature 051 (sc-353): gone and private signals are never lost to a full queue (a
+:class:`ReportGone` is never capped; a capped-out summary of our own query still queues its gone
+codes), a flood of tombstones can't flush a real one (:class:`_Tombstones`), and a null report
+entry of a stored summary is a gone signal.
+
 Only the app's lifespan starts a writer. The CLI, eval scripts and tests leave the sink
 unset, so nothing is persisted there.
 """
@@ -55,6 +60,7 @@ from ..db import session as db_session
 from ..kb import indexer as kb_indexer
 from ..repositories.raw_fetches import (
     GRANT_REFRESH,
+    MAX_CODE,
     ReportStatus,
     delete_report,
     grant_codes,
@@ -74,12 +80,27 @@ _LOG_EVERY_S = 60.0
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
 BATCH_MAX = 20  # items per transaction (sc-177): one commit, bounded by the write timeout
 BATCH_MAX_BYTES = 8 * 1024 * 1024  # and body bytes per transaction (041 fix 3)
-# Gone or private reports this process saw (code -> when), so a fetch already under way then isn't
-# written back afterwards (045 sc-296, 047 sc-322). Per process and lost on restart (045 FR-010).
-# Kept well past the longest WCL query (75 s) plus queueing.
+# Kept well past the longest WCL query (75 s) plus queueing: the in-flight window.
 TOMBSTONE_TTL = timedelta(minutes=10)
 TOMBSTONE_MAX = 1024
-_tombstones: OrderedDict[str, datetime] = OrderedDict()
+
+
+class _Tombstones(OrderedDict[str, datetime]):
+    """Gone or private reports this process saw (code -> when), so a fetch already under way then
+    isn't written back afterwards (045 sc-296, 047 sc-322). Per process and lost on restart (045
+    FR-010).
+
+    At most :data:`TOMBSTONE_MAX` codes of at most :data:`MAX_CODE` characters, plus ``floor``
+    (051 sc-353): the newest time of a tombstone the cap evicted while still inside
+    :data:`TOMBSTONE_TTL`. A fetch naming a report requested at or before it is stale, so a flood
+    of made-up codes can't flush a real tombstone's protection; the flood only keeps in-flight
+    fetches out of the store. Bound: about 256 KB (1024 entries) and one timestamp.
+    """
+
+    floor: datetime | None = None
+
+
+_tombstones = _Tombstones()
 
 
 @dataclass(frozen=True)
@@ -102,19 +123,27 @@ class _Txn:
 
 def _bury(codes: Sequence[str], seen_at: datetime) -> None:
     for code in codes:
+        if not 0 < len(code) <= MAX_CODE:
+            continue  # a row naming it is never served, so there is nothing to protect
         if code not in _tombstones or seen_at > _tombstones[code]:
             _tombstones[code] = seen_at
             _tombstones.move_to_end(code)
     horizon = seen_at - TOMBSTONE_TTL
     while _tombstones and (len(_tombstones) > TOMBSTONE_MAX or next(iter(_tombstones.values())) < horizon):
-        _tombstones.popitem(last=False)
+        _, at = _tombstones.popitem(last=False)
+        if at >= horizon and (_tombstones.floor is None or at > _tombstones.floor):
+            _tombstones.floor = at  # evicted inside the window: keep its protection (051 sc-353)
 
 
 def _stale(item: FetchedResponse) -> bool:
-    """The fetch was requested before (or as) one of its reports was seen gone."""
-    if item.requested_at is None or not _tombstones:
+    """The fetch was requested before (or as) one of its reports was seen gone, or at or before
+    the tombstones' overflow floor."""
+    floor = _tombstones.floor
+    if item.requested_at is None or not (_tombstones or floor):
         return False
     codes = stored_codes(item.query, item.variables)
+    if codes and floor is not None and item.requested_at <= floor:
+        return True
     return any((t := _tombstones.get(c)) is not None and item.requested_at <= t for c in codes)
 
 
@@ -129,6 +158,11 @@ class PendingWrite:
     def size(self) -> int:
         return len(self.item.content) if isinstance(self.item, FetchedResponse) else 0
 
+    @property
+    def capped(self) -> bool:
+        """Counts against the queue's item cap; a gone signal never does (051 sc-353)."""
+        return isinstance(self.item, FetchedResponse)
+
 
 def _is_summary(fetched: FetchedResponse, codes: list[str]) -> bool:
     """Only our own summary queries may state a report's visibility: a hand-written query
@@ -136,24 +170,42 @@ def _is_summary(fetched: FetchedResponse, codes: list[str]) -> bool:
     return fetched.query in (REPORT_SUMMARY, report_summaries_query(len(codes)))
 
 
+def _asked_codes(fetched: FetchedResponse) -> dict[str, object]:
+    """Each response key of our own summary query and the code it asked for: ``report`` is
+    ``$code``, batch alias ``r{i}`` is ``$c{i}`` (our fixed query text, never parsed)."""
+    if fetched.query == REPORT_SUMMARY:
+        return {"report": fetched.variables.get("code")}
+    return {f"r{i}": fetched.variables.get(f"c{i}") for i in range(len(fetched.variables))}
+
+
 async def _report_statuses(
     fetched: FetchedResponse, codes: list[str]
 ) -> tuple[list[ReportStatus], list[str]]:
-    """(statuses, private codes) from a summary body's ``reportData`` report objects."""
+    """(statuses, gone codes) from a summary body's ``reportData`` report objects.
+
+    Gone: a report WCL showed as private, or a report entry that came back null (051 sc-353). A
+    stored body carries no ``errors`` (the client raises on them), so a null is WCL's own answer,
+    not a failing field's null propagating up; a body with errors yields no null-entry finding.
+    """
     if len(fetched.content) > _PARSE_OFF_LOOP_BYTES:
         body = await asyncio.to_thread(json.loads, fetched.content)
     else:
         body = json.loads(fetched.content)
     reports = ((body.get("data") or {}).get("reportData")) or {}
+    asked = {} if body.get("errors") else _asked_codes(fetched)
     statuses: list[ReportStatus] = []
-    private: list[str] = []
-    for report in reports.values():
+    gone: list[str] = []
+    for key, report in reports.items():
+        if report is None:
+            if (code := asked.get(key)) in codes:
+                gone.append(code)
+            continue
         code = report.get("code") if isinstance(report, dict) else None
         if not isinstance(code, str) or code not in codes:
             continue
         visibility, end = report.get("visibility"), report.get("endTime")
         if visibility == "private":
-            private.append(code)
+            gone.append(code)
             continue
         statuses.append(
             ReportStatus(
@@ -163,7 +215,7 @@ async def _report_statuses(
                 fetched.fetched_at,
             )
         )
-    return statuses, private
+    return statuses, gone
 
 
 async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, result: BatchResult) -> None:
@@ -195,7 +247,7 @@ async def _store_one(session: AsyncSession, pending: PendingWrite, txn: _Txn, re
         result.changed.append(item)
     if summary:
         statuses, gone = await _report_statuses(item, codes)
-        _bury(gone, item.fetched_at)  # found private: a fetch already under way is stale too (sc-322)
+        _bury(gone, item.fetched_at)  # found private or null: a fetch under way is stale too (sc-322)
         if not stale:
             await record_report_status(session, statuses)
         for code in gone:
@@ -291,9 +343,13 @@ class FetchWriter:
         max_bytes: int,
     ):
         self._store = store
+        self._max_items = max(1, max_items)
         self._max_bytes = max_bytes
-        self._queue: asyncio.Queue[PendingWrite] = asyncio.Queue(maxsize=max(1, max_items))
+        # Unbounded here: :meth:`_enqueue` caps the fetches; gone signals pass (051 sc-353).
+        self._queue: asyncio.Queue[PendingWrite] = asyncio.Queue()
+        self._items = 0  # capped items in the queue
         self._bytes = 0  # body bytes queued or being written
+        self._salvaging: set[asyncio.Task[None]] = set()  # dropped summaries being read for signals
         self._busy = 0  # items being written
         self._carry: PendingWrite | None = None  # taken from the queue, too big for the last batch
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -328,22 +384,52 @@ class FetchWriter:
             loop.call_soon_threadsafe(self._enqueue, pending)
 
     def _enqueue(self, pending: PendingWrite) -> None:
-        size = pending.size
-        if self._queue.full() or self._bytes + size > self._max_bytes:
-            self.dropped += 1
-            self._drops.hit()
-            return
-        self._bytes += size
+        """Queue an item; a fetch over the item or byte cap is dropped (counted), but a gone
+        signal never is, and a dropped summary of our own query still sends its gone codes."""
+        if pending.capped:
+            size = pending.size
+            if self._items >= self._max_items or self._bytes + size > self._max_bytes:
+                self.dropped += 1
+                self._drops.hit()
+                self._salvage(pending.item)
+                return
+            self._items += 1
+            self._bytes += size
         self._queue.put_nowait(pending)
+
+    def _salvage(self, item: FetchedResponse) -> None:
+        """A dropped summary of our own query: read its gone and private codes in a task and queue
+        them as a :class:`ReportGone` (051 sc-353). Only codes are kept, so the bytes cap holds."""
+        codes = exact_report_codes(item.query, item.variables) or []
+        if self._loop is None or not codes or not _is_summary(item, codes):
+            return
+        task = self._loop.create_task(self._signal(item, codes))
+        self._salvaging.add(task)
+        task.add_done_callback(self._salvaging.discard)
+
+    async def _signal(self, item: FetchedResponse, codes: list[str]) -> None:
+        try:
+            _, gone = await _report_statuses(item, codes)
+        except Exception as exc:  # noqa: BLE001 - an unreadable body has no signal to keep
+            self._failures.hit(_describe(exc))
+            return
+        if gone:
+            # What _store_one does with a summary's private findings: tombstone and delete.
+            self._queue.put_nowait(PendingWrite(ReportGone(tuple(gone), item.fetched_at)))
+
+    def _take(self, pending: PendingWrite) -> PendingWrite:
+        if pending.capped:
+            self._items -= 1
+        return pending
 
     async def _next_batch(self) -> list[PendingWrite]:
         """Up to :data:`BATCH_MAX` items and :data:`BATCH_MAX_BYTES` (041 fix 3). The item that
         would overflow waits for the next batch; one oversize item still goes alone."""
         first, self._carry = self._carry, None
-        batch = [first if first is not None else await self._queue.get()]
+        batch = [first if first is not None else self._take(await self._queue.get())]
         size = batch[0].size
         while len(batch) < BATCH_MAX and not self._queue.empty():
-            pending = self._queue.get_nowait()
+            pending = self._take(self._queue.get_nowait())
             if size + pending.size > BATCH_MAX_BYTES:
                 self._carry = pending
                 break
@@ -402,15 +488,20 @@ class FetchWriter:
         task, self._task = self._task, None
         if task is None:
             return
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + grace_s
+        if self._salvaging:  # their signals join the queue first
+            await asyncio.wait(set(self._salvaging), timeout=grace_s)
         try:
-            await asyncio.wait_for(self._queue.join(), grace_s)
+            await asyncio.wait_for(self._queue.join(), max(0.0, deadline - loop.time()))
         except TimeoutError:
             left = self._queue.qsize() + self._busy + int(self._carry is not None)
             self.dropped += left
             logger.warning(
                 "fetch persistence: stopped after %.1fs, dropped %d unwritten response(s)", grace_s, left
             )
-        task.cancel()
+        for pending_task in (task, *self._salvaging):
+            pending_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
         self._drops.flush()
