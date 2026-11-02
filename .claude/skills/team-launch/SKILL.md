@@ -50,6 +50,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    - any iteration instructions
    - the board name
    - the owner's standing rules: never push, never Done, local HTML reports
+  - live-check requests go on the board as kind `question`, key `live-check:<feature>`
+    (there is no `livecheck` kind)
 6. **Tell the owner in two or three lines** what's running. Mention that the plan report
    will appear at `sprints/<date>/plan.html` and won't block the team.
 

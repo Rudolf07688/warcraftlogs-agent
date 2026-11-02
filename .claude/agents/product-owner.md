@@ -256,7 +256,12 @@ M, and the scrum master owns them in tier L.
    liveness: can any turn now wait behind another?" (2026-11-01b: our own P7 rework left
    the kickoff turn stuck behind the background lane, and only the end sweep caught it.)
 2. **Fix only the crucial findings:** correctness bugs in new code, security, data loss,
-   broken acceptance criteria and regressions. Use one fix developer, as a tier S brief.
+   broken acceptance criteria and regressions. Use one fix developer, as a tier S brief
+   (or one per author when you split the round). Launch it **fresh** with the triage
+   excerpt and the same seat; don't resume the builder. A resumed builder re-reads its
+   whole build history on every call (2026-11-02: 210–260k context per call against 123k
+   for a fresh fix agent; build cost per point rose 0.57 → 0.86). Resuming stays right for
+   the P7 rework, where that history is the point.
 3. **Defer everything else to the board, without duplicates** (the owner's rule):
    - Label every deferred ticket `qa-deferred`.
    - Compare each finding with the existing QA tickets by meaning (the label, `QA` in the

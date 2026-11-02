@@ -53,6 +53,7 @@ as an autonomous unit that needs only a small owner input to steer it.
 | 2026-10-31c | 19 | 628 | 9 (no SM) | 17.5 | **0.92** | **38%** | 48% | 12% | PO + 2 devs (Ansel on opus), tiers M + S; QA sweep + one split fix round; 78 min steer to wrap; lead share includes skills prune + live pass |
 | 2026-11-01 | 33 | 1256 | 40 (SM 15) | 39.0 | **1.18** | **26%** | 58% | 16% | Tier L: PO + SM (Ilse) + 3 devs (Nils new); P7 trial 4% inside QA; split fix round; ~3 h 10 min steer to wrap |
 | 2026-11-01b | 20 | 833 | 7 (no SM) | 20.5 | **1.03** | **26%** | 56% | 18% | Tier M: PO + 2 devs; first P9 trial; PO in planning (0.35 M); P7 5% + split fix round; 1 h 36 min steer to wrap |
+| 2026-11-02 | 20 | 922 | 20 (no SM) | 25.3 | **1.27** | **16%** | 68% | 16% | Tier M: PO + 3 devs, fully autonomous (no owner turn after the steer); P10/P11 first trial; devs resumed for P7 rework *and* QA fix (210–260k context/call) → build 0.86/pt; 1 h 33 min steer to PO report |
 
 **Caveats.**
 - The main-session transcripts include some non-sprint work. On 10-25 that was writing the
@@ -605,3 +606,15 @@ through respawns as the same named member, with its own small, curated memory. I
   before changing anything. The lever wasn't ownership entries but Shortcut re-reads (36%)
   and report copying (10%). Built `report.py` and the shell, `usage.py --context`, and
   expected answers in `livecheck.py` (P11). Updated `product-owner.md` and team-launch.
+- **2026-11-02 (sprint 2026-11-02, fully autonomous):** owner: "start and complete the sprint.
+  No further interactions from me." 20/20 pts (14 stories, three streams: report fights +
+  kickoff, raw-store hardening, turn + startup hardening) in 1 h 33 min; merged locally,
+  not pushed. 25.3 M = 1.27 M/pt (up from 1.03), coordination 16% (lowest yet), build 68%.
+  Cause, measured: Maren resumed each builder for the P7 rework and the QA fix, so later
+  calls carried 210–260k context against 123k for last sprint's fresh fix agents; build per
+  point 0.57 → 0.86. P10: Maren 0.134 M/pt (target ≤ 0.12, was 0.17), Shortcut 20% (target
+  < 15%, was 36%), html 0% (met); new biggest slice is inline Agent results (32%). P11 first
+  live use: judged prompts PASS twice; the soft kickoff miss (37.4k vs ~35k) became
+  sc-367. Changes: `product-owner.md` QA-fix round in fresh agents; `developer.md` final
+  result ~25 lines; `team-launch` live-check board convention; `livecheck.py` raid-only
+  `--facts` + `killdiff`. Team report: `meta/sprints/2026-11-02/team-report.html`.

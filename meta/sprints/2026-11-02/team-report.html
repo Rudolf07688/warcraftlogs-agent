@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Report 2026-11-02</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px;align-content:start}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:grid;gap:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
+.checks .no{font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted)}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Team report · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-02: how the team worked</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-02</b></span><span>Tier M: PO + 3 devs</span><span>Steer 17:01Z → PO report 18:34Z (1 h 33 min)</span><span>No owner interaction after the steer</span></div>
+  <p>The first fully autonomous sprint: the owner said "start and complete the sprint" and nothing else. Maren scoped 20 points into three disjoint streams, every stream passed a scoped security review and one rework round, the end sweep's one High was fixed, and the live pass found 0 failures. Coordination fell to its lowest share yet (16%), but cost per point rose to 1.27 because the build share grew: developers were resumed for every round and carried their whole context with them.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">20<small> / 20 pts</small></span><span class="s">14 stories, Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Cost per point</span><span class="v">1.27<small> M</small></span><span class="s">was 1.03 (2026-11-01b)</span></div>
+  <div class="kpi"><span class="eyebrow">Coordination</span><span class="v">16%</span><span class="s">was 26%; lowest so far</span></div>
+  <div class="kpi"><span class="eyebrow">Live pass</span><span class="v">0<small> FAIL</small></span><span class="s">3 PASS twice, kickoff + 052 checks OK</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-cost" aria-controls="p-cost" aria-selected="true">Cost</button>
+  <button class="tab" role="tab" id="tab-trials" aria-controls="p-trials" aria-selected="false" tabindex="-1">P10 / P11 trials</button>
+  <button class="tab" role="tab" id="tab-flow" aria-controls="p-flow" aria-selected="false" tabindex="-1">Timeline</button>
+  <button class="tab" role="tab" id="tab-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Worked / change</button>
+  <button class="tab" role="tab" id="tab-mem" aria-controls="p-mem" aria-selected="false" tabindex="-1">Memory + skills</button>
+</div></nav>
+
+<div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
+  <h2 class="panel-title">Where the tokens went</h2>
+  <p class="muted small">Weighted cost = cache reads × 0.1 + cache writes × 1.25 + output × 5, in M units, as in the baseline table. Source: <code>meta/sprints/2026-11-02/usage.txt</code>.</p>
+  <table class="tbl">
+    <tr><th>Agent</th><th>Calls</th><th>Weighted</th><th>Avg context / call</th></tr>
+    <tr><td>Tomas: 052 turn hardening (7 stories + P7 rework + QA fix)</td><td class="num">202</td><td class="num">7.40</td><td class="num">260k</td></tr>
+    <tr><td>Nils: 050 report fights (+ rework + QA fix)</td><td class="num">149</td><td class="num">4.96</td><td class="num">210k</td></tr>
+    <tr><td>Ansel: 051 raw store (+ rework + QA fix)</td><td class="num">133</td><td class="num">4.77</td><td class="num">224k</td></tr>
+    <tr><td>Maren (product owner)</td><td class="num">92</td><td class="num">2.68</td><td class="num">138k</td></tr>
+    <tr><td>team-lead (incl. live pass)</td><td class="num">90</td><td class="num">1.32</td><td class="num">111k</td></tr>
+    <tr><td>QA end sweep (4 agents)</td><td class="num">164</td><td class="num">2.67</td><td class="num">—</td></tr>
+    <tr><td>P7 scoped security reviews (3)</td><td class="num">86</td><td class="num">1.40</td><td class="num">—</td></tr>
+    <tr><td>Shortcut board sync</td><td class="num">6</td><td class="num">0.13</td><td class="num">—</td></tr>
+    <tr><td><b>Total</b></td><td class="num"><b>922</b></td><td class="num"><b>25.33</b></td><td></td></tr>
+  </table>
+  <div class="bars">
+    <div class="bar"><span>Build</span><span class="track"><span class="fill" style="width:68%"></span></span><span class="n">68%</span></div>
+    <div class="bar"><span>Coordination</span><span class="track"><span class="fill" style="width:16%"></span></span><span class="n">16%</span></div>
+    <div class="bar"><span>QA (P7 6%)</span><span class="track"><span class="fill" style="width:16%"></span></span><span class="n">16%</span></div>
+  </div>
+  <div class="callout warn"><b>Why the cost per point rose.</b> Build per point went from 0.57 to 0.86 M. Last sprint the QA fixes ran in fresh agents with a short brief (Nils's fix agent averaged 123k context per call). This sprint Maren resumed each developer for the P7 rework <i>and</i> the QA fix, so every later call re-read the whole build history: 210k–260k per call. Three streams also meant three P7 reviews and three fix agents. Lever: resume for the P7 rework (the context is relevant), but run the QA fix round as a fresh agent with the triage excerpt.</div>
+</div>
+
+<div role="tabpanel" id="p-trials" aria-labelledby="tab-trials" tabindex="0" hidden>
+  <h2 class="panel-title">P10 (lighter PO admin) and P11 (live checks judge answers)</h2>
+  <table class="tbl">
+    <tr><th>P10 measure</th><th>2026-11-01b</th><th>Target</th><th>This sprint</th><th></th></tr>
+    <tr><td>Maren cost per point</td><td class="num">0.17</td><td class="num">≤ 0.12</td><td class="num">0.134</td><td><span class="tag t-warn">−21%, near miss</span></td></tr>
+    <tr><td>Shortcut share of her new context</td><td class="num">36%</td><td class="num">&lt; 15%</td><td class="num">20%</td><td><span class="tag t-warn">−16 pts, near miss</span></td></tr>
+    <tr><td>Report copying (html) share</td><td class="num">10%</td><td class="num">≈ 0</td><td class="num">0%</td><td><span class="tag t-ok">met</span></td></tr>
+  </table>
+  <p>The new biggest slice of Maren's context is <b>Agent results (32%)</b>: developer hand-offs came back inline as full tool results even with <code>run_in_background</code>, on top of the same hand-off on the board. She also ran three streams instead of two (14 stories, 14 ticket reads). P10 holds; the next lever is to keep developers' final results short (the board carries the hand-off) and to read tickets in one batched search.</p>
+  <h3>P11</h3>
+  <ul class="checks">
+    <li>First live use. The judged prompts <code>topdmg</code>, <code>chart5</code> and the new <code>killdiff</code> all PASSED on the merged branch and again on the final tip. "Agent picks the wrong last boss kill" is fixed in the real app.</li>
+    <li>Judging also caught a soft miss that arrival alone would hide: the kickoff peaked at 37.4k tokens against the spec's "about 35k". The cause is a fixed ~22.7k base per request, filed as "Every chat request starts at about 23k prompt tokens" (sc-367).</li>
+    <li>Tool fix: <code>--facts</code> counted a Mythic+ key as the "last boss kill"; it now skips difficulty 10.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-flow" aria-labelledby="tab-flow" tabindex="0" hidden>
+  <h2 class="panel-title">Timeline (UTC)</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">17:01</span> Steer on the board; Maren launched</div>
+    <div class="tl ok"><span class="t">17:06</span> Scope: 20 pts in three disjoint streams, tiers all M, file owners posted</div>
+    <div class="tl ok"><span class="t">17:31–17:36</span> Three hand-offs, all green with receipts</div>
+    <div class="tl warn"><span class="t">17:53</span> P7 reviews: 0 High / 4 Medium / 10 Low → one rework round each</div>
+    <div class="tl ok"><span class="t">17:58–18:06</span> 051, 050, 052 merged (receipt reuse + Maren's own --pg runs)</div>
+    <div class="tl ok"><span class="t">18:08–18:11</span> Live pass on the merged tip: 0 FAIL; sc-367 filed</div>
+    <div class="tl warn"><span class="t">18:19</span> End sweep: 0 C / 1 H / 8 M / 17 L; split fix round by author</div>
+    <div class="tl ok"><span class="t">18:23–18:33</span> Three QA-fix merges; live re-run of the touched paths: 0 FAIL</div>
+    <div class="tl ok"><span class="t">18:34</span> Sprint review written; Maren's final report</div>
+  </div>
+  <p class="small muted">Board: 79 entries (17 decisions, 17 answers, 9 questions, 9 hand-offs, 6 merges, 1 blocker). 20 agent messages, 12 of them Maren's. team-lead woke no one: every merge followed its hand-off within 7 minutes.</p>
+</div>
+
+<div role="tabpanel" id="p-learn" aria-labelledby="tab-learn" tabindex="0" hidden>
+  <h2 class="panel-title">What worked, what to change</h2>
+  <div class="grid2">
+    <div class="card"><h3>Worked</h3><ul class="checks">
+      <li>Full autonomy held: no owner question was needed. Maren decided scope, tiers, shared-file grants and the triage on the board.</li>
+      <li>Disjoint streams with hunk-level splits for shared files (raids.py, report_tools.py) – three devs, zero merge conflicts.</li>
+      <li>Maren read the code and refined my candidate: the wrong last kill came from M+ key runs at the top of the list, and the size cap could also drop it; the fix covers both.</li>
+      <li>Running the live pass in parallel with the QA sweep, then re-running only the touched prompts, saved ~15 minutes.</li>
+      <li>P7 kept paying: 4 Mediums fixed before merge, and the end sweep found no security High.</li>
+    </ul></div>
+    <div class="card"><h3>Change next time</h3><ul class="checks">
+      <li class="no">QA-fix round in fresh agents with the triage excerpt, not resumed builders (build per point 0.57 → 0.86).</li>
+      <li class="no">Developer final results short: the board hand-off is the record; the inline result cost Maren 32% of her context.</li>
+      <li class="no">My PO brief asked for a <code>livecheck</code> board kind that doesn't exist. Fixed in the brief template: live checks are <code>question</code> entries keyed <code>live-check:&lt;feature&gt;</code>.</li>
+      <li class="no">The end-sweep High was a cost our own security fix introduced (neutralise on every cell). P7 reworks that add per-item work should state its cost.</li>
+    </ul></div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-mem" aria-labelledby="tab-mem" tabindex="0" hidden>
+  <h2 class="panel-title">Memory and skills</h2>
+  <ul class="checks">
+    <li>Members who updated their memory this sprint: Maren, Ansel, Tomas, Nils (63 lines added, 59 removed; each rewrote rather than appended). Ilse (not used) unchanged.</li>
+    <li><code>member.py lint --all</code>: 0 repeats for Maren; Ilse has 4 lines now covered by tools (suggestions only; nobody edits another's memory).</li>
+    <li>Skill, agent and tool changes by team-lead:
+      <ul>
+        <li><code>team-launch</code>: the PO brief names the live-check board convention (Nils's <code>skill:team-launch</code> notice #41).</li>
+        <li><code>product-owner.md</code>: the QA fix round runs in fresh agents, while the P7 rework still resumes the builder.</li>
+        <li><code>developer.md</code>: the final result is about 25 lines and doesn't repeat the board hand-off.</li>
+        <li><code>livecheck.py</code>: adds the <code>killdiff</code> prompt and a raid-only <code>--facts</code>.</li>
+      </ul></li>
+  </ul>
+</div>
+
+<footer>Written by team-lead from usage.txt, board.jsonl and git. Local report, not published.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>

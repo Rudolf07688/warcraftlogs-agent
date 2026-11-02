@@ -1,0 +1,28 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                             90    29603    10034894     131117      0
+P7 security review 052                       35    32263     2103624      94491      0
+P7 security review 051                       26    47201     1837746     121763      0
+Dev 051 raw-store hardening                 133   130645    29747051     911826      2
+QA spec conformance sweep                    48    37078     4277786     154606      0
+Shortcut board sync                           6     4867      314873      62827      0
+QA security sweep                            33    27713     2012949     108207      0
+P7 security review 050                       25    23739     1211819      77898      0
+Dev 052 turn hardening                      202   177951    52470379    1011652      4
+QA bug hunt sweep                            53    49652     5240420     153788      0
+Dev 050 report fights                       149   137362    31314529     916352      2
+QA performance sweep                         30    28431     1585007      97354      0
+product-owner                                92    81284    12690626     802786     12
+TOTAL {'calls': 922, 'out': 807789, 'cr': 154841703, 'cc': 4644667, 'inp': 1982, 'sends': 20}
+main (team-lead) [('Bash', 47), ('Monitor', 4), ('mcp__shortcut__get_story', 3), ('mcp__shortcut__search_stories', 3), ('ToolSearch', 2), ('mcp__shortcut__create_story', 2)]
+P7 security review 052 [('Bash', 32), ('Read', 1), ('Write', 1)]
+P7 security review 051 [('Bash', 24), ('Read', 1), ('Write', 1)]
+Dev 051 raw-store hardening [('Bash', 116), ('Write', 12), ('mcp__shortcut__update_story', 7), ('Skill', 5), ('ToolSearch', 2), ('Edit', 2)]
+QA spec conformance sweep [('Bash', 47), ('Write', 1)]
+Shortcut board sync [('mcp__shortcut__search_stories', 3), ('Bash', 2), ('mcp__shortcut__list_workflows', 2), ('mcp__shortcut__get_iteration', 2), ('ToolSearch', 1), ('mcp__shortcut__list_iteration_stories', 1)]
+QA security sweep [('Bash', 33), ('Write', 1)]
+P7 security review 050 [('Bash', 24), ('Write', 1)]
+Dev 052 turn hardening [('Bash', 183), ('mcp__shortcut__update_story', 15), ('Write', 8), ('Skill', 4), ('SendMessage', 4), ('ToolSearch', 2)]
+QA bug hunt sweep [('Bash', 53), ('Write', 1)]
+Dev 050 report fights [('Bash', 131), ('mcp__shortcut__update_story', 12), ('Write', 11), ('ToolSearch', 3), ('Skill', 3), ('Edit', 2)]
+QA performance sweep [('Bash', 28), ('Write', 1)]
+product-owner [('Bash', 56), ('mcp__shortcut__get_story', 14), ('mcp__shortcut__update_story', 14), ('SendMessage', 12), ('Agent', 11), ('Write', 8)]

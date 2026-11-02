@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-01 late (session f6f1e132 ended by the owner; everything pushed)
+Updated: 2026-11-02 ~18:50Z (session c88ddb6f: autonomous sprint done, merged locally)
 
 ## Topic
 
@@ -14,29 +14,29 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- Sprint 2026-11-01b merged and pushed: 20/20 at 1.03 M/pt; P9 held on every measure. Report:
-  `meta/sprints/2026-11-01b/team-report.html`; data in `usage.txt` and `board.jsonl` beside it.
-- Retro done with the owner. Built, committed and pushed on the owner's go:
-  - **P10 lighter PO admin:** `report.py` + `report-shell.html`; read-once tickets; one
-    `owner:<glob>` per stream; batched ticket writes; a liveness line in the end-sweep prompt.
-    `usage.py --context` measures it.
-  - **P11:** `livecheck.py` judges answers against EXPECT (`--facts <code>`). Not yet run live.
-- Clean state: local sprint branches deleted, no worktrees, origin/main up to date.
-  Shortcut iterations 161 and 290 end 2026-11-01 and close themselves. The 10 stories in
-  iteration 338 are Under Review; Done is the owner's call.
+- Sprint 2026-11-02 ran fully autonomously on the owner's steer ("start and complete the
+  sprint. No further interactions from me."). 20/20 pts, 14 stories Under Review in
+  iteration 366; merged into main locally (557e3b6); **not pushed** (main is ahead of origin).
+  Team report: `meta/sprints/2026-11-02/team-report.html`; sprint review in
+  `sprints/2026-11-02/`. DB backup before migration 0021: `~/dev/wcl-backups/pre-sprint-2026-11-02.dump`.
+- Readings: 1.27 M/pt (was 1.03), coordination 16% (lowest). Build cost rose because
+  builders were resumed for the QA fix (fixed in `product-owner.md`). P10 near misses
+  (Maren 0.134 M/pt, Shortcut 20%); P11 worked live (0 FAIL, found the soft kickoff miss).
+- The owner's `.env` SECRET_KEY is a placeholder: fine on localhost, but the app now refuses
+  to start with it off localhost (sc-356). Tell the owner before any shared deploy.
 
 ## Open with the owner
 
-1. Longer-lived Google credentials (service account) for the live pass; offered to draft.
-2. Session boundaries: one session per sprint, separate meta sessions. This session ran
-   planning → sprint → merge → meta and needed a compaction, which is evidence for the trial.
+1. Push main (557e3b6 + wrap-up commit)? Preference 1: ask first.
+2. Longer-lived Google credentials (service account) for the live pass; offered to draft.
+3. Session boundaries: this sprint ran in its own fresh session with no compaction.
 
 ## For the next sprint (mine)
 
-- Start it in a fresh session. Trial P10: Maren's cost per point 0.17 → ≤ 0.12, Shortcut
-  share 36% → < 15%, html share → ≈ 0. Read them with `usage.py --context`.
-- Trial P11 in the live pass. Add EXPECT entries for the sprint's prompts.
-- Candidate: "Agent picks the wrong last boss kill" (sc-365); P11 now detects it.
+- Read the trial again: QA fixes in fresh agents (build per point back toward 0.6?), short
+  developer results (Maren's Agent share 32% → < 15%).
+- Candidates: "Every chat request starts at about 23k prompt tokens" (sc-367), "uploader
+  text still raw in the other tools" (sc-368), breaker identity gaps (sc-369).
 
 ## How to resume
 

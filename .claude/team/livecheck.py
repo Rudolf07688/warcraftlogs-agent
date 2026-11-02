@@ -136,13 +136,15 @@ def facts(code):
     fights = json.loads(out)
     for f in fights:
         print(f"{f['id']:3} {f.get('name')!s:40} kill={f.get('kill')} difficulty={f.get('difficulty')} encounter={f.get('encounterID')}")
-    kills = [f for f in fights if f.get("kill") and f.get("encounterID")]
+    kills = [f for f in fights if f.get("kill") and f.get("encounterID") and f.get("difficulty") != 10]  # 10 = M+ key
     if kills:
         k = kills[-1]
-        print(f"last boss kill: fight {k['id']} {k['name']} (difficulty {k.get('difficulty')})")
+        print(f"last raid boss kill: fight {k['id']} {k['name']} (difficulty {k.get('difficulty')})")
 
 
 PROMPTS = {
+    # sprint 2026-11-02: report fights + kickoff (050), raw store (051), turn hardening (052)
+    "killdiff": "In report BKNtypgnhrxXvj84, which raid boss was killed, and on what difficulty? One line.",
     # sprint 2026-11-01b: big-report turns (046/048), clean-up (047/049). "kickoff" is built in above.
     "chart5": "In report BKNtypgnhrxXvj84, make a bar chart of the top 5 damage dealers on the last boss kill. Keep the text to one line that names the boss.",
     # sprint 2026-11-01: knowledge base (043/044/045)
@@ -163,6 +165,8 @@ PROMPTS = {
 LAST_KILL = {"all": [r"ula.?tek"], "none": [r"nalorakk", r"blinding vale", r"kith.?ix"],
              "why": "last boss kill = Ula'tek heroic (fight 32)"}
 EXPECT = {
+    "killdiff": {"all": [r"ula.?tek", r"heroic"], "none": [r"\bnormal\b", r"\blfr\b"],
+                 "why": "raid kill = Ula'tek on Heroic (difficulty 4)"},
     "topdmg": LAST_KILL,
     "chart5": LAST_KILL,
     "related": {"all": [r"\w"], "none": [r"kith.?ix"], "why": "answers about Ula'tek, not Kith'ix"},

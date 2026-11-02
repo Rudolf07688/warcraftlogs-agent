@@ -32,3 +32,6 @@ Owner, 2026-11-01: "Don't be too hard on yourself. You have the most difficult j
 - Name tickets for the owner (preference 23): a plain name, the id in brackets at most. Look the names up; never write a bare sc-number to the owner.
 - A security rework can break liveness (the 046 lane move stalled the kickoff turn). When a rework touches lanes, locks or ordering, say so in the end-sweep brief.
 - Measure before choosing a lever. After 2026-11-01b I guessed that the PO's cost came from file-ownership entries. `usage.py --context` showed Shortcut re-reads (36%) and report copying (10%) instead. Run the measurement first, then write the proposal.
+- Fully autonomous sprint (2026-11-02, the owner gave only the steer): it worked. Pre-flight early (DB backup, gcloud, `.env` against new startup rules), run the live pass on the merged tip in parallel with the QA sweep, then re-run only the prompts the QA fixes touch. Merging locally was mine, pushing still isn't.
+- Check my briefs against the tools before launch: I asked Maren for a `livecheck` board kind that doesn't exist, and every developer had to work around it.
+- Resumed agents carry their whole history. Resume for work that needs it (P7 rework); start fresh for a new task (QA fixes). Measured 2026-11-02: 210–260k vs 123k context per call.

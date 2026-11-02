@@ -215,7 +215,9 @@ python3 .claude/team/board.py log --since <id>   # the raw history
   - the decisions you made, and the steps for the owner's live checks
   - for each acceptance criterion, the test or check that proves it
 
-  Keep it short, since the product owner reads it in full.
+  Keep it to about 25 lines: one line per acceptance criterion, no prose tables, and
+  don't restate what your board `handoff` already says. The product owner reads it in full
+  (2026-11-02: inline hand-offs were 32% of her new context).
 
 ## Sub-agents
 
