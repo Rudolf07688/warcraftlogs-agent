@@ -828,4 +828,5 @@ class CacheStats(BaseModel):
     families: dict[str, FamilyStats]  # all seven families, always present
     redis: RedisHealth | None
     store: StoreStats = StoreStats()
+    store_by_operation: dict[str, StoreStats] = {}  # the store counts per WCL operation (052)
     local_answers: LocalAnswerStats = LocalAnswerStats()

@@ -171,6 +171,7 @@ class StoreSource:
             return None
         identity = current_identity.get()
         tenant_id = identity.tenant_id if identity is not None else None  # None: public only
+        op = operation_name(query) or "anonymous"  # 052 sc-332: counted per operation too
         now = datetime.now(UTC)
         since = now - timedelta(days=settings.raw_store_reverify_days)
         try:
@@ -187,20 +188,20 @@ class StoreSource:
         except Exception as exc:  # noqa: BLE001 - a turn never fails because of the store (FR-015)
             if _is_timeout(exc):
                 breaker.timed_out(trial, turn)
-                record_store("timeout")
+                record_store("timeout", op)
             elif _is_outage(exc):
                 breaker.failed()
-                record_store("timeout")
+                record_store("timeout", op)
             else:
                 breaker.released(trial)
-                record_store("miss")
+                record_store("miss", op)
             logger.debug("raw store read failed: %s", type(exc).__name__)
             return None
         breaker.succeeded(trial, turn)
-        record_store(probe.outcome)
+        record_store(probe.outcome, op)
         if probe.body is None:
             return None
-        logger.info("wcl store hit op=%s", operation_name(query) or "anonymous")
+        logger.info("wcl store hit op=%s", op)
         return StoredFetch(probe.body, probe.shared)
 
 
