@@ -134,6 +134,22 @@ async def test_a_dropped_summary_still_sends_its_private_and_null_codes(blocked_
     assert batch not in written
 
 
+async def test_a_dropped_summary_without_a_finding_is_not_kept(blocked_writer):
+    """P7 SEC-004: only a body that can hold a private or null finding is kept for parsing."""
+    writer, entered, release, _ = blocked_writer
+    now = datetime.now(UTC)
+    writer.start()
+    writer.offer(table("Q0", now, now))
+    await entered.wait()
+    writer.offer(table("Q1", now, now))
+    writer.offer(fetched(REPORT_SUMMARY, {"code": "Pub4"}, {"reportData": {"report": report("Pub4", "public")}}, now))
+    assert writer.dropped == 1 and not writer._salvaging
+    writer.offer(fetched(REPORT_SUMMARY, {"code": "Prv4"}, {"reportData": {"report": report("Prv4", "private")}}, now))
+    assert len(writer._salvaging) == 1
+    release.set()
+    await writer.stop()
+
+
 async def test_a_dropped_summary_signal_deletes_the_rows_end_to_end(patched_db, tenant_id):
     now = datetime.now(UTC)
     t0 = now - timedelta(minutes=1)

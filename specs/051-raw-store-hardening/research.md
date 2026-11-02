@@ -9,6 +9,9 @@
   block commits the migration transaction first and reopens it after. A failed concurrent build
   leaves an INVALID index: `if_not_exists`/`if_exists` make a re-run converge.
 - **Alternatives**: plain `CREATE INDEX` (locks writes for the build: the bug).
+- **P7 rework (SEC-003)**: 0021's `ADD COLUMN` and backfill also run inside the autocommit block
+  (column with a constant default and `if_not_exists`, backfill chunks committed one by one), so no
+  step holds `raw_fetches` for the whole backfill and a re-run converges.
 
 ## R2 Tombstone overflow (sc-353)
 

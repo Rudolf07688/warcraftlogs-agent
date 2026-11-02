@@ -36,6 +36,7 @@ import contextlib
 import json
 import logging
 import math
+import re
 import time
 import uuid
 from collections import OrderedDict
@@ -80,6 +81,9 @@ _LOG_EVERY_S = 60.0
 _PARSE_OFF_LOOP_BYTES = 256_000  # like the WCL client: big bodies are parsed off the loop
 BATCH_MAX = 20  # items per transaction (sc-177): one commit, bounded by the write timeout
 BATCH_MAX_BYTES = 8 * 1024 * 1024  # and body bytes per transaction (041 fix 3)
+# What a summary body with a gone or private finding must contain: a cheap filter, so only such
+# bodies are kept and parsed when dropped (051 P7 SEC-004); the parse still decides.
+_SIGNAL_RE = re.compile(rb'"private"|"(?:report|r\d+)"\s*:\s*null')
 # Kept well past the longest WCL query (75 s) plus queueing: the in-flight window.
 TOMBSTONE_TTL = timedelta(minutes=10)
 TOMBSTONE_MAX = 1024
@@ -399,9 +403,12 @@ class FetchWriter:
 
     def _salvage(self, item: FetchedResponse) -> None:
         """A dropped summary of our own query: read its gone and private codes in a task and queue
-        them as a :class:`ReportGone` (051 sc-353). Only codes are kept, so the bytes cap holds."""
+        them as a :class:`ReportGone` (051 sc-353). Only a body that can hold such a finding is
+        kept, and only until it is parsed; the queued signal holds codes only."""
         codes = exact_report_codes(item.query, item.variables) or []
         if self._loop is None or not codes or not _is_summary(item, codes):
+            return
+        if not _SIGNAL_RE.search(item.content):
             return
         task = self._loop.create_task(self._signal(item, codes))
         self._salvaging.add(task)

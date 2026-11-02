@@ -7,8 +7,11 @@ The lookup then reads only own summaries naming a code granted to the tenant or 
 recently: a partial GIN index on the flagged rows' codes, and indexes for the two code sources.
 0020's ``ix_raw_fetches_summaries`` is no longer used and is dropped.
 
-Indexes are built and dropped CONCURRENTLY outside the migration transaction (051 sc-359, the
-rule in ``script.py.mako``); the column and its backfill commit first.
+Nothing here holds a lock on ``raw_fetches`` for long (051 sc-359, the rule in
+``script.py.mako``): everything runs outside the migration transaction. The column is added with a
+constant default (metadata only, a brief exclusive lock), the backfill updates in short committed
+batches, and the indexes are built and dropped CONCURRENTLY. Every step is guarded (IF [NOT]
+EXISTS, drop-then-create, an idempotent backfill), so a re-run after a failure converges.
 
 Revision ID: 0021_raw_fetch_own_summary
 Revises: 0020_raw_fetch_summary_index
@@ -55,7 +58,8 @@ def is_own(query_key: str, params: object, codes: object) -> bool:
 
 def backfill(conn: sa.Connection) -> int:
     """Flag every stored summary row the old rule accepts; returns how many. Reads keys, params
-    and codes only (never payloads)."""
+    and codes only (never payloads); in autocommit each chunk's UPDATE commits on its own, so row
+    locks are held for one chunk. Re-running it only re-sets flags already set."""
     rows = sa.table(
         "raw_fetches", sa.column("query_key"), sa.column("params", sa.JSON), sa.column("report_codes", sa.JSON),
         sa.column("operation_name"), sa.column("own_summary", sa.Boolean),
@@ -72,11 +76,13 @@ def backfill(conn: sa.Connection) -> int:
 
 
 def upgrade() -> None:
-    op.add_column(
-        "raw_fetches", sa.Column("own_summary", sa.Boolean(), nullable=False, server_default=sa.false())
-    )
-    backfill(op.get_bind())
     with op.get_context().autocommit_block():
+        op.add_column(
+            "raw_fetches",
+            sa.Column("own_summary", sa.Boolean(), nullable=False, server_default=sa.false()),
+            if_not_exists=True,
+        )
+        backfill(op.get_bind())
         for name, table, columns, using, where in _INDEXES:
             # A failed concurrent build leaves an INVALID index behind: drop it so a re-run converges.
             op.drop_index(name, table_name=table, postgresql_concurrently=True, if_exists=True)
@@ -100,4 +106,4 @@ def downgrade() -> None:
         )
         for name, table, _columns, _using, _where in reversed(_INDEXES):
             op.drop_index(name, table_name=table, postgresql_concurrently=True, if_exists=True)
-    op.drop_column("raw_fetches", "own_summary")
+        op.drop_column("raw_fetches", "own_summary", if_exists=True)

@@ -62,7 +62,9 @@ backend/tests/test_047_stored_reports_pg.py            # index assertions update
 ## Risks
 
 - **Backfill on a big table**: one pass over the summary rows' keys/params (no payloads), updates
-  in chunks of 1000 keys; the column add is metadata-only on Postgres 11+.
+  in chunks of 1000 keys, each committed on its own in the autocommit block (P7 SEC-003 rework);
+  the column add is metadata-only on Postgres 11+ and runs as its own short statement. Every step
+  is guarded, so a re-run after a failed index build converges.
 - **Planner ignoring the GIN driver**: proved with `EXPLAIN` under `enable_seqscan=off` and an
   `EXPLAIN ANALYZE` read count, like 047.
 - **Floor too eager**: under a flood, in-flight report fetches aren't stored (availability only);
