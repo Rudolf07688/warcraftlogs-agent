@@ -761,10 +761,6 @@ class RecentRaidRefresh(Base):
     character_set: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
-# The rows of our two report summary queries (operation names; 047 sc-324, migration 0020).
-RAW_SUMMARY_PREDICATE = "operation_name IN ('ReportSummary', 'ReportsBatch')"
-
-
 class RawFetch(Base):
     """One Warcraft Logs GraphQL response, kept for DB-first reads (feature 020).
 
@@ -777,12 +773,13 @@ class RawFetch(Base):
     __tablename__ = "raw_fetches"
     __table_args__ = (
         Index("ix_raw_fetches_report_codes", "report_codes", postgresql_using="gin"),
-        # Our report summaries, newest first: the stored-reports lookup (047 sc-324, 0020).
+        # Our own report summaries by the codes they name: the stored-reports lookup (051 sc-354,
+        # 0021; it replaced 0020's ix_raw_fetches_summaries).
         Index(
-            "ix_raw_fetches_summaries",
-            text("fetched_at DESC"),
-            postgresql_where=text(RAW_SUMMARY_PREDICATE),
-            sqlite_where=text(RAW_SUMMARY_PREDICATE),
+            "ix_raw_fetches_own_summary_codes",
+            "report_codes",
+            postgresql_using="gin",
+            postgresql_where=text("own_summary"),
         ),
     )
 
@@ -796,6 +793,9 @@ class RawFetch(Base):
     # sha256 of the body without ``data._cost`` (feature 039): an unchanged refetch only
     # moves ``fetched_at``. NULL for rows written before migration 0018.
     payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The response to our own fixed report summary query (single or batch) with exact codes, set
+    # when written (051 sc-354; 0021 backfilled older rows). A hand-written look-alike never is.
+    own_summary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false(), default=False)
 
 
 class RawReport(Base):
@@ -807,6 +807,14 @@ class RawReport(Base):
     """
 
     __tablename__ = "raw_reports"
+    __table_args__ = (
+        # Reports confirmed public, by when: the stored-reports lookup's candidates (051, 0021).
+        Index(
+            "ix_raw_reports_public_checked",
+            "checked_at",
+            postgresql_where=text("visibility = 'public'"),
+        ),
+    )
 
     code: Mapped[str] = mapped_column(String(32), primary_key=True)
     visibility: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -822,6 +830,8 @@ class RawFetchGrant(Base):
     """
 
     __tablename__ = "raw_fetch_grants"
+    # A tenant's recent grants: the stored-reports lookup's candidates (051, 0021).
+    __table_args__ = (Index("ix_raw_fetch_grants_tenant_granted", "tenant_id", "granted_at"),)
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True

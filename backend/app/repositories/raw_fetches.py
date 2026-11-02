@@ -52,7 +52,6 @@ from wcl_agent.client.wcl_client import (
     _COST_RE,
     _REPORT_TOKEN_RE,
     FetchedResponse,
-    _flight_key,
     exact_report_codes,
     operation_name,
     report_codes,
@@ -61,7 +60,9 @@ from wcl_agent.client.wcl_client import (
 from ..db.models import RawFetch, RawFetchGrant, RawReport
 from ..db.repository import _insert
 
-_UPDATED = ("operation_name", "params", "report_code", "report_codes", "fetched_at", "payload", "payload_hash")
+_UPDATED = (
+    "operation_name", "params", "report_code", "report_codes", "fetched_at", "payload", "payload_hash", "own_summary"
+)
 MAX_CODE = 32  # raw_reports.code / raw_fetch_grants.report_code; longer codes are never visible
 MAX_OPERATION = 120  # raw_fetches.operation_name
 _OFF_LOOP_BYTES = 256_000  # hashing / scanning bigger bodies runs in a thread
@@ -116,6 +117,18 @@ def stored_codes(query: str, variables: dict) -> list[str]:
     return list(dict.fromkeys(c.strip() for c in loose if c.strip()))
 
 
+def is_own_summary(query: str, variables: dict, exact: list[str] | None) -> bool:
+    """The fetch is our own fixed report summary query, single or batch, with exact codes and
+    exactly its own variables (051 sc-354): the rule the stored-reports lookup trusts. Compares
+    the query text whole; a hand-written ``ReportSummary`` look-alike never matches."""
+    if exact is None:
+        return False
+    if query == REPORT_SUMMARY:
+        return set(variables) == {"code"}
+    n = len(variables)
+    return n > 0 and set(variables) == {f"c{i}" for i in range(n)} and query == report_summaries_query(n)
+
+
 def _prepare(content: bytes) -> tuple[str, bytes]:
     """(hash, storable body). The hash ignores ``data._cost``, which changes every request;
     the body loses ``\\u0000`` escapes (Postgres JSONB rejects them, sc-177)."""
@@ -161,6 +174,7 @@ async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> b
         fetched_at=fetched.fetched_at,
         payload=_payload(session.bind.dialect.name, body.decode()),
         payload_hash=digest,
+        own_summary=is_own_summary(fetched.query, fetched.variables, exact),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["query_key"],
@@ -429,7 +443,6 @@ async def probe_visible_fetch(
     return Probe("hit", bytes(found[2]), bool(found[1]))
 
 
-SUMMARY_OPS = ("ReportSummary", "ReportsBatch")  # our report summary queries (single, batch)
 SUMMARY_LIST_TIMEOUT_MS = 2000  # statement timeout of the summaries list on Postgres (047 sc-324)
 
 # Each report object of a stored summary body cut down to what the character lookup reads
@@ -459,24 +472,22 @@ _SUMMARY_PROJECTION = {
 }
 
 
-def _our_summary(query_key: str, params: object, codes: object) -> bool:
-    """The row is a response to our own fixed summary query with exactly these codes.
-
-    Rows keep no query text, but their key is :func:`_flight_key` of it: rebuilt here from our
-    own query text and the stored params, it matches only a row our query wrote (a hand-written
-    ``run_wcl_graphql`` query may be named ``ReportSummary``, but can't have that key). The
-    params must also give exact codes, equal to the row's (the 039 rule).
-    """
-    if not isinstance(params, dict) or not params:
-        return False
-    if set(params) == {"code"}:
-        query = REPORT_SUMMARY
-    elif set(params) == {f"c{i}" for i in range(len(params))}:
-        query = report_summaries_query(len(params))
-    else:
-        return False
-    exact = exact_report_codes(query, params)
-    return exact is not None and exact == codes and _flight_key(query, params) == query_key
+def _candidate_codes(tenant_id: uuid.UUID | None, since: datetime) -> ColumnElement:
+    """The codes a visible row must name at least one of (Postgres): granted to the tenant or
+    confirmed public, at or after ``since``. Literal ``'public'``, so the planner matches the
+    partial index ``ix_raw_reports_public_checked``; grants are RLS'd (the caller's scope)."""
+    since_at = literal(since, RawReport.checked_at.type)
+    codes = select(cast(RawReport.code, Text).label("code")).where(
+        RawReport.visibility == literal_column("'public'"), RawReport.checked_at >= since_at
+    )
+    if tenant_id is not None:
+        codes = codes.union(
+            select(cast(RawFetchGrant.report_code, Text)).where(
+                RawFetchGrant.tenant_id == tenant_id, RawFetchGrant.granted_at >= since_at
+            )
+        )
+    found = codes.subquery("candidate_codes")
+    return select(func.array_agg(found.c.code)).scalar_subquery()
 
 
 async def list_visible_summaries(
@@ -485,34 +496,30 @@ async def list_visible_summaries(
     """The newest stored report summaries (JSON bytes) the tenant may see, at most ``limit``
     (045 sc-131), each cut down to the fields the character lookup reads (047 sc-324).
 
-    Only rows of our own summary queries with exact codes (:func:`_our_summary`); visibility
-    only through :func:`fetch_visible_clause`. Served by the partial index
-    ``ix_raw_fetches_summaries`` (0020), and bounded by it: only rows fetched at or after
-    ``since`` are read, so the walk never grows with the rows stored since the beginning (PERF-002).
-    A visible row has a fresh status or grant, and a fetch writes those with the row's own
-    ``fetched_at``, so this loses only a summary last fetched before ``since`` and kept visible by
-    a grant of another query naming its report. On Postgres the caller's transaction carries the
-    tenant scope, and :data:`SUMMARY_LIST_TIMEOUT_MS` bounds the statement (it stays set for the
-    rest of that transaction).
+    Only rows of our own summary queries (``own_summary``, set when written; 051 sc-354), filtered
+    in SQL before the limit, so hand-written look-alikes can't crowd them out; visibility only
+    through :func:`fetch_visible_clause`, whenever the row was fetched. On Postgres the candidates
+    are the own summaries naming a code granted to the tenant or confirmed public at or after
+    ``since`` (:func:`_candidate_codes`, the partial GIN index ``ix_raw_fetches_own_summary_codes``):
+    every visible row names such a code, so this hides nothing and reads only rows of recently
+    confirmed reports, never the whole history. The caller's transaction carries the tenant scope,
+    and :data:`SUMMARY_LIST_TIMEOUT_MS` bounds the statement (it stays set for the rest of that
+    transaction).
     """
     dialect = session.bind.dialect.name
-    if dialect == "postgresql":
+    postgres = dialect == "postgresql"
+    if postgres:
         await session.execute(
             text("SELECT set_config('statement_timeout', :ms, true)"), {"ms": str(SUMMARY_LIST_TIMEOUT_MS)}
         )
-    projection = literal_column(_SUMMARY_PROJECTION["postgresql" if dialect == "postgresql" else "sqlite"])
-    rows = await session.execute(
-        select(RawFetch.query_key, RawFetch.params, RawFetch.report_codes, projection)
-        .where(
-            # Literal names, so the planner can match the partial index's predicate.
-            RawFetch.operation_name.in_([literal_column(f"'{op}'") for op in SUMMARY_OPS]),
-            RawFetch.fetched_at >= since,
-            fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since),
-        )
-        .order_by(RawFetch.fetched_at.desc())
-        .limit(limit)
+    projection = literal_column(_SUMMARY_PROJECTION["postgresql" if postgres else "sqlite"])
+    stmt = select(projection).select_from(RawFetch).where(
+        RawFetch.own_summary, fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since)
     )
-    return [bytes(body) for key, params, codes, body in rows if _our_summary(key, params, codes)]
+    if postgres:
+        stmt = stmt.where(RawFetch.report_codes.op("?|", return_type=Boolean)(_candidate_codes(tenant_id, since)))
+    rows = await session.scalars(stmt.order_by(RawFetch.fetched_at.desc()).limit(limit))
+    return [bytes(body) for body in rows]
 
 
 async def read_visible_fetch(
