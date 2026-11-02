@@ -14,6 +14,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import time
+from collections.abc import Sequence
 from typing import Protocol
 
 from starlette.requests import Request
@@ -137,7 +138,7 @@ def _address(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
 
 def _trusted(
     addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
-    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network],
+    networks: Sequence[ipaddress.IPv4Network | ipaddress.IPv6Network],
 ) -> bool:
     return any(addr in net for net in networks)
 

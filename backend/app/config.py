@@ -311,12 +311,16 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
-    def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    def trusted_proxy_networks(self) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
         return _parse_networks(self.trusted_proxies)
 
 
-def _parse_networks(value: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    return [ipaddress.ip_network(p.strip(), strict=False) for p in value.split(",") if p.strip()]
+@lru_cache(maxsize=8)
+def _parse_networks(value: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """Parsed once per value, not per request (052 sc-270); keyed by the string, so a changed
+    ``trusted_proxies`` is parsed again."""
+    parts = (p.strip() for p in value.split(","))
+    return tuple(ipaddress.ip_network(p, strict=False) for p in parts if p)
 
 
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})

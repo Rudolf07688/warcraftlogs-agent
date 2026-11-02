@@ -45,17 +45,16 @@ current_identity: ContextVar[RequestIdentity | None] = ContextVar("current_ident
 async def set_scope(
     session: AsyncSession, *, tenant_id: uuid.UUID | None, user_id: uuid.UUID | None = None
 ) -> None:
-    """Set transaction-local ``app.tenant_id`` / ``app.user_id`` for RLS (Postgres only)."""
+    """Set transaction-local ``app.tenant_id`` / ``app.user_id`` for RLS (Postgres only), in
+    one round trip (052 sc-270)."""
     bind = session.get_bind()
     if bind.dialect.name != "postgresql":
         return
     await session.execute(
-        text("SELECT set_config('app.tenant_id', :tid, true)"),
-        {"tid": str(tenant_id) if tenant_id else ""},
-    )
-    await session.execute(
-        text("SELECT set_config('app.user_id', :uid, true)"),
-        {"uid": str(user_id) if user_id else ""},
+        text(
+            "SELECT set_config('app.tenant_id', :tid, true), set_config('app.user_id', :uid, true)"
+        ),
+        {"tid": str(tenant_id) if tenant_id else "", "uid": str(user_id) if user_id else ""},
     )
 
 
