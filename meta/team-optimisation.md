@@ -618,3 +618,11 @@ through respawns as the same named member, with its own small, curated memory. I
   sc-367. Changes: `product-owner.md` QA-fix round in fresh agents; `developer.md` final
   result ~25 lines; `team-launch` live-check board convention; `livecheck.py` raid-only
   `--facts` + `killdiff`. Team report: `meta/sprints/2026-11-02/team-report.html`.
+- **2026-11-02 (owner feedback after the sprint):** the owner found the plan, sprint review
+  and team report unreadable. Cause: the report shell from P10 laid out check lists,
+  callouts and cards as CSS grids, which put every word on its own line, and its class guide
+  sent writers to the badge class `.no`. Fixed in the shell and guide (a2c0ce5); `report.py`
+  now tells writers to screenshot each tab before sending. Also restored the sprint's QA
+  reports, which `git worktree remove` had deleted (gitignored); `team-launch` copies them
+  first now. Added an "Earlier sprints" tab to the team report on request. Owner: "Well
+  done"; pushed on their go.

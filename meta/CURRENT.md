@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-02 ~18:50Z (session c88ddb6f: autonomous sprint done, merged locally)
+Updated: 2026-11-02 end of session c88ddb6f (sprint merged and pushed; session ended by the owner)
 
 ## Topic
 
@@ -16,7 +16,7 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 - Sprint 2026-11-02 ran fully autonomously on the owner's steer ("start and complete the
   sprint. No further interactions from me."). 20/20 pts, 14 stories Under Review in
-  iteration 366; merged into main locally (557e3b6); **not pushed** (main is ahead of origin).
+  iteration 366; merged into main (557e3b6) and pushed on the owner's go, with the wrap-up commits.
   Team report: `meta/sprints/2026-11-02/team-report.html`; sprint review in
   `sprints/2026-11-02/`. DB backup before migration 0021: `~/dev/wcl-backups/pre-sprint-2026-11-02.dump`.
 - Readings: 1.27 M/pt (was 1.03), coordination 16% (lowest). Build cost rose because
@@ -27,12 +27,14 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Open with the owner
 
-1. Push main (557e3b6 + wrap-up commit)? Preference 1: ask first.
-2. Longer-lived Google credentials (service account) for the live pass; offered to draft.
-3. Session boundaries: this sprint ran in its own fresh session with no compaction.
+1. Longer-lived Google credentials (service account) for the live pass; offered to draft.
+2. Session boundaries: this sprint ran in its own fresh session with no compaction.
+3. Owner feedback after the sprint: reports were unreadable (shell CSS bug, fixed a2c0ce5)
+   and the team report gained an "Earlier sprints" tab on request. Owner: "Well done".
 
 ## For the next sprint (mine)
 
+- Render-check every report (headless screenshot per tab) before sending paths.
 - Read the trial again: QA fixes in fresh agents (build per point back toward 0.6?), short
   developer results (Maren's Agent share 32% → < 15%).
 - Candidates: "Every chat request starts at about 23k prompt tokens" (sc-367), "uploader
