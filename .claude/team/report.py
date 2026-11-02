@@ -8,6 +8,11 @@ report to copy its style. Write only the body, then build:
   report.py build BODY.html OUT.html --title "WCL Sprint <date> Review"
   report.py classes            the class vocabulary with a one-line example each
 
+Look at what you built before handing it over: screenshot each tab and read the images.
+  google-chrome --headless=new --hide-scrollbars --window-size=1300,1800 \
+    --screenshot=/tmp/<scratch>/tab.png "file://$PWD/OUT.html#<tab id without p->"
+(2026-11-02: three reports went to the owner with one word per line; nobody had looked.)
+
 The body goes inside <div class="wrap">; the shell adds doctype, head, footer script and
 closing tags. Tabs work when the body has the tablist + tabpanel markup shown by `classes`.
 """
@@ -32,7 +37,9 @@ CLASSES = """\
 <div class="card">…</div>   <div class="grid2">two cards side by side</div>   <div class="stack">…</div>
 <table class="tbl"><tr><th>…</th><td class="num">12</td></tr></table>
 <span class="tag t-ok|t-warn|t-bad|t-acc">label</span>   <span class="pts p1|p2|p3">2</span> (points badge)
-<div class="callout ok|warn">…</div>   <ul class="checks"><li>… <span class="ref">sc-…</span></li><li class="no">…</li></ul>
+<div class="callout ok|warn"><p>…</p></div>   (callouts, cards and checks are block flow: mix text and inline tags freely)
+<ul class="checks"><li class="ok|no">sentence… <span class="ref">sc-…</span></li></ul>   (ok = done/green bar, no = to change/amber bar)
+  numbered: <li><span class="no">1</span>sentence…</li>   (span.no is the number badge; never put class="no" on text)
 <div class="flow"><span>step</span><i>→</i><span>step</span></div>
 <div class="timeline"><div class="tl ok|warn"><span class="t">15:08Z</span> event</div></div>
 <div class="bars"><div class="bar"><span>label</span><span class="track"><span class="fill" style="width:40%"></span>

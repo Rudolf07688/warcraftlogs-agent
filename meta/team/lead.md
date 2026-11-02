@@ -35,3 +35,4 @@ Owner, 2026-11-01: "Don't be too hard on yourself. You have the most difficult j
 - Fully autonomous sprint (2026-11-02, the owner gave only the steer): it worked. Pre-flight early (DB backup, gcloud, `.env` against new startup rules), run the live pass on the merged tip in parallel with the QA sweep, then re-run only the prompts the QA fixes touch. Merging locally was mine, pushing still isn't.
 - Check my briefs against the tools before launch: I asked Maren for a `livecheck` board kind that doesn't exist, and every developer had to work around it.
 - Resumed agents carry their whole history. Resume for work that needs it (P7 rework); start fresh for a new task (QA fixes). Measured 2026-11-02: 210–260k vs 123k context per call.
+- Look at what the owner will see before sending it. 2026-11-02: the plan, sprint review and team report had broken layouts (a shell CSS bug) and I sent the paths without opening one. A headless screenshot per tab takes a minute.
