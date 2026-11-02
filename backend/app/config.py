@@ -12,6 +12,7 @@ import logging
 import os
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
@@ -316,6 +317,42 @@ class Settings(BaseSettings):
 
 def _parse_networks(value: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     return [ipaddress.ip_network(p.strip(), strict=False) for p in value.split(",") if p.strip()]
+
+
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def insecure_defaults(s: Settings) -> list[str]:
+    """The env names whose built-in dev value is in use (052 sc-356), never the values."""
+    fields = Settings.model_fields
+    return [
+        name
+        for name, value, default in (
+            ("SECRET_KEY", s.secret_key, fields["secret_key"].default),
+            ("DATABASE_URL", s.database_url, fields["database_url"].default),
+        )
+        if value == default
+    ]
+
+
+def check_startup_secrets(s: Settings) -> None:
+    """Run at app startup (052 sc-356): warn naming each insecure default in use, and refuse
+    the dev secret key unless the public site is this machine (``SITE_URL`` on localhost,
+    127.0.0.1 or ::1), where only its own browser can reach the cookies it protects."""
+    names = insecure_defaults(s)
+    if not names:
+        return
+    logger.warning(
+        "insecure built-in defaults in use: %s; set them for any shared deployment",
+        ", ".join(names),
+    )
+    host = urlsplit(s.site_url).hostname  # lower case, without IPv6 brackets
+    if "SECRET_KEY" in names and host not in _LOCAL_HOSTS:
+        raise RuntimeError(
+            "SECRET_KEY is the built-in dev value but SITE_URL is not localhost: set SECRET_KEY to "
+            "a strong random value, e.g. python -c "
+            "\"import secrets; print(secrets.token_urlsafe(48))\""
+        )
 
 
 @lru_cache
