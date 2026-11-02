@@ -13,8 +13,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections import deque
-from collections.abc import Callable
+from collections import OrderedDict, deque
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -23,7 +23,7 @@ from typing import Any
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 
-from wcl_agent.cache.cache import current_turn, record_store, unfinished_ttl
+from wcl_agent.cache.cache import record_store, unfinished_ttl
 from wcl_agent.cache.normalize import is_finished
 from wcl_agent.client.wcl_client import StoredFetch, exact_report_codes, operation_name
 
@@ -35,11 +35,21 @@ from ..tenancy.context import current_identity
 logger = logging.getLogger(__name__)
 
 BREAKER_S = 30.0  # once open, no probe for this long
-# 052 sc-355: timeouts open it only from two turns or more inside the window, and only while
-# they are at least half the window's probes; a turn with this many skips the store itself.
+# 052 sc-355 (+ P7 SEC-001/003): timeouts open it for everyone only from two workspaces or more
+# inside the window, and only while they are at least half the window's probes; a workspace
+# with this many timeouts skips the store itself until they leave the window.
 TIMEOUTS_TO_OPEN = 3
 WINDOW_S = 60.0
-_WINDOW_MAX = 256  # probe outcomes kept; older ones fall out of the ratio early
+_WINDOW_MAX = 256  # probe outcomes kept for the ratio; older ones fall out of it early
+_SLOW_MAX = 1024  # workspaces whose recent timeouts are remembered; the oldest go first
+# The app's own WCL operation names (wcl_agent/client/queries.py and the tools' queries; a test
+# keeps this list complete). Any other name, e.g. a run_wcl_graphql query, counts as "custom"
+# (052 sc-332, P7 SEC-002).
+OWN_OPERATIONS = frozenset({
+    "BenchmarkCtx", "Char", "CharRef", "CooldownCtx", "EncounterRankings", "GameClasses",
+    "MenuDiscovery", "RecentReportsByIds", "ReportMaster", "ReportQ", "ReportsBatch",
+    "ReportSummary", "ResolveCharacters", "SpecRankings",
+})
 
 def is_fresh(fetched_at: datetime, statuses: list[ReportStatus | None], *, now: datetime) -> bool:
     """Research R6. Report data is kept for good once every report was seen finished and the
@@ -63,60 +73,69 @@ def is_fresh(fetched_at: datetime, statuses: list[ReportStatus | None], *, now: 
 class Breaker:
     """Keeps a failing store out of the hot path (045 PERF-001). Process-wide.
 
-    Closed (``open_until`` 0): every call probes, except a turn that already had
-    :data:`TIMEOUTS_TO_OPEN` timeouts inside the window (its own cap, 052 sc-355). A connection
-    error opens it for :data:`BREAKER_S` at once: no probe at all. Timeouts (a slow read or a
-    wait for a pool connection) open it when the last :data:`WINDOW_S` hold at least
-    :data:`TIMEOUTS_TO_OPEN` of them, from two turns or more, and they are at least half of the
-    window's probes: one turn's burst of parallel probes alone never does, and a store slow for
-    most reads does even when one answers in between. Reads outside a chat turn (``turn``
-    None: the kickoff pre-fetch, background jobs) count as one turn. After the wait it is
-    half-open: one call probes (the trial) while the others skip; the trial's success closes
-    it, its failure (a timeout too) opens it again, and a trial that ends otherwise
-    (cancelled, another error) frees the trial for the next.
+    Closed (``open_until`` 0): every call probes, except from a workspace that already had
+    :data:`TIMEOUTS_TO_OPEN` timeouts inside the last :data:`WINDOW_S` (it skips the store
+    itself; 052 sc-355). A connection error opens it for :data:`BREAKER_S` at once: no probe
+    at all. Timeouts (a slow read or a wait for a pool connection) open it when the window
+    holds at least :data:`TIMEOUTS_TO_OPEN` of them, from two workspaces or more, and they are
+    at least half of the window's probes: one workspace's turns, tabs and pre-fetches alone
+    never do (P7 SEC-001), and a store slow for most reads does even when one answers in
+    between. After the wait it is half-open: one call probes (the trial) while the others
+    skip; the trial's success closes it, its failure (a timeout too) opens it again, and a
+    trial that ends otherwise (cancelled, another error) frees the trial for the next.
     """
 
     open_until: float = 0.0
     trial: bool = False
-    # (when, turn, timed out) per finished probe while closed, oldest first
-    recent: deque[tuple[float, object | None, bool]] = field(
+    # (when, timed out) per finished probe while closed, oldest first: the ratio
+    recent: deque[tuple[float, bool]] = field(
         default_factory=lambda: deque(maxlen=_WINDOW_MAX), repr=False
     )
+    # workspace (tenant id, None for public-only reads) -> its latest timeouts while closed (at
+    # most TIMEOUTS_TO_OPEN), least recently timed out first
+    slow: OrderedDict[Hashable, deque[float]] = field(default_factory=OrderedDict, repr=False)
     clock: Callable[[], float] = field(default=time.monotonic, repr=False)
 
     def is_open(self) -> bool:
         """Whether no probe may run now (open and still waiting). Changes nothing (sc-352)."""
         return bool(self.open_until) and self.clock() < self.open_until
 
-    def admit(self, turn: object | None = None) -> bool | None:
+    def admit(self, workspace: Hashable = None) -> bool | None:
         """None: skip the store. Otherwise probe; True when this probe is the trial."""
         if not self.open_until:
-            timeouts = sum(1 for _, t, out in self._window() if out and t is turn)
-            return None if timeouts >= TIMEOUTS_TO_OPEN else False
+            return None if self._timeouts(workspace) >= TIMEOUTS_TO_OPEN else False
         if self.clock() < self.open_until or self.trial:
             return None
         self.trial = True
         return True
 
-    def succeeded(self, trial: bool, turn: object | None = None) -> None:
+    def succeeded(self, trial: bool) -> None:
         if trial:
             self.open_until, self.trial = 0.0, False
         else:
-            self.recent.append((self.clock(), turn, False))
+            self.recent.append((self.clock(), False))
 
-    def timed_out(self, trial: bool, turn: object | None = None) -> None:
+    def timed_out(self, trial: bool, workspace: Hashable = None) -> None:
         """One probe timed out: opens on the window rule, or at once for the half-open trial
         (the store was just failing)."""
         if trial:
             self.failed()
             return
-        self.recent.append((self.clock(), turn, True))
-        window = self._window()
-        timeouts = [t for _, t, out in window if out]
+        now = self.clock()
+        self.recent.append((now, True))
+        times = self.slow.pop(workspace, None) or deque(maxlen=TIMEOUTS_TO_OPEN)
+        times.append(now)
+        self.slow[workspace] = times  # most recent last
+        while len(self.slow) > _SLOW_MAX:
+            self.slow.popitem(last=False)
+        since = now - WINDOW_S
+        while self.recent and self.recent[0][0] <= since:
+            self.recent.popleft()
+        timeouts = sum(1 for _, out in self.recent if out)
         if (
-            len(timeouts) >= TIMEOUTS_TO_OPEN
-            and 2 * len(timeouts) >= len(window)
-            and any(t is not timeouts[0] for t in timeouts)
+            timeouts >= TIMEOUTS_TO_OPEN
+            and 2 * timeouts >= len(self.recent)
+            and sum(1 for w in self.slow if self._timeouts(w)) >= 2
         ):
             self.failed()
 
@@ -125,17 +144,21 @@ class Breaker:
             logger.warning("raw store unavailable, skipping it for %.0fs", BREAKER_S)
         self.open_until, self.trial = self.clock() + BREAKER_S, False
         self.recent.clear()
+        self.slow.clear()
 
     def released(self, trial: bool) -> None:
         if trial:
             self.trial = False
 
-    def _window(self) -> deque[tuple[float, object | None, bool]]:
-        """:attr:`recent` without the outcomes older than :data:`WINDOW_S`."""
+    def _timeouts(self, workspace: Hashable) -> int:
+        """The workspace's timeouts inside the window (forgetting older ones)."""
+        times = self.slow.get(workspace)
+        if times is None:
+            return 0
         since = self.clock() - WINDOW_S
-        while self.recent and self.recent[0][0] <= since:
-            self.recent.popleft()
-        return self.recent
+        while times and times[0] <= since:
+            times.popleft()
+        return len(times)
 
 
 breaker = Breaker()
@@ -154,6 +177,12 @@ def _is_outage(exc: BaseException) -> bool:
     return isinstance(exc, DBAPIError) and exc.connection_invalidated
 
 
+def _operation(query: str) -> str:
+    """The name a probe is counted under: one of :data:`OWN_OPERATIONS`, else "custom"."""
+    name = operation_name(query)
+    return name if name in OWN_OPERATIONS else "custom"
+
+
 class StoreSource:
     """The client's fetch source (045 contracts/fetch-source.md): a callable with a scope."""
 
@@ -165,13 +194,12 @@ class StoreSource:
         """The stored body the current turn's tenant may be served for this query, or None."""
         if not exact_report_codes(query, variables):
             return None  # non-report data, or a query naming reports we can't fully parse
-        turn = current_turn()
-        trial = breaker.admit(turn)
-        if trial is None:
-            return None
         identity = current_identity.get()
         tenant_id = identity.tenant_id if identity is not None else None  # None: public only
-        op = operation_name(query) or "anonymous"  # 052 sc-332: counted per operation too
+        trial = breaker.admit(tenant_id)
+        if trial is None:
+            return None
+        op = _operation(query)
         now = datetime.now(UTC)
         since = now - timedelta(days=settings.raw_store_reverify_days)
         try:
@@ -187,7 +215,7 @@ class StoreSource:
             raise
         except Exception as exc:  # noqa: BLE001 - a turn never fails because of the store (FR-015)
             if _is_timeout(exc):
-                breaker.timed_out(trial, turn)
+                breaker.timed_out(trial, tenant_id)
                 record_store("timeout", op)
             elif _is_outage(exc):
                 breaker.failed()
@@ -197,7 +225,7 @@ class StoreSource:
                 record_store("miss", op)
             logger.debug("raw store read failed: %s", type(exc).__name__)
             return None
-        breaker.succeeded(trial, turn)
+        breaker.succeeded(trial)
         record_store(probe.outcome, op)
         if probe.body is None:
             return None

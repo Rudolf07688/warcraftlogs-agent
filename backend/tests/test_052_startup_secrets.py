@@ -40,6 +40,27 @@ def test_a_secret_set_to_the_dev_value_counts_as_the_default():
         )
 
 
+@pytest.mark.parametrize("secret", ["", "   ", "short-but-random-1234", "please-change-me-" + "x" * 32])
+def test_an_empty_short_or_placeholder_secret_counts_as_insecure(secret):
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        check_startup_secrets(Settings(site_url="https://wcl.example.org", secret_key=secret))
+
+
+@pytest.mark.parametrize(
+    "site",
+    [
+        "http://evil.org\\@localhost:5173",  # Python reads localhost, a browser evil.org
+        "http://evil.org\\localhost",
+        "http://user@localhost:5173",
+        "ftp://localhost",
+        "//localhost:5173",
+    ],
+)
+def test_a_site_only_python_reads_as_local_is_not_local(site):
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        check_startup_secrets(Settings(site_url=site))
+
+
 @pytest.mark.parametrize(
     "site", ["http://localhost:5173", "http://127.0.0.1:8000", "http://[::1]:5173", "http://LOCALHOST"]
 )

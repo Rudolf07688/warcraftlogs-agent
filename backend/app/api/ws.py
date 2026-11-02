@@ -403,6 +403,10 @@ async def _handle_turn(
     except Exception:  # noqa: BLE001 - a card lock or the DB: the turn still ends (052 sc-357)
         ref = uuid.uuid4().hex[:8]
         logger.exception("turn failed: answer not saved (ref %s)", ref)
+        try:  # keep what streamed and link the turn's captures here, not to a later answer
+            await _persist_partial(conv_id, tokens, identity, user_seq)
+        except Exception:  # noqa: BLE001 - the store is likely what failed
+            logger.warning("partial answer not saved either (ref %s)", ref)
         await _send_agent_error(ws, ref)
         return None
 

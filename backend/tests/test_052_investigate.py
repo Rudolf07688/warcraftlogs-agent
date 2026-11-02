@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import func, select
 
 from backend.app.api import raids as raids_mod
+from backend.app.auth import dependencies
 from backend.app.auth.rate_limit import InProcessRateLimiter
 from backend.app.config import Settings, settings
 from backend.app.db.models import Conversation
@@ -61,6 +62,22 @@ async def test_the_limit_comes_before_the_404_rule(as_user, monkeypatch):
     monkeypatch.setattr(raids_mod, "investigate_limiter", InProcessRateLimiter(per_minute=1))
     assert (await as_user.client.post("/api/raids/NOPE1/investigate", json={})).status_code == 404
     assert (await as_user.client.post("/api/raids/NOPE2/investigate", json={})).status_code == 429
+
+
+async def test_a_limited_request_takes_no_tenant_transaction(as_user, monkeypatch):
+    monkeypatch.setattr(raids_mod, "investigate_limiter", InProcessRateLimiter(per_minute=1))
+    opened: list[object] = []
+    real = dependencies.tenant_session
+
+    def counting(identity, *args, **kwargs):
+        opened.append(identity)
+        return real(identity, *args, **kwargs)
+
+    monkeypatch.setattr(dependencies, "tenant_session", counting)
+    assert (await as_user.client.post("/api/raids/NOPE1/investigate", json={})).status_code == 404
+    assert len(opened) == 1
+    assert (await as_user.client.post("/api/raids/NOPE2/investigate", json={})).status_code == 429
+    assert len(opened) == 1  # P7 hardening: the 429 came before the endpoint's DB transaction
 
 
 async def test_the_limit_is_per_user(as_user, make_authed_client, monkeypatch):

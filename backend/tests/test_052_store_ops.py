@@ -6,11 +6,14 @@ as well as in total, and the cache-stats endpoint shows both.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from backend.app.db import session as db_session
 from backend.app.services import raw_fetch_reads
-from backend.app.services.raw_fetch_reads import Breaker, read_stored_fetch
+from backend.app.services.raw_fetch_reads import OWN_OPERATIONS, Breaker, read_stored_fetch
 from backend.tests.test_cache_stats import URL
 from wcl_agent.cache import cache
 from wcl_agent.cache.cache import keys
@@ -40,15 +43,35 @@ async def test_a_probe_is_counted_in_total_and_for_its_operation(no_breaker, mon
 
     monkeypatch.setattr(db_session, "SessionLocal", bug)
     named = "query ReportQ($code: String!) { reportData { report(code: $code) { table } } }"
+    model_written = "query " + "Mine" * 50 + ' { reportData { report(code: "Ops1") { table } } }'
     anonymous = '{ reportData { report(code: "Ops1") { table } } }'
-    for query in (named, named, anonymous):
+    for query in (named, named, model_written, anonymous):
         variables = {"code": "Ops1"}
         await read_stored_fetch(_flight_key(query, variables), query, variables)
     await cache.drain_metrics()
     stats = await cache.read_stats(1)
-    assert stats["store"]["misses"] == 3  # the totals are unchanged
+    assert stats["store"]["misses"] == 4  # the totals are unchanged
+    assert set(stats["store_by_operation"]) == {"ReportQ", "custom"}  # P7 SEC-002: a fixed set
     assert stats["store_by_operation"]["ReportQ"]["misses"] == 2
-    assert stats["store_by_operation"]["anonymous"]["misses"] == 1
+    assert stats["store_by_operation"]["custom"]["misses"] == 2
+
+
+def test_nothing_is_counted_per_operation_while_the_cache_is_off(monkeypatch):
+    monkeypatch.setattr(cache, "_schedule_flush", lambda: None)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    cache.record_store("hit", "ReportQ")
+    assert (cache.STORE_OPS_METRICS, "store_hit@ReportQ") not in cache._counts
+    assert cache._counts[(cache.LOCAL_METRICS, "store_hit")] == 1  # the totals still count
+
+
+def test_the_allowlist_names_every_query_the_app_sends():
+    root = Path(__file__).resolve().parents[2]
+    names = {
+        match
+        for path in [*(root / "wcl_agent").rglob("*.py"), *(root / "backend" / "app").rglob("*.py")]
+        for match in re.findall(r"\bquery\s+([A-Z]\w*)\s*[($\{]", path.read_text(encoding="utf-8"))
+    }
+    assert names and names <= OWN_OPERATIONS, names - OWN_OPERATIONS
 
 
 async def test_the_endpoint_shows_both(as_admin, fake_redis):

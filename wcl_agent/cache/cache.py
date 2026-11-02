@@ -365,11 +365,12 @@ def _record(family: CacheFamily, outcome: Outcome, load_ms: int | None = None) -
 
 
 def record_store(outcome: StoreOutcome, operation: str | None = None) -> None:
-    """Count one raw-store probe (feature 045): hit, miss, not_visible or timeout, in total and
-    for its WCL ``operation`` (the query's name, our own constants; 052 sc-332)."""
+    """Count one raw-store probe (feature 045): hit, miss, not_visible or timeout, in total and,
+    while the cache is on, for its ``operation`` (052 sc-332). The caller passes a name from a
+    fixed set (P7 SEC-002): an operation is a field in a long-lived Redis hash."""
     _counts[(LOCAL_METRICS, f"store_{outcome}")] += 1
-    if operation:
-        _counts[(STORE_OPS_METRICS, f"store_{outcome}@{operation}")] += 1
+    if operation and cache_settings().active:
+        _counts[(STORE_OPS_METRICS, f"store_{outcome}@{operation[:64]}")] += 1
     _schedule_flush()
 
 
@@ -1047,12 +1048,6 @@ def abandon_turn() -> None:
     was cancelled before the turn ran (052 sc-357)."""
     _refresh_actor.set(None)
     _turn.set(None)
-
-
-def current_turn() -> object | None:
-    """The running chat turn, for identity only (the raw-store breaker tells turns apart by it,
-    052 sc-355); None outside a turn."""
-    return _turn.get()
 
 
 def note_external_call() -> None:

@@ -324,24 +324,39 @@ def _parse_networks(value: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6N
 
 
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_MIN_SECRET_CHARS = 32
+
+
+def _weak_secret(key: str) -> bool:
+    """The dev default, empty, short, or a placeholder (P7 SEC-004)."""
+    key = key.strip()
+    return len(key) < _MIN_SECRET_CHARS or "change-me" in key.lower()
 
 
 def insecure_defaults(s: Settings) -> list[str]:
-    """The env names whose built-in dev value is in use (052 sc-356), never the values."""
-    fields = Settings.model_fields
-    return [
-        name
-        for name, value, default in (
-            ("SECRET_KEY", s.secret_key, fields["secret_key"].default),
-            ("DATABASE_URL", s.database_url, fields["database_url"].default),
-        )
-        if value == default
-    ]
+    """The env names whose value is insecure (052 sc-356): a weak ``SECRET_KEY`` or the built-in
+    ``DATABASE_URL``. Names only, never the values."""
+    names = ["SECRET_KEY"] if _weak_secret(s.secret_key) else []
+    if s.database_url == Settings.model_fields["database_url"].default:
+        names.append("DATABASE_URL")
+    return names
+
+
+def _site_is_local(site_url: str) -> bool:
+    """``SITE_URL`` is http(s) on this machine, read so a browser would agree: no userinfo (a
+    browser ends the host at a backslash, Python at the "@" after it; P7 SEC-004). A backslash
+    left in Python's host never matches a local name."""
+    parts = urlsplit(site_url)
+    return (
+        parts.scheme in ("http", "https")
+        and "@" not in parts.netloc
+        and parts.hostname in _LOCAL_HOSTS  # lower case, without IPv6 brackets
+    )
 
 
 def check_startup_secrets(s: Settings) -> None:
-    """Run at app startup (052 sc-356): warn naming each insecure default in use, and refuse
-    the dev secret key unless the public site is this machine (``SITE_URL`` on localhost,
+    """Run at app startup (052 sc-356): warn naming each insecure default in use, and refuse a
+    weak secret key unless the public site is this machine (``SITE_URL`` on localhost,
     127.0.0.1 or ::1), where only its own browser can reach the cookies it protects."""
     names = insecure_defaults(s)
     if not names:
@@ -350,12 +365,11 @@ def check_startup_secrets(s: Settings) -> None:
         "insecure built-in defaults in use: %s; set them for any shared deployment",
         ", ".join(names),
     )
-    host = urlsplit(s.site_url).hostname  # lower case, without IPv6 brackets
-    if "SECRET_KEY" in names and host not in _LOCAL_HOSTS:
+    if "SECRET_KEY" in names and not _site_is_local(s.site_url):
         raise RuntimeError(
-            "SECRET_KEY is the built-in dev value but SITE_URL is not localhost: set SECRET_KEY to "
-            "a strong random value, e.g. python -c "
-            "\"import secrets; print(secrets.token_urlsafe(48))\""
+            f"SECRET_KEY is empty, shorter than {_MIN_SECRET_CHARS} characters or a placeholder, "
+            "and SITE_URL is not localhost: set SECRET_KEY to a strong random value, e.g. "
+            "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
         )
 
 

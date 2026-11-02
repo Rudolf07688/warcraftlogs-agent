@@ -46,7 +46,7 @@ def _real_turns(monkeypatch, records=None) -> None:
 
 
 def _closed() -> bool:
-    return get_refresh_actor() is None and cache.current_turn() is None
+    return get_refresh_actor() is None and cache._turn.get() is None
 
 
 # --- AC1: a turn whose setup fails is closed, not counted -------------------------------------
@@ -178,3 +178,31 @@ async def test_a_failing_final_save_ends_the_turn_with_the_error_frame(as_user, 
     assert sock.frames[-1]["code"] == "agent_error"
     assert _closed() and turns() == (1, 1)  # the turn ran and is counted once
     assert "answer not saved" in caplog.text
+
+
+async def test_a_failing_final_save_keeps_the_streamed_text_as_partial(as_user, monkeypatch):
+    async def save_fails(*args, **kwargs):
+        raise RuntimeError("lock timeout")
+
+    kept: list[str] = []
+
+    async def persist_partial(conv_id, tokens, identity, user_seq):
+        kept.append("".join(tokens))
+
+    _real_turns(monkeypatch)
+    monkeypatch.setattr(ws_mod, "_save_answer", save_fails)
+    monkeypatch.setattr(ws_mod, "_persist_partial", persist_partial)
+    await _run(_FakeSocket(), as_user)
+    assert kept == ["ok"]  # its captures are linked to this turn, never to a later answer
+
+
+async def test_a_save_and_partial_both_failing_still_end_the_turn(as_user, monkeypatch):
+    async def fails(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    _real_turns(monkeypatch)
+    monkeypatch.setattr(ws_mod, "_save_answer", fails)
+    monkeypatch.setattr(ws_mod, "_persist_partial", fails)
+    sock = _FakeSocket()
+    await _run(sock, as_user)
+    assert sock.frames[-1]["type"] == "error" and _closed()
