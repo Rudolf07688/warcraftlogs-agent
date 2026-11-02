@@ -15,8 +15,10 @@ Added keys (computed from the full fight list, never capped):
 ```
 
 - A fight entry carries `keystoneLevel` only when it is a Mythic+ key run.
-- Uploader strings are capped: `title` 80 characters, `guild`, player names and fight names 60
-  (cut with `…`).
+- Uploader strings are neutralised (the knowledge search's neutraliser: entities, NFKC, format
+  characters removed, angle brackets and look-alikes to parentheses), then capped: `title` 80
+  characters, `guild`, player names and fight names 60 (cut with `…`). `players` is capped like
+  `fights` (60,000 characters); `bosses` lists at most 40 entries (P7 SEC-001/005).
 - `fights` is still capped as before (`_preview` when over 60,000 characters).
 
 ## get_report_table(..., overview: bool = False)
@@ -25,7 +27,8 @@ Added keys (computed from the full fight list, never capped):
 - `overview=true`: `{"_overview": true, "_truncated": <rows omitted>, "_note": ..., "data": ...}`,
   each list cut to its top 10 rows by total, plain fields only, no `composition`, no nested
   dicts such as `playerDetails`. Same WCL query as `overview=false`.
-- Every string in a returned table is capped at 60 characters.
+- Every string in a returned table is neutralised and capped at 60 characters. An overview over
+  40,000 characters falls back to the compact projection (P7 SEC-005).
 
 ## Instruction
 

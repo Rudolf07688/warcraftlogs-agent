@@ -19,7 +19,10 @@ I/O is awaited on the event loop, so ADK runs parallel tool calls concurrently.
 from __future__ import annotations
 
 import asyncio
+import functools
+import html
 import json
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
@@ -90,17 +93,61 @@ async def _acap(obj: Any) -> Any:
 
 
 # --- Uploader text (050, sc-351) --------------------------------------------------
-# Report titles, guild, player and fight names are written by whoever uploaded the log. They
-# reach the model capped, so a crafted name cannot carry a long payload.
+# Report titles, guild, player and fight names are written by whoever uploaded the log, guide
+# sections by a guide's author. Before they reach the model they are neutralised (this is the
+# one neutraliser: the knowledge search's <data> blocks use it too) and capped, so a crafted
+# name can neither fake a delimiter nor carry a long payload.
 MAX_TITLE_CHARS = 80
 MAX_NAME_CHARS = 60  # guild, player and fight names, and every string in a returned table
+_DECODE_ROUNDS = 8
+# Angle brackets and their look-alikes, found by Unicode name (after NFKC has folded the
+# full-width, small and vertical forms); names that do not say it are listed by hand.
+_OPEN_NAMES = ("LESS-THAN", "LEFT-POINTING", "LEFT ANGLE", "LEFT DOUBLE ANGLE", "LEFT ARROWHEAD", "PRECEDES")
+_CLOSE_NAMES = ("GREATER-THAN", "RIGHT-POINTING", "RIGHT ANGLE", "RIGHT DOUBLE ANGLE", "RIGHT ARROWHEAD", "SUCCEEDS")
+_OPEN_EXTRA, _CLOSE_EXTRA = "\u1438", "\u1433"  # Canadian syllabics PA, PO
+_LAST_SCANNED = 0x2FFFF  # the symbol blocks; the planes above hold no brackets
+
+
+@functools.cache
+def _bracket_map() -> dict[int, str]:
+    """``str.translate`` table: every angle bracket or look-alike to '(' or ')' (built once)."""
+    table = {ord(c): "(" for c in _OPEN_EXTRA} | {ord(c): ")" for c in _CLOSE_EXTRA}
+    for cp in range(_LAST_SCANNED + 1):
+        name = unicodedata.name(chr(cp), "")
+        if any(part in name for part in _OPEN_NAMES):
+            table[cp] = "("
+        elif any(part in name for part in _CLOSE_NAMES):
+            table[cp] = ")"
+    return table
+
+
+def neutralise(text: str) -> str:
+    """``text`` with no angle bracket, look-alike or invisible format character left.
+
+    Entities are decoded, the text NFKC-normalised and format characters (Unicode Cf: tag
+    characters, bidi controls, zero-width) removed until nothing changes (full-width '＜',
+    '&lt;' and '&lt' split by a zero-width space all become '<'); then every bracket and
+    look-alike becomes a parenthesis. Still changing after :data:`_DECODE_ROUNDS` rounds, its
+    '&' go too.
+    """
+    for _ in range(_DECODE_ROUNDS):
+        decoded = unicodedata.normalize("NFKC", html.unescape(text))
+        decoded = "".join(c for c in decoded if unicodedata.category(c) != "Cf")
+        if decoded == text:
+            break
+        text = decoded
+    else:
+        text = text.replace("&", "+")
+    return text.translate(_bracket_map())
 
 
 def _bounded(text: Any, limit: int = MAX_NAME_CHARS) -> Any:
-    """``text`` cut to ``limit`` characters (the last one an ellipsis); non-strings as they are."""
-    if not isinstance(text, str) or len(text) <= limit:
+    """``text`` neutralised and cut to ``limit`` characters (the last one an ellipsis);
+    non-strings as they are."""
+    if not isinstance(text, str):
         return text
-    return text[: limit - 1] + "…"
+    text = neutralise(text)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _bounded_strings(obj: Any, limit: int = MAX_NAME_CHARS) -> Any:
@@ -255,7 +302,10 @@ def overview_table(table: Any) -> Any:
         return compact_table(table)
     data = {k: v for k, v in _bounded_strings(data).items() if k not in OVERVIEW_DROPPED}
     projected, omitted = _compact_level(data, OVERVIEW_TOP_N, _seconds(data), 1)
-    return {"_overview": True, "_truncated": omitted > 0, "_note": OVERVIEW_NOTE, "data": projected}
+    result = {"_overview": True, "_truncated": omitted > 0, "_note": OVERVIEW_NOTE, "data": projected}
+    if len(json.dumps(result, default=str)) > TABLE_MAX_CHARS:
+        return compact_table(table)  # never larger than the compact guarantee
+    return result
 
 
 async def aoverview_table(table: Any) -> Any:
@@ -394,9 +444,12 @@ def _boss(fight: FightSummary) -> dict[str, Any]:
     }
 
 
+MAX_BOSSES = 40  # boss and difficulty pairs listed per report (ten bosses on four difficulties)
+
+
 def boss_summary(summary: ReportSummary) -> list[dict[str, Any]]:
-    """One entry per boss and difficulty, in first-pull order: pulls, kills, the last kill's
-    and the last pull's fight id (050, sc-365)."""
+    """One entry per boss and difficulty, in first-pull order, at most :data:`MAX_BOSSES`:
+    pulls, kills, the last kill's and the last pull's fight id (050, sc-365)."""
     bosses: dict[tuple[int, int | None], dict[str, Any]] = {}
     for fight in _boss_pulls(summary):
         entry = bosses.setdefault(
@@ -408,7 +461,7 @@ def boss_summary(summary: ReportSummary) -> list[dict[str, Any]]:
         if fight.kill:
             entry["kills"] += 1
             entry["last_kill_fight_id"] = fight.id
-    return list(bosses.values())
+    return list(bosses.values())[:MAX_BOSSES]
 
 
 def last_kill(summary: ReportSummary) -> dict[str, Any] | None:
@@ -484,7 +537,7 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
             # Also lets the backend label a tracked raid without a second query (PERF-016).
             "guild": _bounded(summary.guild_name),
             "start_time_ms": summary.start_time_ms,
-            "players": players,
+            "players": await _acap(players),  # uploader names: bounded like the fight list
             # sc-365: from the full fight list, outside the cap below.
             "last_kill": last_kill(summary),
             "bosses": boss_summary(summary),

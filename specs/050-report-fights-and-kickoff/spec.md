@@ -155,10 +155,13 @@ and existing tests pass unchanged.
 - **FR-008**: A prompt-size regression test MUST show the kickoff answer request at least 15k
   tokens (chars/4) smaller than today's on the synthetic 20-player fixture.
 - **FR-009**: Search hit labels and guide sections MUST be wrapped as data and capped.
-- **FR-010**: Neutralising MUST decode HTML entities and apply NFKC to a fixed point, then
-  replace every angle-bracket look-alike, including the old replacement characters.
-- **FR-011**: The report tools MUST cap report titles at 80 characters and guild, player and
-  fight names (and every string in a returned table) at 60.
+- **FR-010**: Neutralising MUST decode HTML entities, apply NFKC and remove format characters
+  (Unicode Cf) to a fixed point, then replace every angle-bracket look-alike, including the old
+  replacement characters; length caps apply after it (P7 SEC-002/003/004).
+- **FR-011**: The report tools MUST neutralise uploader strings and cap report titles at 80
+  characters and guild, player and fight names (and every string in a returned table) at 60;
+  the total per result is bounded (players map and fight list 60,000 characters, at most 40
+  bosses, tables 40,000) (P7 SEC-001/005).
 - **FR-012**: The 044 search contract MUST match the payload shape.
 - **FR-013**: One difficulty id-to-name map in the game reference package; no output change.
 

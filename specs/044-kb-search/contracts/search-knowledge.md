@@ -44,9 +44,12 @@ The workspace comes only from `current_identity` (checked against the ADK sessio
 - Untrusted text (046 sc-328, 050 sc-351): each hit's `text` (at most 400 characters) and its
   source `label` or `section` (at most 120 characters) are written by others (log uploaders,
   guide authors), so each comes wrapped in `<data>…</data>`. Inside a block, HTML entities are
-  decoded and the text is NFKC-normalised until neither changes it, then every angle bracket
-  and look-alike (`‹ › « » 〈 〉 ⟨ ⟩` …) becomes `(` or `)`: nothing inside can open or close a
-  block. The other source fields are ids and names the app sets itself.
+  decoded, the text is NFKC-normalised and format characters (Unicode Cf: tag characters, bidi
+  controls, zero-width) are removed until nothing changes; then every angle bracket and
+  look-alike (`‹ › « » 〈 〉 ⟨ ⟩ ≮ ≺ ⩽` …, found by Unicode name) becomes `(` or `)`: nothing
+  inside can open or close a block. The length limits apply after this, to what the model
+  reads. The neutraliser is `wcl_agent.tools.report_tools.neutralise`, shared with the report
+  tools. The other source fields are ids and names the app sets itself.
 
 - `mode` is `keyword_only` when the query embedder is unavailable or failed; `note` then says
   so in one sentence the agent can repeat.
