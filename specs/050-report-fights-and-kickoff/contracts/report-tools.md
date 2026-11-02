@@ -24,7 +24,8 @@ Added keys (computed from the full fight list, never capped):
 ## get_report_table(..., overview: bool = False)
 
 - `overview=false`: unchanged shape (raw table, or the 046 compact projection).
-- `overview=true`: `{"_overview": true, "_truncated": <rows omitted>, "_note": ..., "data": ...}`,
+- `overview=true`: `{"_overview": true, "_truncated": <bool: any rows omitted>, "_note": ..., "data": ...}`
+  (each list's `<list>_omitted` carries its count),
   each list cut to its top 10 rows by total, plain fields only, no `composition`, no nested
   dicts such as `playerDetails`. Same WCL query as `overview=false`.
 - Every string in a returned table is neutralised and capped at 60 characters. An overview over
