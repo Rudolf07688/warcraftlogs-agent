@@ -1,7 +1,8 @@
 """One slow stored read doesn't switch the stored data off (feature 047, sc-323).
 
 The shared breaker opens on a connection error at once, but on timeouts (a slow read, a wait for
-a pool connection) only after ``TIMEOUTS_TO_OPEN`` in a row.
+a pool connection) only after ``TIMEOUTS_TO_OPEN`` (since 052 sc-355: inside the window, from two
+workspaces or more, and at least half of the window's probes; test_052_breaker.py).
 """
 
 from __future__ import annotations
@@ -72,12 +73,14 @@ async def test_one_timeout_keeps_the_breaker_closed(monkeypatch, breaker, tenant
 
 
 @pytest.mark.parametrize("failure", [slow, pool_wait], ids=["slow-read", "pool-wait"])
-async def test_n_consecutive_timeouts_open_it(monkeypatch, breaker, tenant_id, failure):
+async def test_n_timeouts_from_two_workspaces_open_it(
+    monkeypatch, breaker, tenant_id, other_tenant_id, failure
+):
     monkeypatch.setattr(db_session, "SessionLocal", failure)
     for _ in range(TIMEOUTS_TO_OPEN - 1):
         await probe(tenant_id)
     assert breaker.open_until == 0
-    await probe(tenant_id)
+    await probe(other_tenant_id)
     assert breaker.open_until == breaker.clock() + BREAKER_S
 
 
@@ -87,16 +90,16 @@ async def test_a_connection_error_opens_it_at_once(monkeypatch, breaker, tenant_
     assert breaker.open_until > 0
 
 
-def test_a_success_resets_the_count():
+def test_successes_outweighing_timeouts_keep_it_closed():
     b = Breaker(clock=Clock())
-    for _ in range(TIMEOUTS_TO_OPEN - 1):
-        b.timed_out(False)
-    b.succeeded(False)
-    for _ in range(TIMEOUTS_TO_OPEN - 1):
-        b.timed_out(False)
-    assert b.open_until == 0  # never N in a row
-    b.timed_out(False)
-    assert b.open_until > 0
+    b.timed_out(False, "ws-a")
+    b.timed_out(False, "ws-b")
+    for _ in range(4):
+        b.succeeded(False)
+    b.timed_out(False, "ws-b")
+    assert b.open_until == 0  # 3 timeouts from two workspaces, but only 3 of 7 probes
+    b.timed_out(False, "ws-a")
+    assert b.open_until > 0  # 4 of 8: half the window's probes
 
 
 def test_a_half_open_trial_that_times_out_reopens_it():
@@ -106,4 +109,4 @@ def test_a_half_open_trial_that_times_out_reopens_it():
     clock.now += BREAKER_S
     assert b.admit() is True
     b.timed_out(True)
-    assert b.admit() is None and b.open_until == clock.now + BREAKER_S and b.timeouts == 0
+    assert b.admit() is None and b.open_until == clock.now + BREAKER_S and not b.recent

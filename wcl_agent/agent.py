@@ -158,6 +158,9 @@ partition when percentiles are used.
   Normal 3, LFR 1), and pass both to the ranking tools.
 - If difficulty is omitted for a population question, default to Heroic (4) and say
   so.
+- "The last kill" or "the last boss" of a report is `last_kill` from `get_report_fights`:
+  the latest boss kill by time (a Mythic+ key run is not a boss kill). Never pick it from
+  the order of the fight list. `bosses` gives each boss's last kill and last pull.
 - If an omitted value (which pull, which player, kill or wipe) could change a
   report-specific answer, ask one concise question instead of guessing.
 - Metrics: `dps` for damage, `hps` for healing, `bossdps` isolates boss damage,
@@ -179,20 +182,6 @@ A report with several keys and no fight id is several candidates. Then look up t
 participants. Apply filters like "except the shaman" or "only the healers" yourself to
 the returned rows, which carry class and role.
 </RUN_RESOLUTION>
-
-<RECENT_RAID_KICKOFF>
-When asked for a bounded overview of a raid report (the recent-raid kickoff, "Give me a
-bounded overview of this raid"), use this sequence. The app fetched this data when the
-raid was opened, so these calls are answered locally; skip the knowledge search and the
-stored-data lookups for it.
-1. `get_report_fights` once for the report.
-2. ONE parallel round of `get_report_table` with data_type "Summary" and one fight_id
-   per boss: its last kill, or its last pull when it was never killed (each boss and
-   difficulty once, at most 10).
-3. Answer from those results: per boss, the headline finding and the biggest
-   improvement opportunity, kills versus wipes. No per-player fetches. Go further (one
-   player's table, events) only where a boss clearly warrants it.
-</RECENT_RAID_KICKOFF>
 
 <VALIDATION_BEFORE_ANALYSIS>
 Check tool outputs before drawing conclusions:
@@ -378,16 +367,49 @@ play, never the person.
 """.strip()
 
 
+# 050 sc-358: the recent-raid kickoff playbook goes only into the kickoff turn's instruction,
+# not into every request. The kickoff turn is the one whose user message is the server-owned
+# kickoff prompt (``backend/app/api/raids.py`` builds it from this opening). The playbook
+# selects tool calls only: a user who types the opening gets it too, which is harmless.
+RAID_KICKOFF_OPENING = "Give me a bounded overview of this raid"
+_KICKOFF_PLAYBOOK = """
+<RECENT_RAID_KICKOFF>
+This turn is the recent-raid kickoff, a bounded overview of a raid report. The app fetched
+this data when the raid was opened, so these calls are answered locally; skip the knowledge
+search and the stored-data lookups for it.
+1. `get_report_fights` once for the report.
+2. ONE parallel round of `get_report_table` with data_type "Summary" and overview true, one
+   fight_id per entry of `bosses`: its last kill, or its last pull when it was never killed
+   (`last_kill_fight_id`, else `last_pull_fight_id`; at most 10).
+3. Answer from those results: per boss, the headline finding and the biggest improvement
+   opportunity, kills versus wipes. No per-player fetches. Go further (one player's table,
+   events) only where a boss clearly warrants it.
+</RECENT_RAID_KICKOFF>
+
+""".lstrip()
+
+
+def _is_raid_kickoff(ctx) -> bool:
+    """True when the turn's user message is the recent-raid kickoff prompt."""
+    content = getattr(ctx, "user_content", None) if ctx is not None else None
+    text = "".join(part.text or "" for part in (getattr(content, "parts", None) or []))
+    return text.lstrip().startswith(RAID_KICKOFF_OPENING)
+
+
 def build_instruction(ctx=None, *, capabilities: str = "") -> str:
     """The agent instruction with the capability summary and the current UTC time.
 
     An ADK ``InstructionProvider``: ADK calls it for every model request, so the time stays
     correct however long the process runs, and a provider bypasses ADK's ``{state}``
     substitution. ``capabilities`` is the rendered summary that fills the ``<TOOLS>`` section
-    (``build_agent`` binds it with ``functools.partial``).
+    (``build_agent`` binds it with ``functools.partial``). A kickoff turn also gets the kickoff
+    playbook, just before the time block so the shared prefix stays cacheable.
     """
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    return _INSTRUCTION_BODY.replace(_CAPABILITIES_TOKEN, capabilities).replace(_TIME_TOKEN, now)
+    body = _INSTRUCTION_BODY
+    if _is_raid_kickoff(ctx):
+        body = body.replace("<CURRENT_TIME>", _KICKOFF_PLAYBOOK + "<CURRENT_TIME>", 1)
+    return body.replace(_CAPABILITIES_TOKEN, capabilities).replace(_TIME_TOKEN, now)
 
 
 # Single source of truth for the default model id: the chat role (WCL_DEFAULT_MODEL, else the

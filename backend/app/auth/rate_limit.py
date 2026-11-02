@@ -14,6 +14,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import time
+from collections.abc import Sequence
 from typing import Protocol
 
 from starlette.requests import Request
@@ -137,7 +138,7 @@ def _address(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
 
 def _trusted(
     addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
-    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network],
+    networks: Sequence[ipaddress.IPv4Network | ipaddress.IPv6Network],
 ) -> bool:
     return any(addr in net for net in networks)
 
@@ -164,3 +165,5 @@ token_limiter = InProcessRateLimiter()
 guide_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_generate_per_minute)
 # Feature 015: per-user cap on "report an inaccuracy".
 guide_report_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_report_per_minute)
+# 052 sc-352: per-user cap on recent-raid investigations. Keyed by user_id.
+investigate_limiter = InProcessRateLimiter(per_minute=settings.wcl_investigate_per_minute)

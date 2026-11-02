@@ -50,7 +50,7 @@ from .api import (
 )
 from .api.errors import install_error_handlers
 from .auth.redaction import RedactionFilter
-from .config import settings
+from .config import check_startup_secrets, settings
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +294,7 @@ async def _boot(app: FastAPI, tracker: StartupTracker) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    check_startup_secrets(settings)  # 052 sc-356: before anything starts
     tracker = StartupTracker()
     app.state.startup = tracker
     # Feature 043: chunk and embed new knowledge in the background. Started before the fetch

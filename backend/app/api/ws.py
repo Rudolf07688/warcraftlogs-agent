@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from wcl_agent.cache.cache import set_refresh_actor
+from wcl_agent.cache.cache import abandon_turn, set_refresh_actor
 
 from wcl_agent.llm.model_retry import ModelRateLimited
 from wcl_agent.llm.models import class_label
@@ -283,49 +283,55 @@ async def _handle_turn(
     # PERF-006: one short tenant-scoped transaction to set the turn up. It closes (commits
     # and returns its connection to the pool) before the model streams; captures and the
     # final save open their own short transactions.
-    async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
-        # Resolve or create the conversation (scoped — a foreign id reads as not-found).
-        if turn.conversation_id is not None:
-            conv = await repo.get_conversation_row(
-                session, turn.conversation_id, tenant_id=tenant_id
+    try:
+        async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
+            # Resolve or create the conversation (scoped — a foreign id reads as not-found).
+            if turn.conversation_id is not None:
+                conv = await repo.get_conversation_row(
+                    session, turn.conversation_id, tenant_id=tenant_id
+                )
+                if conv is None:
+                    await _send(ws, ErrorFrame(code="not_found", message="Conversation not found."))
+                    return None
+            else:
+                conv = await repo.create_conversation(
+                    session, model=turn.model, tenant_id=tenant_id
+                )
+            conv_id = conv.id
+            # Feature 019 / sc-155: only a default-named chat gets a generated title.
+            title_eligible = conv.title_source == "auto"
+
+            # Persist the user message, then announce the turn.
+            user_msg = await repo.add_message(
+                session, conv_id, "user", turn.content, tenant_id=tenant_id
             )
-            if conv is None:
-                await _send(ws, ErrorFrame(code="not_found", message="Conversation not found."))
-                return None
-        else:
-            conv = await repo.create_conversation(session, model=turn.model, tenant_id=tenant_id)
-        conv_id = conv.id
-        # Feature 019 / sc-155: only a default-named chat gets a generated title.
-        title_eligible = conv.title_source == "auto"
+            await session.commit()
+            await apply_tenant_scope(session, identity)  # re-scope after commit
+            user_seq = user_msg.seq
+            await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_seq))
 
-        # Persist the user message, then announce the turn.
-        user_msg = await repo.add_message(
-            session, conv_id, "user", turn.content, tenant_id=tenant_id
-        )
-        await session.commit()
-        await apply_tenant_scope(session, identity)  # re-scope after commit
-        user_seq = user_msg.seq
-        await _send(ws, MetaFrame(conversation_id=conv_id, seq=user_seq))
-
-        # WCL data is public and cached for every tenant alike (feature 014 supersedes FR-019);
-        # only the forced-refresh limit is per user, for this turn (US4). The turn opens before
-        # its preamble, so WCL calls made building it count for it (047 sc-326). Cleared with
-        # the identity (sc-276), so the follow-up suggestions task never acts as this turn's user.
-        set_refresh_actor(str(identity.user_id))
-        try:
+            # WCL data is public and cached for every tenant alike (feature 014 supersedes
+            # FR-019); only the forced-refresh limit is per user, for this turn (US4). The turn
+            # opens before its preamble, so WCL calls made building it count for it (047 sc-326).
+            # Cleared with the identity (sc-276), so the follow-up suggestions task never acts as
+            # this turn's user.
+            set_refresh_actor(str(identity.user_id))
             preamble = await _build_turn_preamble(session, tenant_id, turn.content)
-        except BaseException:
-            set_refresh_actor(None)
-            raise
+        # US2: a per-turn scratch store holds each tool's full output on disk so large
+        # concurrent results are preserved and picked up after every call completes. Last in
+        # the setup: nothing between it and the stream's ``finally`` (which removes it) can fail.
+        scratch = TurnScratch(str(conv_id))
+    except BaseException:
+        # 052 sc-357: setup failed or was cancelled (the preamble, this transaction's commit or
+        # the scratch folder) after the turn may have opened: close it uncounted, clear its user.
+        abandon_turn()
+        raise
 
     # Stream the agent response, accumulating tokens into the final content.
-    # US2: a per-turn scratch store holds each tool's full output on disk so large
-    # concurrent results are preserved and picked up after every call completes.
     tokens: list[str] = []
     empty = False  # 048: the turn ended with the runner's no-answer message, not model text
     proposal_ids: list[uuid.UUID] = []  # feature 031: proposals sent this turn
     switched = False  # feature 021: the turn moved to the sibling model
-    scratch = TurnScratch(str(conv_id))
     # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)
@@ -385,10 +391,7 @@ async def _handle_turn(
         ref = uuid.uuid4().hex[:8]
         logger.exception("turn failed (ref %s)", ref)
         await _persist_partial(conv_id, tokens, identity, user_seq)
-        try:
-            await _send(ws, ErrorFrame(code="agent_error", message=AGENT_ERROR_MESSAGE.format(ref=ref)))
-        except Exception:  # noqa: BLE001 - socket may already be gone
-            pass
+        await _send_agent_error(ws, ref)
         return None
     finally:
         current_identity.reset(identity_token)
@@ -396,7 +399,17 @@ async def _handle_turn(
         scratch.cleanup()
 
     final_text = "".join(tokens) or "(no response)"
-    agent_msg_id, agent_seq = await _save_answer(identity, conv_id, final_text, proposal_ids)
+    try:
+        agent_msg_id, agent_seq = await _save_answer(identity, conv_id, final_text, proposal_ids)
+    except Exception:  # noqa: BLE001 - a card lock or the DB: the turn still ends (052 sc-357)
+        ref = uuid.uuid4().hex[:8]
+        logger.exception("turn failed: answer not saved (ref %s)", ref)
+        try:  # keep what streamed and link the turn's captures here, not to a later answer
+            await _persist_partial(conv_id, tokens, identity, user_seq)
+        except Exception:  # noqa: BLE001 - the store is likely what failed
+            logger.warning("partial answer not saved either (ref %s)", ref)
+        await _send_agent_error(ws, ref)
+        return None
 
     # Feature 043: the saved exchange becomes a workspace chat chunk in the background (enqueue
     # only). Only the streamed answer goes in: tool results never reach ``tokens``. A no-answer
@@ -425,6 +438,14 @@ async def _handle_turn(
     if empty:
         return None
     return asyncio.create_task(_send_suggestions(ws, turn, final_text, agent_msg_id))
+
+
+async def _send_agent_error(ws: WebSocket, ref: str) -> None:
+    """Tell the client its turn failed (with the log reference), if the socket is still there."""
+    try:
+        await _send(ws, ErrorFrame(code="agent_error", message=AGENT_ERROR_MESSAGE.format(ref=ref)))
+    except Exception:  # noqa: BLE001 - socket may already be gone
+        pass
 
 
 async def _send_suggestions(ws, turn: ChatTurn, final_text: str, message_id) -> None:

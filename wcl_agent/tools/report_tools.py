@@ -19,7 +19,9 @@ I/O is awaited on the event loop, so ADK runs parallel tool calls concurrently.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
@@ -42,7 +44,7 @@ from ..cache.cache_models import (
     PlayerTable,
     ReportSummary,
 )
-from ..game.constants import METRICS
+from ..game.constants import DIFFICULTY_NAMES, METRICS
 from ..cache.normalize import is_finished, server_slug
 from ..client.queries import CHARACTER_REF, REPORT_SUMMARY, character_refs_query, report_summaries_query
 from .provenance import Completeness, Provenance, flatten_report_rankings, with_envelope
@@ -87,6 +89,87 @@ def _cap(obj: Any) -> Any:
 async def _acap(obj: Any) -> Any:
     """``_cap`` off the event loop: sizing a large result is a full ``json.dumps`` (SC-008)."""
     return await asyncio.to_thread(_cap, obj)
+
+
+# --- Uploader text (050, sc-351) --------------------------------------------------
+# Report titles, guild, player and fight names are written by whoever uploaded the log, guide
+# sections by a guide's author. Before they reach the model they are neutralised (this is the
+# one neutraliser: the knowledge search's <data> blocks use it too) and capped, so a crafted
+# name can neither fake a delimiter nor carry a long payload.
+MAX_TITLE_CHARS = 80
+MAX_NAME_CHARS = 60  # guild, player and fight names, and every string in a returned table
+_DECODE_ROUNDS = 8
+# Angle brackets and their look-alikes after NFKC (which folds the full-width, small and
+# vertical forms): every code point up to U+2FFFF whose Unicode name says less-than/greater-than,
+# left-/right-pointing, (double) angle, arrowhead or precedes/succeeds, plus Canadian syllabics
+# PA/PO. A literal, so no process scans the code points on the event loop (QA PERF-002);
+# backend/tests/test_050_untrusted_text.py regenerates it from that rule and must agree.
+_OPEN_BRACKETS = (
+    "<\u00ab\u02c2\u02f1\u031a\u0349\u0354\u08f7\u08f9\u1438\u1dfe\u2039\u2264\u2266"
+    "\u2268\u226a\u226e\u2270\u2272\u2274\u2276\u2277\u2278\u2279\u227a\u227c\u227e\u22b0"
+    "\u22d6\u22d8\u22da\u22db\u22dc\u22de\u22e6\u22e8\u2329\u2343\u23ea\u23ee\u23f4\u25c0"
+    "\u25c1\u25c2\u25c3\u25c4\u25c5\u276c\u276e\u2770\u27e8\u27ea\u2976\u2977\u2991\u2993"
+    "\u2996\u29c0\u29fc\u2a79\u2a7b\u2a7d\u2a7f\u2a81\u2a83\u2a85\u2a87\u2a89\u2a8b\u2a8c"
+    "\u2a8d\u2a8f\u2a90\u2a91\u2a92\u2a93\u2a94\u2a95\u2a97\u2a99\u2a9b\u2a9d\u2a9f\u2aa1"
+    "\u2aa3\u2aa4\u2aa5\u2aa6\u2aa8\u2aaf\u2ab1\u2ab3\u2ab5\u2ab7\u2ab9\u2abb\u2af7\u2af9"
+    "\u2bc7\u3008\u300a\ufe3d\ufe3f\ufe64\uff1c\U00010877\U0001cc02\U0001cc0e\U0001cc56"
+    "\U0001cc60\U0001cc65\U0001cc78\U0001cc80\U0001cc97\U0001cc9e\U0001cca0\U0001cca2"
+    "\U0001cdf9\U0001ce07\U0001f50d\U0001f780"
+)
+_CLOSE_BRACKETS = (
+    ">\u00bb\u02c3\u02f2\u0350\u0355\u0356\u08f8\u08fa\u08fb\u08fc\u08fd\u1433\u1dff"
+    "\u203a\u221f\u2265\u2267\u2269\u226b\u226f\u2271\u2273\u2275\u227b\u227d\u227f\u22b1"
+    "\u22be\u22d7\u22d9\u22dd\u22df\u22e7\u22e9\u232a\u2344\u2369\u237c\u23e9\u23ed\u23ef"
+    "\u23f5\u25b6\u25b7\u25b8\u25b9\u25ba\u25bb\u276d\u276f\u2771\u27e9\u27eb\u2978\u2992"
+    "\u2994\u2995\u299c\u299d\u29c1\u29fd\u2a7a\u2a7c\u2a7e\u2a80\u2a82\u2a84\u2a86\u2a88"
+    "\u2a8a\u2a8e\u2a96\u2a98\u2a9a\u2a9c\u2a9e\u2aa0\u2aa2\u2aa7\u2aa9\u2ab0\u2ab2\u2ab4"
+    "\u2ab6\u2ab8\u2aba\u2abc\u2af8\u2afa\u2b43\u2b53\u2b54\u2bc8\u2bfe\u2e00\u2e01\u2e16"
+    "\u3009\u300b\ufe3e\ufe40\ufe65\uff1e\U00010878\U0001cc01\U0001cc03\U0001cc0f"
+    "\U0001cc58\U0001cc62\U0001cc67\U0001cc7a\U0001cc82\U0001cc99\U0001cc9f\U0001cca1"
+    "\U0001cca3\U0001f50e\U0001f782"
+)
+_BRACKET_MAP = str.maketrans({**dict.fromkeys(_OPEN_BRACKETS, "("), **dict.fromkeys(_CLOSE_BRACKETS, ")")})
+
+
+def neutralise(text: str) -> str:
+    """``text`` with no angle bracket, look-alike or invisible format character left.
+
+    Entities are decoded, the text NFKC-normalised and format characters (Unicode Cf: tag
+    characters, bidi controls, zero-width) removed until nothing changes (full-width '＜',
+    '&lt;' and '&lt' split by a zero-width space all become '<'); then every bracket and
+    look-alike becomes a parenthesis. Still changing after :data:`_DECODE_ROUNDS` rounds, its
+    '&' go too. ASCII text without '&', '<' and '>' is returned as is: none of these steps
+    changes it (QA PERF-001).
+    """
+    if text.isascii() and "&" not in text and "<" not in text and ">" not in text:
+        return text
+    for _ in range(_DECODE_ROUNDS):
+        decoded = unicodedata.normalize("NFKC", html.unescape(text))
+        decoded = "".join(c for c in decoded if unicodedata.category(c) != "Cf")
+        if decoded == text:
+            break
+        text = decoded
+    else:
+        text = text.replace("&", "+")
+    return text.translate(_BRACKET_MAP)
+
+
+def _bounded(text: Any, limit: int = MAX_NAME_CHARS) -> Any:
+    """``text`` neutralised and cut to ``limit`` characters (the last one an ellipsis);
+    non-strings as they are."""
+    if not isinstance(text, str):
+        return text
+    text = neutralise(text)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _bounded_strings(obj: Any, limit: int = MAX_NAME_CHARS) -> Any:
+    """``obj`` with every string value, at any depth, cut by :func:`_bounded`."""
+    if isinstance(obj, dict):
+        return {key: _bounded_strings(value, limit) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_bounded_strings(value, limit) for value in obj]
+    return _bounded(obj, limit)
 
 
 # --- Compact report tables (046, sc-334) -----------------------------------------
@@ -183,18 +266,31 @@ def _compact_level(level: dict[str, Any], n: int, seconds: float | None, depth: 
     return out, omitted
 
 
+def _seconds(data: dict[str, Any]) -> float | None:
+    total_time = data.get("totalTime")
+    return total_time / 1000 if _number(total_time) and total_time > 0 else None
+
+
+def _fits(obj: Any) -> bool:
+    return len(json.dumps(obj, default=str)) <= TABLE_MAX_CHARS
+
+
 def compact_table(table: Any) -> Any:
-    """``table`` as is when it fits :data:`TABLE_MAX_CHARS`, else its compact projection."""
-    if len(json.dumps(table, default=str)) <= TABLE_MAX_CHARS:
-        return table
+    """``table`` as is when it fits :data:`TABLE_MAX_CHARS`, else its compact projection.
+    Either way every string in what is returned is neutralised and capped (:data:`MAX_NAME_CHARS`);
+    only that, never the whole raw table (QA PERF-001), and its size is checked after it."""
+    if _fits(table) and _fits(bounded := _bounded_strings(table)):
+        return bounded
     data = table.get("data") if isinstance(table, dict) else None
     if isinstance(data, dict):
-        total_time = data.get("totalTime")
-        seconds = total_time / 1000 if _number(total_time) and total_time > 0 else None
+        seconds = _seconds(data)
         for n in TABLE_TOP_N:
             projected, omitted = _compact_level(data, n, seconds, 0)
-            result = {"_compact": True, "_truncated": omitted > 0, "_note": COMPACT_NOTE, "data": projected}
-            if len(json.dumps(result, default=str)) <= TABLE_MAX_CHARS:
+            result = {
+                "_compact": True, "_truncated": omitted > 0, "_note": COMPACT_NOTE,
+                "data": _bounded_strings(projected),
+            }
+            if _fits(result):
                 return result
     return {"_compact": True, "_truncated": True, "_note": TOO_LARGE_NOTE}
 
@@ -202,6 +298,42 @@ def compact_table(table: Any) -> Any:
 async def acompact_table(table: Any) -> Any:
     """:func:`compact_table` off the event loop (sizing is a full ``json.dumps``, like ``_acap``)."""
     return await asyncio.to_thread(compact_table, table)
+
+
+# --- Overview tables (050, sc-358) ------------------------------------------------
+# The recent-raid kickoff reads one Summary table per boss. The compact projection still repeats
+# the roster (composition, playerDetails) and keeps 25 rows per list; the overview keeps what a
+# per-boss headline needs.
+
+OVERVIEW_TOP_N = 10
+OVERVIEW_DROPPED = ("composition",)  # nested dicts (playerDetails) are dropped by the projection
+OVERVIEW_NOTE = (
+    "Overview: each list keeps its top 10 rows by total (auras by uptime) with plain fields; "
+    "'<list>_omitted' counts the rows left out. No per-player details and no composition. For "
+    "more rows call again without overview; for one player's breakdown, with source_id."
+)
+
+
+def overview_table(table: Any) -> Any:
+    """The slim per-boss view of ``table``: top :data:`OVERVIEW_TOP_N` rows of each list, plain
+    fields only. A table without a ``data`` object gets the compact projection instead."""
+    data = table.get("data") if isinstance(table, dict) else None
+    if not isinstance(data, dict):
+        return compact_table(table)
+    data = {k: v for k, v in data.items() if k not in OVERVIEW_DROPPED}
+    projected, omitted = _compact_level(data, OVERVIEW_TOP_N, _seconds(data), 1)
+    result = {
+        "_overview": True, "_truncated": omitted > 0, "_note": OVERVIEW_NOTE,
+        "data": _bounded_strings(projected),  # only the kept rows (QA PERF-001)
+    }
+    if not _fits(result):
+        return compact_table(table)  # never larger than the compact guarantee
+    return result
+
+
+async def aoverview_table(table: Any) -> Any:
+    """:func:`overview_table` off the event loop."""
+    return await asyncio.to_thread(overview_table, table)
 
 
 def report_query(field_calls: str, var_decls: str) -> str:
@@ -316,6 +448,51 @@ async def load_report_summaries(codes: Sequence[str]) -> list[ReportSummary | No
     )
 
 
+def _boss_pulls(summary: ReportSummary) -> list[FightSummary]:
+    """The report's boss pulls (an encounter id, not a Mythic+ key run), oldest first.
+
+    Fights in a report never overlap, so start-time order is end-time order; the fight id
+    breaks ties and stands in for a missing time (summaries cached before 022).
+    """
+    pulls = [f for f in summary.fights if f.encounter_id and f.keystone_level is None]
+    return sorted(pulls, key=lambda f: (f.start_time_ms or 0, f.id))
+
+
+def _boss(fight: FightSummary) -> dict[str, Any]:
+    return {
+        "encounterID": fight.encounter_id,
+        "name": _bounded(fight.name),
+        "difficulty": fight.difficulty,
+        "difficulty_name": DIFFICULTY_NAMES.get(fight.difficulty) if fight.difficulty else None,
+    }
+
+
+MAX_BOSSES = 40  # boss and difficulty pairs listed per report (ten bosses on four difficulties)
+
+
+def boss_summary(summary: ReportSummary) -> list[dict[str, Any]]:
+    """One entry per boss and difficulty, in first-pull order, at most :data:`MAX_BOSSES`:
+    pulls, kills, the last kill's and the last pull's fight id (050, sc-365)."""
+    bosses: dict[tuple[int, int | None], dict[str, Any]] = {}
+    for fight in _boss_pulls(summary):
+        entry = bosses.setdefault(
+            (fight.encounter_id, fight.difficulty),
+            {**_boss(fight), "pulls": 0, "kills": 0, "last_kill_fight_id": None, "last_pull_fight_id": None},
+        )
+        entry["pulls"] += 1
+        entry["last_pull_fight_id"] = fight.id
+        if fight.kill:
+            entry["kills"] += 1
+            entry["last_kill_fight_id"] = fight.id
+    return list(bosses.values())[:MAX_BOSSES]
+
+
+def last_kill(summary: ReportSummary) -> dict[str, Any] | None:
+    """The report's latest boss kill by time (fight id, boss, difficulty), or None (sc-365)."""
+    kills = [f for f in _boss_pulls(summary) if f.kill]
+    return {"fight_id": kills[-1].id, **_boss(kills[-1])} if kills else None
+
+
 def _fight_ids(fight_id: int) -> list[int] | None:
     """0 means 'all fights'; otherwise a single-fight filter list."""
     return [fight_id] if fight_id else None
@@ -330,14 +507,23 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
     and player source IDs, which the other report tools need. Report codes are the
     short string in a log URL: warcraftlogs.com/reports/<CODE>.
 
+    For "the last kill" or "the last boss" of a report, use ``last_kill``: the latest boss
+    kill by time, never a guess from the fight list. ``bosses`` lists each boss and difficulty
+    once with its pulls, kills and the fights to inspect. Both cover every fight, even when
+    the fight list itself is too large and comes back truncated.
+
     Args:
         report_code (str): The report code.
 
     Returns:
         dict: {"status": "success", "title": ..., "zone": ..., "guild": ...,
                "start_time_ms": ..., "players": {id: {"name", "class"}},
-               "fights": [{id, name, encounterID, difficulty, kill,
-                           averageItemLevel, players:[names]}]} or an error.
+               "last_kill": {fight_id, name, encounterID, difficulty, difficulty_name} | null,
+               "bosses": [{encounterID, name, difficulty, difficulty_name, pulls, kills,
+                           last_kill_fight_id, last_pull_fight_id}],
+               "fights": [{id, name, encounterID, difficulty, kill, averageItemLevel,
+                           size, players:[names], keystoneLevel (Mythic+ runs only)}]}
+            or an error. Mythic+ key runs are not boss kills.
     """
     try:
         summary = await load_report_summary(report_code)
@@ -346,17 +532,18 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
     if summary is None:
         return {"status": "error", "error_message": f"No report '{report_code}'."}
 
-    players = {pid: {"name": p.name, "class": p.class_name} for pid, p in summary.players.items()}
+    players = {pid: {"name": _bounded(p.name), "class": p.class_name} for pid, p in summary.players.items()}
     fights = [
         {
             "id": f.id,
-            "name": f.name,
+            "name": _bounded(f.name),
             "encounterID": f.encounter_id,
             "difficulty": f.difficulty,
             "kill": f.kill,
             "averageItemLevel": f.average_item_level,
             "size": f.size,
             "players": [players[i]["name"] for i in f.player_ids if i in players],
+            **({"keystoneLevel": f.keystone_level} if f.keystone_level is not None else {}),
         }
         for f in summary.fights
     ]
@@ -368,12 +555,15 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
     return with_envelope(
         {
             "status": "success",
-            "title": summary.title,
+            "title": _bounded(summary.title, MAX_TITLE_CHARS),
             "zone": zone,
             # Also lets the backend label a tracked raid without a second query (PERF-016).
-            "guild": summary.guild_name,
+            "guild": _bounded(summary.guild_name),
             "start_time_ms": summary.start_time_ms,
-            "players": players,
+            "players": await _acap(players),  # uploader names: bounded like the fight list
+            # sc-365: from the full fight list, outside the cap below.
+            "last_kill": last_kill(summary),
+            "bosses": boss_summary(summary),
             "fights": await _acap(fights),
         },
         Provenance(report_code=report_code),
@@ -450,6 +640,7 @@ async def get_report_table(
     source_id: int = 0,
     ability_id: int = 0,
     hostility_type: str = "Friendlies",
+    overview: bool = False,
 ) -> dict[str, Any]:
     """Get an analysis table for a report — the richest general-purpose tool.
 
@@ -473,6 +664,9 @@ async def get_report_table(
             one player's abilities.
         ability_id (int): Filter to one ability's game id (0 = all).
         hostility_type (str): 'Friendlies' (players) or 'Enemies' (NPCs/boss).
+        overview (bool): True for a slim per-boss overview: the top 10 rows of each
+            list with plain fields, no per-player details and no composition list.
+            The recent-raid kickoff uses it; leave False otherwise.
 
     Returns:
         dict: {"status": "success", "data_type": ..., "table": {...},
@@ -487,6 +681,35 @@ async def get_report_table(
     if hostility_type not in HOSTILITY_TYPES:
         return {"status": "error", "error_message": f"Bad hostility_type '{hostility_type}'.",
                 "valid": sorted(HOSTILITY_TYPES)}
+    try:
+        if source_id:
+            field, var_decls, variables = _table_query(
+                data_type, hostility_type, fight_id, source_id, ability_id
+            )
+            table = await _player_table(
+                report_code, field, var_decls, variables,
+                keys.report_player(report_code, source_id, data_type, fight_id, ability_id, hostility_type),
+            )
+        else:
+            table = await load_report_table(report_code, data_type, fight_id, ability_id, hostility_type)
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
+    if table is None:
+        return {"status": "error", "error_message": f"No data for report '{report_code}'."}
+    return with_envelope(
+        {
+            "status": "success",
+            "data_type": data_type,
+            "table": await (aoverview_table(table) if overview else acompact_table(table)),
+        },
+        Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
+    )
+
+
+def _table_query(
+    data_type: str, hostility_type: str, fight_id: int, source_id: int, ability_id: int
+) -> tuple[str, str, dict[str, Any]]:
+    """The ``table`` field call, its variable declarations and values (the store's key)."""
     field = (
         f"table(dataType: {data_type}, hostilityType: {hostility_type}, "
         "fightIDs: $fightIDs, sourceID: $sourceID, abilityID: $abilityID)"
@@ -497,22 +720,21 @@ async def get_report_table(
         "sourceID": source_id or None,
         "abilityID": ability_id or None,
     }
-    try:
-        if source_id:
-            table = await _player_table(
-                report_code, field, var_decls, variables,
-                keys.report_player(report_code, source_id, data_type, fight_id, ability_id, hostility_type),
-            )
-        else:  # whole-raid tables are large and rarely repeated: not cached
-            table = await _report_field(report_code, field, var_decls, variables, "table")
-    except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "error_message": f"WCL request failed: {exc}"}
-    if table is None:
-        return {"status": "error", "error_message": f"No data for report '{report_code}'."}
-    return with_envelope(
-        {"status": "success", "data_type": data_type, "table": await acompact_table(table)},
-        Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
-    )
+    return field, var_decls, variables
+
+
+async def load_report_table(
+    report_code: str,
+    data_type: str,
+    fight_id: int = 0,
+    ability_id: int = 0,
+    hostility_type: str = "Friendlies",
+) -> Any:
+    """A whole-raid table as Warcraft Logs returns it, neither compacted nor neutralised: the
+    exact query :func:`get_report_table` sends, so the kickoff pre-fetch warms the store for
+    it (QA PERF-003). Large and rarely repeated, so not cached in Redis; raises on a WCL error."""
+    field, var_decls, variables = _table_query(data_type, hostility_type, fight_id, 0, ability_id)
+    return await _report_field(report_code, field, var_decls, variables, "table")
 
 
 async def _player_table(

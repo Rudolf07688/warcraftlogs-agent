@@ -1,7 +1,8 @@
 """The stored-reports lookup is strict and cheap (feature 047, sc-324).
 
 Only rows of our own summary queries with exact codes are used: a hand-written query named like
-ours, a row with inexact codes and a row of another operation are never returned. Each returned
+ours, a row with inexact codes and a row of another operation are never returned (since 051 they
+carry no own-summary flag: the write rule and 0021's backfill decide it). Each returned
 summary is cut down to the fields the lookup reads. Over SQLite; the Postgres index plan and the
 statement timeout are in test_047_stored_reports_pg.py.
 """
@@ -63,15 +64,17 @@ def codes_of(bodies: list[dict]) -> set[str]:
 
 
 async def insert_row(
-    factory, key: str, op: str, params: dict, codes: list[str], data: dict, fetched_at: datetime = NOW
+    factory, key: str, op: str, params: dict, codes: list[str], data: dict, fetched_at: datetime = NOW,
+    own: bool = False,
 ) -> None:
-    """A stored row as it may sit in the table (written by an older or looser path)."""
+    """A stored row as it may sit in the table (written by an older or looser path; ``own``: the
+    own-summary flag, 051 sc-354)."""
     async with factory() as session:
         body = json.dumps({"data": data})
         await session.execute(
             RawFetch.__table__.insert().values(
                 query_key=key, operation_name=op, params=params, report_code=None, report_codes=codes,
-                fetched_at=fetched_at, payload=_payload("sqlite", body), payload_hash=None,
+                fetched_at=fetched_at, payload=_payload("sqlite", body), payload_hash=None, own_summary=own,
             )
         )
         await record_report_status(session, [ReportStatus(c, "public", ENDED, NOW) for c in codes])
@@ -135,10 +138,11 @@ async def test_only_the_needed_fields_come_back(patched_db, tenant_id):
     assert len(json.dumps(body)) * 10 < len(full.content)
 
 
-async def test_the_scan_reads_only_rows_fetched_since_the_visibility_window(patched_db, tenant_id):
-    """049 PERF-002: ``fetched_at >= since`` bounds the walk (the Postgres plan is in the _pg file)."""
-    for code, at in (("Bd1", NOW), ("Bd2", SINCE - timedelta(hours=1))):
+async def test_a_visible_summary_is_listed_whenever_it_was_fetched(patched_db, tenant_id):
+    """051 sc-354 (reverses 049's fetch-time bound): visibility alone decides; the Postgres scan is
+    bounded by the recently confirmed codes instead (test_051_raw_store_pg.py)."""
+    for code, at in (("Bd1", NOW), ("Bd2", SINCE - timedelta(days=30))):
         params = {"code": code}  # both visible by a fresh public status; only the fetch time differs
         await insert_row(patched_db, _flight_key(REPORT_SUMMARY, params), "ReportSummary", params, [code],
-                         {"reportData": {"report": report(code)}}, fetched_at=at)
-    assert codes_of(await listed(patched_db, tenant_id)) == {"Bd1"}
+                         {"reportData": {"report": report(code)}}, fetched_at=at, own=True)
+    assert codes_of(await listed(patched_db, tenant_id)) == {"Bd1", "Bd2"}

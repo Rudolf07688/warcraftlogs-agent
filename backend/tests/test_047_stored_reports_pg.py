@@ -1,7 +1,8 @@
 """The stored-reports lookup on real Postgres (feature 047, sc-324, migration 0020).
 
-It walks the partial index ``ix_raw_fetches_summaries``, runs under a statement timeout, never
-lists a forged summary row and reads a projection, not the stored payloads. Skipped unless
+It reads the partial index ``ix_raw_fetches_own_summary_codes`` (051 sc-354; 0020's
+``ix_raw_fetches_summaries`` before), runs under a statement timeout, never lists a forged summary
+row and reads a projection, not the stored payloads. Skipped unless
 ``TEST_DATABASE_URL`` points at a migrated Postgres (runtime role), like test_raw_store_pg.py.
 """
 
@@ -111,12 +112,13 @@ async def test_the_lookup_is_strict_bounded_and_uses_the_index(pg, tenant):
         await db.execute(sa.text("SET LOCAL enable_seqscan = off"))
         raw = await db.connection()
         plan = (await raw.exec_driver_sql("EXPLAIN " + statement, parameters)).scalars().all()
-    assert any("ix_raw_fetches_summaries" in line for line in plan), "\n".join(plan)
+    assert any("ix_raw_fetches_own_summary_codes" in line for line in plan), "\n".join(plan)
 
 
-async def test_the_scan_is_bounded_by_the_fetch_time_not_by_everything_stored(pg, tenant):
-    """049 PERF-002: rows fetched before the window are not read, however many there are; rows
-    inside it still come back. ``EXPLAIN ANALYZE`` counts the rows the index scan handed on."""
+async def test_the_scan_is_bounded_by_the_recent_codes_not_by_everything_stored(pg, tenant):
+    """049 PERF-002, 051 sc-354: rows whose reports were not confirmed public or granted inside the
+    window are not read, however many there are; the others still come back. ``EXPLAIN ANALYZE``
+    counts the rows the index scan handed on."""
     since = NOW - timedelta(days=1)
     recent = code()
     old = [code() for _ in range(5)]
@@ -147,20 +149,25 @@ async def test_the_scan_is_bounded_by_the_fetch_time_not_by_everything_stored(pg
     async with pg() as db:
         await set_scope(db, tenant_id=tenant)
         in_window = await db.scalar(sa.text(
-            "SELECT count(*) FROM raw_fetches WHERE operation_name IN ('ReportSummary', 'ReportsBatch')"
-            " AND fetched_at >= :since"), {"since": since})
-        stored = await db.scalar(sa.text(
-            "SELECT count(*) FROM raw_fetches WHERE operation_name IN ('ReportSummary', 'ReportsBatch')"))
+            "SELECT count(*) FROM raw_fetches WHERE own_summary AND report_codes ?| ARRAY("
+            " SELECT code FROM raw_reports WHERE visibility = 'public' AND checked_at >= :since UNION"
+            " SELECT report_code FROM raw_fetch_grants WHERE tenant_id = :t AND granted_at >= :since)"),
+            {"since": since, "t": tenant})
+        stored = await db.scalar(sa.text("SELECT count(*) FROM raw_fetches WHERE own_summary"))
         await db.execute(sa.text("SET LOCAL enable_seqscan = off"))
         raw = await db.connection()
         plan = (await raw.exec_driver_sql("EXPLAIN (ANALYZE, FORMAT JSON) " + statement, parameters)).scalar()
     assert stored - in_window >= len(old)  # there is more stored than the window holds
 
-    def index_scans(node):
-        yield from ([node] if node.get("Index Name") == "ix_raw_fetches_summaries" else [])
-        for child in node.get("Plans", []):
-            yield from index_scans(child)
+    def heap_scans(node):
+        """The heap scan over the GIN index: its rows are the ones read (a bitmap index scan counts
+        index entries, one per matching code)."""
+        children = node.get("Plans", [])
+        if any(c.get("Index Name") == "ix_raw_fetches_own_summary_codes" for c in children):
+            yield node
+        for child in children:
+            yield from heap_scans(child)
 
-    [scan] = [n for n in index_scans(plan[0]["Plan"]) if "fetched_at" in n.get("Index Cond", "")]
-    read = scan["Actual Rows"] + scan.get("Rows Removed by Filter", 0)
+    [scan] = list(heap_scans(plan[0]["Plan"]))
+    read = scan["Actual Rows"] + scan.get("Rows Removed by Index Recheck", 0) + scan.get("Rows Removed by Filter", 0)
     assert read <= in_window, json.dumps(plan)

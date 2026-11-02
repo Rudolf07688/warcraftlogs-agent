@@ -195,12 +195,15 @@ def retry_after_hint(exc: BaseException) -> float | None:
 async def generate_with_retry(
     inner: Callable[[], AsyncGenerator[Any, None]],
     policy: RetryPolicy,
+    *,
+    deadline: float | None = None,
 ) -> AsyncGenerator[Any, None]:
     """Drive ``inner()`` (a fresh model-call generator per attempt) with rate-limit retries.
 
     Retries only when the failure is a rate limit (FR-002), nothing has been yielded yet
     (a mid-stream retry would duplicate streamed text), attempts remain, and the next
-    delay still fits the wait budget. Each retry is announced on the current turn as a
+    delay still fits the wait budget and ends by ``deadline`` (a :data:`_clock` time, so
+    requests count too; 052 sc-297). Each retry is announced on the current turn as a
     ``model_retry`` record (FR-003) and counted (FR-013). When the turn has
     ``retry_enabled=False`` (helper calls, FR-012) the first rate limit fails fast.
     """
@@ -222,7 +225,9 @@ async def generate_with_retry(
             if attempt >= attempts_allowed:
                 raise ModelRateLimited(attempt, waited, exc) from exc
             delay = policy.delay_for(attempt, retry_after_hint(exc))
-            if waited + delay > policy.budget_s:
+            if waited + delay > policy.budget_s or (
+                deadline is not None and _clock() + delay > deadline
+            ):
                 raise ModelRateLimited(attempt, waited, exc) from exc
             logger.warning(
                 "model rate-limited (%s: %s); retry %d/%d in %.1fs",
@@ -256,8 +261,10 @@ _PRIMARY_BUDGET_S = 10.0
 # sc-268: when both the turn's model and its sibling are remembered as limited, the turn
 # gets this one wait budget in all: the primary's short probe and the sibling's retries
 # together, so it fails with the "both busy" outcome in about this long, not probe + the
-# sibling's full schedule (about 40 s, up to 100 s).
+# sibling's full schedule (about 40 s, up to 100 s). 052 sc-297: a deadline on ``_clock``
+# (monotonic) that the requests count against too, so it is 10 s plus at most one request.
 _BOTH_LIMITED_BUDGET_S = 10.0
+_clock = time.monotonic
 # How long a model whose retries ran out is skipped in favour of its sibling.
 RATE_LIMIT_MEMORY_S = 300.0
 _limited_until: dict[str, float] = {}
@@ -351,7 +358,8 @@ async def generate_with_fallback(
     (``_PRIMARY_ATTEMPTS`` within ``_PRIMARY_BUDGET_S``); the sibling keeps ``policy``. A
     model whose retries ran out is remembered (``recently_limited``), and a turn whose
     model is remembered switches on its first request, unless the sibling is remembered too
-    (sc-268: then probe and sibling share ``_BOTH_LIMITED_BUDGET_S`` and the turn fails fast).
+    (sc-268: then probe and sibling share one ``_BOTH_LIMITED_BUDGET_S`` deadline, requests
+    included (052 sc-297), and the turn fails fast).
 
     sc-184: ``may_switch=False`` (the web-search sub-agent, pinned to the turn's model)
     follows a switch the turn already made but never makes one; its own conversation is
@@ -365,7 +373,7 @@ async def generate_with_fallback(
     both_limited = (
         can_switch and recently_limited(stats.model) and recently_limited(stats.fallback_model)
     )
-    waited_before = stats.waited_s if own else 0.0
+    deadline = _clock() + _BOTH_LIMITED_BUDGET_S if both_limited else None
     if not may_switch:
         if own and stats.switched_to:
             llm_request.model = stats.switched_to
@@ -383,7 +391,9 @@ async def generate_with_fallback(
         _route_to_sibling(llm_request, stats)
     else:
         try:
-            async for response in generate_with_retry(inner, _short(policy) if can_switch else policy):
+            async for response in generate_with_retry(
+                inner, _short(policy) if can_switch else policy, deadline=deadline
+            ):
                 yield response
             return
         except ModelRateLimited:
@@ -391,13 +401,11 @@ async def generate_with_fallback(
                 _remember_limited(llm_request.model, stats)
             if not can_switch:
                 raise
-        _switch(llm_request, stats, "still rate-limited")
-    sibling_policy = policy
-    if both_limited:
-        left = max(_BOTH_LIMITED_BUDGET_S - (stats.waited_s - waited_before), 0.0)
-        sibling_policy = replace(policy, budget_s=min(policy.budget_s, left))
+            _switch(llm_request, stats, "still rate-limited")
+            if deadline is not None and _clock() >= deadline:
+                raise  # the probe ended past the shared deadline: "both busy" without the sibling
     try:
-        async for response in generate_with_retry(inner, sibling_policy):
+        async for response in generate_with_retry(inner, policy, deadline=deadline):
             yield response
     except ModelRateLimited:
         _remember_limited(llm_request.model, stats)

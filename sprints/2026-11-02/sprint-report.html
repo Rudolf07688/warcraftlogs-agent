@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-02 Review</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px;align-content:start}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:grid;gap:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
+.checks .no{font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted)}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint review · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-02: big-report and stored-data work finished</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-02</b></span> <span>Head <b class="mono">eae8a19</b></span> <span>Base <b class="mono">3b5e3ca</b></span> <span>PO Maren</span></div>
+  <p>All 20 planned points were merged with no carry-over. The agent now finds the right "last boss kill", the recent-raid overview costs much less, uploader text is cleaned before it reaches the model, and the stored-data and startup paths are harder to abuse. Each feature had a scoped security review before merge (no Highs). The end QA sweep found one High, a performance cost from this sprint's own cleaning step, and it is fixed. Team-lead's live pass passed, and a re-run after the QA fixes found 0 failures.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">20<small> / 20 pts</small></span><span class="s">14 stories, all Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Live pass</span><span class="v">3<small> / 3</small></span><span class="s">re-run after QA fixes: 0 FAIL</span></div>
+  <div class="kpi"><span class="eyebrow">QA sweep</span><span class="v">0<small> High open</small></span><span class="s">1 High + 6 Medium fixed</span></div>
+  <div class="kpi"><span class="eyebrow">Tests</span><span class="v">2034</span><span class="s">full suite with Postgres, green</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-a" aria-controls="p-a" aria-selected="true">Report fights + kickoff <span class="count">7</span></button>
+  <button class="tab" role="tab" id="tab-b" aria-controls="p-b" aria-selected="false" tabindex="-1">Stored data <span class="count">6</span></button>
+  <button class="tab" role="tab" id="tab-c" aria-controls="p-c" aria-selected="false" tabindex="-1">Turns + startup <span class="count">7</span></button>
+  <button class="tab" role="tab" id="tab-q" aria-controls="p-q" aria-selected="false" tabindex="-1">QA + backlog <span class="count">6</span></button>
+  <button class="tab" role="tab" id="tab-d" aria-controls="p-d" aria-selected="false" tabindex="-1">Decisions + live checks</button>
+</div></nav>
+
+<div role="tabpanel" id="p-a" aria-labelledby="tab-a" tabindex="0">
+  <h2 class="panel-title">050 Report fights and kickoff <span class="tag t-acc">Nils</span> <span class="tag t-ok">merged</span></h2>
+  <div class="callout ok">Root cause of the wrong last kill: the report opens with two Mythic+ key runs, and the fight list carried no times and no last-kill marker, so the model guessed fight 2. It was not the size cap, but the fix covers that too.</div>
+  <table class="tbl">
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>Result</th></tr>
+    <tr><td>Agent picks the wrong last boss kill (sc-365)</td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td>Explicit <code>last_kill</code>, key runs excluded, kept even when the list is capped. Live: Ula'tek, fight 32 in both turns.</td></tr>
+    <tr><td>One difficulty id-to-name map (sc-330)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>One map in <code>wcl_agent/game</code>, output unchanged.</td></tr>
+    <tr><td>Recent-raid kickoff still about 55k prompt tokens (sc-358)</td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td>Fixture: 37.3k to 16.4k tokens. Live: 41.7k to 37.5k, just over the ~35k target. The remaining cost is the fixed per-request base, now ticketed as "Every chat request starts at about 23k prompt tokens" (sc-367).</td></tr>
+    <tr><td>Untrusted text outside the data block (sc-351)</td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td>Search labels marked as data; look-alike, invisible and entity-encoded delimiters neutralised; report-tool names cleaned and capped.</td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-b" aria-labelledby="tab-b" tabindex="0" hidden>
+  <h2 class="panel-title">051 Raw-store hardening <span class="tag t-acc">Ansel</span> <span class="tag t-ok">merged</span></h2>
+  <table class="tbl">
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>Result</th></tr>
+    <tr><td>Index migrations lock writes (sc-359)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>0020 and 0021 build indexes concurrently, and the backfill runs in chunks outside a transaction. A re-run after a failure converges. The rule is now in the migration template.</td></tr>
+    <tr><td>Private-report tombstones can be flushed (sc-353)</td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td>A flood can't let a private report back in; gone signals survive a full queue; a null batch entry counts as gone.</td></tr>
+    <tr><td>Stored-reports lookup: own-summary flag (sc-354)</td><td class="num"><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td><td>Flag set at write time and backfilled (live: 46 of 252 rows, no invalid indexes); look-alike rows can't crowd out real ones; visibility unchanged (two-tenant Postgres test).</td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-c" aria-labelledby="tab-c" tabindex="0" hidden>
+  <h2 class="panel-title">052 Turn and startup hardening <span class="tag t-acc">Tomas</span> <span class="tag t-ok">merged</span></h2>
+  <table class="tbl">
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>Result</th></tr>
+    <tr><td>Store breaker opens on one turn's timeouts (sc-355)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>A slow store makes only the affected workspace skip it; switching it off for everyone needs two workspaces. Connection errors still switch it off at once.</td></tr>
+    <tr><td>Store counters per report family (sc-332)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>Per-operation counters (allowlisted, the rest as "custom"). Live: ReportQ, ReportSummary.</td></tr>
+    <tr><td>No per-user limit on recent-raid investigate (sc-352)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>5 per user per minute; pre-fetch after commit and never while the store is skipped. Live: 6th click got 429.</td></tr>
+    <tr><td>Local-answer count edge cases (sc-357)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>Failed or cancelled setup is not counted and leaves no state behind; the joiner case follows the spec; no new waits (re-checked in the sweep).</td></tr>
+    <tr><td>App starts on the dev secret key (sc-356)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>Refuses a weak or placeholder key off localhost. Live: refusal on example.org, and a warning that names the setting without its value.</td></tr>
+    <tr><td>Two set_config round trips per transaction (sc-270)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>One statement; trusted proxies parsed once.</td></tr>
+    <tr><td>"Both models busy" takes 11–16 s, not 10 (sc-297)</td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>One deadline covering requests and waits.</td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-q" aria-labelledby="tab-q" tabindex="0" hidden>
+  <h2 class="panel-title">QA: security reviews, end sweep and backlog</h2>
+  <div class="grid2">
+    <div class="card"><h3>Security review per feature (before merge)</h3>
+      <table class="tbl">
+        <tr><th>Feature</th><th>High</th><th>Medium</th><th>Low</th><th>Fixed in rework</th></tr>
+        <tr><td>050</td><td class="num">0</td><td class="num">2</td><td class="num">3</td><td>all 5</td></tr>
+        <tr><td>051</td><td class="num">0</td><td class="num">0</td><td class="num">5</td><td>2 (incl. migration locking)</td></tr>
+        <tr><td>052</td><td class="num">0</td><td class="num">2</td><td class="num">2</td><td>all 4</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>End sweep (merged tree)</h3>
+      <table class="tbl">
+        <tr><th>Report</th><th>High</th><th>Medium</th><th>Low</th></tr>
+        <tr><td>Spec conformance</td><td class="num">0</td><td class="num">3</td><td class="num">6</td></tr>
+        <tr><td>Bugs</td><td class="num">0</td><td class="num">1</td><td class="num">4</td></tr>
+        <tr><td>Performance</td><td class="num">1</td><td class="num">3</td><td class="num">4</td></tr>
+        <tr><td>Security</td><td class="num">0</td><td class="num">1</td><td class="num">3</td></tr>
+      </table>
+      <p class="small muted">Fixed in one round, split by author: the High (cleaning the whole table before cutting it: 6.7 ms to 0.1 ms per overview), the pre-fetch warming Mythic+ keys instead of bosses, and spec drift. No turn waits behind another (liveness re-check).</p>
+    </div>
+  </div>
+  <h3>Deferred to the backlog (labelled qa-deferred)</h3>
+  <table class="tbl">
+    <tr><th>Ticket</th><th>Pts</th><th>What</th></tr>
+    <tr><td>Uploader text still raw through other tools (sc-368)</td><td class="num">2</td><td>Stored-data and other report tools need the same cleaning (pre-existing).</td></tr>
+    <tr><td>Store breaker identity gaps (sc-369)</td><td class="num">2</td><td>Stored-data lookups bypass the breaker; one workspace can hold its trial.</td></tr>
+    <tr><td>Tombstone floor and salvage hardening (sc-370)</td><td class="num">2</td><td>A tenant flood can pause storing for everyone (availability only, no leak).</td></tr>
+    <tr><td>Stored-reports lookup cost at scale (sc-371)</td><td class="num">2</td><td>Needs a query plan on production-like volume.</td></tr>
+    <tr><td>Per-user limit on the Mythic+ review click (sc-372)</td><td class="num">1</td><td>Same limit as the raid click.</td></tr>
+    <tr><td>Cleaned names in tracked-raid labels (sc-373)</td><td class="num">1</td><td>Labels should use the raw report title.</td></tr>
+  </table>
+  <p class="small muted">Plus a note added to team-lead's ticket "Every chat request starts at about 23k prompt tokens" (sc-367). Full triage: sprints/2026-11-02/qa-triage.md.</p>
+</div>
+
+<div role="tabpanel" id="p-d" aria-labelledby="tab-d" tabindex="0" hidden>
+  <h2 class="panel-title">Decisions, risks and live checks</h2>
+  <div class="grid2">
+    <div class="card"><h3>Key decisions</h3><ul class="checks">
+      <li>Scope: open bugs and deferred QA items on two epics, no UI or product judgment. <span class="ref">board #2</span></li>
+      <li>Three parallel tier-M streams with disjoint files; the one shared file was split by function. No merge conflicts. <span class="ref">#6–9</span></li>
+      <li>Store breaker: a slow store makes only that workspace skip it; switching it off for everyone needs two workspaces (security review). <span class="ref">#52</span></li>
+      <li>Report tools clean names (no full data marking), plus caps on each name and on the total. <span class="ref">#53</span></li>
+      <li>"Every chat request starts at about 23k prompt tokens" (sc-367) left for the next sprint. <span class="ref">#77</span></li>
+    </ul></div>
+    <div class="card"><h3>Risks</h3><ul class="checks">
+      <li class="no">Startup now refuses a weak key when SITE_URL is not localhost, including LAN addresses. Deployments need a real SECRET_KEY.</li>
+      <li class="no">Migration 0021 backfills on deploy; it ran cleanly live on 252 rows. Larger stores take longer, but writes are no longer blocked.</li>
+      <li class="no">The kickoff prompt is still slightly above its ~35k target until the per-request base is trimmed (sc-367).</li>
+      <li class="no">The stored-reports lookup cost at scale is unmeasured (sc-371).</li>
+    </ul></div>
+  </div>
+  <h3>Live checks</h3>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">#62</span> Team-lead's pass on the merged features: last kill, chart and kill-difficulty prompts all pass; kickoff correct; 0021 ran; counters, 429 and the startup refusal confirmed.</div>
+    <div class="tl ok"><span class="t">#78</span> Re-run after the QA fixes on eae8a19: last-kill and kill-difficulty prompts pass; kickoff correct, pre-fetch now warms bosses only (1 table, was 2 with a key run), read from the store in 18 ms. 0 FAIL. The 429 message in the UI was not part of the re-run (covered by frontend tests).</div>
+  </div>
+</div>
+
+<footer>Written by Maren (product owner) on 2026-11-02. Board: sprint-2026-11-02. Never pushed; no ticket moved to Done.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>

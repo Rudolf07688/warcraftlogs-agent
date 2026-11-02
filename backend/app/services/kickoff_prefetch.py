@@ -3,9 +3,10 @@
 Clicking a recent raid (``POST /api/raids/{code}/investigate``) starts this in the background,
 so the kickoff turn's tool calls are answered locally instead of rediscovering the report: the
 report summary (``get_report_fights``'s data) and one ``Summary`` table per boss, the sequence
-the agent instruction's RECENT_RAID_KICKOFF playbook names. It calls the agent's own tool
-functions, so every query is byte for byte the one the turn sends: the turn hits the Redis
-cache, the raw store (039) or this job's single-flight.
+the agent instruction's RECENT_RAID_KICKOFF playbook names, for the fights of the tool's
+``bosses`` list. It calls the agent tools' own loaders, so every query is byte for byte the one
+the turn sends (the tables raw, without the tool's compaction: QA PERF-003): the turn hits the
+Redis cache, the raw store (039) or this job's single-flight.
 
 Rules:
 
@@ -24,7 +25,9 @@ Rules:
 * One job per (workspace, report) per :data:`COOLDOWN_S`: a repeat click within it starts
   nothing (P7-046 SEC-001). The cooldown is in-process: each app instance keeps its own.
 * Only when store reads are on and the store is installed as the client's fetch source: without
-  them a whole-raid table is not kept anywhere the turn could read (SEC-002).
+  them a whole-raid table is not kept anywhere the turn could read (SEC-002). Not while the
+  store's breaker is open or the workspace is skipping the store either: the job would warm
+  nothing (052 sc-352, QA BUG-003).
 """
 
 from __future__ import annotations
@@ -37,11 +40,11 @@ import uuid
 from wcl_agent.cache.cache_models import ReportSummary
 from wcl_agent.client import wcl_client
 from wcl_agent.client.wcl_client import background_lane
-from wcl_agent.tools.report_tools import get_report_table, load_report_summary
+from wcl_agent.tools.report_tools import boss_summary, load_report_summary, load_report_table
 
 from ..config import settings
 from ..tenancy.context import RequestIdentity, current_identity
-from . import background
+from . import background, raw_fetch_reads
 
 logger = logging.getLogger(__name__)
 
@@ -54,16 +57,12 @@ _started: dict[tuple[uuid.UUID | None, str], float] = {}
 
 
 def pick_boss_fights(summary: ReportSummary) -> list[int]:
-    """One fight per boss and difficulty, in first-pull order: the last kill, else the last pull."""
-    chosen: dict[tuple[int, int | None], tuple[bool, int]] = {}
-    for fight in summary.fights:
-        if not fight.encounter_id:
-            continue  # trash
-        key = (fight.encounter_id, fight.difficulty)
-        previous = chosen.get(key)
-        if fight.kill or previous is None or not previous[0]:
-            chosen[key] = (bool(fight.kill), fight.id)
-    return [fight_id for _, fight_id in chosen.values()][:MAX_BOSS_TABLES]
+    """The fights the kickoff turn asks for: one per entry of ``get_report_fights``'s
+    ``bosses`` (Mythic+ key runs are no bosses), its last kill, else its last pull, in
+    first-pull order (QA BUG-001)."""
+    return [
+        boss["last_kill_fight_id"] or boss["last_pull_fight_id"] for boss in boss_summary(summary)
+    ][:MAX_BOSS_TABLES]
 
 
 async def prefetch(identity: RequestIdentity, report_code: str) -> None:
@@ -74,14 +73,15 @@ async def prefetch(identity: RequestIdentity, report_code: str) -> None:
         if summary is None:
             return
         fights = pick_boss_fights(summary)
-        with background_lane():
+        with background_lane():  # raw tables only: warming needs no compaction (QA PERF-003)
             results = await asyncio.gather(
-                *(get_report_table(report_code, BOSS_TABLE, fight_id=fight_id) for fight_id in fights)
+                *(load_report_table(report_code, BOSS_TABLE, fight_id) for fight_id in fights),
+                return_exceptions=True,
             )
     except Exception as exc:  # noqa: BLE001 - a warm-up; the turn fetches what it lacks
         logger.warning("kickoff prefetch failed report=%s error=%s", report_code, type(exc).__name__)
         return
-    failed = sum(1 for r in results if r.get("status") != "success")
+    failed = sum(1 for r in results if r is None or isinstance(r, BaseException))
     logger.info("kickoff prefetch report=%s tables=%d failed=%d", report_code, len(fights), failed)
 
 
@@ -91,9 +91,10 @@ def store_reads_on() -> bool:
 
 
 def schedule(identity: RequestIdentity, report_code: str) -> bool:
-    """Start :func:`prefetch` unless store reads are off or this workspace started one for the
-    report less than :data:`COOLDOWN_S` ago; True when it started."""
-    if not store_reads_on():
+    """Start :func:`prefetch` unless store reads are off, the store skips this workspace (breaker
+    open, or its own timeouts), or this workspace started one for the report less than
+    :data:`COOLDOWN_S` ago; True when it started."""
+    if not store_reads_on() or raw_fetch_reads.breaker.skips(identity.tenant_id):
         return False
     now = time.monotonic()
     for key, at in list(_started.items()):

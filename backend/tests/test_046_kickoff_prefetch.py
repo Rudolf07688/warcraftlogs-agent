@@ -1,4 +1,4 @@
-"""Recent-raid kickoff pre-fetch, playbook and tool-call count (046, sc-339).
+"""Recent-raid kickoff pre-fetch and tool-call count (046, sc-339; the playbook test is in 050).
 
 The WCL tool functions are faked: the pre-fetch must call them as the clicking workspace, in the
 background lane, at most once per workspace and report per cooldown, only with store reads on,
@@ -18,7 +18,6 @@ from backend.app.services import background, kickoff_prefetch
 from backend.app.services.kickoff_prefetch import MAX_BOSS_TABLES, pick_boss_fights
 from backend.app.tenancy.context import RequestIdentity, current_identity
 from backend.tests.test_raids import _store_recent
-from wcl_agent.agent import INSTRUCTION
 from wcl_agent.cache.cache_models import FightSummary, ReportSummary
 from wcl_agent.client import wcl_client
 
@@ -69,10 +68,10 @@ class _FakeWcl:
         async def table(code, data_type, fight_id=0, **_kwargs):
             self.tables.append((code, data_type, fight_id, _tenant()))
             self.lanes.add(wcl_client._lane.get())
-            return {"status": "success"}
+            return {"playerDetails": {}}  # the raw table (052 QA PERF-003)
 
         monkeypatch.setattr(kickoff_prefetch, "load_report_summary", load)
-        monkeypatch.setattr(kickoff_prefetch, "get_report_table", table)
+        monkeypatch.setattr(kickoff_prefetch, "load_report_table", table)
 
 
 def _tenant() -> uuid.UUID | None:
@@ -191,11 +190,3 @@ async def test_prefetch_sets_the_identity_only_in_its_own_task(store_running, mo
     assert sorted(map(str, wcl.summaries)) == sorted([str(identity.tenant_id), str(other.tenant_id)])
     assert current_identity.get() is None
 
-
-def test_the_playbook_names_the_kickoff_sequence():
-    body = INSTRUCTION.split("<RECENT_RAID_KICKOFF>")[1].split("</RECENT_RAID_KICKOFF>")[0]
-    assert "`get_report_fights` once" in body
-    assert 'ONE parallel round of `get_report_table` with data_type "Summary"' in body
-    assert "last kill, or its last pull" in body
-    assert "No per-player fetches" in body
-    assert body.index("get_report_fights") < body.index("get_report_table")

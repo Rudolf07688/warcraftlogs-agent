@@ -97,7 +97,8 @@ def test_auras_sort_by_uptime_and_an_unfittable_table_returns_the_note_only():
     assert [a["totalUptime"] for a in out["data"]["auras"]][:3] == [399, 398, 397]
     assert out["data"]["auras_omitted"] == 375 and "bands" not in out["data"]["auras"][0]
 
-    wide = [{"name": "x" * 10_000, "total": i} for i in range(50)]  # five rows still don't fit
+    # five rows still don't fit (wide in fields: strings are capped since 050)
+    wide = [{"name": "x", "total": i, **{f"f{j}": j for j in range(2_000)}} for i in range(50)]
     out = compact_table({"data": {"entries": wide}})
     assert out == {"_compact": True, "_truncated": True, "_note": report_tools.TOO_LARGE_NOTE}
     assert len(json.dumps(out)) <= TABLE_MAX_CHARS
