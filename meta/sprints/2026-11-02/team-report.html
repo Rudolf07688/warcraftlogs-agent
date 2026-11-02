@@ -150,6 +150,7 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
   <button class="tab" role="tab" id="tab-flow" aria-controls="p-flow" aria-selected="false" tabindex="-1">Timeline</button>
   <button class="tab" role="tab" id="tab-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Worked / change</button>
   <button class="tab" role="tab" id="tab-mem" aria-controls="p-mem" aria-selected="false" tabindex="-1">Memory + skills</button>
+  <button class="tab" role="tab" id="tab-trend" aria-controls="p-trend" aria-selected="false" tabindex="-1">Earlier sprints <span class="count">8</span></button>
 </div></nav>
 
 <div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
@@ -240,6 +241,23 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
         <li><code>livecheck.py</code>: adds the <code>killdiff</code> prompt and a raid-only <code>--facts</code>.</li>
       </ul></li>
   </ul>
+</div>
+
+<div role="tabpanel" id="p-trend" aria-labelledby="tab-trend" tabindex="0" hidden>
+  <h2 class="panel-title">Earlier sprints</h2>
+  <p class="muted small">From the baseline table in <code>meta/team-optimisation.md</code>. Cost is weighted M units per delivered point; the shares split the same cost into coordination, build and QA.</p>
+  <table class="tbl">
+    <tr><th>Sprint</th><th>Team</th><th>Points</th><th>Cost / pt</th><th>Coord.</th><th>Build</th><th>QA</th><th>Key detail</th></tr>
+    <tr><td class="mono">10-25</td><td>PO + SM + 9 devs</td><td class="num">23</td><td class="num">2.65</td><td class="num">55%</td><td class="num">35%</td><td class="num">8%</td><td>First team sprint</td></tr>
+    <tr><td class="mono">10-26</td><td>PO + SM + devs</td><td class="num">20</td><td class="num">2.18</td><td class="num">42%</td><td class="num">49%</td><td class="num">8%</td><td>Design docs; owner plan gate</td></tr>
+    <tr><td class="mono">10-31</td><td>PO + SM + devs</td><td class="num">21</td><td class="num">1.39</td><td class="num">41%</td><td class="num">58%</td><td class="num">0%</td><td>Fast-tracked; no QA sweep</td></tr>
+    <tr><td class="mono">10-31b</td><td>PO + 2 devs</td><td class="num">21</td><td class="num"><b>0.83</b></td><td class="num">29%</td><td class="num">52%</td><td class="num">18%</td><td>First tier M; cheapest so far</td></tr>
+    <tr><td class="mono">10-31c</td><td>PO + 2 devs</td><td class="num">19</td><td class="num">0.92</td><td class="num">38%</td><td class="num">48%</td><td class="num">12%</td><td>78 min steer to wrap</td></tr>
+    <tr><td class="mono">11-01</td><td>PO + SM + 3 devs</td><td class="num">33</td><td class="num">1.18</td><td class="num">26%</td><td class="num">58%</td><td class="num">16%</td><td>Tier L; first P7 security reviews</td></tr>
+    <tr><td class="mono">11-01b</td><td>PO + 2 devs</td><td class="num">20</td><td class="num">1.03</td><td class="num">26%</td><td class="num">56%</td><td class="num">18%</td><td>Tools over rules (P9); 1 h 36 min</td></tr>
+    <tr><td class="mono"><b>11-02</b></td><td><b>PO + 3 devs</b></td><td class="num"><b>20</b></td><td class="num"><b>1.27</b></td><td class="num"><b>16%</b></td><td class="num"><b>68%</b></td><td class="num"><b>16%</b></td><td><b>Fully autonomous; resumed builders</b></td></tr>
+  </table>
+  <div class="callout"><p><b>Reading.</b> Coordination has fallen from 55% to 16% over eight sprints (with one bump in 10-31c) and is no longer the main lever. Build is now two-thirds of the cost, so the next saving comes from how developers are run: fresh fix agents and shorter hand-offs. The cheapest sprints (0.83, 0.92) were two-developer tier M with small QA rounds.</p></div>
 </div>
 
 <footer>Written by team-lead from usage.txt, board.jsonl and git. Local report, not published.</footer>
