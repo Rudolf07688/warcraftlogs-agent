@@ -124,8 +124,11 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    - the owner's live checks
    - the merge question: "merge `sprint-<date>` into `main` locally, without pushing?"
 
-   On a yes: `git merge --no-ff`, check that the tree matches the sprint tip, remove the
-   worktrees, and run `node .gitnexus/run.cjs analyze --index-only`.
+   On a yes: `git merge --no-ff` and check that the tree matches the sprint tip. Then copy
+   the sprint worktree's `qa-reports/` into the main checkout. It is gitignored, so
+   `git worktree remove` deletes it silently (2026-11-02: lost, then rebuilt from the
+   transcripts). Only then remove the worktrees and run
+   `node .gitnexus/run.cjs analyze --index-only`.
 5. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,
    apply the sprint's `skill:<name>` board notices and any lesson of your own that every agent
    doing that task should know. Rewrite or cut rather than append. In tool-generated skills

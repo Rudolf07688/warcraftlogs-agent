@@ -23,7 +23,7 @@ Rule changes I make mid-sprint never reach running agents: their worktrees were 
 
 Recovering from a crash: check git fsck, the board and transcripts for NUL-byte tails; strip a damaged line after a backup; resume agents by ID. Rewrite meta/CURRENT.md at each milestone so a crash loses nothing. Don't suggest UI commands I haven't verified.
 
-Check the code before cutting or claiming anything; the owner caught my Google ADK mistake. Count tickets on the board, not from memory: I quoted 32 Under Review when there were 41. Look at a file right before writing it, never with a bare `>`: I clobbered `.gitnexusignore` minutes after printing it (2026-11-01).
+Check the code before cutting or claiming anything; the owner caught my Google ADK mistake. Count tickets on the board, not from memory: I quoted 32 Under Review when there were 41. Look at a file right before writing it, never with a bare `>`: I clobbered `.gitnexusignore` minutes after printing it (2026-11-01). Same before deleting: `git worktree remove` took the gitignored `qa-reports/` with it (2026-11-02); list what's ignored first.
 
 Memories: never touch another member's memory, not even to trim duplicates; a shared fact gets copied into an agent file or skill instead. My own memory I update whenever a lasting lesson comes up (1000-word cap, via member.py), not just at wrap-up.
 
