@@ -14,7 +14,7 @@ from typing import Any
 import pandas as pd
 from google.adk.tools import ToolContext
 
-from ..game.constants import METRICS, normalize_class_name
+from ..game.constants import DIFFICULTY_NAMES, METRICS, normalize_class_name
 from ..game.roster import roster_snapshot
 from .provenance import Completeness, Provenance, with_envelope
 from ..menu import load_world_zones
@@ -23,8 +23,6 @@ from ..client import wcl_client
 from ..client.aio import gather_settled, unwrap
 
 MAX_PAGES = 10  # hard cap to protect the API points budget
-
-_DIFFICULTY_NAMES = {5: "Mythic", 4: "Heroic", 3: "Normal", 1: "LFR"}
 
 
 def _selection(tool_context: ToolContext) -> dict[str, Any]:
@@ -299,14 +297,14 @@ async def get_rankings_distribution(
             "encounterID": encounter_id,
             "encounterName": sel.get("encounterName") or f"encounter {encounter_id}",
             "difficultyID": diff,
-            "difficultyName": _DIFFICULTY_NAMES.get(diff, str(diff)),
+            "difficultyName": DIFFICULTY_NAMES.get(diff, str(diff)),
             "partition": sel.get("partition"),
         }
     elif difficulty_id and sel.get("encounterID"):
         sel = {
             **sel,
             "difficultyID": difficulty_id,
-            "difficultyName": _DIFFICULTY_NAMES.get(difficulty_id, sel.get("difficultyName")),
+            "difficultyName": DIFFICULTY_NAMES.get(difficulty_id, sel.get("difficultyName")),
         }
     if not sel.get("encounterID"):
         return {

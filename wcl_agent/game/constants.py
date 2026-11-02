@@ -25,6 +25,9 @@ CLASS_SPECS: dict[str, dict[str, object]] = {
     "Warrior": {"display": "Warrior", "specs": ["Arms", "Fury", "Protection"]},
 }
 
+# WCL difficulty id -> name (sc-330): the one map; name_resolver adds Mythic+ on top of it.
+DIFFICULTY_NAMES: dict[int, str] = {5: "Mythic", 4: "Heroic", 3: "Normal", 1: "LFR"}
+
 # Accepted metric values (WoW-relevant subset of CharacterRankingMetricType).
 METRICS = ["dps", "hps", "wdps", "rdps", "bossdps", "default"]
 

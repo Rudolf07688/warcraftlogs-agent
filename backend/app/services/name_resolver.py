@@ -25,11 +25,11 @@ from typing import Literal, TypeVar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from wcl_agent.game import constants
 from wcl_agent.game.constants import normalize_class_name
 from wcl_agent.game.patch import MYTHIC_PLUS_DIFFICULTY_ID
 from wcl_agent.game.roster import RosterSpec, resolve_spec, roster_snapshot
 from wcl_agent.menu import load_world_zones
-from wcl_agent.tools.tools import _DIFFICULTY_NAMES
 
 from ..db.models import KnownEncounter, KnownPlayer, UserCharacter
 
@@ -65,7 +65,7 @@ CLASS_SPEC_ALIASES: dict[str, tuple[str, str]] = {
 }
 
 MYTHIC_PLUS_NAME = "Mythic+"
-DIFFICULTY_NAMES: dict[int, str] = {**_DIFFICULTY_NAMES, MYTHIC_PLUS_DIFFICULTY_ID: MYTHIC_PLUS_NAME}
+DIFFICULTY_NAMES: dict[int, str] = {**constants.DIFFICULTY_NAMES, MYTHIC_PLUS_DIFFICULTY_ID: MYTHIC_PLUS_NAME}
 _DIFFICULTY_WORDS: dict[str, int] = {
     "lfr": 1, "lookingforraid": 1, "raidfinder": 1,
     "normal": 3, "norm": 3, "nm": 3,

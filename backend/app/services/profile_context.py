@@ -26,7 +26,7 @@ so behavior is identical to having no profile at all (FR-006, FR-011, SC-003, SC
 
 from __future__ import annotations
 
-from wcl_agent.game.constants import role_for_spec
+from wcl_agent.game.constants import DIFFICULTY_NAMES, role_for_spec
 from wcl_agent.guides.guide_meta import BriefRecord
 from wcl_agent.game.roster import roster_snapshot
 
@@ -49,8 +49,6 @@ _RECENT_CHARS = 1500
 # Feature 030: the recent-runs candidates (D5), at most this many per kind and characters in all.
 _RUNS_PER_KIND = 5
 _RUNS_CHARS = 600
-_DIFFICULTY = {1: "LFR", 3: "Normal", 4: "Heroic", 5: "Mythic"}
-
 _HEADER = (
     "KNOWN PLAYER CONTEXT (use only when the question is about the user, their "
     "friends, or their guild; answer population-level questions normally):"
@@ -148,7 +146,7 @@ def _mplus_run_ident(run: RecentMplusRun) -> str:
 
 def _raid_run_ident(raid: RecentRaid) -> str:
     # sc-221: never ``raid.title``, which the report's uploader writes.
-    parts = [raid.zone_name, _DIFFICULTY.get(raid.difficulty), f"{raid.started_at:%Y-%m-%d}"]
+    parts = [raid.zone_name, DIFFICULTY_NAMES.get(raid.difficulty), f"{raid.started_at:%Y-%m-%d}"]
     return f"{', '.join(p for p in parts if p)} (report {raid.report_code})"
 
 
