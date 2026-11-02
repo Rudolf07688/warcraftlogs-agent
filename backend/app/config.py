@@ -12,6 +12,7 @@ import logging
 import os
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
@@ -142,6 +143,9 @@ class Settings(BaseSettings):
     wcl_guide_datasheet_min_sample: int = 20  # ranked players a data sheet needs to be citable
     wcl_guide_inuse_days: int = 14  # stale guides wanted this recently regenerate at once (FR-051)
     wcl_guide_report_per_minute: int = 5  # per-user cap on "report an inaccuracy"
+    # 052 sc-352: per-user cap on recent-raid investigations (each starts a conversation and a
+    # kickoff pre-fetch of up to 11 WCL requests).
+    wcl_investigate_per_minute: int = 5
     wcl_guide_research_fetch_enabled: bool = False  # fetch allowlisted third-party pages (terms review first)
     wcl_guide_talent_names_url: str = ""  # optional talent id → name JSON; off until terms are checked
     wow_version_url: str = "https://us.version.battle.net/v2/products/wow/versions"  # live build
@@ -307,12 +311,66 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
-    def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    def trusted_proxy_networks(self) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
         return _parse_networks(self.trusted_proxies)
 
 
-def _parse_networks(value: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    return [ipaddress.ip_network(p.strip(), strict=False) for p in value.split(",") if p.strip()]
+@lru_cache(maxsize=8)
+def _parse_networks(value: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """Parsed once per value, not per request (052 sc-270); keyed by the string, so a changed
+    ``trusted_proxies`` is parsed again."""
+    parts = (p.strip() for p in value.split(","))
+    return tuple(ipaddress.ip_network(p, strict=False) for p in parts if p)
+
+
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_MIN_SECRET_CHARS = 32
+
+
+def _weak_secret(key: str) -> bool:
+    """The dev default, empty, short, or a placeholder (P7 SEC-004)."""
+    key = key.strip()
+    return len(key) < _MIN_SECRET_CHARS or "change-me" in key.lower()
+
+
+def insecure_defaults(s: Settings) -> list[str]:
+    """The env names whose value is insecure (052 sc-356): a weak ``SECRET_KEY`` or the built-in
+    ``DATABASE_URL``. Names only, never the values."""
+    names = ["SECRET_KEY"] if _weak_secret(s.secret_key) else []
+    if s.database_url == Settings.model_fields["database_url"].default:
+        names.append("DATABASE_URL")
+    return names
+
+
+def _site_is_local(site_url: str) -> bool:
+    """``SITE_URL`` is http(s) on this machine, read so a browser would agree: no userinfo (a
+    browser ends the host at a backslash, Python at the "@" after it; P7 SEC-004). A backslash
+    left in Python's host never matches a local name."""
+    parts = urlsplit(site_url)
+    return (
+        parts.scheme in ("http", "https")
+        and "@" not in parts.netloc
+        and parts.hostname in _LOCAL_HOSTS  # lower case, without IPv6 brackets
+    )
+
+
+def check_startup_secrets(s: Settings) -> None:
+    """Run at app startup (052 sc-356): warn naming each insecure default in use, and refuse a
+    weak secret key unless the public site is this machine (``SITE_URL`` on localhost,
+    127.0.0.1 or ::1), where only its own browser can reach the cookies it protects."""
+    names = insecure_defaults(s)
+    if not names:
+        return
+    logger.warning(
+        "insecure built-in defaults in use: %s; set them for any shared deployment",
+        ", ".join(names),
+    )
+    if "SECRET_KEY" in names and not _site_is_local(s.site_url):
+        raise RuntimeError(
+            f"SECRET_KEY is empty, shorter than {_MIN_SECRET_CHARS} characters or a placeholder, "
+            "and SITE_URL is not localhost: set SECRET_KEY to a strong random value, e.g. "
+            "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
 
 
 @lru_cache

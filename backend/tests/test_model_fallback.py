@@ -383,7 +383,8 @@ async def test_both_remembered_starts_on_the_chosen_model():
 
 # --- sc-268: one wait budget per turn when both models are remembered as limited ----------
 
-# Real waits (3 s, 6 s, 12 s, 24 s), but sleep is faked and only records them.
+# Real waits (3 s, 6 s, 12 s, 24 s), but sleep is faked: it records them and moves the
+# deadline's clock on (052 sc-297; requests take no time here, see test_052_retry_deadline.py).
 WAITING = RetryPolicy(attempts=5, initial_s=3.0, max_s=30.0, jitter_s=0.0, budget_s=90.0)
 
 
@@ -395,6 +396,7 @@ def sleeps(monkeypatch) -> list[float]:
         recorded.append(seconds)
 
     monkeypatch.setattr(model_retry.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(model_retry, "_clock", lambda: 1000.0 + sum(recorded))
     return recorded
 
 

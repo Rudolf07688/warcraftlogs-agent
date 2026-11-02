@@ -241,7 +241,8 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
 
     @staticmethod
     def metrics(family: CacheFamily | str, day: str) -> str:
-        # ``family`` is a cache family or LOCAL_METRICS (the raw store and turn counters, 045).
+        # ``family`` is a cache family, LOCAL_METRICS (the raw store and turn counters, 045) or
+        # STORE_OPS_METRICS (the raw store per operation, 052).
         return f"wcl:metrics:v1:{family}:{day}"
 
     @staticmethod
@@ -342,6 +343,7 @@ _FLUSH_S = 2.0
 # Feature 045: the raw-store probe outcomes (sc-295) and chat turns (sc-132) are counted like
 # the families, in one more hash.
 LOCAL_METRICS = "local"
+STORE_OPS_METRICS = "store_ops"  # 052 sc-332: the probe outcomes per WCL operation, own hash
 StoreOutcome = Literal["hit", "miss", "not_visible", "timeout"]
 _counts: Counter[tuple[CacheFamily | str, str]] = Counter()
 _flush_tasks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task[None]] = (
@@ -362,9 +364,13 @@ def _record(family: CacheFamily, outcome: Outcome, load_ms: int | None = None) -
     _schedule_flush()
 
 
-def record_store(outcome: StoreOutcome) -> None:
-    """Count one raw-store probe (feature 045): hit, miss, not_visible or timeout."""
+def record_store(outcome: StoreOutcome, operation: str | None = None) -> None:
+    """Count one raw-store probe (feature 045): hit, miss, not_visible or timeout, in total and,
+    while the cache is on, for its ``operation`` (052 sc-332). The caller passes a name from a
+    fixed set (P7 SEC-002): an operation is a field in a long-lived Redis hash."""
     _counts[(LOCAL_METRICS, f"store_{outcome}")] += 1
+    if operation and cache_settings().active:
+        _counts[(STORE_OPS_METRICS, f"store_{outcome}@{operation[:64]}")] += 1
     _schedule_flush()
 
 
@@ -561,9 +567,10 @@ async def _shared(
     """The Redis layer, with concurrent same-process lookups of one key sharing one call.
 
     A load marked unshareable served its first caller through that caller's own grant (QA
-    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone. A
-    shared load that asked Warcraft Logs counts as external for every caller that waited on it,
-    not only the first (047 sc-326)."""
+    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone, and
+    that own load decides how it counts (047 edge case, 052 sc-357). A shared load that asked
+    Warcraft Logs counts as external for every caller that waited on it and took its value, not
+    only the first (047 sc-326)."""
     settings = cache_settings()
     if not settings.active:
         return await loader()
@@ -585,10 +592,10 @@ async def _shared(
         if flight[1] == 0 and not task.done():
             _drop_flight(flights, key, task)  # a new caller starts afresh, never joins this
             task.cancel()  # every caller left: stop the load (and release its lock)
-    if external:
-        note_external_call()  # in this caller's own context: its turn and its load
     if joined and unshareable:
         return await _lookup(settings, family, key, model, loader, ttl, False)
+    if external:
+        note_external_call()  # in this caller's own context: its turn and its load
     if joined:
         _record(family, Outcome.NEG_HIT if value is None else Outcome.HIT)
     return value
@@ -903,12 +910,15 @@ async def read_stats(days: int) -> dict[str, Any]:
         "families": summarize({}),
         "redis": None,
         **summarize_local([]),
+        "store_by_operation": {},
     }
     client = _client() if settings.active else None
     if client is None:
         return result
     slots: list[tuple[CacheFamily | str, str]] = [
-        (family, keys.metrics(family, day)) for family in (*CacheFamily, LOCAL_METRICS) for day in _window(days)
+        (family, keys.metrics(family, day))
+        for family in (*CacheFamily, LOCAL_METRICS, STORE_OPS_METRICS)
+        for day in _window(days)
     ]
     try:
         pipe = client.pipeline(transaction=False)
@@ -924,11 +934,13 @@ async def read_stats(days: int) -> dict[str, Any]:
             {(k.decode() if isinstance(k, bytes) else k): int(v) for k, v in raw.items()}
         )
     local = per_day.pop(LOCAL_METRICS, [])
+    store_ops = per_day.pop(STORE_OPS_METRICS, [])
     result.update(
         available=True,
         families=summarize(per_day),  # type: ignore[arg-type]
         redis=await _redis_health(client),
         **summarize_local(local),
+        store_by_operation=summarize_store_operations(store_ops),
     )
     return result
 
@@ -947,20 +959,36 @@ def summarize_local(days: list[dict[str, int]]) -> dict[str, dict[str, Any]]:
     total = Counter[str]()
     for day in days:
         total.update({k: int(v) for k, v in day.items()})
-    hits, misses, hidden = total["store_hit"], total["store_miss"], total["store_not_visible"]
     return {
-        "store": {
-            "hits": hits,
-            "misses": misses,
-            "not_visible": hidden,
-            "timeouts": total["store_timeout"],
-            "hit_rate": _rate(hits, hits + misses + hidden),
-        },
+        "store": _store_stats(total),
         "local_answers": {
             "turns": total["turns"],
             "local_turns": total["local_turns"],
             "rate": _rate(total["local_turns"], total["turns"]),
         },
+    }
+
+
+def summarize_store_operations(days: list[dict[str, int]]) -> dict[str, dict[str, Any]]:
+    """The raw-store probe counts per WCL operation over the window (052 sc-332), from the
+    ``store_<outcome>@<operation>`` fields, in the ``store`` shape of :func:`summarize_local`,
+    sorted by operation name."""
+    per_op: dict[str, Counter[str]] = {}
+    for day in days:
+        for field_name, value in day.items():
+            outcome, _, op = field_name.partition("@")
+            per_op.setdefault(op, Counter())[outcome] += int(value)
+    return {op: _store_stats(per_op[op]) for op in sorted(per_op)}
+
+
+def _store_stats(total: Counter[str]) -> dict[str, Any]:
+    hits, misses, hidden = total["store_hit"], total["store_miss"], total["store_not_visible"]
+    return {
+        "hits": hits,
+        "misses": misses,
+        "not_visible": hidden,
+        "timeouts": total["store_timeout"],
+        "hit_rate": _rate(hits, hits + misses + hidden),
     }
 
 
@@ -1013,6 +1041,13 @@ def set_refresh_actor(user_id: str | None) -> None:
             _counts[(LOCAL_METRICS, "local_turns")] += 1
         _schedule_flush()
     _turn.set(_Turn() if user_id else None)
+
+
+def abandon_turn() -> None:
+    """Close the open turn without counting it and clear the turn's user: its setup failed or
+    was cancelled before the turn ran (052 sc-357)."""
+    _refresh_actor.set(None)
+    _turn.set(None)
 
 
 def note_external_call() -> None:
