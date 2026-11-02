@@ -681,24 +681,17 @@ async def get_report_table(
     if hostility_type not in HOSTILITY_TYPES:
         return {"status": "error", "error_message": f"Bad hostility_type '{hostility_type}'.",
                 "valid": sorted(HOSTILITY_TYPES)}
-    field = (
-        f"table(dataType: {data_type}, hostilityType: {hostility_type}, "
-        "fightIDs: $fightIDs, sourceID: $sourceID, abilityID: $abilityID)"
-    )
-    var_decls = ", $fightIDs: [Int], $sourceID: Int, $abilityID: Float"
-    variables = {
-        "fightIDs": _fight_ids(fight_id),
-        "sourceID": source_id or None,
-        "abilityID": ability_id or None,
-    }
     try:
         if source_id:
+            field, var_decls, variables = _table_query(
+                data_type, hostility_type, fight_id, source_id, ability_id
+            )
             table = await _player_table(
                 report_code, field, var_decls, variables,
                 keys.report_player(report_code, source_id, data_type, fight_id, ability_id, hostility_type),
             )
-        else:  # whole-raid tables are large and rarely repeated: not cached
-            table = await _report_field(report_code, field, var_decls, variables, "table")
+        else:
+            table = await load_report_table(report_code, data_type, fight_id, ability_id, hostility_type)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if table is None:
@@ -711,6 +704,37 @@ async def get_report_table(
         },
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
+
+
+def _table_query(
+    data_type: str, hostility_type: str, fight_id: int, source_id: int, ability_id: int
+) -> tuple[str, str, dict[str, Any]]:
+    """The ``table`` field call, its variable declarations and values (the store's key)."""
+    field = (
+        f"table(dataType: {data_type}, hostilityType: {hostility_type}, "
+        "fightIDs: $fightIDs, sourceID: $sourceID, abilityID: $abilityID)"
+    )
+    var_decls = ", $fightIDs: [Int], $sourceID: Int, $abilityID: Float"
+    variables = {
+        "fightIDs": _fight_ids(fight_id),
+        "sourceID": source_id or None,
+        "abilityID": ability_id or None,
+    }
+    return field, var_decls, variables
+
+
+async def load_report_table(
+    report_code: str,
+    data_type: str,
+    fight_id: int = 0,
+    ability_id: int = 0,
+    hostility_type: str = "Friendlies",
+) -> Any:
+    """A whole-raid table as Warcraft Logs returns it, neither compacted nor neutralised: the
+    exact query :func:`get_report_table` sends, so the kickoff pre-fetch warms the store for
+    it (QA PERF-003). Large and rarely repeated, so not cached in Redis; raises on a WCL error."""
+    field, var_decls, variables = _table_query(data_type, hostility_type, fight_id, 0, ability_id)
+    return await _report_field(report_code, field, var_decls, variables, "table")
 
 
 async def _player_table(

@@ -109,6 +109,17 @@ async def test_a_cancelled_setup_closes_the_turn_uncounted(as_user, monkeypatch)
     assert turns() == (0, 0)
 
 
+async def test_a_failed_scratch_folder_closes_the_turn_uncounted(as_user, monkeypatch):
+    def no_disk(*args, **kwargs):
+        raise OSError("no space left on device")
+
+    _real_turns(monkeypatch)
+    monkeypatch.setattr(ws_mod, "TurnScratch", no_disk)  # QA: it used to sit outside the guard
+    with pytest.raises(OSError):
+        await _run(_FakeSocket(), as_user)
+    assert _closed() and turns() == (0, 0)
+
+
 # --- AC2: an unshareable-load joiner counts by its own reload ----------------------------------
 
 

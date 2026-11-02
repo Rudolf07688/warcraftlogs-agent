@@ -100,6 +100,13 @@ class Breaker:
         """Whether no probe may run now (open and still waiting). Changes nothing (sc-352)."""
         return bool(self.open_until) and self.clock() < self.open_until
 
+    def skips(self, workspace: Hashable = None) -> bool:
+        """Whether a probe from ``workspace`` would skip the store now: open and waiting, or the
+        workspace at its timeout threshold. Takes no trial (sc-352, QA BUG-003)."""
+        if self.open_until:
+            return self.is_open()
+        return self._timeouts(workspace) >= TIMEOUTS_TO_OPEN
+
     def admit(self, workspace: Hashable = None) -> bool | None:
         """None: skip the store. Otherwise probe; True when this probe is the trial."""
         if not self.open_until:
