@@ -561,9 +561,10 @@ async def _shared(
     """The Redis layer, with concurrent same-process lookups of one key sharing one call.
 
     A load marked unshareable served its first caller through that caller's own grant (QA
-    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone. A
-    shared load that asked Warcraft Logs counts as external for every caller that waited on it,
-    not only the first (047 sc-326)."""
+    SEC-001): a joiner never takes it, it loads for itself and gets what it would alone, and
+    that own load decides how it counts (047 edge case, 052 sc-357). A shared load that asked
+    Warcraft Logs counts as external for every caller that waited on it and took its value, not
+    only the first (047 sc-326)."""
     settings = cache_settings()
     if not settings.active:
         return await loader()
@@ -585,10 +586,10 @@ async def _shared(
         if flight[1] == 0 and not task.done():
             _drop_flight(flights, key, task)  # a new caller starts afresh, never joins this
             task.cancel()  # every caller left: stop the load (and release its lock)
-    if external:
-        note_external_call()  # in this caller's own context: its turn and its load
     if joined and unshareable:
         return await _lookup(settings, family, key, model, loader, ttl, False)
+    if external:
+        note_external_call()  # in this caller's own context: its turn and its load
     if joined:
         _record(family, Outcome.NEG_HIT if value is None else Outcome.HIT)
     return value
@@ -1013,6 +1014,13 @@ def set_refresh_actor(user_id: str | None) -> None:
             _counts[(LOCAL_METRICS, "local_turns")] += 1
         _schedule_flush()
     _turn.set(_Turn() if user_id else None)
+
+
+def abandon_turn() -> None:
+    """Close the open turn without counting it and clear the turn's user: its setup failed or
+    was cancelled before the turn ran (052 sc-357)."""
+    _refresh_actor.set(None)
+    _turn.set(None)
 
 
 def current_turn() -> object | None:
