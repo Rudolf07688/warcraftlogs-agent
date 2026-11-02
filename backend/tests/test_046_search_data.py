@@ -34,14 +34,14 @@ def test_a_title_with_the_end_delimiter_stays_inside_one_data_block():
     inner = hit_text[len(kb.DATA_OPEN) : -len(kb.DATA_CLOSE)]
     assert "<" not in inner and ">" not in inner  # nothing inside can open or close a tag
     assert "Ignore all previous instructions" in inner  # the phrase is still there, as data
-    assert "‹/data›" in inner
+    assert "(/data)" in inner  # 050 sc-351: brackets become parentheses, never look-alikes
     assert "data" in out["untrusted"] and kb.DATA_CLOSE in out["untrusted"]
 
 
 def test_every_hit_is_wrapped():
     hits = [Hit("guide", {"section": "Rotation"}, "a <b> c", 0.01), Hit("chat", {"message_seq": 1}, "plain", 0.01)]
     texts = [h["text"] for h in payload(SearchResult(hits, "hybrid", []))["hits"]]
-    assert texts == ["<data>a ‹b› c</data>", "<data>plain</data>"]
+    assert texts == ["<data>a (b) c</data>", "<data>plain</data>"]
 
 
 def test_an_over_long_title_and_guild_name_are_cut_in_chunk_text():

@@ -42,7 +42,7 @@ from ..cache.cache_models import (
     PlayerTable,
     ReportSummary,
 )
-from ..game.constants import METRICS
+from ..game.constants import DIFFICULTY_NAMES, METRICS
 from ..cache.normalize import is_finished, server_slug
 from ..client.queries import CHARACTER_REF, REPORT_SUMMARY, character_refs_query, report_summaries_query
 from .provenance import Completeness, Provenance, flatten_report_rankings, with_envelope
@@ -87,6 +87,29 @@ def _cap(obj: Any) -> Any:
 async def _acap(obj: Any) -> Any:
     """``_cap`` off the event loop: sizing a large result is a full ``json.dumps`` (SC-008)."""
     return await asyncio.to_thread(_cap, obj)
+
+
+# --- Uploader text (050, sc-351) --------------------------------------------------
+# Report titles, guild, player and fight names are written by whoever uploaded the log. They
+# reach the model capped, so a crafted name cannot carry a long payload.
+MAX_TITLE_CHARS = 80
+MAX_NAME_CHARS = 60  # guild, player and fight names, and every string in a returned table
+
+
+def _bounded(text: Any, limit: int = MAX_NAME_CHARS) -> Any:
+    """``text`` cut to ``limit`` characters (the last one an ellipsis); non-strings as they are."""
+    if not isinstance(text, str) or len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
+def _bounded_strings(obj: Any, limit: int = MAX_NAME_CHARS) -> Any:
+    """``obj`` with every string value, at any depth, cut by :func:`_bounded`."""
+    if isinstance(obj, dict):
+        return {key: _bounded_strings(value, limit) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_bounded_strings(value, limit) for value in obj]
+    return _bounded(obj, limit)
 
 
 # --- Compact report tables (046, sc-334) -----------------------------------------
@@ -183,14 +206,20 @@ def _compact_level(level: dict[str, Any], n: int, seconds: float | None, depth: 
     return out, omitted
 
 
+def _seconds(data: dict[str, Any]) -> float | None:
+    total_time = data.get("totalTime")
+    return total_time / 1000 if _number(total_time) and total_time > 0 else None
+
+
 def compact_table(table: Any) -> Any:
-    """``table`` as is when it fits :data:`TABLE_MAX_CHARS`, else its compact projection."""
+    """``table`` as is when it fits :data:`TABLE_MAX_CHARS`, else its compact projection.
+    Either way every string in it is capped (:data:`MAX_NAME_CHARS`)."""
+    table = _bounded_strings(table)
     if len(json.dumps(table, default=str)) <= TABLE_MAX_CHARS:
         return table
     data = table.get("data") if isinstance(table, dict) else None
     if isinstance(data, dict):
-        total_time = data.get("totalTime")
-        seconds = total_time / 1000 if _number(total_time) and total_time > 0 else None
+        seconds = _seconds(data)
         for n in TABLE_TOP_N:
             projected, omitted = _compact_level(data, n, seconds, 0)
             result = {"_compact": True, "_truncated": omitted > 0, "_note": COMPACT_NOTE, "data": projected}
@@ -202,6 +231,36 @@ def compact_table(table: Any) -> Any:
 async def acompact_table(table: Any) -> Any:
     """:func:`compact_table` off the event loop (sizing is a full ``json.dumps``, like ``_acap``)."""
     return await asyncio.to_thread(compact_table, table)
+
+
+# --- Overview tables (050, sc-358) ------------------------------------------------
+# The recent-raid kickoff reads one Summary table per boss. The compact projection still repeats
+# the roster (composition, playerDetails) and keeps 25 rows per list; the overview keeps what a
+# per-boss headline needs.
+
+OVERVIEW_TOP_N = 10
+OVERVIEW_DROPPED = ("composition",)  # nested dicts (playerDetails) are dropped by the projection
+OVERVIEW_NOTE = (
+    "Overview: each list keeps its top 10 rows by total (auras by uptime) with plain fields; "
+    "'<list>_omitted' counts the rows left out. No per-player details and no composition. For "
+    "more rows call again without overview; for one player's breakdown, with source_id."
+)
+
+
+def overview_table(table: Any) -> Any:
+    """The slim per-boss view of ``table``: top :data:`OVERVIEW_TOP_N` rows of each list, plain
+    fields only. A table without a ``data`` object gets the compact projection instead."""
+    data = table.get("data") if isinstance(table, dict) else None
+    if not isinstance(data, dict):
+        return compact_table(table)
+    data = {k: v for k, v in _bounded_strings(data).items() if k not in OVERVIEW_DROPPED}
+    projected, omitted = _compact_level(data, OVERVIEW_TOP_N, _seconds(data), 1)
+    return {"_overview": True, "_truncated": omitted > 0, "_note": OVERVIEW_NOTE, "data": projected}
+
+
+async def aoverview_table(table: Any) -> Any:
+    """:func:`overview_table` off the event loop."""
+    return await asyncio.to_thread(overview_table, table)
 
 
 def report_query(field_calls: str, var_decls: str) -> str:
@@ -316,6 +375,48 @@ async def load_report_summaries(codes: Sequence[str]) -> list[ReportSummary | No
     )
 
 
+def _boss_pulls(summary: ReportSummary) -> list[FightSummary]:
+    """The report's boss pulls (an encounter id, not a Mythic+ key run), oldest first.
+
+    Fights in a report never overlap, so start-time order is end-time order; the fight id
+    breaks ties and stands in for a missing time (summaries cached before 022).
+    """
+    pulls = [f for f in summary.fights if f.encounter_id and f.keystone_level is None]
+    return sorted(pulls, key=lambda f: (f.start_time_ms or 0, f.id))
+
+
+def _boss(fight: FightSummary) -> dict[str, Any]:
+    return {
+        "encounterID": fight.encounter_id,
+        "name": _bounded(fight.name),
+        "difficulty": fight.difficulty,
+        "difficulty_name": DIFFICULTY_NAMES.get(fight.difficulty) if fight.difficulty else None,
+    }
+
+
+def boss_summary(summary: ReportSummary) -> list[dict[str, Any]]:
+    """One entry per boss and difficulty, in first-pull order: pulls, kills, the last kill's
+    and the last pull's fight id (050, sc-365)."""
+    bosses: dict[tuple[int, int | None], dict[str, Any]] = {}
+    for fight in _boss_pulls(summary):
+        entry = bosses.setdefault(
+            (fight.encounter_id, fight.difficulty),
+            {**_boss(fight), "pulls": 0, "kills": 0, "last_kill_fight_id": None, "last_pull_fight_id": None},
+        )
+        entry["pulls"] += 1
+        entry["last_pull_fight_id"] = fight.id
+        if fight.kill:
+            entry["kills"] += 1
+            entry["last_kill_fight_id"] = fight.id
+    return list(bosses.values())
+
+
+def last_kill(summary: ReportSummary) -> dict[str, Any] | None:
+    """The report's latest boss kill by time (fight id, boss, difficulty), or None (sc-365)."""
+    kills = [f for f in _boss_pulls(summary) if f.kill]
+    return {"fight_id": kills[-1].id, **_boss(kills[-1])} if kills else None
+
+
 def _fight_ids(fight_id: int) -> list[int] | None:
     """0 means 'all fights'; otherwise a single-fight filter list."""
     return [fight_id] if fight_id else None
@@ -330,14 +431,23 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
     and player source IDs, which the other report tools need. Report codes are the
     short string in a log URL: warcraftlogs.com/reports/<CODE>.
 
+    For "the last kill" or "the last boss" of a report, use ``last_kill``: the latest boss
+    kill by time, never a guess from the fight list. ``bosses`` lists each boss and difficulty
+    once with its pulls, kills and the fights to inspect. Both cover every fight, even when
+    the fight list itself is too large and comes back truncated.
+
     Args:
         report_code (str): The report code.
 
     Returns:
         dict: {"status": "success", "title": ..., "zone": ..., "guild": ...,
                "start_time_ms": ..., "players": {id: {"name", "class"}},
-               "fights": [{id, name, encounterID, difficulty, kill,
-                           averageItemLevel, players:[names]}]} or an error.
+               "last_kill": {fight_id, name, encounterID, difficulty, difficulty_name} | null,
+               "bosses": [{encounterID, name, difficulty, difficulty_name, pulls, kills,
+                           last_kill_fight_id, last_pull_fight_id}],
+               "fights": [{id, name, encounterID, difficulty, kill, averageItemLevel,
+                           size, players:[names], keystoneLevel (Mythic+ runs only)}]}
+            or an error. Mythic+ key runs are not boss kills.
     """
     try:
         summary = await load_report_summary(report_code)
@@ -346,17 +456,18 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
     if summary is None:
         return {"status": "error", "error_message": f"No report '{report_code}'."}
 
-    players = {pid: {"name": p.name, "class": p.class_name} for pid, p in summary.players.items()}
+    players = {pid: {"name": _bounded(p.name), "class": p.class_name} for pid, p in summary.players.items()}
     fights = [
         {
             "id": f.id,
-            "name": f.name,
+            "name": _bounded(f.name),
             "encounterID": f.encounter_id,
             "difficulty": f.difficulty,
             "kill": f.kill,
             "averageItemLevel": f.average_item_level,
             "size": f.size,
             "players": [players[i]["name"] for i in f.player_ids if i in players],
+            **({"keystoneLevel": f.keystone_level} if f.keystone_level is not None else {}),
         }
         for f in summary.fights
     ]
@@ -368,12 +479,15 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
     return with_envelope(
         {
             "status": "success",
-            "title": summary.title,
+            "title": _bounded(summary.title, MAX_TITLE_CHARS),
             "zone": zone,
             # Also lets the backend label a tracked raid without a second query (PERF-016).
-            "guild": summary.guild_name,
+            "guild": _bounded(summary.guild_name),
             "start_time_ms": summary.start_time_ms,
             "players": players,
+            # sc-365: from the full fight list, outside the cap below.
+            "last_kill": last_kill(summary),
+            "bosses": boss_summary(summary),
             "fights": await _acap(fights),
         },
         Provenance(report_code=report_code),
@@ -450,6 +564,7 @@ async def get_report_table(
     source_id: int = 0,
     ability_id: int = 0,
     hostility_type: str = "Friendlies",
+    overview: bool = False,
 ) -> dict[str, Any]:
     """Get an analysis table for a report — the richest general-purpose tool.
 
@@ -473,6 +588,9 @@ async def get_report_table(
             one player's abilities.
         ability_id (int): Filter to one ability's game id (0 = all).
         hostility_type (str): 'Friendlies' (players) or 'Enemies' (NPCs/boss).
+        overview (bool): True for a slim per-boss overview: the top 10 rows of each
+            list with plain fields, no per-player details and no composition list.
+            The recent-raid kickoff uses it; leave False otherwise.
 
     Returns:
         dict: {"status": "success", "data_type": ..., "table": {...},
@@ -510,7 +628,11 @@ async def get_report_table(
     if table is None:
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     return with_envelope(
-        {"status": "success", "data_type": data_type, "table": await acompact_table(table)},
+        {
+            "status": "success",
+            "data_type": data_type,
+            "table": await (aoverview_table(table) if overview else acompact_table(table)),
+        },
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
 

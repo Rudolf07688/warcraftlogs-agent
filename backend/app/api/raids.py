@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from wcl_agent.agent import RAID_KICKOFF_OPENING
+
 from ..auth.dependencies import get_tenant_db, require_csrf, require_session
 from ..db import repository as repo
 from ..model_state import get_model_state, is_valid_model
@@ -25,12 +27,13 @@ def kickoff_prompt_for(report_code: str) -> str:
     """The server-owned kickoff wording for a one-click investigation (US1/FR-004).
 
     The frontend never hardcodes this — the server is the single source of truth
-    for the report-code → prompt mapping.
+    for the report-code → prompt mapping. Its opening also selects the kickoff playbook in the
+    agent instruction (050, sc-358).
     """
     # Feature 011 / FR-010: a bounded per-boss overview, so the first turn's evidence
     # gathering is naturally limited (one report-level round + one per-boss round).
     return (
-        f"Give me a bounded overview of this raid (report {report_code}): for each boss, "
+        f"{RAID_KICKOFF_OPENING} (report {report_code}): for each boss, "
         "one headline finding and the single biggest improvement opportunity, noting "
         "kills versus wipes. Stay at the report and per-boss level; go into cast-level "
         "detail only where a boss clearly warrants it."
