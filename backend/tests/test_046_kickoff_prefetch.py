@@ -68,10 +68,10 @@ class _FakeWcl:
         async def table(code, data_type, fight_id=0, **_kwargs):
             self.tables.append((code, data_type, fight_id, _tenant()))
             self.lanes.add(wcl_client._lane.get())
-            return {"status": "success"}
+            return {"playerDetails": {}}  # the raw table (052 QA PERF-003)
 
         monkeypatch.setattr(kickoff_prefetch, "load_report_summary", load)
-        monkeypatch.setattr(kickoff_prefetch, "get_report_table", table)
+        monkeypatch.setattr(kickoff_prefetch, "load_report_table", table)
 
 
 def _tenant() -> uuid.UUID | None:

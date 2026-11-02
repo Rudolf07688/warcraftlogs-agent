@@ -7,11 +7,11 @@
 
 - [X] T001 Branch `052-turn-and-startup-hardening` off `sprint-2026-11-02`; spec, plan, tasks in specs/052-turn-and-startup-hardening/
 
-## Phase 2: US1 Breaker counts turns, not bursts (sc-355)
+## Phase 2: US1 Breaker counts workspaces, not bursts (sc-355)
 
 - [X] T002 [US1] Tests in backend/tests/test_052_breaker.py: one turn's parallel timeouts keep it closed and the turn stops probing; two turns' timeouts open it; mostly slow store with an odd success opens it; healthy store with sporadic timeouts stays closed; connection error opens at once; half-open trial unchanged; is_open side-effect free; window expiry
-- [X] T003 [US1] `current_turn_key()` in wcl_agent/cache/cache.py
-- [X] T004 [US1] Sliding-window Breaker + per-turn cap + `is_open()` in backend/app/services/raw_fetch_reads.py
+- [X] T003 [US1] ~~`current_turn_key()` in wcl_agent/cache/cache.py~~ Superseded by the P7 rework (b7b66ae): the breaker keys on the workspace (tenant id), no turn key exists
+- [X] T004 [US1] Sliding-window Breaker + per-workspace skip (P7 rework; was per turn) + `is_open()` in backend/app/services/raw_fetch_reads.py
 - [X] T005 [US1] Update the 047 "N in a row" tests that encode the old rule in backend/tests/test_047_breaker.py; existing trial tests unchanged
 - [X] T006 [US1] Commit
 
@@ -61,3 +61,12 @@
 ## Dependencies
 
 Stories are independent; US3's breaker gate uses US1's `is_open()`. Order = brief order.
+
+## Phase 10: QA fix round 2026-11-02 (branch qa-fix-tomas)
+
+- [X] T029 BUG-001: `pick_boss_fights` from `report_tools.boss_summary` (no key runs); tests in backend/tests/test_052_qa_prefetch.py
+- [X] T030 PERF-003: `report_tools.load_report_table` (raw whole-raid table, the query `get_report_table` sends); the pre-fetch warms raw tables; test that the turn reads them from the store
+- [X] T031 BUG-003: `Breaker.skips(workspace)`; `schedule()` skips while the store skips the workspace
+- [X] T032 ws.py: the turn's temp folder is created inside the guarded setup (test_052_turn_accounting.py)
+- [X] T033 BUG-004: frontend/src/lib/investigateError.ts, a 429 names the limit
+- [X] T034 SPEC-001/002/005/008: spec, research, data model, contract, tasks aligned with the workspace breaker, `store_by_operation` + "custom" and the weak-secret rule

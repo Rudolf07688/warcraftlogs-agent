@@ -1,14 +1,20 @@
 # Research: Turn and startup hardening
 
 - **Breaker rule (sc-355)**. Decision: sliding 60 s window of outcomes; open on ≥3 timeouts from
-  ≥2 turns with timeouts ≥ half the outcomes; per-turn cap of 3 timeouts per window. Rationale:
-  one turn's burst can't open it (AC1), a mostly slow store opens it despite an odd success (AC2),
-  an outage across two turns opens after the same 3 timeouts as today (AC3). Alternatives:
-  failure ratio only (one turn's burst would still open it); time-decayed score (more knobs).
-- **Turn identity**. Decision: the cache's `_Turn` object (one per chat turn, already copied into
-  tool contexts). Alternatives: `RequestIdentity.session_id` (per socket, not per turn).
-- **Per-op counters (sc-332)**. Decision: extra fields `store_<outcome>@<op>` in the existing
-  local metrics hash. Alternatives: a hash per op (more keys and pipeline slots in `read_stats`).
+  ≥2 workspaces with timeouts ≥ half the outcomes; a workspace with 3 timeouts in the window
+  skips the store itself. Rationale: one workspace's burst can't open it (AC1), a mostly slow
+  store opens it despite an odd success (AC2), an outage across two workspaces opens after the
+  same 3 timeouts as today (AC3), and a single-workspace install still stops paying the timeout.
+  Alternatives: failure ratio only (one burst would still open it); time-decayed score (more
+  knobs).
+- **Identity**. Decision: the workspace (tenant id from `current_identity`; public-only reads are
+  one more key), remembered for at most 1024 workspaces apart from the ratio window. Superseded:
+  the cache's `_Turn` object with one shared "no turn" bucket, because one account has many
+  turns, tabs and pre-fetches (P7 SEC-001/003, board #59).
+- **Per-op counters (sc-332)**. Decision: fields `store_<outcome>@<op>` in their own daily hash
+  (`store_ops`), so the 045 totals and their exact-match tests stay unchanged; names from a fixed
+  allowlist of the app's operations, any other as "custom" (P7 SEC-002). Alternatives: fields in
+  the local hash (breaks the 045 tests), any query name (unbounded keys).
 - **Commit before schedule (sc-352)**. Decision: explicit `await db.commit()` in the endpoint
   before scheduling; `tenant_session`'s own commit then has nothing to do. Alternatives: a
   background task after the response (FastAPI's dependency exit order differs across versions).

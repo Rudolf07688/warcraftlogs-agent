@@ -317,20 +317,21 @@ async def _handle_turn(
             # this turn's user.
             set_refresh_actor(str(identity.user_id))
             preamble = await _build_turn_preamble(session, tenant_id, turn.content)
+        # US2: a per-turn scratch store holds each tool's full output on disk so large
+        # concurrent results are preserved and picked up after every call completes. Last in
+        # the setup: nothing between it and the stream's ``finally`` (which removes it) can fail.
+        scratch = TurnScratch(str(conv_id))
     except BaseException:
-        # 052 sc-357: setup failed or was cancelled (the preamble, or this transaction's commit)
-        # after the turn may have opened: close it uncounted and clear its user.
+        # 052 sc-357: setup failed or was cancelled (the preamble, this transaction's commit or
+        # the scratch folder) after the turn may have opened: close it uncounted, clear its user.
         abandon_turn()
         raise
 
     # Stream the agent response, accumulating tokens into the final content.
-    # US2: a per-turn scratch store holds each tool's full output on disk so large
-    # concurrent results are preserved and picked up after every call completes.
     tokens: list[str] = []
     empty = False  # 048: the turn ended with the runner's no-answer message, not model text
     proposal_ids: list[uuid.UUID] = []  # feature 031: proposals sent this turn
     switched = False  # feature 021: the turn moved to the sibling model
-    scratch = TurnScratch(str(conv_id))
     # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)

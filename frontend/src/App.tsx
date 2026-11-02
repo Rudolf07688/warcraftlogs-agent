@@ -22,6 +22,7 @@ import { MessageList } from "./components/MessageList";
 import { WelcomePanel } from "./components/WelcomePanel";
 import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
+import { investigateErrorMessage } from "./lib/investigateError";
 import { streamStore } from "./lib/streamStore";
 import { Button } from "./components/ui/button";
 import { Toggle } from "./components/ui/toggle";
@@ -512,8 +513,8 @@ export default function App() {
       });
       // Feature 013: a recent raid becomes a tracked raid on investigation (FR-009).
       void refreshRaids();
-    } catch {
-      setError("Could not start the investigation. Is the backend up?");
+    } catch (err) {
+      setError(investigateErrorMessage(err));
     }
   }, [sendText, refreshRaids]);
 

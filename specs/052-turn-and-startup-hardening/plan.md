@@ -31,6 +31,10 @@ starts with its failing edge-case tests (the state machines first: breaker, turn
 
 ## Design per story
 
+> Superseded in part by the P7 rework (board #59) and the QA round: the breaker keys on the
+> workspace, not the turn (see data-model.md), and the per-operation counts are a top-level
+> `store_by_operation` in their own hash, allowlisted (see contracts/interfaces.md).
+
 **sc-355 breaker** (`raw_fetch_reads.py`, `cache.py`): `Breaker` keeps a deque of recent probe
 outcomes `(t, turn, timed_out)` over `WINDOW_S = 60`. `timed_out(trial, turn)` opens when the
 window holds ≥ `TIMEOUTS_TO_OPEN` timeouts from ≥ 2 distinct turns and timeouts are ≥ half of its
