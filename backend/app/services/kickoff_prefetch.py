@@ -24,7 +24,8 @@ Rules:
 * One job per (workspace, report) per :data:`COOLDOWN_S`: a repeat click within it starts
   nothing (P7-046 SEC-001). The cooldown is in-process: each app instance keeps its own.
 * Only when store reads are on and the store is installed as the client's fetch source: without
-  them a whole-raid table is not kept anywhere the turn could read (SEC-002).
+  them a whole-raid table is not kept anywhere the turn could read (SEC-002). Not while the
+  store's breaker is open either: the job would warm nothing (052 sc-352).
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from wcl_agent.tools.report_tools import get_report_table, load_report_summary
 
 from ..config import settings
 from ..tenancy.context import RequestIdentity, current_identity
-from . import background
+from . import background, raw_fetch_reads
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +92,9 @@ def store_reads_on() -> bool:
 
 
 def schedule(identity: RequestIdentity, report_code: str) -> bool:
-    """Start :func:`prefetch` unless store reads are off or this workspace started one for the
-    report less than :data:`COOLDOWN_S` ago; True when it started."""
-    if not store_reads_on():
+    """Start :func:`prefetch` unless store reads are off, the store's breaker is open, or this
+    workspace started one for the report less than :data:`COOLDOWN_S` ago; True when it started."""
+    if not store_reads_on() or raw_fetch_reads.breaker.is_open():
         return False
     now = time.monotonic()
     for key, at in list(_started.items()):

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import get_tenant_db, require_csrf, require_session
+from ..auth.rate_limit import investigate_limiter
 from ..db import repository as repo
 from ..model_state import get_model_state, is_valid_model
 from ..services import kickoff_prefetch
@@ -61,6 +62,13 @@ async def investigate_raid(
     standard path (no double-persist / seq-0 special case). The kickoff turn's data is
     pre-fetched in the background (``services.kickoff_prefetch``).
     """
+    # 052 sc-352: per user, before the 404 rule, so the answer reveals nothing about the code.
+    if not investigate_limiter.allow_request(str(identity.user_id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "rate_limited", "message": "Too many investigations. Slow down."},
+            headers={"Retry-After": "60"},
+        )
     raid = await repo.get_tracked_raid(db, report_code, tenant_id=identity.tenant_id)
     if raid is None:
         # Feature 013: a raid from the welcome page becomes a tracked raid on investigation.
@@ -96,8 +104,10 @@ async def investigate_raid(
     conv = await repo.create_conversation(
         db, model=model, title=raid.label[:60], tenant_id=identity.tenant_id
     )
+    # 052 sc-352: committed first, so a failed commit starts no pre-fetch.
+    await db.commit()
     # 046 sc-339: warm the kickoff turn's data in the background, only past the 404 rule
-    # above (schedule() checks store reads and the per-report cooldown).
+    # above (schedule() checks store reads, the breaker and the per-report cooldown).
     kickoff_prefetch.schedule(identity, report_code)
     return InvestigateResponse(
         conversation_id=conv.id,

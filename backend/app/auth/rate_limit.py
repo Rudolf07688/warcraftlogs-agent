@@ -164,3 +164,5 @@ token_limiter = InProcessRateLimiter()
 guide_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_generate_per_minute)
 # Feature 015: per-user cap on "report an inaccuracy".
 guide_report_limiter = InProcessRateLimiter(per_minute=settings.wcl_guide_report_per_minute)
+# 052 sc-352: per-user cap on recent-raid investigations. Keyed by user_id.
+investigate_limiter = InProcessRateLimiter(per_minute=settings.wcl_investigate_per_minute)

@@ -142,6 +142,9 @@ class Settings(BaseSettings):
     wcl_guide_datasheet_min_sample: int = 20  # ranked players a data sheet needs to be citable
     wcl_guide_inuse_days: int = 14  # stale guides wanted this recently regenerate at once (FR-051)
     wcl_guide_report_per_minute: int = 5  # per-user cap on "report an inaccuracy"
+    # 052 sc-352: per-user cap on recent-raid investigations (each starts a conversation and a
+    # kickoff pre-fetch of up to 11 WCL requests).
+    wcl_investigate_per_minute: int = 5
     wcl_guide_research_fetch_enabled: bool = False  # fetch allowlisted third-party pages (terms review first)
     wcl_guide_talent_names_url: str = ""  # optional talent id → name JSON; off until terms are checked
     wow_version_url: str = "https://us.version.battle.net/v2/products/wow/versions"  # live build
