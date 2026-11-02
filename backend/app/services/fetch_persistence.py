@@ -142,11 +142,14 @@ def _bury(codes: Sequence[str], seen_at: datetime) -> None:
 def _stale(item: FetchedResponse) -> bool:
     """The fetch was requested before (or as) one of its reports was seen gone, or at or before
     the tombstones' overflow floor."""
-    floor = _tombstones.floor
-    if item.requested_at is None or not (_tombstones or floor):
+    if item.requested_at is None:
+        return False
+    # Times first: the query is parsed only when a tombstone or the floor could apply (PERF-008).
+    under_floor = _tombstones.floor is not None and item.requested_at <= _tombstones.floor
+    if not (_tombstones or under_floor):
         return False
     codes = stored_codes(item.query, item.variables)
-    if codes and floor is not None and item.requested_at <= floor:
+    if codes and under_floor:
         return True
     return any((t := _tombstones.get(c)) is not None and item.requested_at <= t for c in codes)
 

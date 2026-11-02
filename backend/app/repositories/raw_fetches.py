@@ -141,7 +141,8 @@ def _prepare(content: bytes) -> tuple[str, bytes]:
 async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> bool:
     """Store one fetch; a row with the same ``query_key`` is replaced only by a newer fetch.
 
-    An unchanged body (same hash) only moves ``fetched_at`` forward: the payload is neither
+    An unchanged body (same hash) only moves ``fetched_at`` forward and sets ``own_summary``
+    (a row an older app version wrote keeps no false flag; 051 BUG-002): the payload is neither
     sent nor rewritten (sc-177). Overlong labels never fail the insert: the operation name is
     truncated, and a code over :data:`MAX_CODE` leaves ``report_code`` empty (it stays in
     ``report_codes``, so deletion still finds it). Returns whether the stored payload changed
@@ -154,15 +155,16 @@ async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> b
     stored = await session.scalar(
         select(RawFetch.payload_hash).where(RawFetch.query_key == fetched.query_key)
     )
+    exact = exact_report_codes(fetched.query, fetched.variables)
+    own = is_own_summary(fetched.query, fetched.variables, exact)
     if stored == digest:
         await session.execute(
             update(RawFetch)
             .where(RawFetch.query_key == fetched.query_key, RawFetch.fetched_at < fetched.fetched_at)
-            .values(fetched_at=fetched.fetched_at)
+            .values(fetched_at=fetched.fetched_at, own_summary=own)
         )
         return False
     codes = stored_codes(fetched.query, fetched.variables)
-    exact = exact_report_codes(fetched.query, fetched.variables)
     single = codes[0] if exact and len(codes) == 1 and len(codes[0]) <= MAX_CODE else None
     op = operation_name(fetched.query)
     stmt = _insert(session, RawFetch).values(
@@ -174,7 +176,7 @@ async def upsert_raw_fetch(session: AsyncSession, fetched: FetchedResponse) -> b
         fetched_at=fetched.fetched_at,
         payload=_payload(session.bind.dialect.name, body.decode()),
         payload_hash=digest,
-        own_summary=is_own_summary(fetched.query, fetched.variables, exact),
+        own_summary=own,
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["query_key"],

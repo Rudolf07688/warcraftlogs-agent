@@ -112,3 +112,20 @@ async def test_an_old_summary_without_a_recent_grant_or_status_is_not_listed(pat
     async with patched_db() as session:
         assert await list_visible_summaries(session, tenant_id=tenant_id, since=now - timedelta(days=1), limit=200) == []
 
+
+
+async def test_an_unchanged_refetch_sets_a_missing_flag(patched_db, tenant_id):
+    """BUG-002: a summary row an older app version wrote (flag false) gets the flag on its next
+    unchanged refetch, which otherwise only moves ``fetched_at``."""
+    now = datetime.now(UTC)
+    first = single("Old3", now - timedelta(minutes=5))
+    await store_batch([PendingWrite(first, tenant_id)])
+    async with patched_db() as session:
+        await session.execute(RawFetch.__table__.update().values(own_summary=False))
+        await session.commit()
+    again = FetchedResponse(first.query_key, first.query, first.variables, first.content, now)
+    await store_batch([PendingWrite(again, tenant_id)])
+    assert await flags(patched_db) == {first.query_key: True}
+    async with patched_db() as session:
+        bodies = await list_visible_summaries(session, tenant_id=tenant_id, since=now - timedelta(days=1), limit=200)
+    assert codes_of(bodies) == {"Old3"}
