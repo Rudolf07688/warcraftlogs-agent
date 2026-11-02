@@ -1015,6 +1015,12 @@ def set_refresh_actor(user_id: str | None) -> None:
     _turn.set(_Turn() if user_id else None)
 
 
+def current_turn() -> object | None:
+    """The running chat turn, for identity only (the raw-store breaker tells turns apart by it,
+    052 sc-355); None outside a turn."""
+    return _turn.get()
+
+
 def note_external_call() -> None:
     """The running turn asked Warcraft Logs itself (any network call, failed ones too), or
     waited on a load that did. Also marks the running cache load, so a shared load passes it to
