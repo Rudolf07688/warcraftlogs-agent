@@ -33,4 +33,4 @@ One commit per story, in the brief's order. Tests use fixtures only.
 
 ## Phase 6: Polish
 
-- [ ] T015 detect-changes, footprint check, full check.py run with receipt; board handoff; Shortcut Under Review
+- [X] T015 detect-changes, footprint check, full check.py run with receipt; board handoff; Shortcut Under Review

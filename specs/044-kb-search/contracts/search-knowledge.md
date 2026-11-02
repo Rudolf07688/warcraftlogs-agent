@@ -69,8 +69,9 @@ The workspace comes only from `current_identity` (checked against the ADK sessio
 ## Internal API (for the eval and tests)
 
 ```python
-async def search(request: SearchRequest, *, mode: Literal["hybrid", "vector", "keyword"] = "hybrid",
-                 embedder: Embedder | None = ...) -> SearchResult
-def fuse(per_query: Sequence[Sequence[Candidate]]) -> list[ScoredSource]      # pure, RRF twice + dedupe
-def cap(result: SearchResult, limit: int = 6000) -> SearchResult              # pure
+async def search(request: SearchRequest, *, embedder: Embedder | None, runner: QueryRunner | None = None,
+                 mode: Literal["hybrid", "vector", "keyword"] = "hybrid") -> SearchResult
+def fuse(per_query: Sequence[Sequence[Candidate]]) -> list[_Scored]           # pure, RRF twice + dedupe
+def cap(result: SearchResult, limit: int = 6000) -> SearchResult              # pure, renders each hit once
+def payload(result: SearchResult) -> dict[str, Any]                           # the tool result above
 ```

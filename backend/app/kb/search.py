@@ -432,19 +432,20 @@ def _marked_source(source: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _item(hit: Hit) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "kind": hit.kind,
+        "source": _marked_source(hit.source),
+        "text": as_data(hit.text),
+        "score": round(hit.score, 4),
+    }
+    if hit.relaxed:
+        item["relaxed"] = True
+    return item
+
+
 def payload(result: SearchResult) -> dict[str, Any]:
     """The tool result the agent sees (contracts/search-knowledge.md)."""
-    hits = []
-    for hit in result.hits:
-        item: dict[str, Any] = {
-            "kind": hit.kind,
-            "source": _marked_source(hit.source),
-            "text": as_data(hit.text),
-            "score": round(hit.score, 4),
-        }
-        if hit.relaxed:
-            item["relaxed"] = True
-        hits.append(item)
     return {
         "status": "success",
         "mode": result.mode,
@@ -452,7 +453,7 @@ def payload(result: SearchResult) -> dict[str, Any]:
         "capped": result.capped,
         "note": result.note,
         "untrusted": UNTRUSTED_NOTE,
-        "hits": hits,
+        "hits": [_item(hit) for hit in result.hits],
     }
 
 
@@ -461,13 +462,22 @@ def _size(result: SearchResult) -> int:
 
 
 def cap(result: SearchResult, limit: int = OUTPUT_CAP) -> SearchResult:
-    """Drop the lowest-ranked hits until the serialised result fits in ``limit`` characters."""
-    if _size(result) <= limit:
+    """Drop the lowest-ranked hits until the serialised result fits in ``limit`` characters.
+
+    Each hit is rendered (and neutralised) once (QA PERF-005): the result's size is the size
+    without hits plus each kept hit's item and the ", " between them."""
+    items = [len(json.dumps(_item(hit), ensure_ascii=False)) for hit in result.hits]
+    empty = {capped: _size(replace(result, hits=[], capped=capped)) for capped in (False, True)}
+
+    def size(n: int, capped: bool) -> int:
+        return empty[capped] + sum(items[:n]) + 2 * max(n - 1, 0)
+
+    if size(len(items), result.capped) <= limit:
         return result
-    hits = list(result.hits)
-    while hits and _size(replace(result, hits=hits, capped=True)) > limit:
-        hits.pop()
-    return replace(result, hits=hits, capped=True)
+    n = len(items)
+    while n and size(n, True) > limit:
+        n -= 1
+    return replace(result, hits=result.hits[:n], capped=True)
 
 
 async def _embed(queries: Sequence[str], embedder: Embedder | None) -> list[list[float]] | None:

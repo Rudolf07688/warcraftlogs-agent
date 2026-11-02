@@ -19,7 +19,6 @@ I/O is awaited on the event loop, so ADK runs parallel tool calls concurrently.
 from __future__ import annotations
 
 import asyncio
-import functools
 import html
 import json
 import unicodedata
@@ -100,25 +99,36 @@ async def _acap(obj: Any) -> Any:
 MAX_TITLE_CHARS = 80
 MAX_NAME_CHARS = 60  # guild, player and fight names, and every string in a returned table
 _DECODE_ROUNDS = 8
-# Angle brackets and their look-alikes, found by Unicode name (after NFKC has folded the
-# full-width, small and vertical forms); names that do not say it are listed by hand.
-_OPEN_NAMES = ("LESS-THAN", "LEFT-POINTING", "LEFT ANGLE", "LEFT DOUBLE ANGLE", "LEFT ARROWHEAD", "PRECEDES")
-_CLOSE_NAMES = ("GREATER-THAN", "RIGHT-POINTING", "RIGHT ANGLE", "RIGHT DOUBLE ANGLE", "RIGHT ARROWHEAD", "SUCCEEDS")
-_OPEN_EXTRA, _CLOSE_EXTRA = "\u1438", "\u1433"  # Canadian syllabics PA, PO
-_LAST_SCANNED = 0x2FFFF  # the symbol blocks; the planes above hold no brackets
-
-
-@functools.cache
-def _bracket_map() -> dict[int, str]:
-    """``str.translate`` table: every angle bracket or look-alike to '(' or ')' (built once)."""
-    table = {ord(c): "(" for c in _OPEN_EXTRA} | {ord(c): ")" for c in _CLOSE_EXTRA}
-    for cp in range(_LAST_SCANNED + 1):
-        name = unicodedata.name(chr(cp), "")
-        if any(part in name for part in _OPEN_NAMES):
-            table[cp] = "("
-        elif any(part in name for part in _CLOSE_NAMES):
-            table[cp] = ")"
-    return table
+# Angle brackets and their look-alikes after NFKC (which folds the full-width, small and
+# vertical forms): every code point up to U+2FFFF whose Unicode name says less-than/greater-than,
+# left-/right-pointing, (double) angle, arrowhead or precedes/succeeds, plus Canadian syllabics
+# PA/PO. A literal, so no process scans the code points on the event loop (QA PERF-002);
+# backend/tests/test_050_untrusted_text.py regenerates it from that rule and must agree.
+_OPEN_BRACKETS = (
+    "<\u00ab\u02c2\u02f1\u031a\u0349\u0354\u08f7\u08f9\u1438\u1dfe\u2039\u2264\u2266"
+    "\u2268\u226a\u226e\u2270\u2272\u2274\u2276\u2277\u2278\u2279\u227a\u227c\u227e\u22b0"
+    "\u22d6\u22d8\u22da\u22db\u22dc\u22de\u22e6\u22e8\u2329\u2343\u23ea\u23ee\u23f4\u25c0"
+    "\u25c1\u25c2\u25c3\u25c4\u25c5\u276c\u276e\u2770\u27e8\u27ea\u2976\u2977\u2991\u2993"
+    "\u2996\u29c0\u29fc\u2a79\u2a7b\u2a7d\u2a7f\u2a81\u2a83\u2a85\u2a87\u2a89\u2a8b\u2a8c"
+    "\u2a8d\u2a8f\u2a90\u2a91\u2a92\u2a93\u2a94\u2a95\u2a97\u2a99\u2a9b\u2a9d\u2a9f\u2aa1"
+    "\u2aa3\u2aa4\u2aa5\u2aa6\u2aa8\u2aaf\u2ab1\u2ab3\u2ab5\u2ab7\u2ab9\u2abb\u2af7\u2af9"
+    "\u2bc7\u3008\u300a\ufe3d\ufe3f\ufe64\uff1c\U00010877\U0001cc02\U0001cc0e\U0001cc56"
+    "\U0001cc60\U0001cc65\U0001cc78\U0001cc80\U0001cc97\U0001cc9e\U0001cca0\U0001cca2"
+    "\U0001cdf9\U0001ce07\U0001f50d\U0001f780"
+)
+_CLOSE_BRACKETS = (
+    ">\u00bb\u02c3\u02f2\u0350\u0355\u0356\u08f8\u08fa\u08fb\u08fc\u08fd\u1433\u1dff"
+    "\u203a\u221f\u2265\u2267\u2269\u226b\u226f\u2271\u2273\u2275\u227b\u227d\u227f\u22b1"
+    "\u22be\u22d7\u22d9\u22dd\u22df\u22e7\u22e9\u232a\u2344\u2369\u237c\u23e9\u23ed\u23ef"
+    "\u23f5\u25b6\u25b7\u25b8\u25b9\u25ba\u25bb\u276d\u276f\u2771\u27e9\u27eb\u2978\u2992"
+    "\u2994\u2995\u299c\u299d\u29c1\u29fd\u2a7a\u2a7c\u2a7e\u2a80\u2a82\u2a84\u2a86\u2a88"
+    "\u2a8a\u2a8e\u2a96\u2a98\u2a9a\u2a9c\u2a9e\u2aa0\u2aa2\u2aa7\u2aa9\u2ab0\u2ab2\u2ab4"
+    "\u2ab6\u2ab8\u2aba\u2abc\u2af8\u2afa\u2b43\u2b53\u2b54\u2bc8\u2bfe\u2e00\u2e01\u2e16"
+    "\u3009\u300b\ufe3e\ufe40\ufe65\uff1e\U00010878\U0001cc01\U0001cc03\U0001cc0f"
+    "\U0001cc58\U0001cc62\U0001cc67\U0001cc7a\U0001cc82\U0001cc99\U0001cc9f\U0001cca1"
+    "\U0001cca3\U0001f50e\U0001f782"
+)
+_BRACKET_MAP = str.maketrans({**dict.fromkeys(_OPEN_BRACKETS, "("), **dict.fromkeys(_CLOSE_BRACKETS, ")")})
 
 
 def neutralise(text: str) -> str:
@@ -128,8 +138,11 @@ def neutralise(text: str) -> str:
     characters, bidi controls, zero-width) removed until nothing changes (full-width '＜',
     '&lt;' and '&lt' split by a zero-width space all become '<'); then every bracket and
     look-alike becomes a parenthesis. Still changing after :data:`_DECODE_ROUNDS` rounds, its
-    '&' go too.
+    '&' go too. ASCII text without '&', '<' and '>' is returned as is: none of these steps
+    changes it (QA PERF-001).
     """
+    if text.isascii() and "&" not in text and "<" not in text and ">" not in text:
+        return text
     for _ in range(_DECODE_ROUNDS):
         decoded = unicodedata.normalize("NFKC", html.unescape(text))
         decoded = "".join(c for c in decoded if unicodedata.category(c) != "Cf")
@@ -138,7 +151,7 @@ def neutralise(text: str) -> str:
         text = decoded
     else:
         text = text.replace("&", "+")
-    return text.translate(_bracket_map())
+    return text.translate(_BRACKET_MAP)
 
 
 def _bounded(text: Any, limit: int = MAX_NAME_CHARS) -> Any:
@@ -258,19 +271,26 @@ def _seconds(data: dict[str, Any]) -> float | None:
     return total_time / 1000 if _number(total_time) and total_time > 0 else None
 
 
+def _fits(obj: Any) -> bool:
+    return len(json.dumps(obj, default=str)) <= TABLE_MAX_CHARS
+
+
 def compact_table(table: Any) -> Any:
     """``table`` as is when it fits :data:`TABLE_MAX_CHARS`, else its compact projection.
-    Either way every string in it is capped (:data:`MAX_NAME_CHARS`)."""
-    table = _bounded_strings(table)
-    if len(json.dumps(table, default=str)) <= TABLE_MAX_CHARS:
-        return table
+    Either way every string in what is returned is neutralised and capped (:data:`MAX_NAME_CHARS`);
+    only that, never the whole raw table (QA PERF-001), and its size is checked after it."""
+    if _fits(table) and _fits(bounded := _bounded_strings(table)):
+        return bounded
     data = table.get("data") if isinstance(table, dict) else None
     if isinstance(data, dict):
         seconds = _seconds(data)
         for n in TABLE_TOP_N:
             projected, omitted = _compact_level(data, n, seconds, 0)
-            result = {"_compact": True, "_truncated": omitted > 0, "_note": COMPACT_NOTE, "data": projected}
-            if len(json.dumps(result, default=str)) <= TABLE_MAX_CHARS:
+            result = {
+                "_compact": True, "_truncated": omitted > 0, "_note": COMPACT_NOTE,
+                "data": _bounded_strings(projected),
+            }
+            if _fits(result):
                 return result
     return {"_compact": True, "_truncated": True, "_note": TOO_LARGE_NOTE}
 
@@ -300,10 +320,13 @@ def overview_table(table: Any) -> Any:
     data = table.get("data") if isinstance(table, dict) else None
     if not isinstance(data, dict):
         return compact_table(table)
-    data = {k: v for k, v in _bounded_strings(data).items() if k not in OVERVIEW_DROPPED}
+    data = {k: v for k, v in data.items() if k not in OVERVIEW_DROPPED}
     projected, omitted = _compact_level(data, OVERVIEW_TOP_N, _seconds(data), 1)
-    result = {"_overview": True, "_truncated": omitted > 0, "_note": OVERVIEW_NOTE, "data": projected}
-    if len(json.dumps(result, default=str)) > TABLE_MAX_CHARS:
+    result = {
+        "_overview": True, "_truncated": omitted > 0, "_note": OVERVIEW_NOTE,
+        "data": _bounded_strings(projected),  # only the kept rows (QA PERF-001)
+    }
+    if not _fits(result):
         return compact_table(table)  # never larger than the compact guarantee
     return result
 
