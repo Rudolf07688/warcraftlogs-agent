@@ -122,9 +122,10 @@ async def test_one_chat_turn_is_one_trace(
     assert redis and any("execute_tool" in ancestry(s) for s in redis)
 
 
-async def test_routes_are_traced_by_template_and_health_is_not(otel, as_user):
+async def test_routes_are_traced_by_template_and_health_is_not(otel, as_user, monkeypatch):
     capture = otel(environment="prod")
     FastAPIInstrumentor.instrument_app(app, **setup.FASTAPI_OPTIONS)
+    monkeypatch.setattr(app, "middleware_stack", None)  # an earlier test built it uninstrumented
     try:
         missing = uuid.uuid4()
         assert (await as_user.client.get(f"/api/conversations/{missing}")).status_code == 404
