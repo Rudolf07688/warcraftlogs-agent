@@ -24,11 +24,11 @@
 
 ## Phase 5: US3 dashboards (sc-413)
 
-- [ ] T011 [US3] observability/mimir/rules/anonymous/runtime.yaml (contract aliases + D7/D8 helpers); mimirtool lint/check
-- [ ] T012 [P] [US3] D7: evolve observability/grafana/dashboards/runtime/app-api-llm.json (same uid) onto aliases
-- [ ] T013 [P] [US3] D6: observability/grafana/dashboards/runtime/api-red.json over app:http_* aliases
-- [ ] T014 [P] [US3] D8: observability/grafana/dashboards/runtime/rag.json over rag:* and cache:* aliases
-- [ ] T015 [US3] Test: dashboards parse and every Mimir panel expr references only recording-rule aliases (runtime.yaml or the 055 contract names), in backend/tests/test_telemetry_metrics_dashboards.py
+- [X] T011 [US3] observability/mimir/rules/anonymous/runtime.yaml (contract aliases + D7/D8 helpers); mimirtool lint/check
+- [X] T012 [P] [US3] D7: evolve observability/grafana/dashboards/runtime/app-api-llm.json (same uid) onto aliases
+- [X] T013 [P] [US3] D6: observability/grafana/dashboards/runtime/api-red.json over app:http_* aliases
+- [X] T014 [P] [US3] D8: observability/grafana/dashboards/runtime/rag.json over rag:* and cache:* aliases
+- [X] T015 [US3] Test: dashboards parse and every Mimir panel expr references only recording-rule aliases (runtime.yaml or the 055 contract names), in backend/tests/test_telemetry_metrics_dashboards.py
 
 ## Phase 6: Polish
 
