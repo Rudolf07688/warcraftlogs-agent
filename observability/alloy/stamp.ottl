@@ -1,0 +1,4 @@
+set(attributes["service.namespace"], "wcl-agent") where attributes["service.namespace"] == nil
+set(attributes["deployment.environment.name"], "unknown") where attributes["deployment.environment.name"] == nil
+set(attributes["app.layer"], "build") where attributes["app.layer"] == nil and attributes["service.name"] == "claude-code"
+set(attributes["app.layer"], "runtime") where attributes["app.layer"] == nil

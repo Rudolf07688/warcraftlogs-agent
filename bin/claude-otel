@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Claude Code with OpenTelemetry for this project (feature 053, sc-400, spec §5.2 and §14
+# decision 6): metrics, events and traces go to the local Alloy, scoped to this wrapper
+# instead of the global ~/.claude/settings.json. Dev only: content capture is on (owner
+# decision 7); Alloy redacts secrets and keeps content in a 7-day stream.
+#
+#   bin/claude-otel [claude arguments...]
+#
+# ALLOY_OTLP_GRPC_PORT picks Alloy's host port (default 4317), as in docker-compose.yml.
+set -euo pipefail
+
+alloy_port="${ALLOY_OTLP_GRPC_PORT:-4317}"
+
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${alloy_port}"
+# Mimir wants cumulative counters; Claude Code defaults to delta.
+export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+# 10 s: the 60 s default is too coarse for short subagent bursts.
+export OTEL_METRIC_EXPORT_INTERVAL=10000
+export OTEL_METRICS_INCLUDE_VERSION=true
+export OTEL_METRICS_INCLUDE_ENTRYPOINT=true
+export OTEL_METRICS_INCLUDE_REPOSITORY=true
+# Real names for subagents, skills and MCP servers (otherwise "custom" / "third-party").
+export OTEL_LOG_TOOL_DETAILS=1
+export OTEL_LOG_USER_PROMPTS=1
+export OTEL_LOG_ASSISTANT_RESPONSES=1
+export OTEL_LOG_TOOL_CONTENT=1
+export OTEL_RESOURCE_ATTRIBUTES="service.namespace=wcl-agent,app.layer=build,deployment.environment.name=dev"
+
+# Warn, never block: without Alloy, Claude Code runs and its exporters drop the data.
+if ! timeout 1 bash -c ": > /dev/tcp/127.0.0.1/${alloy_port}" 2>/dev/null; then
+  echo "claude-otel: warning: Alloy is not reachable on 127.0.0.1:${alloy_port}; telemetry from this session will be lost (start it with: docker compose up -d alloy)" >&2
+fi
+
+exec claude "$@"

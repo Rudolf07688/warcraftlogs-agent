@@ -1,0 +1,325 @@
+// Grafana Alloy: the always-on collector for both layers (feature 053, spec §4).
+//
+//   OTLP in -> memory limiter -> stamp defaults -> redact -> metrics: drop banned labels
+//                                                         -> logs: split content / rest
+//   -> batch -> exporters with persistent, size-bounded queues
+//
+// The backends (Loki, Tempo, Mimir) only run with the `observability` compose profile.
+// Without them every exporter queues on disk (volume alloy-data) up to its cap and retries
+// until they come back. Once a queue is full, Alloy refuses new data for that signal with a
+// retryable error (logged here) and the sender's SDK drops it; senders are never blocked.
+//
+// The OTTL statements shared by several contexts live in stamp.ottl and redact.ottl (one
+// statement per line, unprefixed paths so each line works in any context).
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+local.file "stamp" {
+  filename = "/etc/alloy/stamp.ottl"
+}
+
+local.file "redact" {
+  filename = "/etc/alloy/redact.ottl"
+}
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    metrics = [otelcol.processor.memory_limiter.default.input]
+    logs    = [otelcol.processor.memory_limiter.default.input]
+    traces  = [otelcol.processor.memory_limiter.default.input]
+  }
+}
+
+otelcol.processor.memory_limiter "default" {
+  check_interval         = "1s"
+  limit_percentage       = 80
+  spike_limit_percentage = 20
+
+  output {
+    metrics = [otelcol.processor.transform.stamp.input]
+    logs    = [otelcol.processor.transform.stamp.input]
+    traces  = [otelcol.processor.transform.stamp.input]
+  }
+}
+
+// Spec §4.2 step 2: stamp service.namespace, deployment.environment.name and app.layer when
+// missing. The environment defaults to "unknown": Alloy can't tell dev from anything else.
+otelcol.processor.transform "stamp" {
+  error_mode = "ignore"
+
+  trace_statements {
+    context    = "resource"
+    statements = string.split(string.trim_space(local.file.stamp.content), "\n")
+  }
+
+  log_statements {
+    context    = "resource"
+    statements = string.split(string.trim_space(local.file.stamp.content), "\n")
+  }
+
+  metric_statements {
+    context    = "resource"
+    statements = string.split(string.trim_space(local.file.stamp.content), "\n")
+  }
+
+  output {
+    metrics = [otelcol.processor.transform.redact.input]
+    logs    = [otelcol.processor.transform.redact.input]
+    traces  = [otelcol.processor.transform.redact.input]
+  }
+}
+
+// Spec §4.2 step 3, both layers, every signal: hash the known secret keys and mask bearer
+// tokens, JWTs, sk-*/AIza* keys and Postgres DSN passwords in every string attribute
+// (resource, span, span event, log record, datapoint) and in log bodies. Claude Code's
+// tool.output content arrives as a span event, so the spanevent context matters.
+// Not covered: values nested in slices or nested maps (the app-side filter of 054 is the
+// first line of defense; this is the last).
+otelcol.processor.transform "redact" {
+  error_mode = "ignore"
+
+  trace_statements {
+    context    = "resource"
+    statements = string.split(string.trim_space(local.file.redact.content), "\n")
+  }
+
+  trace_statements {
+    context    = "span"
+    statements = string.split(string.trim_space(local.file.redact.content), "\n")
+  }
+
+  trace_statements {
+    context    = "spanevent"
+    statements = string.split(string.trim_space(local.file.redact.content), "\n")
+  }
+
+  log_statements {
+    context    = "resource"
+    statements = string.split(string.trim_space(local.file.redact.content), "\n")
+  }
+
+  log_statements {
+    context    = "log"
+    statements = string.split(string.trim_space(local.file.redact.content), "\n")
+  }
+
+  // The same masks for the log body, as a string or as a map (structured GenAI events).
+  log_statements {
+    context    = "log"
+    statements = [
+      `replace_pattern(body, "eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]+", "<jwt:redacted>") where IsString(body)`,
+      `replace_pattern(body, "(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+", "${1}<redacted>") where IsString(body)`,
+      `replace_pattern(body, "sk-[A-Za-z0-9_-]{16,}", "sk-<redacted>") where IsString(body)`,
+      `replace_pattern(body, "AIza[0-9A-Za-z_-]{30,}", "AIza<redacted>") where IsString(body)`,
+      `replace_pattern(body, "(postgres(?:ql)?(?:\\+[a-z0-9]+)?://[^:/@\\s]+:)[^@\\s]+@", "${1}<redacted>@") where IsString(body)`,
+      `replace_all_patterns(body, "value", "eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]+", "<jwt:redacted>") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+", "${1}<redacted>") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "sk-[A-Za-z0-9_-]{16,}", "sk-<redacted>") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "AIza[0-9A-Za-z_-]{30,}", "AIza<redacted>") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "(postgres(?:ql)?(?:\\+[a-z0-9]+)?://[^:/@\\s]+:)[^@\\s]+@", "${1}<redacted>@") where IsMap(body)`,
+    ]
+  }
+
+  metric_statements {
+    context    = "resource"
+    statements = string.split(string.trim_space(local.file.redact.content), "\n")
+  }
+
+  metric_statements {
+    context    = "datapoint"
+    statements = string.split(string.trim_space(local.file.redact.content), "\n")
+  }
+
+  output {
+    metrics = [otelcol.processor.transform.metric_labels.input]
+    logs    = [otelcol.processor.transform.classify.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Spec §4.2 step 4: per-session and per-user identifiers never become metric labels. They
+// stay on spans and logs. Removed from the resource too, or Mimir's target_info would carry
+// them.
+otelcol.processor.transform "metric_labels" {
+  error_mode = "ignore"
+
+  metric_statements {
+    context    = "resource"
+    statements = [
+      `delete_matching_keys(attributes, "^(session\\.id|prompt\\.id|user\\.account_uuid|user\\.email|client_request_id)$")`,
+    ]
+  }
+
+  metric_statements {
+    context    = "datapoint"
+    statements = [
+      `delete_matching_keys(attributes, "^(session\\.id|prompt\\.id|user\\.account_uuid|user\\.email|client_request_id)$")`,
+    ]
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Content stream (board contract:content-stream): a log record is content when it carries
+// app.content="true", is a GenAI event (event name gen_ai.*), or is a Claude Code event that
+// holds prompt, response or tool content. The condition is written once (classify); the two
+// filters split on its result, so every record goes to exactly one branch. Content records
+// get the resource attribute content="true", a Loki index label with its own 7-day
+// retention_stream; the rest lose any incoming "content" attribute so the label stays bounded.
+otelcol.processor.transform "classify" {
+  error_mode = "ignore"
+
+  log_statements {
+    context    = "log"
+    statements = [
+      `set(attributes["alloy.content_stream"], "false")`,
+      `set(attributes["alloy.content_stream"], "true") where attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or (resource.attributes["service.name"] == "claude-code" and IsMatch(attributes["event.name"], "^(user_prompt|assistant_response|tool_result|tool_decision|api_request_body|api_response_body)$"))`,
+    ]
+  }
+
+  output {
+    logs = [
+      otelcol.processor.filter.content_only.input,
+      otelcol.processor.filter.no_content.input,
+    ]
+  }
+}
+
+otelcol.processor.filter "content_only" {
+  error_mode = "ignore"
+
+  logs {
+    log_record = [`attributes["alloy.content_stream"] != "true"`]
+  }
+
+  output {
+    logs = [otelcol.processor.transform.mark_content.input]
+  }
+}
+
+otelcol.processor.filter "no_content" {
+  error_mode = "ignore"
+
+  logs {
+    log_record = [`attributes["alloy.content_stream"] == "true"`]
+  }
+
+  output {
+    logs = [otelcol.processor.transform.mark_rest.input]
+  }
+}
+
+otelcol.processor.transform "mark_content" {
+  error_mode = "ignore"
+
+  log_statements {
+    context    = "resource"
+    statements = [`set(attributes["content"], "true")`]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [`delete_key(attributes, "alloy.content_stream")`]
+  }
+
+  output {
+    logs = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.transform "mark_rest" {
+  error_mode = "ignore"
+
+  log_statements {
+    context    = "resource"
+    statements = [`delete_key(attributes, "content")`]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [`delete_key(attributes, "alloy.content_stream")`]
+  }
+
+  output {
+    logs = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.otlphttp.mimir.input]
+    logs    = [otelcol.exporter.otlphttp.loki.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// Persistent export queue (spec §14 decision 8). Public preview: Alloy runs with
+// --stability.level=public-preview. The directory is on the alloy-data volume.
+otelcol.storage.file "queue" {
+  directory = "/var/lib/alloy/data/queue"
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+
+    tls {
+      insecure = true
+    }
+  }
+
+  sending_queue {
+    storage    = otelcol.storage.file.queue.handler
+    sizer      = "bytes"
+    queue_size = 268435456 // 256 MiB
+  }
+
+  retry_on_failure {
+    max_elapsed_time = "0s" // retry until Tempo is back
+  }
+}
+
+otelcol.exporter.otlphttp "loki" {
+  client {
+    endpoint = "http://loki:3100/otlp"
+  }
+
+  sending_queue {
+    storage    = otelcol.storage.file.queue.handler
+    sizer      = "bytes"
+    queue_size = 268435456 // 256 MiB
+  }
+
+  retry_on_failure {
+    max_elapsed_time = "0s" // retry until Loki is back
+  }
+}
+
+otelcol.exporter.otlphttp "mimir" {
+  client {
+    endpoint = "http://mimir:9009/otlp"
+  }
+
+  sending_queue {
+    storage    = otelcol.storage.file.queue.handler
+    sizer      = "bytes"
+    queue_size = 67108864 // 64 MiB
+  }
+
+  retry_on_failure {
+    max_elapsed_time = "0s" // retry until Mimir is back
+  }
+}
