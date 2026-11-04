@@ -60,3 +60,25 @@ def test_d2_shows_cost_by_model_agent_and_seat() -> None:
     exprs = " ".join(e for _, e in mimir_exprs(load(D2)))
     assert "by (agent_name" in exprs and "model" in exprs
     assert "team_seat_cost_usd" in exprs and "seat" in exprs
+
+
+@pytest.mark.parametrize(("title", "alias"), [
+    ("Cost over time (estimated, list price)", "cc:cost_usd:rate5m"),
+    ("Tokens over time", "cc:tokens:rate5m"),
+])
+def test_d1_over_time_panels(title: str, alias: str) -> None:
+    """Owner's request (board steer:overview-panels): totals near the top, full width, bars per
+    interval plus a running total on the right axis, never empty at short ranges."""
+    p = next(p for p in panels(load(D1)) if p["title"] == title)
+    assert p["gridPos"]["w"] == 24 and p["gridPos"]["y"] <= 16  # right below the stat rows
+    assert p["interval"] == "1m"  # rules evaluate every minute
+    (t,) = p["targets"]
+    assert alias in t["expr"] and t["expr"].startswith("sum(") and " by (" not in t["expr"]
+    (calc,) = [x for x in p["transformations"] if x["id"] == "calculateField"]
+    opts = calc["options"]
+    assert opts["mode"] == "cumulativeFunctions" and opts["cumulative"] == {"field": t["legendFormat"], "reducer": "sum"}
+    assert p["fieldConfig"]["defaults"]["custom"]["drawStyle"] == "bars"
+    (line,) = p["fieldConfig"]["overrides"]
+    assert line["matcher"]["options"] == opts["alias"]
+    props = {x["id"]: x["value"] for x in line["properties"]}
+    assert props["custom.drawStyle"] == "line" and props["custom.axisPlacement"] == "right"

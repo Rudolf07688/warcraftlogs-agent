@@ -584,9 +584,223 @@
       }
     },
     {
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "id": 11,
+      "type": "timeseries",
+      "title": "Cost over time (estimated, list price)",
+      "description": "Claude Code's own cost estimate at API list prices. On a Max plan this is the list-price equivalent, not what you are billed. All models and agents together: bars per interval, line = running total since the start of the range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(sum_over_time(cc:cost_usd:rate5m{service_namespace=\"wcl-agent\"}[$__interval])) * 60",
+          "legendFormat": "per interval",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "cumulativeFunctions",
+            "cumulative": {
+              "field": "per interval",
+              "reducer": "sum"
+            },
+            "alias": "running total",
+            "replaceFields": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "axisPlacement": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "running total"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "id": 12,
+      "type": "timeseries",
+      "title": "Tokens over time",
+      "description": "All tokens of every type, model and agent together: bars per interval, line = running total since the start of the range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\"}[$__interval])) * 60",
+          "legendFormat": "per interval",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "cumulativeFunctions",
+            "cumulative": {
+              "field": "per interval",
+              "reducer": "sum"
+            },
+            "alias": "running total",
+            "replaceFields": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "axisPlacement": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "running total"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
       "maxDataPoints": 100,
       "interval": "5m",
-      "id": 11,
+      "id": 13,
       "type": "timeseries",
       "title": "Spend by model (estimated, list price)",
       "description": "Estimated spend per time bucket, stacked by model.",
@@ -596,7 +810,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 8,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -650,7 +864,7 @@
     {
       "maxDataPoints": 100,
       "interval": "5m",
-      "id": 12,
+      "id": 14,
       "type": "timeseries",
       "title": "Spend by agent (estimated, list price)",
       "description": "Estimated spend per time bucket by Claude Code agent type (agent.name). Every developer is 'developer'; per seat see Claude Code: Agent Team.",
@@ -660,7 +874,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 8,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -714,7 +928,7 @@
     {
       "maxDataPoints": 100,
       "interval": "5m",
-      "id": 13,
+      "id": 15,
       "type": "timeseries",
       "title": "Tokens by type",
       "description": "Tokens per time bucket, stacked by type.",
@@ -724,7 +938,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -778,7 +992,7 @@
     {
       "maxDataPoints": 100,
       "interval": "5m",
-      "id": 14,
+      "id": 16,
       "type": "timeseries",
       "title": "Cache hit ratio over time",
       "description": "Cache-read share of all tokens, 5-minute window.",
@@ -788,7 +1002,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -841,7 +1055,7 @@
       }
     },
     {
-      "id": 15,
+      "id": 17,
       "type": "bargauge",
       "title": "Spend by agent, whole range (estimated, list price)",
       "description": "Estimated spend per agent type over the selected range.",
@@ -851,7 +1065,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -893,7 +1107,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 18,
       "type": "bargauge",
       "title": "Tokens by model and type (whole range)",
       "description": "Tokens over the selected range.",
@@ -903,7 +1117,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 40,
         "w": 12,
         "h": 8
       },
