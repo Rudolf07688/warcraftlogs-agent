@@ -137,8 +137,13 @@ def main() -> int:
     ap.add_argument("--cost-rules", required=True)
     a = ap.parse_args()
 
-    groups = wait(a.grafana, "vector(1)", 30) and get(a.grafana, "api/v1/rules").get("data", {}).get("groups", [])
-    files = {g["file"].rsplit("/", 1)[-1] for g in groups or []}
+    # The ruler reads the rule files on its first poll (every minute), so wait for them.
+    files: set[str] = set()
+    deadline = time.time() + 150
+    while time.time() < deadline and not {"build.yaml", "red.yaml", "cost.yaml"} <= files:
+        groups = get(a.grafana, "api/v1/rules").get("data", {}).get("groups", [])
+        files = {g["file"].rsplit("/", 1)[-1] for g in groups or []}
+        time.sleep(5)
     check({"build.yaml", "red.yaml", "cost.yaml"} <= files, f"rule files loaded: {sorted(files)}")
 
     start = time.time_ns() - 240 * 10**9
@@ -164,7 +169,8 @@ def main() -> int:
     by_agent = {r["metric"].get("agent_name", "") for r in query(a.grafana, "cc:cost_usd:rate5m")}
     check({"developer", ""} <= by_agent, f"cc:cost_usd:rate5m keeps agent_name (main session = empty) {by_agent}")
     ratio = wait(a.grafana, "cc:cache_hit_ratio", 120)
-    check(bool(ratio) and abs(float(ratio[0]["value"][1]) - 0.5) < 0.01, f"cc:cache_hit_ratio = 3000/6000 ({ratio and ratio[0]['value'][1]})")
+    check(bool(ratio) and abs(float(ratio[0]["value"][1]) - 0.6) < 0.01,
+          f"cc:cache_hit_ratio = cacheRead / input side = 3000/5000, output left out ({ratio and ratio[0]['value'][1]})")
 
     prices = prices_from(a.cost_rules)
     check(len(prices) >= 4, f"{len(prices)} price rows in cost.yaml")

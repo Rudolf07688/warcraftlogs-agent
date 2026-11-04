@@ -35,32 +35,32 @@ groups:
       gen_ai_request_model: claude-haiku-5-5
       gen_ai_token_type: output
   - record: llm_price_usd_per_token
-    expr: vector(3.000000e-07)
+    expr: vector(7.500000e-07)
     labels:
       gen_ai_request_model: gemini-3.8-flash
       gen_ai_token_type: input
   - record: llm_price_usd_per_token
-    expr: vector(2.500000e-06)
+    expr: vector(3.750000e-06)
     labels:
       gen_ai_request_model: gemini-3.8-flash
       gen_ai_token_type: output
   - record: llm_price_usd_per_token
-    expr: vector(3.000000e-07)
+    expr: vector(7.500000e-07)
     labels:
       gen_ai_request_model: gemini-3.7-flash
       gen_ai_token_type: input
   - record: llm_price_usd_per_token
-    expr: vector(2.500000e-06)
+    expr: vector(3.750000e-06)
     labels:
       gen_ai_request_model: gemini-3.7-flash
       gen_ai_token_type: output
   - record: llm_price_usd_per_token
-    expr: vector(3.000000e-07)
+    expr: vector(7.500000e-07)
     labels:
       gen_ai_request_model: gemini-3.6-flash
       gen_ai_token_type: input
   - record: llm_price_usd_per_token
-    expr: vector(2.500000e-06)
+    expr: vector(3.750000e-06)
     labels:
       gen_ai_request_model: gemini-3.6-flash
       gen_ai_token_type: output
