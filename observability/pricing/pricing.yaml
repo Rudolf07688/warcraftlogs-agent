@@ -12,9 +12,13 @@
 # Mimir records the price in force every minute, so cost already computed keeps the old price.
 #
 # Sources (2026-11-04): Claude = Anthropic first-party API list price (Vertex AI partner
-# pricing can differ). Gemini rows are NOT verified against Google's current price list for
-# the 3.x generation: they carry the last published Flash / Flash-Lite / Pro list prices
-# (Pro: prompts up to 200k tokens). The owner confirms them (board live-check:055).
+# pricing can differ). Gemini 3.6/3.7/3.8 Flash = Google's Vertex AI pricing page
+# (cloud.google.com/vertex-ai/generative-ai/pricing, checked 2026-11-04, board #69): the
+# introductory global-endpoint price through 2026-12-31, cached input $0.075 (priced as input
+# here, see above); non-global endpoints are about 10% higher. From 2027-01-01 the standard
+# price is $1.50 input / $7.50 output: change these rows in a commit on that day. Flash-Lite
+# and 3.1 Pro are NOT verified: they carry the last published list prices (Pro: prompts up
+# to 200k tokens).
 models:
   claude-opus-5-5:
     input: 4.00
@@ -26,14 +30,14 @@ models:
     input: 0.10
     output: 0.50
   gemini-3.8-flash:
-    input: 0.30
-    output: 2.50
+    input: 0.75
+    output: 3.75
   gemini-3.7-flash:
-    input: 0.30
-    output: 2.50
+    input: 0.75
+    output: 3.75
   gemini-3.6-flash:
-    input: 0.30
-    output: 2.50
+    input: 0.75
+    output: 3.75
   gemini-3.5-flash-lite:
     input: 0.10
     output: 0.40

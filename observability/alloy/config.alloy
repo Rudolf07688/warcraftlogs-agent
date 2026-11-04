@@ -1,7 +1,8 @@
 // Grafana Alloy: the always-on collector for both layers (feature 053, spec §4).
 //
 //   OTLP in -> memory limiter -> stamp defaults -> redact -> metrics: drop banned labels
-//                                                         -> logs: split content / rest
+//                                                         -> logs: drop outside Loki's window,
+//                                                            split content / rest
 //   -> batch -> exporters with persistent, size-bounded queues
 //
 // The backends (Loki, Tempo, Mimir) only run with the `observability` compose profile.
@@ -66,6 +67,13 @@ otelcol.processor.transform "stamp" {
   log_statements {
     context    = "resource"
     statements = string.split(string.trim_space(local.file.stamp.content), "\n")
+  }
+
+  // The team board's path marker (see "board"): only the board branch, which joins after this
+  // step, may carry it. Any sender claiming it here loses it.
+  log_statements {
+    context    = "log"
+    statements = [`delete_key(attributes, "alloy.board")`]
   }
 
   metric_statements {
@@ -156,7 +164,7 @@ otelcol.processor.transform "redact" {
 
   output {
     metrics = [otelcol.processor.transform.metric_labels.input]
-    logs    = [otelcol.processor.transform.classify.input]
+    logs    = [otelcol.processor.filter.log_window.input]
     traces  = [
       otelcol.processor.batch.default.input,
       otelcol.processor.filter.red_sources.input,
@@ -218,8 +226,14 @@ otelcol.processor.filter "red_sources" {
   }
 }
 
+// One aggregate per promoted resource (the attributes Mimir turns into labels, mimir.yaml), so
+// a new service.version or revision continues the same series instead of starting a second
+// generation that maps to the same labels; an aggregate idle for 5 minutes is dropped rather
+// than re-exported with frozen values until Alloy restarts (Alloy v1.21 arguments).
 otelcol.connector.spanmetrics "default" {
-  namespace = "traces.spanmetrics"
+  namespace                       = "traces.spanmetrics"
+  metrics_expiration              = "5m"
+  resource_metrics_key_attributes = ["service.name", "service.namespace", "deployment.environment.name", "app.layer"]
 
   dimension {
     name = "http.route"
@@ -284,6 +298,30 @@ otelcol.connector.servicegraph "default" {
   }
 }
 
+// Loki's accept window (board scope:055-fix:time-bound), for every log source: a record dated
+// more than 6 days back or more than 10 minutes ahead is dropped here. Loki refuses anything
+// older than a week or past its 10-minute grace, and before its schema start it answers with
+// a retryable 503: such a record would sit in the export queue and hold back every record
+// batched with it (an old board file, a skewed browser clock, any local sender). The day of
+// headroom lets a record queued during a short outage still land. A record without a time
+// is judged by its observed time, as Loki does.
+otelcol.processor.filter "log_window" {
+  error_mode = "ignore"
+
+  logs {
+    log_record = [
+      `time_unix_nano > 0 and time_unix_nano < UnixNano(Now()) - 518400000000000`,
+      `time_unix_nano > UnixNano(Now()) + 600000000000`,
+      `time_unix_nano == 0 and observed_time_unix_nano > 0 and observed_time_unix_nano < UnixNano(Now()) - 518400000000000`,
+      `time_unix_nano == 0 and observed_time_unix_nano > UnixNano(Now()) + 600000000000`,
+    ]
+  }
+
+  output {
+    logs = [otelcol.processor.transform.classify.input]
+  }
+}
+
 // Content stream (board contract:content-stream): a log record is content when it carries
 // app.content="true", is a GenAI event (event name gen_ai.*), or comes from the build layer
 // (service.name claude-code or app.layer build) and is not one of Claude Code's known
@@ -301,9 +339,11 @@ otelcol.connector.servicegraph "default" {
 // record goes to exactly one branch. Content records
 // get the resource attribute content="true", a Loki index label with its own 7-day
 // retention_stream; the rest lose any incoming "content" attribute so the label stays bounded.
-// The team board (service.name team-board, see its section) is the one build-layer source
-// that is not content: agent prose about the work, never prompts or tool output. It keeps
-// the 30-day stream so a sprint's board stays next to its telemetry (board scope:055:board-stream).
+// The team board is the one build-layer source that is not content: agent prose about the
+// work, never prompts or tool output. It keeps the 30-day stream so a sprint's board stays
+// next to its telemetry (board scope:055:board-stream). The exception keys on the path, not
+// the payload: only records from the board branch carry alloy.board (stamp deletes it from
+// everything else), so an OTLP sender calling itself team-board is still content.
 otelcol.processor.transform "classify" {
   error_mode = "ignore"
 
@@ -311,7 +351,7 @@ otelcol.processor.transform "classify" {
     context    = "log"
     statements = [
       `set(attributes["alloy.content_stream"], "true")`,
-      `set(attributes["alloy.content_stream"], "false") where not (attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or ((resource.attributes["service.name"] == "claude-code" or resource.attributes["app.layer"] == "build") and resource.attributes["service.name"] != "team-board" and not IsMatch(attributes["event.name"], "^(api_request|api_refusal|subagent_completed|skill_activated|hook_registered|mcp_server_connection|plugin_loaded|plugin_installed|permission_mode_changed|retention_sweep|internal_error|at_mention|auth)$")))`,
+      `set(attributes["alloy.content_stream"], "false") where not (attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or ((resource.attributes["service.name"] == "claude-code" or resource.attributes["app.layer"] == "build") and attributes["alloy.board"] != "true" and not IsMatch(attributes["event.name"], "^(api_request|api_refusal|subagent_completed|skill_activated|hook_registered|mcp_server_connection|plugin_loaded|plugin_installed|permission_mode_changed|retention_sweep|internal_error|at_mention|auth)$")))`,
     ]
   }
 
@@ -357,7 +397,7 @@ otelcol.processor.transform "mark_content" {
 
   log_statements {
     context    = "log"
-    statements = [`delete_key(attributes, "alloy.content_stream")`]
+    statements = [`delete_matching_keys(attributes, "^alloy\\.(content_stream|board)$")`]
   }
 
   output {
@@ -375,7 +415,7 @@ otelcol.processor.transform "mark_rest" {
 
   log_statements {
     context    = "log"
-    statements = [`delete_key(attributes, "alloy.content_stream")`]
+    statements = [`delete_matching_keys(attributes, "^alloy\\.(content_stream|board)$")`]
   }
 
   output {
@@ -385,9 +425,12 @@ otelcol.processor.transform "mark_rest" {
 
 // Team board (feature 055, sc-407, spec §14 decision 11). The board's JSONL files (one per
 // sprint, in the git common dir, mounted at /var/lib/team-board) are tailed into Loki through
-// the same chain as OTLP logs: memory limiter, stamp, redact, classify, batch. Never straight
-// to loki.write: board text can quote a secret. Only *.jsonl: the cursors/ dir and the
-// "active" file stay out. Session transcripts are not tailed (usage.py reads them on demand).
+// the same chain as OTLP logs from the redaction step on: redact, log window, classify, batch.
+// Never straight to loki.write: board text can quote a secret. Only the board's own files
+// (sprint-*.jsonl, selftest-*.jsonl): the cursors/ dir, the "active" file and any other JSONL
+// a mistyped TEAM_BOARD_DIR might hold stay out, and a line that is not a board entry (no
+// text or no kind) is dropped, never forwarded raw. Session transcripts are not tailed
+// (usage.py reads them on demand).
 // Each entry becomes one record: body = the entry text, timestamp = the entry's ts, and the
 // entry fields (board, author, kind, key, entry_id, supersedes) are attributes, which Loki
 // keeps as structured metadata (index labels come only from loki.yaml's resource allowlist).
@@ -396,7 +439,10 @@ otelcol.processor.transform "mark_rest" {
 // after Loki loses its data, observability/board-backfill.sh resets them and the board is read
 // again from the start (same timestamps and lines, so a re-read does not duplicate in Loki).
 local.file_match "board" {
-  path_targets = [{"__path__" = "/var/lib/team-board/*.jsonl"}]
+  path_targets = [
+    {"__path__" = "/var/lib/team-board/sprint-*.jsonl"},
+    {"__path__" = "/var/lib/team-board/selftest-*.jsonl"},
+  ]
   sync_period  = "10s"
 }
 
@@ -452,8 +498,25 @@ loki.process "board" {
     }
   }
 
+  stage.template {
+    source   = "board_entry"
+    template = "{{ if and .text .kind }}yes{{ end }}"
+  }
+
+  stage.labels {
+    values = {
+      board_entry = "",
+    }
+  }
+
+  stage.match {
+    selector            = "{board=~\".+\", board_entry!=\"yes\"}"
+    action              = "drop"
+    drop_counter_reason = "not_a_board_entry"
+  }
+
   stage.label_drop {
-    values = ["filename"]
+    values = ["filename", "board_entry"]
   }
 
   stage.output {
@@ -489,13 +552,17 @@ otelcol.processor.transform "board" {
       `set(span_id.string, attributes["span_id"]) where attributes["span_id"] != nil`,
       `delete_matching_keys(attributes, "^(trace_id|span_id|loki\\.attribute\\.labels)$")`,
       `set(attributes["event.name"], "team_board_entry")`,
+      // The path marker classify keys on (see "stamp" and "classify").
+      `set(attributes["alloy.board"], "true")`,
       // A re-read must produce the identical record (Loki drops exact duplicates only).
       `set(observed_time, time)`,
     ]
   }
 
+  // Straight to redact: past stamp, which strips the board marker from every other source.
+  // The tail reads at its own pace, so it needs no memory limiter in front.
   output {
-    logs = [otelcol.processor.memory_limiter.default.input]
+    logs = [otelcol.processor.transform.redact.input]
   }
 }
 
@@ -544,8 +611,12 @@ otelcol.exporter.otlphttp "loki" {
     queue_size = 268435456 // 256 MiB
   }
 
+  // A day, not forever (board scope:055-fix:retry): a refusal that can never succeed frees its
+  // queue consumer instead of holding it and its batch for good. In an outage longer than a
+  // day the batches being retried at that moment (at most one per consumer) are dropped; the
+  // rest of the queue waits on disk and lands when Loki is back.
   retry_on_failure {
-    max_elapsed_time = "0s" // retry until Loki is back
+    max_elapsed_time = "24h"
   }
 }
 

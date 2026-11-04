@@ -145,7 +145,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:cost_usd:rate5m{service_namespace=\"wcl-agent\", agent_name!=\"\"}[$__range])) * 60 / sum (sum_over_time(cc:cost_usd:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "sum (sum_over_time(cc:cost_usd:rate5m{service_namespace=\"wcl-agent\", agent_name!=\"\"}[$__range])) / sum (sum_over_time(cc:cost_usd:rate5m{service_namespace=\"wcl-agent\"}[$__range]))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -237,7 +237,7 @@
       "id": 4,
       "type": "stat",
       "title": "Cache hit ratio",
-      "description": "Cache-read tokens / all tokens over the range.",
+      "description": "Cache-read tokens / input-side tokens (input + cache read + cache write) over the range.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -254,7 +254,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\", type=\"cacheRead\"}[$__range])) * 60 / sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\", type=\"cacheRead\"}[$__range])) / sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\", type!=\"output\"}[$__range]))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -636,7 +636,7 @@
           },
           "refId": "A",
           "queryType": "range",
-          "expr": "{service_namespace=\"wcl-agent\", service_name=\"team-board\"} | kind=~\"handoff|blocker|question|merge\""
+          "expr": "{service_namespace=\"wcl-agent\", service_name=\"team-board\", content!=\"true\"} | kind=~\"handoff|blocker|question|merge\""
         }
       ],
       "options": {
@@ -670,7 +670,7 @@
           },
           "refId": "A",
           "queryType": "range",
-          "expr": "{service_namespace=\"wcl-agent\", service_name=\"claude-code\"} | event_name=\"subagent_completed\""
+          "expr": "{service_namespace=\"wcl-agent\", service_name=\"claude-code\", content!=\"true\"} | event_name=\"subagent_completed\""
         }
       ],
       "options": {

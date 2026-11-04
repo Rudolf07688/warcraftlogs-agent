@@ -15,11 +15,12 @@ groups:
       # Tokens/s by model, type (input, output, cacheRead, cacheCreation) and agent.
       - record: cc:tokens:rate5m
         expr: sum by (service_namespace, model, type, agent_name) (rate(claude_code_token_usage{service_name="claude-code"}[5m]))
-      # Share of all tokens served from the prompt cache.
+      # Share of the input side served from the prompt cache (spec §5.5):
+      # cacheRead / (input + cacheRead + cacheCreation); output tokens are not input.
       - record: cc:cache_hit_ratio
         expr: |
           sum by (service_namespace) (cc:tokens:rate5m{type="cacheRead"})
-            / sum by (service_namespace) (cc:tokens:rate5m)
+            / sum by (service_namespace) (cc:tokens:rate5m{type!="output"})
       - record: cc:sessions:rate5m
         expr: sum by (service_namespace) (rate(claude_code_session_count{service_name="claude-code"}[5m]))
       - record: cc:active_time_seconds:rate5m

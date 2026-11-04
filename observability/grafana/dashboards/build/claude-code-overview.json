@@ -1,7 +1,7 @@
 {
   "uid": "wcl-cc-overview",
   "title": "Claude Code: Overview",
-  "description": "D1: cost, tokens, cache efficiency and output of the agent team (build layer), from bin/claude-otel sessions. Every panel queries the cc:* recording rules (observability/mimir/rules/anonymous/build.yaml). Cost is Claude Code's estimate at list price.",
+  "description": "D1: cost, tokens, cache efficiency and output of the agent team (build layer), from bin/claude-otel sessions. Every panel queries the cc:* recording rules (observability/mimir/rules/anonymous/build.yaml), except the event counts, which take increase() of the raw counter. Cost is Claude Code's estimate at list price.",
   "tags": [
     "wcl-agent",
     "build"
@@ -207,7 +207,7 @@
       "id": 4,
       "type": "stat",
       "title": "Cache hit ratio",
-      "description": "Cache-read tokens / all tokens over the range: how much of the context came from the prompt cache.",
+      "description": "Cache-read tokens / input-side tokens (input + cache read + cache write) over the range: how much of the context came from the prompt cache.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -224,7 +224,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\", type=\"cacheRead\"}[$__range])) * 60 / sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\", type=\"cacheRead\"}[$__range])) / sum (sum_over_time(cc:tokens:rate5m{service_namespace=\"wcl-agent\", type!=\"output\"}[$__range]))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -261,8 +261,8 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Sessions",
-      "description": "Claude Code sessions started.",
+      "title": "Sessions started",
+      "description": "Claude Code sessions started in the range (a session begun earlier is not counted).",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -279,7 +279,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:sessions:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "round(sum(increase(claude_code_session_count{service_name=\"claude-code\", service_namespace=\"wcl-agent\"}[$__range])))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -333,7 +333,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:active_time_seconds:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "sum(increase(claude_code_active_time_total{service_name=\"claude-code\", service_namespace=\"wcl-agent\"}[$__range]))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -387,7 +387,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:lines_of_code:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "round(sum(increase(claude_code_lines_of_code_count{service_name=\"claude-code\", service_namespace=\"wcl-agent\"}[$__range])))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -441,7 +441,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:commits:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "round(sum(increase(claude_code_commit_count{service_name=\"claude-code\", service_namespace=\"wcl-agent\"}[$__range])))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -495,7 +495,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:pull_requests:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "round(sum(increase(claude_code_pull_request_count{service_name=\"claude-code\", service_namespace=\"wcl-agent\"}[$__range])))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -549,7 +549,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum (sum_over_time(cc:edit_decisions:rate5m{service_namespace=\"wcl-agent\", decision=\"accept\"}[$__range])) * 60 / sum (sum_over_time(cc:edit_decisions:rate5m{service_namespace=\"wcl-agent\"}[$__range])) * 60",
+          "expr": "sum (sum_over_time(cc:edit_decisions:rate5m{service_namespace=\"wcl-agent\", decision=\"accept\"}[$__range])) / sum (sum_over_time(cc:edit_decisions:rate5m{service_namespace=\"wcl-agent\"}[$__range]))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -995,7 +995,7 @@
       "id": 16,
       "type": "timeseries",
       "title": "Cache hit ratio over time",
-      "description": "Cache-read share of all tokens, 5-minute window.",
+      "description": "Cache-read share of input-side tokens (output left out), 5-minute window.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"

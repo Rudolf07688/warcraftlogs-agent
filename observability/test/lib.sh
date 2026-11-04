@@ -29,7 +29,10 @@ FAILURES=0
 export POSTGRES_USER="${POSTGRES_USER:-}" POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}" \
   POSTGRES_DB="${POSTGRES_DB:-}" APP_DB_USER="${APP_DB_USER:-}" APP_DB_PASSWORD="${APP_DB_PASSWORD:-}"
 
-dc() { (cd "$REPO_ROOT" && docker compose --progress quiet -p "$COMPOSE_PROJECT" --profile observability "$@"); }
+# COMPOSE_OVERRIDE: an extra compose file layered on top (queue-drain.sh mounts a Loki config
+# with it); unset for every other script.
+dc() { (cd "$REPO_ROOT" && docker compose --progress quiet -p "$COMPOSE_PROJECT" \
+  ${COMPOSE_OVERRIDE:+-f docker-compose.yml -f "$COMPOSE_OVERRIDE"} --profile observability "$@"); }
 
 # backend_get URL: GET from inside the compose network (Grafana's image has wget).
 backend_get() { dc exec -T grafana wget -qO- "$1"; }
