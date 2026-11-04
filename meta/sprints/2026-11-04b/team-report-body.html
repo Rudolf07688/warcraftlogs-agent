@@ -1,0 +1,109 @@
+<header>
+  <div class="eyebrow">Team report · agent team · local report</div>
+  <h1>Sprint 2026-11-04b: Telemetry 2</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-04b</b></span><span>Base <b class="mono">3262948</b></span><span>Tip <b class="mono">17f081c</b></span><span>Steer 16:59Z → PO report 19:41Z (2 h 42 min)</span></div>
+  <p>The first sprint the team ran while its own telemetry was recording it. Maren planned it with me in the room, and her view won every row. 24 of 24 points over three tier-M streams, nothing dropped. The owner added two dashboard panels mid-sprint. Cost per point rose to 1.30 (from 1.17), mostly in coordination and in two fix rounds that read a lot of screenshots. The live pass on real data found what the synthetic stack proofs missed.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">24<small> / 24 pts</small></span><span class="s">9 stories, all Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Cost per point</span><span class="v">1.30<small> M</small></span><span class="s">31.2 M weighted, 1168 calls (was 1.17)</span></div>
+  <div class="kpi"><span class="eyebrow">Coordination</span><span class="v">31%</span><span class="s">build 59%, QA 10% (was 29 / 53 / 18)</span></div>
+  <div class="kpi"><span class="eyebrow">Wall clock</span><span class="v">2 h 42<small> min</small></span><span class="s">6.8 min/pt (11-04: 7.6)</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-cost" aria-controls="p-cost" aria-selected="true">Cost</button>
+  <button class="tab" role="tab" id="tab-time" aria-controls="p-time" aria-selected="false" tabindex="-1">Timeline</button>
+  <button class="tab" role="tab" id="tab-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Worked / change <span class="count">8</span></button>
+  <button class="tab" role="tab" id="tab-team" aria-controls="p-team" aria-selected="false" tabindex="-1">Team and memory</button>
+  <button class="tab" role="tab" id="tab-base" aria-controls="p-base" aria-selected="false" tabindex="-1">Earlier sprints</button>
+</div></nav>
+
+<div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
+  <h2 class="panel-title">Where the cost went</h2>
+  <p class="muted small">Weighted units: cache read 0.1×, cache write 1.25×, output 5× (as in <code>meta/team-optimisation.md</code>). From <code>usage.py</code> on this session; archived in <code>meta/sprints/2026-11-04b/usage.txt</code> and <code>usage-context.txt</code>. The seat costs are on the "Agent Team: Improvement" and "Claude Code: Agent Team" dashboards (pushed with the sprint branch's <code>teamstats.py</code>).</p>
+  <div class="bars">
+    <div class="bar"><span>Maren, product owner</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="n">6.16</span></div>
+    <div class="bar"><span>Ansel, build stream (4 stories)</span><span class="track"><span class="fill" style="width:76%"></span></span><span class="n">4.67</span></div>
+    <div class="bar"><span>Ansel, QA fix round (fresh)</span><span class="track"><span class="fill" style="width:60%"></span></span><span class="n">3.68</span></div>
+    <div class="bar"><span>team-lead (planning, live pass, wrap-up)</span><span class="track"><span class="fill" style="width:54%"></span></span><span class="n">3.31</span></div>
+    <div class="bar"><span>Tomas, browser stream + security rework</span><span class="track"><span class="fill" style="width:45%"></span></span><span class="n">2.76</span></div>
+    <div class="bar"><span>Tomas, architecture docs (two passes)</span><span class="track"><span class="fill" style="width:45%"></span></span><span class="n">2.76</span></div>
+    <div class="bar"><span>Nils, runtime stream (3 stories)</span><span class="track"><span class="fill" style="width:41%"></span></span><span class="n">2.50</span></div>
+    <div class="bar"><span>Nils, QA fix round (fresh)</span><span class="track"><span class="fill" style="width:32%"></span></span><span class="n">1.95</span></div>
+    <div class="bar"><span>QA sweep: spec, bugs, perf, security</span><span class="track"><span class="fill" style="width:42%"></span></span><span class="n">2.61</span></div>
+    <div class="bar"><span>qa-security review of the browser stream</span><span class="track"><span class="fill" style="width:9%"></span></span><span class="n">0.57</span></div>
+    <div class="bar"><span>Shortcut board sync</span><span class="track"><span class="fill" style="width:4%"></span></span><span class="n">0.24</span></div>
+  </div>
+  <div class="callout warn"><b>Fix rounds were Read-heavy.</b> <code>usage.py --context</code>: Nils's fix round took 3.2 M new context, 94% from Read; Ansel's 0.8 M, 74% from Read. Both were proving dashboard fixes with screenshots. Images are expensive context; a screenshot per changed panel, not per dashboard, would do.</div>
+</div>
+
+<div role="tabpanel" id="p-time" aria-labelledby="tab-time" tabindex="0" hidden>
+  <h2 class="panel-title">Timeline (UTC)</h2>
+  <div class="timeline">
+    <div class="tl ok"><b>16:59</b> Steer on the board; Maren briefed read-only to challenge my plan</div>
+    <div class="tl ok"><b>~17:05</b> Her view won every row: 415 to 3 pts over the WebSocket, pricing in stream A, D2 its own file, ruler first, contracts before launch</div>
+    <div class="tl ok"><b>17:26 / 17:31</b> Tomas (browser) and Nils (runtime) hand off</div>
+    <div class="tl warn"><b>17:36</b> Security review of the browser stream: 1 High, 2 Medium; one rework round</div>
+    <div class="tl ok"><b>17:57</b> Owner asks for two overview panels; routed into 408 the same minute</div>
+    <div class="tl ok"><b>18:15</b> All three streams merged, 24/24</div>
+    <div class="tl warn"><b>18:18 / 18:25</b> Live pass: board never reaches Loki (old board files jam the retry queue), ratio stats in the 100 000s, fractional counts, wrong Gemini prices, one false "D7 empty" (mine)</div>
+    <div class="tl ok"><b>18:26</b> Fresh QA fix rounds for Ansel and Nils, docs pass for Tomas</div>
+    <div class="tl ok"><b>19:34</b> Last fix merged; <b>19:37</b> my re-check passes</div>
+    <div class="tl ok"><b>19:41</b> Maren's report: archdocs 15 pages, 0 problems; 7 tickets to Backlog</div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-learn" aria-labelledby="tab-learn" tabindex="0" hidden>
+  <h2 class="panel-title">What worked</h2>
+  <div class="grid2">
+    <div class="card"><b>Planning with the PO in the room.</b> Maren read the code and caught the WebSocket gap in 415, the missing ruler, the unworkable cost rule and the seat-cost join PromQL can't do, before anyone built on them.</div>
+    <div class="card"><b>Contracts and owner keys before launch.</b> Three streams touched Alloy, compose and Mimir rules, with no merge conflict and no blocked developer.</div>
+    <div class="card"><b>A mid-sprint owner request cost nothing extra.</b> The two panels went to the developer already in that file, no ticket, merged with his story.</div>
+    <div class="card"><b>The telemetry earned its keep at once.</b> The new knowledge-base dashboard showed every search as keyword-only at a 3.03 s p95, which is the embedding timeout (an old bug, sc-428).</div>
+  </div>
+  <h2 class="panel-title">What to change</h2>
+  <div class="grid2">
+    <div class="card"><b>Proofs on real-shaped data.</b> Every stack script passed on fresh synthetic data; the real board directory (Oct 31 files) and real ratios broke at once. Seed old or odd data and assert values, not presence (Maren recorded this too).</div>
+    <div class="card"><b>Render checks taller than the page.</b> My 2200 px screenshot left Grafana's off-screen panels blank and I reported a false failure. Nils diagnosed it in minutes.</div>
+    <div class="card"><b>Search before filing.</b> My embedding-timeout ticket duplicated one from last sprint; Maren merged it.</div>
+    <div class="card"><b>Cheaper proof screenshots.</b> One image per changed panel, not a full dashboard per fix (see the Cost tab).</div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-team" aria-labelledby="tab-team" tabindex="0" hidden>
+  <h2 class="panel-title">Seats</h2>
+  <table class="tbl">
+    <thead><tr><th>Seat</th><th>Work</th><th>Weighted M</th></tr></thead>
+    <tbody>
+      <tr><td>Maren (po)</td><td>planning view, contracts, 3 briefs, security triage, QA triage, 4 merges, reports</td><td>6.16</td></tr>
+      <tr><td>Ansel (dev-1)</td><td>055 build stream (407, 409, 408, 410 + owner panels); QA fix round</td><td>8.35</td></tr>
+      <tr><td>Tomas (dev-2)</td><td>057 browser stream (414, 415) + security rework; two docs passes</td><td>5.52</td></tr>
+      <tr><td>Nils (dev-3)</td><td>056 runtime stream (411, 412, 413); QA fix round; diagnosed my false D7 finding</td><td>4.45</td></tr>
+      <tr><td>team-lead</td><td>Done moves, setup, planning relay, live pass + re-check, wrap-up</td><td>3.31</td></tr>
+    </tbody>
+  </table>
+  <h2 class="panel-title">Memory</h2>
+  <p>Ansel, Nils and Maren rewrote their memories (49 lines added, 50 removed); Tomas left his unchanged. <code>member.py lint --all</code>: 0 repeats for the active seats; Ilse (not used this sprint) still has 4 lines that tools now cover. I rewrote my own memory (717 of 1000 words), fixing a duplicated header and adding the render-check, real-data and search-first lessons. No skill notices this sprint, so no skill changes.</p>
+</div>
+
+<div role="tabpanel" id="p-base" aria-labelledby="tab-base" tabindex="0" hidden>
+  <h2 class="panel-title">Earlier sprints</h2>
+  <table class="tbl">
+    <thead><tr><th>Sprint</th><th>Pts</th><th>Calls</th><th>Per point</th><th>Coord</th><th>Build</th><th>QA</th></tr></thead>
+    <tbody>
+      <tr><td>2026-10-25</td><td>23</td><td>1975</td><td>2.65</td><td>55%</td><td>35%</td><td>8%</td></tr>
+      <tr><td>2026-10-26</td><td>20</td><td>1482</td><td>2.18</td><td>42%</td><td>49%</td><td>8%</td></tr>
+      <tr><td>2026-10-31</td><td>21</td><td>990</td><td>1.39</td><td>41%</td><td>58%</td><td>0%</td></tr>
+      <tr><td>2026-10-31b</td><td>21</td><td>757</td><td>0.83</td><td>29%</td><td>52%</td><td>18%</td></tr>
+      <tr><td>2026-10-31c</td><td>19</td><td>628</td><td>0.92</td><td>38%</td><td>48%</td><td>12%</td></tr>
+      <tr><td>2026-11-01</td><td>33</td><td>1256</td><td>1.18</td><td>26%</td><td>58%</td><td>16%</td></tr>
+      <tr><td>2026-11-01b</td><td>20</td><td>833</td><td>1.03</td><td>26%</td><td>56%</td><td>18%</td></tr>
+      <tr><td>2026-11-02</td><td>20</td><td>922</td><td>1.27</td><td>16%</td><td>68%</td><td>16%</td></tr>
+      <tr><td>2026-11-04</td><td>23</td><td>958</td><td>1.17</td><td>29%</td><td>53%</td><td>18%</td></tr>
+      <tr><td><b>2026-11-04b</b></td><td><b>24</b></td><td><b>1168</b></td><td><b>1.30</b></td><td><b>31%</b></td><td><b>59%</b></td><td><b>10%</b></td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">QA counts the sweeps and the security review; fix rounds count as build, as in earlier rows.</p>
+</div>

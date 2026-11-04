@@ -55,6 +55,7 @@ as an autonomous unit that needs only a small owner input to steer it.
 | 2026-11-01b | 20 | 833 | 7 (no SM) | 20.5 | **1.03** | **26%** | 56% | 18% | Tier M: PO + 2 devs; first P9 trial; PO in planning (0.35 M); P7 5% + split fix round; 1 h 36 min steer to wrap |
 | 2026-11-02 | 20 | 922 | 20 (no SM) | 25.3 | **1.27** | **16%** | 68% | 16% | Tier M: PO + 3 devs, fully autonomous (no owner turn after the steer); P10/P11 first trial; devs resumed for P7 rework *and* QA fix (210–260k context/call) → build 0.86/pt; 1 h 33 min steer to PO report |
 | 2026-11-04 | 23 | 958 | 15 (no SM) | 26.9 | **1.17** | **29%** | 53% | 18% | Tier M: PO + 2 devs + Tomas on docs; first infra sprint (telemetry 1), planned with PO the same morning; security review at hand-off + QA fix round in fresh agents (0.81 vs 7.65 build for Nils); a PO-unwatched question cost 55 min; 2 h 54 min steer to PO report |
+| 2026-11-04b | 24 | 1168 | 8 (no SM) | 31.2 | **1.30** | **31%** | 59% | 10% | Tier M: PO + 3 devs (Tomas on browser, then docs), planned with PO in the room (her view won every row); first sprint observed by its own telemetry (claude-otel); owner added 2 panels mid-sprint; security review at hand-off; live pass found 5 issues the synthetic stack proofs missed (one was my screenshot artifact); QA fix rounds fresh (Ansel 3.68, Nils 1.95, both Read-heavy on screenshots); 2 h 42 min steer to PO report |
 
 **Caveats.**
 - The main-session transcripts include some non-sprint work. On 10-25 that was writing the

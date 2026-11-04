@@ -1,0 +1,30 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            127    64046    26168347     297522      3
+056 runtime metrics (Nils)                  107    74683    18327748     231583      0
+057 browser telemetry (Tomas)                93    96079    16748623     485739      0
+product-owner                               158   125572    31213958    1932288      3
+Telemetry 2 docs close-out (Tomas)          102    69026    17836486     506116      1
+qa-security review of 057                    26    50424     1756301     117331      0
+Shortcut board sync at wrap-up               12     6325      898429      93796      0
+QA security sweep                            25    26108     1448548      97450      0
+QA performance sweep                         35    49197     2552878     124630      0
+QA spec conformance sweep                    48    39306     4798211     171342      0
+055 build telemetry (Ansel)                 146   117423    36552210     339479      1
+055 QA fix round (Ansel)                    147    86451    26676677     460373      0
+056 QA fix round (Nils)                      96    55063    14249404     199944      0
+QA bug hunt sweep                            46    35641     3298268     121285      0
+TOTAL {'calls': 1168, 'out': 895344, 'cr': 202526088, 'cc': 5178878, 'inp': 2550, 'sends': 8}
+main (team-lead) [('Bash', 73), ('mcp__shortcut__update_story', 34), ('Read', 12), ('mcp__shortcut__search_stories', 6), ('Monitor', 6), ('ToolSearch', 5)]
+056 runtime metrics (Nils) [('Bash', 97), ('mcp__shortcut__update_story', 6), ('Skill', 4), ('Write', 2), ('ToolSearch', 1), ('mcp__shortcut__list_workflow_states', 1)]
+057 browser telemetry (Tomas) [('Bash', 92), ('mcp__shortcut__update_story', 4), ('SubagentHandback', 2), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('Skill', 1)]
+product-owner [('Bash', 97), ('mcp__shortcut__create_story_comment', 21), ('Agent', 12), ('Write', 11), ('mcp__shortcut__update_story', 10), ('mcp__shortcut__create_story', 7)]
+Telemetry 2 docs close-out (Tomas) [('Bash', 93), ('Read', 5), ('Monitor', 2), ('SubagentHandback', 2), ('bash', 1), ('SendMessage', 1)]
+qa-security review of 057 [('Bash', 26), ('Write', 1), ('SubagentHandback', 1)]
+Shortcut board sync at wrap-up [('Bash', 7), ('mcp__shortcut__search_stories', 4), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1), ('mcp__shortcut__search_epics', 1)]
+QA security sweep [('Bash', 24), ('Write', 1), ('SubagentHandback', 1)]
+QA performance sweep [('Bash', 34), ('Write', 1), ('SubagentHandback', 1)]
+QA spec conformance sweep [('Bash', 46), ('Read', 1), ('Write', 1), ('SubagentHandback', 1)]
+055 build telemetry (Ansel) [('Bash', 132), ('mcp__shortcut__update_story', 8), ('Skill', 4), ('Write', 4), ('ToolSearch', 3), ('mcp__shortcut__get_story', 2)]
+055 QA fix round (Ansel) [('Bash', 134), ('TaskStop', 9), ('ToolSearch', 2), ('Monitor', 2), ('Read', 2), ('WebFetch', 1)]
+056 QA fix round (Nils) [('Bash', 85), ('Read', 10), ('TaskStop', 1), ('ToolSearch', 1), ('SubagentHandback', 1)]
+QA bug hunt sweep [('Bash', 47), ('SubagentHandback', 1)]

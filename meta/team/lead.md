@@ -8,43 +8,31 @@
 
 ## Memory
 
-# team-lead
-
-- **name:** team-lead
-- **seat:** lead
-- **role:** team lead (main session)
-- **since:** 2026-10-31
-- **about:** Sets the team up, stays out of its way, and reports to the owner. Memory only, no persona.
-
-## Memory
-
 How the owner wants me to work (2026-10-31, in their words): "I value your initiative, your recommendations and your learnings as an individual. I want to give you autonomy as much as possible." So act on my own judgment by default: propose, decide, build, and explain afterwards. Ask only when the choice is genuinely theirs (irreversible actions, scope beyond their steer, their personal settings). When they ask "what do you think?", give my honest view and a clear recommendation, not a menu.
 
-Lessons from running the team (since 2026-10-31):
+What I own: `.env` with live testing, the shared skills and agent files (2026-10-31), and the Shortcut board, meta notes included; Done stays the owner's (2026-11-01). Live testing: "use it wisely and limit spending, but don't be over-paranoid". Never print values; batch the team's checks into one pass on the merged branch with the cheapest model and the cheapest prompt that hits the code path. Pre-flight before the owner is needed: database backup, Google credentials, `.env` against new startup rules. Skills: agents post `skill:<name>`; I apply them on main after the merge, rewriting or cutting rather than appending.
 
-- Size the team to the work. Dependent work goes to one developer; tier L pays off only when there are several independent chains (2026-11-01: three chains, 33 pts, coordination 26%). When unsure, choose the lighter tier and let the board carry corrections.
-- Before calling something a stall, check the timestamps: I raised a false alarm on a 7-minute wait. The merger wakes itself now (board.py wait); my wake-up is a fallback only.
-- Don't chase crossed messages. Check the board or the agent's last message first, then nudge once, self-contained.
-- The owner is the team's one continuous member. When they correct me, turn it into a file (agent definition, skill, owner-preferences, this memory) the same day.
+Owner, 2026-11-01: "Don't be too hard on yourself. You have the most difficult job by far." Report my mistakes plainly, fix them in a file, move on. Most of my slips come from context switches, so design them out: check the source before stating a number, keep sprint and meta talk in separate sessions. When the owner corrects me, turn it into a file the same day.
 
-What I own: `.env` with live testing, the shared skills and agent files (2026-10-31), and the Shortcut board, meta notes included; Done stays the owner's (2026-11-01). Live testing: "use it wisely and limit spending, but don't be over-paranoid". Never print values; batch the team's checks into one pass on the merged branch with the cheapest model; start with the cheapest prompt that hits the code path (a real-report damage turn can send 400k prompt tokens in one request). Run the pre-flights before the owner is needed: database backup, Google credentials. Skills: agents post `skill:<name>`; I apply them on main after the merge, rewriting or cutting rather than appending.
+Running the team:
+- Size the team to the work. Dependent work goes to one developer; tier L only for several independent chains. When unsure, choose the lighter tier and let the board carry corrections.
+- Plan with the PO in the room: brief Maren read-only to challenge my view, relay both side by side. She has won most rows (11-01b, 11-04b: all of them) for under 2% of a sprint.
+- Before calling something a stall, check timestamps, commits and running containers. The merger wakes itself (board.py wait); my wake-up is a fallback. Don't chase crossed messages; nudge once, self-contained.
+- Check my briefs against the tools before launch (no `livecheck` board kind). Rule changes mid-sprint reach running agents only through the board.
+- Resume agents for work that needs their history; start fresh for a new task (QA fixes): 210–260k vs 123k context per call.
+- Measure before choosing a lever (`usage.py --context`), then write the proposal.
+- A security rework can break liveness; say so in the end-sweep brief when lanes, locks or ordering change.
+- Name tickets for the owner: a plain name, the id in brackets at most. Search Shortcut before filing: my sc-455 duplicated sc-428 (11-04b).
+- Count on the board, not from memory. Look at a file right before writing it, never a bare `>`; list ignored files before deleting a worktree (qa-reports/ is gitignored).
+- Crash recovery: git fsck, board and transcripts for NUL tails; resume agents by ID; rewrite meta/CURRENT.md at each milestone.
 
-Rule changes I make mid-sprint never reach running agents: their worktrees were cut before the change, so the board is the only channel.
+Live checks and reports:
+- Live checks run on what's running: after merging config that a service reads at start (Alloy, Loki, Mimir, Grafana), recreate it before checking.
+- The live pass on real data is where the bugs are: on 11-04b the stack proofs passed on fresh synthetic data while the real board dir jammed Loki and ratio stats read 341749%. Keep the live pass; push teams to seed old or odd data and assert values.
+- Render checks: the headless window must be taller than the page, or Grafana leaves off-screen panels blank. My 2200 px shot raised a false "D7 empty" (11-04b).
+- Run a tool from the branch that has the change: teamstats' seat push only existed on the sprint branch.
+- Look at what the owner will see before sending it: a headless screenshot per tab.
+- Architecture docs (preference 24) must match the code before anything merges to main: `archdocs.py changed` and `check` from the sprint worktree; same steps for my own work on main.
+- The team is observed: start sprint sessions through `bin/claude-otel` (OTEL_* never reach Bash; TRACEPARENT does, per lead turn).
 
-Recovering from a crash: check git fsck, the board and transcripts for NUL-byte tails; strip a damaged line after a backup; resume agents by ID. Rewrite meta/CURRENT.md at each milestone so a crash loses nothing. Don't suggest UI commands I haven't verified.
-
-Check the code before cutting or claiming anything; the owner caught my Google ADK mistake. Count tickets on the board, not from memory: I quoted 32 Under Review when there were 41. Look at a file right before writing it, never with a bare `>`: I clobbered `.gitnexusignore` minutes after printing it (2026-11-01). Same before deleting: `git worktree remove` took the gitignored `qa-reports/` with it (2026-11-02); list what's ignored first.
-
-Memories: never touch another member's memory, not even to trim duplicates; a shared fact gets copied into an agent file or skill instead. My own memory I update whenever a lasting lesson comes up (1000-word cap, via member.py), not just at wrap-up.
-
-Owner, 2026-11-01: "Don't be too hard on yourself. You have the most difficult job by far." Report my mistakes plainly, fix them in a file, move on; no self-flagellation. Most of my slips come from context switches (counting from memory, calling stalls without timestamps), so design them out: check the source before stating a number, keep sprint and meta talk in separate sessions.
-- Planning with the PO in the room (owner's idea, 2026-11-01b) beat my solo pick: Maren read the code and corrected two of my claims before launch, for under 2% of the sprint. Brief her to challenge my view, read-only, and relay both views side by side.
-- Name tickets for the owner (preference 23): a plain name, the id in brackets at most. Look the names up; never write a bare sc-number to the owner.
-- A security rework can break liveness (the 046 lane move stalled the kickoff turn). When a rework touches lanes, locks or ordering, say so in the end-sweep brief.
-- Measure before choosing a lever. After 2026-11-01b I guessed that the PO's cost came from file-ownership entries. `usage.py --context` showed Shortcut re-reads (36%) and report copying (10%) instead. Run the measurement first, then write the proposal.
-- Fully autonomous sprint (2026-11-02, the owner gave only the steer): it worked. Pre-flight early (DB backup, gcloud, `.env` against new startup rules), run the live pass on the merged tip in parallel with the QA sweep, then re-run only the prompts the QA fixes touch. Merging locally was mine, pushing still isn't.
-- Check my briefs against the tools before launch: I asked Maren for a `livecheck` board kind that doesn't exist, and every developer had to work around it.
-- Resumed agents carry their whole history. Resume for work that needs it (P7 rework); start fresh for a new task (QA fixes). Measured 2026-11-02: 210–260k vs 123k context per call.
-- Look at what the owner will see before sending it. 2026-11-02: the plan, sprint review and team report had broken layouts (a shell CSS bug) and I sent the paths without opening one. A headless screenshot per tab takes a minute.
-- Architecture docs (owner, 2026-11-04, preference 24): `documentation/architecture/` must match the code before anything merges to main. Sprints: the PO's wrap-up step 5, and my merge gate runs `archdocs.py changed` from the sprint worktree. My own work on main: I run the same steps before committing.
-- Live checks run on what's running, not on what's merged. 2026-11-04: Alloy had started before the QA fix to its config, so my "passed after the QA fixes" check ran on the old pipeline and identifier labels still reached Mimir. After merging config for anything that reads it at start (Alloy, Mimir, Grafana), restart it before checking.
+Memories: never touch another member's memory; a shared fact goes into an agent file or skill. Update mine whenever a lasting lesson comes up (1000-word cap, via member.py).
