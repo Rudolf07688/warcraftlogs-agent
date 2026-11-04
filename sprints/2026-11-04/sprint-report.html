@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-04 Review</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+/* Text containers are block flow, not grid: a grid makes every inline child (<b>, <code>, a bare word run) its own row. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flow-root}
+.card>*+*{margin-top:8px}
+.card>:first-child{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:flow-root;margin:10px 0}
+.callout>*{margin:0}
+.callout>*+*{margin-top:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;display:flex}
+.bar .fill{display:block;flex:none;height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:flow-root;background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;margin:0}
+.checks li.ok{border-left-color:var(--ok)}
+.checks li.no{border-left-color:var(--warn)}
+.checks span.no{float:left;margin-right:10px;min-width:24px;padding:0 4px;font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted);margin-left:6px;white-space:nowrap}
+.checks ul{margin:6px 0 0;padding-left:20px}
+[role=tabpanel]>*+*{margin-top:16px}
+[role=tabpanel]>h3{margin-bottom:0}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint review · WCL Agent App · local report</div>
+  <h1>Telemetry 1: stack, build layer and backend traces</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-04</b></span> <span>Tip <b class="mono">f7d6590</b></span> <span>Base <b class="mono">38606fd</b></span> <span>Iteration "Sprint 2026-11-04"</span></div>
+  <p>The agent team and a chat request can now both be followed end to end in Grafana. Telemetry survives backend restarts, secrets are masked in both layers, and prompt and tool content is captured in dev only. All 9 stories are merged and Under Review. The live checks passed on the merged tip.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">23<small> / 23 pts</small></span><span class="s">9 stories, all Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Tests</span><span class="v">2052</span><span class="s">passed, 71 skipped (+89 new)</span></div>
+  <div class="kpi"><span class="eyebrow">QA</span><span class="v">13</span><span class="s">findings fixed, 8 tickets deferred</span></div>
+  <div class="kpi"><span class="eyebrow">Live checks</span><span class="v">PASS</span><span class="s">run by team-lead on the tip</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-a" aria-controls="p-a" aria-selected="true">Stack and build layer <span class="count">11</span></button>
+  <button class="tab" role="tab" id="tab-b" aria-controls="p-b" aria-selected="false" tabindex="-1">Backend <span class="count">12</span></button>
+  <button class="tab" role="tab" id="tab-q" aria-controls="p-q" aria-selected="false" tabindex="-1">QA <span class="count">8</span></button>
+  <button class="tab" role="tab" id="tab-d" aria-controls="p-d" aria-selected="false" tabindex="-1">Decisions and risks</button>
+  <button class="tab" role="tab" id="tab-l" aria-controls="p-l" aria-selected="false" tabindex="-1">For you</button>
+</div></nav>
+
+<div role="tabpanel" id="p-a" aria-labelledby="tab-a" tabindex="0">
+  <h2 class="panel-title">Feature 053 · stack and build layer · Ansel</h2>
+  <ul class="checks">
+    <li class="ok"><span class="pts p3">5</span> Observability stack with persistence and a durable export queue <span class="ref">sc-398</span>. Plain <code>docker compose up</code> adds only Alloy. The <code>observability</code> profile adds Loki, Tempo, Mimir and Grafana on named volumes. Data sent while the backends are down arrives after they restart, even across an Alloy restart (persistence script).</li>
+    <li class="ok"><span class="pts p2">2</span> Grafana datasource correlations <span class="ref">sc-399</span>. Provisioned as code. Trace ids match between logs and traces; the UI clicks themselves were checked by config only.</li>
+    <li class="ok"><span class="pts p2">2</span> claude-otel wrapper <span class="ref">sc-400</span>. Live: a session with two subagents shows cost per agent in Mimir and both subagents nested in Tempo. With Alloy down it warns once and still starts.</li>
+    <li class="ok"><span class="pts p2">2</span> Alloy redaction for both layers <span class="ref">sc-401</span>. Tokens, keys, JWTs, PEM blocks, URL credentials and <code>NAME=value</code> secrets are masked. 24 mutations prove each rule matters.</li>
+  </ul>
+  <p class="muted small">Merges: 4412117 (feature), 9501550 (QA fix round).</p>
+</div>
+
+<div role="tabpanel" id="p-b" aria-labelledby="tab-b" tabindex="0" hidden>
+  <h2 class="panel-title">Feature 054 · backend · Nils · security-core</h2>
+  <ul class="checks">
+    <li class="ok"><span class="pts p3">3</span> Backend telemetry bootstrap, off unless configured <span class="ref">sc-402</span>. With no endpoint set, nothing is installed and the suite is unchanged.</li>
+    <li class="ok"><span class="pts p3">3</span> One chat turn is one trace <span class="ref">sc-403</span>. Live: 111 spans, from the chat turn through the agent, model calls, tools and WCL requests to SQL and Redis. Chat runs over a websocket, so each turn now starts its own trace.</li>
+    <li class="ok"><span class="pts p2">2</span> GenAI spans for one-shot model calls <span class="ref">sc-404</span>. Live: the title call shows model, tokens and finish reason. Gemini was shown through the embeddings call, since the provider was Anthropic during the check.</li>
+    <li class="ok"><span class="pts p2">2</span> Backend logs with trace ids, through the redaction filter <span class="ref">sc-405</span>. Live: the "turn stats" log line opens its trace.</li>
+    <li class="ok"><span class="pts p2">2</span> Content-capture policy per environment <span class="ref">sc-406</span>. Live: content in dev; with <code>ci</code> no content at all. The default when unset is off.</li>
+  </ul>
+  <p class="muted small">Merges: c212475 (feature plus the security rework), 1dce358 (QA fix round).</p>
+</div>
+
+<div role="tabpanel" id="p-q" aria-labelledby="tab-q" tabindex="0" hidden>
+  <h2 class="panel-title">QA: review, sweep, fixes and deferred tickets</h2>
+  <div class="grid2">
+    <div class="card"><p><b>Security review of the backend at hand-off</b>: 0 High, 3 Medium, 8 Low. Fixed in the one rework round: error text could carry chat content outside dev; secret masking could be stalled by one large request; the Host header could become an unbounded metric label. Also fixed: the wrapper's settings switched telemetry on in tests.</p></div>
+    <div class="card"><p><b>End sweep</b> (spec, bugs, performance, security): 0 Critical, 2 High, 10 Medium, 15 Low. Fixed: build-layer secrets from an agent reading <code>.env</code>; content records growing with the conversation until Loki rejected them; fail-open content routing; Grafana anonymous admin; a test script that edited the live config; slow shutdown; a missing version; the wrapper's wrong port.</p></div>
+  </div>
+  <table class="tbl">
+    <tr><th>Deferred ticket</th><th>Pts</th></tr>
+    <tr><td>Telemetry redaction gaps: nested values, extra secret shapes, exception text in log messages, over-masking of "session" <span class="ref">sc-429</span></td><td class="num">3</td></tr>
+    <tr><td>Unauthenticated receivers and telemetry backends on the shared compose network <span class="ref">sc-430</span></td><td class="num">2</td></tr>
+    <tr><td>Span privacy: raw path, query, IP and User-Agent; shared WCL tasks in one trace <span class="ref">sc-431</span></td><td class="num">2</td></tr>
+    <tr><td>Telemetry robustness and trace noise <span class="ref">sc-432</span></td><td class="num">2</td></tr>
+    <tr><td>Telemetry cost: masking prefilter, double log filter, first-request schema build, disk queue <span class="ref">sc-433</span></td><td class="num">2</td></tr>
+    <tr><td>Telemetry docs drift <span class="ref">sc-434</span></td><td class="num">1</td></tr>
+    <tr><td>A chat message with a NUL character breaks the message insert <span class="ref">sc-435</span></td><td class="num">1</td></tr>
+    <tr><td>Flaky raw-store breaker test under full-suite load <span class="ref">sc-436</span></td><td class="num">1</td></tr>
+  </table>
+  <p class="muted small">Existing ticket updated: hide SQL parameters in error logs (sc-329). Full triage: <code>sprints/2026-11-04/qa-triage.md</code>.</p>
+</div>
+
+<div role="tabpanel" id="p-d" aria-labelledby="tab-d" tabindex="0" hidden>
+  <h2 class="panel-title">Decisions and risks</h2>
+  <ul class="checks">
+    <li class="ok">Content capture is off unless <code>WCL_ENVIRONMENT=dev</code>. Compose sets dev, as you decided.</li>
+    <li class="ok">Content routing fails closed: build-layer records go to the 7-day content stream unless they are known to be content-free.</li>
+    <li class="ok">Grafana: anonymous visitors are Viewers with Explore. The admin password comes from <code>GRAFANA_ADMIN_PASSWORD</code>; while that is unset the admin password is random and unknown.</li>
+    <li class="ok">The websocket handler got one granted change, so each chat turn is the root of its own trace.</li>
+    <li class="ok">Images are pinned. Alloy's disk queue is a public-preview component, run with the matching stability flag.</li>
+    <li class="no">Risks: the SQLAlchemy instrumentation runs with its version check skipped (it declares support below 2.1). Claude Code 2.1.318 exports no tool output, so masking of tool output is proven by script only. Generic key-word masking also hides some harmless values. The architecture docs gained a new observability page.</li>
+  </ul>
+  <p class="muted small">Architecture docs updated: observability (new), deployment, backend API, models, streaming, maintaining, open points, index.</p>
+</div>
+
+<div role="tabpanel" id="p-l" aria-labelledby="tab-l" tabindex="0" hidden>
+  <h2 class="panel-title">For you</h2>
+  <ul class="checks">
+    <li><span class="no">1</span>Decide whether to merge <b class="mono">sprint-2026-11-04</b> into main (nothing is pushed).</li>
+    <li><span class="no">2</span>Set <code>GRAFANA_ADMIN_PASSWORD</code> in <code>.env</code> if you want an admin login; anonymous viewing works without it.</li>
+    <li><span class="no">3</span>Start the app with <code>bin/01_start_app.sh</code> (or export <code>WCL_GIT_SHA</code>) so backend signals carry the commit.</li>
+    <li><span class="no">4</span>Optional click check in Grafana: trace to logs, log to trace, exemplar to trace.</li>
+    <li><span class="no">5</span>Move the 9 stories to Done when you're satisfied.</li>
+  </ul>
+</div>
+
+<footer>Written by Maren (product owner), 2026-11-04.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>
