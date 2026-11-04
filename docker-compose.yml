@@ -1,5 +1,8 @@
-# Local full-stack: db + redis (shared WCL cache) + backend (FastAPI) + frontend (Vite).
+# Local full-stack: db + redis (shared WCL cache) + backend (FastAPI) + frontend (Vite)
+# + alloy (always-on telemetry collector, feature 053).
 # Secrets/config come from the root .env (env_file). Bring up with:  docker compose up --build
+# Telemetry backends and Grafana (observability/README.md):
+#   docker compose --profile observability up -d
 services:
   db:
     # Postgres 17 plus the pgvector extension (feature 043, knowledge base): same major
@@ -65,6 +68,12 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
       # Shared WCL cache (feature 014); overrides the host-side REDIS_URL from .env.
       REDIS_URL: redis://redis:6379/0
+      # Telemetry (feature 054 contract:env): export to Alloy over OTLP http/protobuf. The
+      # backend starts with Alloy down, so there is deliberately no depends_on on alloy.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      WCL_ENVIRONMENT: dev
+      WCL_GIT_SHA: ${WCL_GIT_SHA:-unknown}
     volumes:
       # Defaults to the Linux/macOS gcloud location. On Windows set GCP_ADC_FILE in .env,
       # e.g. C:/Users/<you>/AppData/Roaming/gcloud/application_default_credentials.json
@@ -91,5 +100,93 @@ services:
     ports:
       - "5173:5173"
 
+  # Telemetry collector (feature 053): always on, receives OTLP from the backend and from
+  # Claude Code (bin/claude-otel), redacts, and queues on disk while the backends are absent.
+  # --stability.level=public-preview is needed for the file-backed export queue.
+  alloy:
+    image: grafana/alloy:v1.21.3
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - --stability.level=public-preview
+      - /etc/alloy/config.alloy
+    volumes:
+      # ALLOY_CONFIG_DIR: the test scripts mount a copy here (mutation.sh edits only that).
+      - ${ALLOY_CONFIG_DIR:-./observability/alloy}:/etc/alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      - "127.0.0.1:${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
+      - "127.0.0.1:${ALLOY_UI_PORT:-12345}:12345"
+    mem_limit: 512m
+    restart: unless-stopped
+
+  # --- observability profile: storage backends and Grafana (feature 053) ---
+  loki:
+    image: grafana/loki:3.7.9
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    mem_limit: 512m
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.10.10
+    profiles: [observability]
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    mem_limit: 512m
+    restart: unless-stopped
+
+  mimir:
+    image: grafana/mimir:3.2.4
+    profiles: [observability]
+    command: ["-config.file=/etc/mimir/mimir.yaml", "-target=all"]
+    volumes:
+      - ./observability/mimir/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      - mimir-data:/data
+    mem_limit: 1g
+    restart: unless-stopped
+
+  # Grafana holds no telemetry: datasources are provisioned from the repository. Anonymous
+  # visitors are Viewers who can use Explore; the admin login uses GRAFANA_ADMIN_PASSWORD
+  # (unset = no admin login, see observability/grafana/entrypoint.sh). Port on loopback only.
+  grafana:
+    image: grafana/grafana:13.2.5
+    profiles: [observability]
+    entrypoint: ["/etc/grafana/entrypoint.sh"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/entrypoint.sh:/etc/grafana/entrypoint.sh:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - loki
+      - tempo
+      - mimir
+    mem_limit: 512m
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  alloy-data:
+  loki-data:
+  tempo-data:
+  mimir-data:
+  grafana-data:

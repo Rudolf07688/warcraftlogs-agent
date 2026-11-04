@@ -1,0 +1,75 @@
+# Grafana datasources as code (feature 053, sc-399, spec §8.1). Grafana stores no telemetry;
+# fixed uids let the correlations below point at each other.
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    uid: mimir
+    type: prometheus
+    access: proxy
+    url: http://mimir:9009/prometheus
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      prometheusType: Mimir
+      # The backend exports metrics every 60 s (Claude Code every 10 s), so $__rate_interval
+      # must cover at least two backend exports: 4 x 60 s.
+      timeInterval: 60s
+      # Metric exemplar -> trace.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      # Log line -> trace: trace_id is OTLP structured metadata on every record with a span.
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: View trace
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # Trace -> logs: same service, records carrying this trace id, span time +/- 2 s.
+      # trace_id is structured metadata, not line text, so a custom query filters on it
+      # (the built-in filterByTraceID adds a line filter that would miss).
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-2s"
+        spanEndTimeShift: "2s"
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: true
+        query: '{$${__tags}} | trace_id="$${__span.traceId}"'
+        tags:
+          - key: service.name
+            value: service_name
+          - key: service.namespace
+            value: service_namespace
+      tracesToMetrics:
+        datasourceUid: mimir
+        spanStartTimeShift: "-2m"
+        spanEndTimeShift: "2m"
+        tags:
+          - key: service.name
+            value: service_name
+      lokiSearch:
+        datasourceUid: loki
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false

@@ -1,0 +1,60 @@
+# Mimir, monolithic on local disk (feature 053). Alloy sends OTLP to /otlp.
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9009
+  grpc_listen_port: 9095
+  log_level: warn
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/storage
+
+blocks_storage:
+  storage_prefix: blocks
+  tsdb:
+    dir: /data/tsdb
+
+compactor:
+  data_dir: /data/compactor
+
+ingester:
+  ring:
+    replication_factor: 1
+    kvstore:
+      store: inmemory
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+# Single node: a dashboard fires ~30 queries at once and each is split into up to 16 shards;
+# the cluster default of 100 queued requests per tenant answered 429 to the rest.
+query_scheduler:
+  max_outstanding_requests_per_tenant: 2000
+
+ruler_storage:
+  storage_prefix: ruler
+
+limits:
+  # 13 months (spec §10): long enough for year-on-year trend panels.
+  compactor_blocks_retention_period: 9490h
+  native_histograms_ingestion_enabled: true
+  # A zero sample at each OTLP counter's start time, so increase() counts the first export
+  # too. Without it a short Claude Code session (one or two exports) adds nothing to the
+  # build dashboards. Experimental in Mimir 3.2.
+  otel_created_timestamp_zero_ingestion_enabled: true
+  # Sprint facts (.claude/team/teamstats.py) are stamped at each sprint's end, so a wrap-up
+  # or a rebuilt volume backfills them; 90 days covers a quarter of history.
+  out_of_order_time_window: 90d
+  # Single node: always ask the ingester too, so backfilled samples show before the next
+  # block compaction (the default only asks it about the last 13 h).
+  query_ingesters_within: 0s
+  max_global_exemplars_per_user: 100000
+  # OTLP resource attributes promoted to series labels (spec §9.2); the rest stay on target_info.
+  promote_otel_resource_attributes: "service.namespace,service.name,deployment.environment.name,app.layer"
+
+usage_stats:
+  enabled: false

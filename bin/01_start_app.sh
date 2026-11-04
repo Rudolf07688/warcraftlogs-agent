@@ -15,6 +15,8 @@ fi
 echo " -- DB Initialization and Migration Complete -- "
 
 echo " -- Launching Application -- "
+# service.version on the backend's telemetry (the image has no .git to read it from).
+export WCL_GIT_SHA=$(git rev-parse --short HEAD)
 docker compose up -d $BUILD_FLAG 2>&1
 if [ $? != 0 ]; then
     echo "ERROR: Failed to launch application"

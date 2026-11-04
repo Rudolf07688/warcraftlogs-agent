@@ -11,6 +11,10 @@ import os
 
 # Before any app import: a checkout's .env must never reach a test (sc-336, backend/app/config.py).
 os.environ["WCL_LOAD_DOTENV"] = "0"
+# Nor a shell's OpenTelemetry settings: bin/claude-otel exports OTEL_EXPORTER_OTLP_ENDPOINT, which
+# would switch the app's telemetry on (054, QA SEC-005).
+for _otel_var in [name for name in os.environ if name.startswith("OTEL_")]:
+    del os.environ[_otel_var]
 
 import uuid
 from collections.abc import AsyncIterator

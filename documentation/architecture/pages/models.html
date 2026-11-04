@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
 <title>Models &amp; providers · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -151,7 +151,7 @@
     <span class="chip">wcl_agent/llm/generation.py</span>
   </div>
   <h3>What it does, and where it lives</h3>
-  <p>Two paths. Turns that need tools go through the ADK agent (<code>stream_response()</code> in <code>backend/app/agent_runner.py</code>). One-shot calls go through <code>wcl_agent/llm/generation.py</code>: <code>generate_text</code>, <code>generate_json</code> (schema-constrained output), <code>generate_grounded</code> (Google Search on Gemini, the server-side web search tool on Claude, web fetch on the Anthropic API only) and <code>embed_texts</code>. It picks the client by model family, builds each client once per process, and runs every call through the shared retry loop with the SDKs' own retries off.</p>
+  <p>Two paths. Turns that need tools go through the ADK agent (<code>stream_response()</code> in <code>backend/app/agent_runner.py</code>). One-shot calls go through <code>wcl_agent/llm/generation.py</code>: <code>generate_text</code>, <code>generate_json</code> (schema-constrained output), <code>generate_grounded</code> (Google Search on Gemini, the server-side web search tool on Claude, web fetch on the Anthropic API only) and <code>embed_texts</code>. It picks the client by model family, builds each client once per process, and runs every call through the shared retry loop with the SDKs' own retries off. Each model request through the loop (a grounded Claude search can make several) runs inside one GenAI client span (<code>chat {model}</code>, or <code>embeddings {model}</code> for <code>embed_texts</code>) with the operation, provider name, request and response model, token counts and finish reasons, and <code>error.type</code> on failure. It carries metadata only, never the prompt or the reply, and does nothing when telemetry is off (see <a href="observability.html#runtime">Observability</a>).</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Call</th><th>Path · code</th><th>Model</th><th>Retries</th><th>Time limit</th></tr></thead>
     <tbody>

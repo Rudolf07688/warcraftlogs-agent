@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
+<meta name="verified-at" content="commit ac571b3 · 2026-11-04">
+<title>Observability · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Runtime</p>
+  <h1>Observability</h1>
+  <p class="lede">Traces, logs and metrics from two sources: the backend API (the runtime layer) and the Claude Code sessions that build the app (the build layer). Both send OpenTelemetry to one always-on collector, Grafana Alloy, which redacts secrets, sorts prompt and answer content into its own short-lived stream and queues everything on disk until the storage backends (Loki, Tempo, Mimir) and Grafana are running. This page follows the data from each source to Grafana. The compose wiring is on <a href="deployment.html#compose">Deployment &amp; config</a>.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#pipeline">The pipeline</a>
+    <a href="#build">Build layer</a>
+    <a href="#runtime">Runtime layer</a>
+    <a href="#alloy">Alloy</a>
+    <a href="#backends">Backends &amp; Grafana</a>
+    <a href="#tests">Checks</a>
+  </nav>
+</header>
+
+<!-- ============================================================ PIPELINE -->
+<section class="layer" id="pipeline">
+  <h2>The pipeline</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">OpenTelemetry (OTLP http/protobuf)</span><span class="chip">grafana/alloy:v1.21.3</span><span class="chip">loki:3.7.9</span><span class="chip">tempo:2.10.10</span><span class="chip">mimir:3.2.4</span><span class="chip">grafana:13.2.5</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Two layers, one stamp.</b> Every signal carries <code>app.layer</code>: <code>runtime</code> for the backend (<code>service.name=api</code>) and <code>build</code> for Claude Code (<code>service.name=claude-code</code>). Both also carry <code>service.namespace=wcl-agent</code> and <code>deployment.environment.name</code>.</li>
+    <li><b>Alloy is always on.</b> <code>docker compose up</code> starts it with the app; it holds its queues on the <code>alloy-data</code> volume. Loki, Tempo, Mimir and Grafana only start with <code>docker compose --profile observability up -d</code>. Until then nothing is lost: Alloy retries from its disk queue.</li>
+    <li><b>Where the code is.</b> <code>backend/app/telemetry/</code> (runtime layer), <code>bin/claude-otel</code> (build layer), <code>observability/</code> (Alloy, Loki, Tempo, Mimir and Grafana config, its README and its test scripts), the <code>alloy</code> and profile services in <code>docker-compose.yml</code>.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 560" role="img" aria-labelledby="ob-title ob-desc">
+      <title id="ob-title">Telemetry pipeline</title>
+      <desc id="ob-desc">The backend API and Claude Code send OTLP over HTTP to Alloy. Inside Alloy the signals pass through a receiver, a memory limiter and stamp step, redaction, a classify step that sorts log content from the rest and drops identifier labels from metrics, and a batch step with exporters backed by disk queues. The exporters send metrics to Mimir, traces to Tempo and logs to Loki. Those three run only in the observability compose profile, and Grafana queries all three.</desc>
+      <defs>
+        <marker id="ob-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="ob-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="zone" x="300" y="14" width="380" height="530" rx="14"/>
+      <text class="zlbl" x="316" y="36">Alloy · always on</text>
+      <rect class="zone" x="720" y="14" width="262" height="530" rx="14"/>
+      <text class="zlbl" x="736" y="36">Profile · observability</text>
+
+      <rect class="node core" x="20" y="50" width="240" height="120" rx="10"/>
+      <text class="t" x="140" y="82" text-anchor="middle">Backend API</text>
+      <text class="sub" x="140" y="106" text-anchor="middle">runtime layer · app.layer=runtime</text>
+      <text class="sub" x="140" y="128" text-anchor="middle">content policy · app-side redaction</text>
+      <text class="sub" x="140" y="150" text-anchor="middle">OTLP http/protobuf</text>
+
+      <rect class="node ext" x="20" y="300" width="240" height="120" rx="10"/>
+      <text class="t" x="140" y="332" text-anchor="middle">Claude Code sessions</text>
+      <text class="sub" x="140" y="356" text-anchor="middle">build layer · app.layer=build</text>
+      <text class="sub" x="140" y="378" text-anchor="middle">started by bin/claude-otel</text>
+      <text class="sub" x="140" y="400" text-anchor="middle">OTLP http/protobuf</text>
+
+      <rect class="node" x="320" y="56" width="340" height="62" rx="10"/>
+      <text class="t" x="336" y="82">1 OTLP receiver</text>
+      <text class="sub" x="336" y="104">gRPC :4317 · HTTP :4318</text>
+      <rect class="node" x="320" y="138" width="340" height="62" rx="10"/>
+      <text class="t" x="336" y="164">2 memory limiter, stamp defaults</text>
+      <text class="sub" x="336" y="186">namespace · environment · layer</text>
+      <rect class="node core" x="320" y="220" width="340" height="62" rx="10"/>
+      <text class="t" x="336" y="246">3 redact, every signal</text>
+      <text class="sub" x="336" y="268">hash secret keys · mask secret shapes</text>
+      <rect class="node" x="320" y="302" width="340" height="62" rx="10"/>
+      <text class="t" x="336" y="328">4 classify and clean</text>
+      <text class="sub" x="336" y="350">logs: content or rest · metrics: drop ids</text>
+      <rect class="node" x="320" y="384" width="340" height="62" rx="10"/>
+      <text class="t" x="336" y="410">5 batch, three exporters</text>
+      <text class="sub" x="336" y="432">retry forever · disk queue each</text>
+      <rect class="node store" x="320" y="466" width="340" height="62" rx="10"/>
+      <text class="t" x="336" y="492">volume alloy-data</text>
+      <text class="sub" x="336" y="514">queue caps: traces 256, logs 256, metrics 64 MiB</text>
+
+      <rect class="node store" x="742" y="56" width="218" height="82" rx="10"/>
+      <text class="t" x="758" y="82">Mimir · metrics</text>
+      <text class="sub" x="758" y="104">kept 13 months</text>
+      <text class="sub" x="758" y="124">volume mimir-data</text>
+      <rect class="node store" x="742" y="158" width="218" height="82" rx="10"/>
+      <text class="t" x="758" y="184">Tempo · traces</text>
+      <text class="sub" x="758" y="206">kept 7 days</text>
+      <text class="sub" x="758" y="226">volume tempo-data</text>
+      <rect class="node store" x="742" y="260" width="218" height="82" rx="10"/>
+      <text class="t" x="758" y="286">Loki · logs</text>
+      <text class="sub" x="758" y="308">30 days · content 7 days</text>
+      <text class="sub" x="758" y="328">volume loki-data</text>
+      <rect class="node core" x="742" y="420" width="218" height="92" rx="10"/>
+      <text class="t" x="758" y="446">Grafana</text>
+      <text class="sub" x="758" y="468">127.0.0.1:3000 · no data</text>
+      <text class="sub" x="758" y="490">volume grafana-data</text>
+
+      <path class="flow" marker-end="url(#ob-ah)" d="M260,87 H318"/>
+      <text class="lbl" x="280" y="76" text-anchor="middle">OTLP</text>
+      <path class="flow" marker-end="url(#ob-ah)" d="M260,360 H282 V105 H318"/>
+      <path class="flow" marker-end="url(#ob-ah)" d="M490,118 V136"/>
+      <path class="flow" marker-end="url(#ob-ah)" d="M490,200 V218"/>
+      <path class="flow" marker-end="url(#ob-ah)" d="M490,282 V300"/>
+      <path class="flow" marker-end="url(#ob-ah)" d="M490,364 V382"/>
+      <path class="flow ret" marker-end="url(#ob-ah2)" d="M490,446 V464"/>
+      <path class="flow" marker-end="url(#ob-ah)" d="M660,415 H700 V97 H740"/>
+      <path class="flow" marker-end="url(#ob-ah)" d="M700,199 H740"/>
+      <path class="flow" marker-end="url(#ob-ah)" d="M700,301 H740"/>
+      <path class="flow ret" marker-end="url(#ob-ah2)" d="M850,420 V344"/>
+      <text class="lbl" x="858" y="388">query</text>
+    </svg>
+    <figcaption>The pipeline as configured in <code>observability/alloy/config.alloy</code>. Steps 3 and 4 are different for each signal (see <a href="#alloy">Alloy</a>). The dashed grey arrow means Grafana pulls from all three stores; the bottom box is the on-disk queue, not a process. Backends publish no host ports; only Alloy and Grafana do.</figcaption>
+  </figure>
+
+  <h3>Why</h3>
+  <p class="why">One always-on collector with disk queues, and storage backends that can be off: the owner asked for persistence before dashboards, and the transcripts and the team board remain the backfill sources.<cite>specs/telemetry_spec.md §14.1 (decisions 8 and 11)</cite></p>
+  <p class="why">The runtime layer goes over HTTP, not gRPC, so the backend avoids the <code>grpcio</code> wheel on Python 3.14.<cite>specs/telemetry_spec.md §14.1 (decision 12) · specs/054-backend-telemetry/research.md R2</cite></p>
+</section>
+
+<!-- ============================================================ BUILD -->
+<section class="layer" id="build">
+  <h2>Build layer: Claude Code</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">bash</span><span class="chip">Claude Code OTel env vars</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>bin/claude-otel [claude arguments...]</code> sets the telemetry environment and then <code>exec</code>s <code>claude</code> with the arguments unchanged. It is scoped to the wrapper: nothing is written to <code>~/.claude/settings.json</code>.</li>
+    <li>Signals: metrics, logs (events) and traces, all <code>otlp</code> over <code>http/protobuf</code> to <code>http://localhost:${ALLOY_OTLP_HTTP_PORT:-4318}</code>. The port must be a number (else exit 2). Metrics are cumulative (Mimir wants that; Claude Code defaults to delta) and exported every 10 s instead of 60 s.</li>
+    <li>Content is on: user prompts, assistant responses and tool content, plus real names for tools, subagents, skills and MCP servers (<code>OTEL_LOG_TOOL_DETAILS</code>). Version, entrypoint and repository are added to metrics.</li>
+    <li>Resource attributes are fixed: <code>service.namespace=wcl-agent,app.layer=build,deployment.environment.name=dev</code>.</li>
+    <li>If nothing listens on the Alloy port the wrapper prints a warning and starts Claude Code anyway; the exporters then drop their data. It never blocks.</li>
+    <li>Every process started inside such a session inherits these variables. A backend started there still exports as the runtime layer (its own <code>app.layer</code> wins), but any other OTel-aware tool exports as <code>app.layer=build</code>, so its logs go to the content stream (<code>observability/README.md</code>).</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">A project wrapper instead of the global settings file: scoped and reversible.<cite>specs/telemetry_spec.md §14.1 (decision 6)</cite></p>
+  <p class="why">Content capture is on in dev only, and Alloy redacts secrets whatever the setting.<cite>specs/telemetry_spec.md §14.1 (decision 7)</cite></p>
+</section>
+
+<!-- ============================================================ RUNTIME -->
+<section class="layer" id="runtime">
+  <h2>Runtime layer: the backend</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">opentelemetry-exporter-otlp-proto-http&gt;=1.39,&lt;=1.42.1</span><span class="chip">opentelemetry-instrumentation-{fastapi, sqlalchemy, redis, httpx}==0.63b1</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Bootstrap.</b> <code>configure_telemetry()</code> in <code>backend/app/telemetry/__init__.py</code> is the first thing <code>backend/app/main.py</code> runs, before FastAPI and ADK are imported, because global instrumentation must exist before the app and the database engine are created. The package reads its own environment and <code>.env</code> (it cannot import <code>backend/app/config.py</code>, which imports ADK).</li>
+    <li><b>On or off.</b> Telemetry is on only when <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> is set. Unset, nothing is installed and the test suite and bare runs are untouched. Compose sets it to <code>http://alloy:4318</code> for the backend, with no <code>depends_on</code> on Alloy, so the backend starts with Alloy down.</li>
+    <li><b>Resource.</b> <code>service.name=api</code>, <code>service.namespace=wcl-agent</code>, <code>service.version</code> and <code>vcs.ref.head.revision</code> from <code>WCL_GIT_SHA</code> (else <code>git rev-parse --short HEAD</code>, else <code>unknown</code>; the image has no <code>.git</code>, so <code>bin/01_start_app.sh</code> exports it), <code>deployment.environment.name</code> from <code>WCL_ENVIRONMENT</code>, <code>app.layer=runtime</code>.</li>
+    <li><b>What is instrumented.</b> FastAPI (health paths and the chat socket's connection are excluded; server spans are named by route template, never by raw path), SQLAlchemy, Redis and httpx. ADK adds its own <code>invoke_agent</code>, <code>generate_content</code> and <code>execute_tool</code> spans with GenAI semantic-convention names. Each chat turn on <code>/ws/chat</code> is the root of its own trace (<code>chat_turn_span</code> around <code>_start_turn</code> in <code>backend/app/api/ws.py</code>), so the model and tool spans of one turn belong together; see <a href="streaming.html#socket">Stream protocol</a>. One-shot model calls get a <code>chat</code> or <code>embeddings</code> client span with token usage (see <a href="models.html#calls">Models &amp; providers</a>). The fetch writer and knowledge-base indexer run in tasks started at boot, so their spans start their own traces.</li>
+    <li><b>Logs.</b> <code>main.py</code> adds an OTLP log handler to the root logger after the log-redaction filter is installed. The handler carries <code>RedactionFilter</code> itself and ignores records from the exporters' own loggers (<code>opentelemetry</code>, <code>urllib3</code>, <code>requests</code>), so a dead collector cannot feed itself. Records carry their span's trace and span id.</li>
+    <li><b>Metrics.</b> A view keeps only an allowlist of attributes on every instrument (HTTP method, status, route template, outbound host, pool state, GenAI operation, provider, model, agent and tool names). No ids, no raw paths, no Host header. Histograms are exponential and temporality is cumulative.</li>
+    <li><b>Bounded cost.</b> Batch processors with bounded queues keep export off the request path. One export attempt waits at most 2 s. At exit one hook shuts all three providers down in parallel and waits 3 s in total; whatever is not sent is dropped.</li>
+  </ul>
+
+  <h3>Content policy per environment</h3>
+  <p><code>WCL_ENVIRONMENT</code> is <code>dev</code>, <code>ci</code> or <code>prod</code>; any other value, unset included, becomes <code>unknown</code> and is treated like <code>ci</code> and <code>prod</code>. Compose sets <code>dev</code> for the backend.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Environment</th><th>ADK content settings</th><th>What the exporter wrappers do</th></tr></thead>
+    <tbody>
+      <tr><td><code>dev</code></td><td>Content on (<code>ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=true</code>, <code>…GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT</code>) unless the operator set their own value.</td><td>Content log records are cut to 32,000 characters (newest messages kept), marked <code>app.content=true</code> and flagged <code>app.content.truncated</code> when cut; Alloy routes them to the 7-day stream. Secrets are masked.</td></tr>
+      <tr><td><code>ci</code>, <code>prod</code>, <code>unknown</code></td><td>Forced off: <code>false</code>, <code>NO_CONTENT</code>, <code>ADK_TELEMETRY_IGNORE_RUN_CONFIG=1</code>.</td><td>The same line is enforced app-side in case ADK leaks anyway: content attributes (prompts, replies, tool arguments and results, HTTP bodies, exception message and stack trace) are removed, <code>gen_ai.*</code> span events and log records are dropped, span status text and SQL parameters are cut. <code>exception.type</code> stays.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Both set <code>OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental</code> unless it is already set, so ADK's spans use <code>gen_ai.*</code> names.</p>
+
+  <h3>App-side redaction</h3>
+  <p><code>backend/app/telemetry/redaction.py</code> wraps the span and log exporters, so it runs in the SDK's export thread and sees every record, ADK's own events included. In every environment it masks: string values under sensitive keys (the logging filter's key list plus <code>secret</code>, API and private keys, <code>dsn</code>, <code>credential</code>), bearer and Basic credentials, <code>user:password@</code> in URLs, sensitive query parameters, <code>key: value</code> pairs in text, and known key shapes (<code>sk-</code>, <code>AIza</code>, <code>ya29.</code>, JWTs). Values are cut to 16,384 characters, which is also the span attribute limit. Numeric values under such keys, like <code>gen_ai.usage.input_tokens</code>, survive. This is the first of two redaction layers; <a href="#alloy">Alloy</a> is the second and the only one for the build layer.</p>
+
+  <h3>Why</h3>
+  <p class="why">Telemetry starts first in <code>main.py</code> because global FastAPI instrumentation swaps <code>fastapi.FastAPI</code> and SQLAlchemy's wraps <code>create_async_engine</code> before the modules that bind them are imported.<cite>specs/054-backend-telemetry/research.md R1</cite></p>
+  <p class="why">ADK captures message content by default, so the lockdown must be explicit outside dev, and the exporter wrappers enforce it a second time.<cite>specs/054-backend-telemetry/research.md R3 · specs/telemetry_spec.md §14.2</cite></p>
+  <p class="why">The OTLP log handler needs its own <code>RedactionFilter</code>, because <code>_install_log_redaction</code> in <code>main.py</code> only filters handlers that exist when it runs.<cite>specs/telemetry_spec.md §14.2</cite></p>
+  <p class="why">The chat socket is excluded from ASGI tracing because its connection lasts the whole session; a root span per turn gives usable trace lengths.<cite>specs/054-backend-telemetry/research.md R5</cite></p>
+</section>
+
+<!-- ============================================================ ALLOY -->
+<section class="layer" id="alloy">
+  <h2>Alloy: the collector</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">grafana/alloy:v1.21.3</span><span class="chip">otelcol.* components</span><span class="chip">OTTL</span><span class="chip">--stability.level=public-preview</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>All of it is in <code>observability/alloy/</code>: <code>config.alloy</code> wires the components; <code>stamp.ottl</code> and <code>redact.ottl</code> hold the statements shared by several signal types (one per line, so each works in any context). Alloy's UI is on <code>127.0.0.1:12345</code>; OTLP ports 4317 (gRPC) and 4318 (HTTP) are published on loopback only.</p>
+  <ol class="steps">
+    <li><b>Receive</b> OTLP on 4317 and 4318, then the <b>memory limiter</b> (80 % limit, 20 % spike limit).</li>
+    <li><b>Stamp defaults</b> on the resource when missing: <code>service.namespace=wcl-agent</code>, <code>deployment.environment.name=unknown</code>, <code>app.layer=build</code> for <code>claude-code</code> and <code>runtime</code> otherwise.</li>
+    <li><b>Redact</b>, for both layers and every signal (resource, span, span event, log record, datapoint attributes, and log bodies, as string or map). The values of <code>access_token</code>, <code>refresh_token</code>, <code>client_secret</code>, <code>authorization</code>, <code>api_key</code> and <code>password</code> become their SHA-256. These shapes are masked to <code>&lt;redacted&gt;</code>: PEM private keys, JWTs, Bearer and Basic credentials, <code>sk-</code>, <code>AIza</code>, <code>ya29.</code> and GitHub tokens, the password in any <code>scheme://user:pw@</code> URL, and the value of <code>NAME=value</code>, <code>NAME: value</code> and <code>"name": "value"</code> pairs whose name contains secret, password, token, key, credential, dsn, auth, cookie or session. The pair rule also hides harmless values like <code>primary_key: id</code>; that is the intended trade. Not covered: values nested in lists or nested maps, and secrets with no recognisable shape.</li>
+    <li><b>Metrics:</b> delete the per-session, per-user and per-account identifiers (<code>session.id</code>, <code>prompt.id</code>, <code>user.id</code>, <code>user.email</code>, <code>organization.id</code>, <code>client_request_id</code> and similar) from datapoints and from the resource, so they never become labels or land in Mimir's <code>target_info</code>. They stay on spans and logs.</li>
+    <li><b>Logs: classify.</b> A log record is <b>content</b> when it has <code>app.content="true"</code>, an event name starting <code>gen_ai.</code>, or comes from the build layer (<code>service.name=claude-code</code> or <code>app.layer=build</code>) and is not one of 13 known content-free Claude Code events (such as <code>api_request</code>, <code>api_refusal</code>, <code>skill_activated</code>, <code>mcp_server_connection</code>, <code>auth</code>). The build rule fails closed: an event a new Claude Code version adds, or a record without an event name, is content. Content records get the resource attribute <code>content="true"</code>; every other record has any incoming <code>content</code> attribute removed, so the Loki label stays bounded.</li>
+    <li><b>Batch</b>, then three exporters: Tempo over gRPC (traces), Loki over OTLP HTTP (logs), Mimir over OTLP HTTP (metrics).</li>
+  </ol>
+  <p><b>Persistence.</b> Each exporter has a persistent <code>sending_queue</code> on the file-storage component, in <code>/var/lib/alloy/data/queue</code> on the <code>alloy-data</code> volume, with caps of 256 MiB (traces), 256 MiB (logs) and 64 MiB (metrics), and retries forever (<code>max_elapsed_time = "0s"</code>). When a queue is full, Alloy refuses new data for that signal with a retryable error; senders are never blocked, their SDK retries briefly and then drops the data. Queued data drains first when the backends start. File-backed queues are public preview in Alloy, which is why the container runs with <code>--stability.level=public-preview</code> on a pinned image.</p>
+
+  <h3>Why</h3>
+  <p class="why">Redaction is OTTL <code>transform</code> statements, not Alloy's redaction processor: the processor is experimental in v1.21 and does not cover span events or resource attributes. Claude Code's tool output arrives as a span event.<cite>specs/053-telemetry-stack/research.md (Redaction engine)</cite></p>
+  <p class="why">The build layer is classified as content unless proven content-free, because Alloy is its only redaction step and a new event type must not leak into the 30-day stream by default.<cite>observability/alloy/config.alloy (comment on classify)</cite></p>
+  <p class="why">Prompt, response and tool content gets its own 7-day Loki stream (and traces are kept 7 days because Tempo cannot keep content-bearing traces shorter than the rest).<cite>specs/telemetry_spec.md §14.1 (decisions 7 and 9)</cite></p>
+</section>
+
+<!-- ============================================================ BACKENDS -->
+<section class="layer" id="backends">
+  <h2>Backends and Grafana</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Loki 3.7.9 (tsdb, v13)</span><span class="chip">Tempo 2.10.10</span><span class="chip">Mimir 3.2.4 (monolithic)</span><span class="chip">Grafana 13.2.5</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Service</th><th>Config</th><th>Storage and retention</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>loki</code></td><td><code>observability/loki/loki.yaml</code></td><td>Filesystem, volume <code>loki-data</code>. Logs 720 h (30 days); streams with <code>content="true"</code> 168 h (7 days).</td><td>Receives OTLP at <code>/otlp</code>. Index labels are only <code>service.namespace</code>, <code>service.name</code>, <code>deployment.environment.name</code>, <code>app.layer</code> and <code>content</code>; every other attribute is structured metadata. <code>trace_id</code> is structured metadata.</td></tr>
+      <tr><td><code>tempo</code></td><td><code>observability/tempo/tempo.yaml</code></td><td>Local blocks, volume <code>tempo-data</code>. Block retention 168 h (7 days).</td><td>OTLP gRPC in on 4317. The metrics generator is off.</td></tr>
+      <tr><td><code>mimir</code></td><td><code>observability/mimir/mimir.yaml</code></td><td>Filesystem, volume <code>mimir-data</code>. 9,490 h (about 13 months).</td><td>Single tenant, OTLP at <code>/otlp</code>. Resource attributes promoted to labels: namespace, name, environment, layer. Native histograms and exemplars on. A zero sample at each OTLP counter's start time, so <code>increase()</code> counts a short session's first export. Out-of-order window 90 days, and the querier always asks the ingester, so backfilled sprint facts show at once. Up to 2,000 queued queries per tenant (a dashboard sends about 30 at once, each split into shards).</td></tr>
+      <tr><td><code>grafana</code></td><td><code>observability/grafana/</code></td><td>Volume <code>grafana-data</code>; holds no telemetry.</td><td>Port <code>127.0.0.1:${GRAFANA_PORT:-3000}</code>. Datasources are provisioned from <code>provisioning/datasources/datasources.yaml</code> (Mimir with a 60 s minimum interval: the backend exports every 60 s). Dashboards from <code>observability/grafana/dashboards/</code> through <code>provisioning/dashboards/dashboards.yaml</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>Grafana access.</b> Anonymous visitors are Viewers who may use Explore. The <code>admin</code> login uses <code>GRAFANA_ADMIN_PASSWORD</code>; <code>observability/grafana/entrypoint.sh</code> sets it again on every start, so an old volume created with <code>admin/admin</code> is fixed too. Unset or empty means a random password nobody knows, i.e. no admin login. No plugins are preinstalled, and Grafana's update checks, analytics and news feed are off.</li>
+    <li><b>Dashboards.</b> Provisioned as JSON, one Grafana folder per layer, read-only in the UI (change the JSON; Grafana reloads it within 30 s). <i>build</i>: "Claude Code: Overview" (spend, tokens and cache by model and agent) and "Agent Team: Improvement" (cost, flow and collaboration per sprint, context per agent). <i>runtime</i>: "App: API and LLM" (requests and latency by route, chat turns, model and tool calls, recent chat-turn traces, warnings and errors). The improvement dashboard reads <code>team_sprint_*</code> and <code>team_agent_*</code> gauges that <code>.claude/team/teamstats.py</code> pushes through Alloy at each sprint wrap-up, timestamped at the sprint's end, from the baseline table in <code>meta/team-optimisation.md</code> and each sprint's <code>usage.txt</code> and <code>board.jsonl</code>. Both build dashboards mark sprint ends.</li>
+    <li><b>Correlations.</b> The Mimir datasource (the default) links metric exemplars to Tempo by <code>trace_id</code>. Loki turns <code>trace_id</code> into a "View trace" link. Tempo links a span to the logs of the same service and trace (a custom query on the structured-metadata <code>trace_id</code>, span time plus or minus 2 s) and to metrics (plus or minus 2 min).</li>
+    <li><b>Memory.</b> Every service in this stack, Alloy included, has <code>mem_limit: 512m</code>, except Mimir with <code>1g</code>. All services have <code>restart: unless-stopped</code>.</li>
+    <li><b>Ports.</b> Only Alloy (4317, 4318, 12345) and Grafana (3000) are published, on loopback; each host port can be overridden (<code>ALLOY_OTLP_GRPC_PORT</code>, <code>ALLOY_OTLP_HTTP_PORT</code>, <code>ALLOY_UI_PORT</code>, <code>GRAFANA_PORT</code>) so a second stack can run.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Mimir monolithic on the filesystem, no object store: cheaper to run locally, and the move later is possible.<cite>specs/telemetry_spec.md §14.1 (decision 10)</cite></p>
+  <p class="why">Named volumes with retention for every backend, and Grafana holds nothing, so any container can be recreated without losing history.<cite>specs/telemetry_spec.md §14.1 (decision 8)</cite></p>
+  <p class="why">The admin password is reset on every start so that leaving <code>GRAFANA_ADMIN_PASSWORD</code> unset never leaves a known default login behind.<cite>observability/grafana/entrypoint.sh (header comment)</cite></p>
+</section>
+
+<!-- ============================================================ TESTS -->
+<section class="layer" id="tests">
+  <h2>Checks</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">bash</span><span class="chip">docker compose (throwaway project)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>The scripts in <code>observability/test/</code> each start their own compose project (<code>COMPOSE_PROJECT</code>, default <code>wcl-obs-test</code>) on non-default ports, print <code>PASS</code> and <code>FAIL</code> lines and a <code>RESULT</code>, and remove the project and its volumes at the end (<code>KEEP=1</code> keeps it). They need Docker and are not part of <code>pytest</code>. The backend side is covered by <code>backend/tests/test_telemetry*.py</code> in the normal suite.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Script</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td><code>persistence.sh</code></td><td>A span, a log and a metric sent while the backends are stopped (and Alloy restarted) arrive after they start; retention as the backends run it.</td></tr>
+      <tr><td><code>redaction.sh</code> (with <code>redaction_check.py</code>)</td><td>Seeded secrets from both layers are hashed or masked in Loki, Tempo and Mimir; the banned metric labels are absent; content routing.</td></tr>
+      <tr><td><code>mutation.sh</code></td><td>Disabling any one redaction, label or routing rule makes the redaction check fail. It mutates a temporary copy of <code>alloy/</code> mounted through <code>ALLOY_CONFIG_DIR</code>; the checkout is never written.</td></tr>
+      <tr><td><code>provisioning.sh</code></td><td>Datasources load from file, are healthy and carry the correlations; Grafana's anonymous Viewer, admin password (none when unset) and no plugin preinstall.</td></tr>
+      <tr><td><code>claude-otel.sh</code></td><td>The wrapper's environment, argument pass-through and the Alloy-down warning, with a stub <code>claude</code> and no Docker.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>backend/app/telemetry/__init__.py</code>, <code>config.py</code>, <code>policy.py</code>, <code>redaction.py</code>, <code>setup.py</code></li>
+    <li><code>backend/app/main.py</code>, <code>backend/app/api/ws.py</code> (<code>chat_turn_span</code>), <code>wcl_agent/llm/generation.py</code></li>
+    <li><code>bin/claude-otel</code>, <code>bin/01_start_app.sh</code>, <code>docker-compose.yml</code>, <code>.env.example</code>, <code>pyproject.toml</code></li>
+    <li><code>observability/alloy/config.alloy</code>, <code>stamp.ottl</code>, <code>redact.ottl</code>; <code>observability/loki/loki.yaml</code>, <code>tempo/tempo.yaml</code>, <code>mimir/mimir.yaml</code>; <code>observability/grafana/entrypoint.sh</code>, <code>provisioning/datasources/datasources.yaml</code>, <code>provisioning/dashboards/dashboards.yaml</code>, <code>dashboards/</code>; <code>.claude/team/teamstats.py</code>; <code>observability/README.md</code>, <code>observability/test/</code></li>
+    <li><code>specs/telemetry_spec.md</code> (§14), <code>specs/053-telemetry-stack/research.md</code>, <code>specs/054-backend-telemetry/research.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

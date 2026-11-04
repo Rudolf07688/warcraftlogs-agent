@@ -18,11 +18,14 @@ from typing import Any
 
 import anthropic
 from google.genai import types as genai_types
+from opentelemetry import trace
 from pydantic import BaseModel
 
 from . import provider
 from .model_retry import RetryPolicy, generate_with_retry, is_anthropic_model
 from .provider import ModelRole
+
+_tracer = trace.get_tracer(__name__)
 
 
 class ModelRefused(RuntimeError):
@@ -41,15 +44,72 @@ def _genai_client() -> Any:
     return provider.genai_client()
 
 
-async def _with_retry(call: Callable[[], Awaitable[Any]], policy: RetryPolicy) -> Any:
-    """``call()`` once per attempt under the shared rate-limit loop."""
+def _provider_name(model: str) -> str:
+    """``gen_ai.provider.name`` for the client that serves ``model``."""
+    if is_anthropic_model(model):
+        return "anthropic" if provider.active_provider() == "anthropic" else "gcp.vertex_ai"
+    return "gcp.vertex_ai" if provider.uses_vertex() else "gcp.gen_ai"
 
-    async def once():
-        yield await call()
 
-    async for response in generate_with_retry(once, policy):
-        return response
-    raise RuntimeError("model returned no response")
+def _finish_reason(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(getattr(value, "name", value)).lower()
+
+
+def _response_attributes(response: Any) -> dict[str, Any]:
+    """Model, token usage and finish reasons of a Messages, generate or embed response."""
+    if (usage := getattr(response, "usage", None)) is not None:  # Claude
+        found = {
+            "gen_ai.response.model": getattr(response, "model", None),
+            "gen_ai.usage.input_tokens": getattr(usage, "input_tokens", None),
+            "gen_ai.usage.output_tokens": getattr(usage, "output_tokens", None),
+            "gen_ai.response.finish_reasons": [_finish_reason(getattr(response, "stop_reason", None))],
+        }
+    elif (usage := getattr(response, "usage_metadata", None)) is not None:  # Gemini generate
+        reasons = [_finish_reason(getattr(c, "finish_reason", None)) for c in getattr(response, "candidates", None) or []]
+        found = {
+            "gen_ai.response.model": getattr(response, "model_version", None),
+            "gen_ai.usage.input_tokens": getattr(usage, "prompt_token_count", None),
+            "gen_ai.usage.output_tokens": getattr(usage, "candidates_token_count", None),
+            "gen_ai.response.finish_reasons": [r for r in reasons if r],
+        }
+    else:  # embeddings: Vertex reports each input's token count
+        counts = [
+            getattr(getattr(e, "statistics", None), "token_count", None)
+            for e in getattr(response, "embeddings", None) or []
+        ]
+        found = {"gen_ai.usage.input_tokens": int(sum(counts)) if counts and None not in counts else None}
+    return {k: v for k, v in found.items() if v is not None and v != [None] and v != []}
+
+
+async def _with_retry(
+    call: Callable[[], Awaitable[Any]], policy: RetryPolicy, *, model: str, operation: str = "chat"
+) -> Any:
+    """``call()`` once per attempt under the shared rate-limit loop, in one GenAI client span
+    (feature 054; a no-op without a tracer provider). Metadata only, never the prompt or reply.
+    """
+    with _tracer.start_as_current_span(
+        f"{operation} {model}",
+        kind=trace.SpanKind.CLIENT,
+        attributes={
+            "gen_ai.operation.name": operation,
+            "gen_ai.provider.name": _provider_name(model),
+            "gen_ai.request.model": model,
+        },
+    ) as span:
+
+        async def once():
+            yield await call()
+
+        try:
+            async for response in generate_with_retry(once, policy):
+                span.set_attributes(_response_attributes(response))
+                return response
+            raise RuntimeError("model returned no response")
+        except BaseException as exc:
+            span.set_attribute("error.type", type(exc).__qualname__)
+            raise
 
 
 def _user(prompt: str) -> list[dict[str, Any]]:
@@ -99,6 +159,7 @@ async def generate_text(
                 model=model, max_tokens=max_tokens, messages=_user(prompt), **extra
             ),
             policy,
+            model=model,
         )
         return _claude_text(response)
     config = genai_types.GenerateContentConfig(
@@ -109,6 +170,7 @@ async def generate_text(
     response = await _with_retry(
         lambda: _genai_client().aio.models.generate_content(model=model, contents=prompt, config=config),
         policy,
+        model=model,
     )
     return getattr(response, "text", "") or ""
 
@@ -157,6 +219,7 @@ async def generate_json(
                 output_config={"format": output_format},
             ),
             policy,
+            model=model,
         )
         return _claude_text(response)
     config = genai_types.GenerateContentConfig(
@@ -167,6 +230,7 @@ async def generate_json(
     response = await _with_retry(
         lambda: _genai_client().aio.models.generate_content(model=model, contents=prompt, config=config),
         policy,
+        model=model,
     )
     return response.text or ""
 
@@ -244,6 +308,7 @@ async def _claude_grounded(
                     model=model, max_tokens=_GUIDE_MAX_TOKENS, messages=messages, tools=tools
                 ),
                 policy,
+                model=model,
             )
             _raise_if_refused(response)
             blocks = blocks + list(response.content)
@@ -285,6 +350,7 @@ async def generate_grounded(
     response = await _with_retry(
         lambda: _genai_client().aio.models.generate_content(model=model, contents=prompt, config=config),
         policy,
+        model=model,
     )
     return Grounded((response.text or "").strip(), grounding_sources(response))
 
@@ -313,5 +379,7 @@ async def embed_texts(
     response = await _with_retry(
         lambda: _genai_client().aio.models.embed_content(model=model, contents=list(texts), config=config),
         policy,
+        model=model,
+        operation="embeddings",
     )
     return [list(embedding.values or []) for embedding in response.embeddings or []]
