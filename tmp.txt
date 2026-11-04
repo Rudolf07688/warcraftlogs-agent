@@ -1,3 +1,3 @@
-claude --resume 84278822-c396-4fc0-8dea-734725eec37e
+claude --resume c88ddb6f-410c-4a10-ac79-a0cce79d1cd1
 
 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --dangerously-skip-permissions

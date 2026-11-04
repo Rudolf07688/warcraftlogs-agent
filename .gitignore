@@ -30,3 +30,6 @@ quotes.md
 backend/evals/guides/reports/*
 !backend/evals/guides/reports/baseline.json
 !backend/evals/guides/reports/.gitkeep
+
+# Local editor settings
+.vscode/
