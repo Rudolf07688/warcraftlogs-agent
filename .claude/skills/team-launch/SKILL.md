@@ -119,9 +119,12 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
      - the coordination, build and QA shares
      - what worked and what to change next time
 4. **Architecture docs gate** (owner's rule, 2026-11-04): run from the sprint worktree,
-   `python3 .claude/team/archdocs.py changed` must report nothing left to re-check, and `archdocs.py check` must be clean. The product owner does this in its
-   wrap-up; if it's missing, send the product owner back before you ask the merge question.
-   In single-pass mode, the lead does the step from `documentation/architecture/pages/maintaining.html`.
+   `python3 .claude/team/archdocs.py changed` must report nothing left to re-check, and
+   `archdocs.py check` must be clean. The product owner does this in its wrap-up; if it's
+   missing, send the product owner back before you ask the merge question. In single-pass
+   mode, the lead does the step from `documentation/architecture/pages/maintaining.html`.
+   The `.githooks/pre-merge-commit` hook refuses the `--no-ff` merge into `main` otherwise;
+   never bypass it (`ARCHDOCS_SKIP=1`) unless the owner says so for that merge.
 5. **Report to the owner:**
    - the paths to the plan, the sprint review and the team report
    - the points delivered
