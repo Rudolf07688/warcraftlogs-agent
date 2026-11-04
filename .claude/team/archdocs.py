@@ -10,14 +10,19 @@ after they have been re-checked, and checks the site's links and structure.
   archdocs.py stamp [PAGE...] [--ref REF]
                                      write REF's commit + today into the pages (default: all pages)
   archdocs.py check                  nav, links, anchors, stamps, no <style>/external resources
+  archdocs.py gate [--branches main]  git hook (.githooks/pre-merge-commit): on a merge into main,
+                                     refuse while any page's code moved past its stamp or check fails
 
 The page map (PAGE_PATHS) decides which page owns a code path. A changed path no page owns is
 listed under "unmapped": decide where it belongs, document it, and add it to PAGE_PATHS.
 The procedure is in documentation/architecture/pages/maintaining.html.
-Exit codes: changed = 0 nothing to re-check / 1 pages to re-check; check = 0 clean / 1 problems.
+Exit codes: changed = 0 nothing to re-check / 1 pages to re-check; check and gate = 0 clean / 1 problems.
+The hook is enabled per clone with: git config core.hooksPath .githooks
 """
 import argparse
+import contextlib
 import datetime
+import io
 import html.parser
 import os
 import re
@@ -79,7 +84,7 @@ SHARED = {"pyproject.toml": ["pages/deployment.html", "pages/backend-api.html"],
           "frontend/package.json": ["pages/frontend.html"],
           "docker-compose.yml": ["pages/deployment.html", "pages/database.html"]}
 # Paths that never affect the architecture pages.
-IGNORE = re.compile(r"^(meta/|sprints/|specs/|qa-reports/|\.claude/|\.specify/|documentation/(?!deployment\.md)|"
+IGNORE = re.compile(r"^(meta/|sprints/|specs/|qa-reports/|\.claude/|\.specify/|\.githooks/|documentation/(?!deployment\.md)|"
                     r"todo\.md|user_stories\.md|quotes\.md|tmp\.txt|CLAUDE\.md|AGENTS\.md|README\.md|LICENCE|\.gitignore|\.gitnexusignore|uv\.lock|package-lock\.json|"
                     r"frontend/package-lock\.json|.*\.pyc$|.*/tests?/|backend/tests/|frontend/src/.*\.test\.)")
 
@@ -117,19 +122,22 @@ def owner(path):
     return []
 
 
-def cmd_changed(a):
-    to = a.to
-    by_page, unmapped = {}, set()
-    bases = {}
+def moved(diff):
+    """Pages whose code changed since their stamp. `diff(sha)` lists changed paths from sha."""
+    by_page, unmapped, bases = {}, set(), {}
     for page in pages():
         sha, _ = stamp_of(page)
         if not sha:
-            print(f"{page}: no verified-at stamp, re-check the whole page")
-            by_page.setdefault(page, set()).add("(no stamp)")
+            by_page.setdefault(page, set()).add("(no verified-at stamp: re-check the whole page)")
             continue
         bases.setdefault(sha, []).append(page)
     for sha, pgs in bases.items():
-        files = git("diff", "--name-only", f"{sha}..{to}").splitlines()
+        try:
+            files = diff(sha)
+        except subprocess.CalledProcessError:
+            for p in pgs:
+                by_page.setdefault(p, set()).add(f"(stamp {sha} is not a known commit: re-check the page)")
+            continue
         for f in files:
             if IGNORE.match(f):
                 continue
@@ -139,12 +147,10 @@ def cmd_changed(a):
             for p in own:
                 if p in pgs:
                     by_page.setdefault(p, set()).add(f)
-            # index.html summarises everything: any mapped change may touch its tables/diagram.
-    tip = git("rev-parse", "--short", to)
-    if not by_page and not unmapped:
-        print(f"Nothing to re-check: every page's stamp covers {to} ({tip}).")
-        return 0
-    print(f"Code changed under these pages since their stamp (up to {to} = {tip}):\n")
+    return by_page, unmapped
+
+
+def report(by_page, unmapped):
     for p in sorted(by_page):
         print(f"{p}  (stamp {stamp_of(p)[0]})")
         for f in sorted(by_page[p]):
@@ -155,6 +161,54 @@ def cmd_changed(a):
             print(f"    {f}")
     print("\nAlso check index.html: the layer table and the system diagram summarise every page.")
     print("Re-verify those sections against the code, then: archdocs.py stamp && archdocs.py check")
+
+
+def cmd_changed(a):
+    to = a.to
+    by_page, unmapped = moved(lambda sha: git("diff", "--name-only", f"{sha}..{to}").splitlines())
+    tip = git("rev-parse", "--short", to)
+    if not by_page and not unmapped:
+        print(f"Nothing to re-check: every page's stamp covers {to} ({tip}).")
+        return 0
+    print(f"Code changed under these pages since their stamp (up to {to} = {tip}):\n")
+    report(by_page, unmapped)
+    return 1
+
+
+def cmd_gate(a):
+    """Git hook entry (pre-merge-commit): refuse a merge into a protected branch while the
+    merged code is ahead of the architecture docs. Compares each stamp with the INDEX, i.e.
+    exactly what the merge commit will contain, so commits on either side are covered."""
+    branch = subprocess.run(["git", "symbolic-ref", "--quiet", "--short", "HEAD"], capture_output=True,
+                            text=True, cwd=ROOT).stdout.strip()
+    if branch not in a.branches:
+        return 0
+    if os.environ.get("ARCHDOCS_SKIP") == "1":
+        print("archdocs gate: skipped (ARCHDOCS_SKIP=1). The architecture docs may now be behind main.",
+              file=sys.stderr)
+        return 0
+    by_page, unmapped = moved(lambda sha: git("diff", "--cached", "--name-only", sha).splitlines())
+    problems, out = [], []
+    if by_page or unmapped:
+        problems.append("code ahead of its page")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report(by_page, unmapped)
+        out.append(buf.getvalue())
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cmd_check(a)
+    if rc:
+        problems.append("site check failed")
+        out.append(buf.getvalue())
+    if not problems:
+        return 0
+    print(f"\narchdocs gate: merge into '{branch}' refused - documentation/architecture is behind the "
+          f"code ({', '.join(problems)}).\n", file=sys.stderr)
+    print("".join(out), file=sys.stderr)
+    print("Fix it on the branch you are merging (documentation/architecture/pages/maintaining.html),\n"
+          "then merge again. Owner override for one merge: ARCHDOCS_SKIP=1 git merge ...",
+          file=sys.stderr)
     return 1
 
 
@@ -276,8 +330,10 @@ def main():
     s.add_argument("pages", nargs="*")
     s.add_argument("--ref", default="HEAD")
     sub.add_parser("check")
+    g = sub.add_parser("gate")
+    g.add_argument("--branches", nargs="*", default=["main"])
     a = ap.parse_args()
-    return {"changed": cmd_changed, "stamp": cmd_stamp, "check": cmd_check}[a.cmd](a)
+    return {"changed": cmd_changed, "stamp": cmd_stamp, "check": cmd_check, "gate": cmd_gate}[a.cmd](a)
 
 
 if __name__ == "__main__":

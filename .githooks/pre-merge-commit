@@ -1,0 +1,9 @@
+#!/bin/sh
+# Owner preference 24: documentation/architecture must match the code before anything merges
+# into main. Refuses the merge commit while a page's code has moved past its verified-at stamp
+# or the site check fails. Runs only when the current branch is main; other branches pass.
+# Enable per clone:  git config core.hooksPath .githooks
+# One-off owner override:  ARCHDOCS_SKIP=1 git merge ...
+# Note: git runs this hook for merge commits only, so sprint merges use --no-ff (they do).
+root=$(git rev-parse --show-toplevel) || exit 1
+exec python3 "$root/.claude/team/archdocs.py" gate --branches main

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Completes the pre-merge-commit gate: git skips pre-merge-commit when a merge stops (conflicts,
+# or after that hook refused) and is finished with `git commit`, but runs this hook then.
+# Only acts while a merge is in progress; ordinary commits pass straight through.
+root=$(git rev-parse --show-toplevel) || exit 1
+[ -f "$(git rev-parse --git-path MERGE_HEAD)" ] || exit 0
+exec python3 "$root/.claude/team/archdocs.py" gate --branches main

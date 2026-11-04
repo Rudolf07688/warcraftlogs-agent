@@ -58,6 +58,13 @@
     <li><b>Commit and report.</b> Commit on the sprint branch (<code>docs(architecture): …</code>) and name the changed pages in the sprint review.</li>
   </ol>
   <p class="note">Done when <code>archdocs.py changed</code> exits 0 and <code>archdocs.py check</code> is clean on the sprint tip. That is the gate team-lead checks before the merge question.</p>
+  <h3>The git hook</h3>
+  <p>Git enforces the same gate. <code>.githooks/pre-merge-commit</code> runs <code>archdocs.py gate</code> on every merge commit into <code>main</code>, and <code>.githooks/pre-commit</code> repeats it when a stopped merge is finished with <code>git commit</code>. The gate compares each page's stamp with exactly what the merge commit will contain, and refuses while any page's code has moved past its stamp, a changed path has no page, or the site check fails. Merges into other branches and ordinary commits pass through.</p>
+  <ul>
+    <li><b>Enable it once per clone:</b> <code>git config core.hooksPath .githooks</code> (done in the main checkout on 2026-11-04; worktrees share the setting).</li>
+    <li><b>Fast-forward merges</b> make no merge commit, so git runs no hook; sprint merges use <code>git merge --no-ff</code>.</li>
+    <li><b>Owner override</b> for one merge: <code>ARCHDOCS_SKIP=1 git merge …</code>. The gate prints a warning, and the next close-out catches up.</li>
+  </ul>
 </section>
 
 <section class="layer" id="map">
