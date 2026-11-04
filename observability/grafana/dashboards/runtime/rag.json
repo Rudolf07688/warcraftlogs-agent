@@ -55,7 +55,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(sum_over_time(rag:searches:rate5m[$__range]) * 60)",
+          "expr": "round(sum(histogram_count(increase(app_rag_retrieval_duration{service_namespace=\"wcl-agent\"}[$__range]))))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -549,7 +549,9 @@
             "stacking": {
               "mode": "none"
             }
-          }
+          },
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -619,7 +621,9 @@
             "stacking": {
               "mode": "none"
             }
-          }
+          },
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -713,7 +717,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum by (app_cache_name) (sum_over_time(cache:requests:rate5m[$__range]) * 60)",
+          "expr": "round(sum by (app_cache_name) (increase(app_cache_requests{service_namespace=\"wcl-agent\"}[$__range])))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -723,7 +727,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0
         },
         "overrides": []
       },

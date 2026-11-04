@@ -35,8 +35,10 @@ from backend.tests.test_llm_provider_agent import (  # noqa: F401 - fixture
     use_provider,
 )
 from backend.tests.test_telemetry_support import scripted_agent, tool_call_with
+from backend.tests.test_wcl_cache import dead_redis  # noqa: F401 - fixture
 from wcl_agent.cache import cache
 from wcl_agent.cache.cache import CacheFamily, Outcome
+from wcl_agent.cache.cache_models import CharacterRef
 from wcl_agent.llm.model_retry import TurnStats, current_turn
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -195,6 +197,72 @@ async def test_cache_lookups_count_a_miss_then_a_hit(metric_reader, fake_redis):
     assert_clean(labels)
 
 
+def _lookups(points: Points) -> dict[str, int]:
+    """app.cache.requests by result."""
+    return {p.attributes["app.cache.result"]: p.value for p in points["app.cache.requests"]}
+
+
+class _BatchLoader:
+    async def __call__(self, missing):
+        return [CharacterRef(id=i, name="Rudolf", realm="area-52", region="eu", class_id=4) for i in missing]
+
+
+_MANY = [cache.keys.char_zone(i, 0, "dps", 0) for i in range(4)]
+
+
+async def test_a_corrupt_entry_counts_once(metric_reader, fake_redis):
+    """BUG-003: the dropped entry and its reload are one lookup."""
+    key = cache.keys.char_zone(7, 0, "dps", 0)
+    await fake_redis.set(key, b"{not json")
+
+    async def load():
+        return CharacterRef(id=7, name="Rudolf", realm="area-52", region="eu", class_id=4)
+
+    await cache.get_or_load(CacheFamily.CHAR_OVERVIEW, key, CharacterRef, load)
+
+    assert _lookups(metric_reader()) == {"miss": 1}
+
+
+async def test_a_failed_write_after_a_load_counts_once(metric_reader, fake_redis, monkeypatch):
+    """BUG-003: a value that loaded but could not be stored is one miss, not a miss and a
+    redis_error."""
+    client = cache._client()
+    real_set = client.set
+
+    async def refuse_values(name, value, *args, **kwargs):
+        if kwargs.get("ex"):
+            raise cache.RedisError("read-only replica")
+        return await real_set(name, value, *args, **kwargs)
+
+    monkeypatch.setattr(client, "set", refuse_values)
+    key = cache.keys.char_zone(8, 0, "dps", 0)
+
+    async def load():
+        return CharacterRef(id=8, name="Rudolf", realm="area-52", region="eu", class_id=4)
+
+    await cache.get_or_load(CacheFamily.CHAR_OVERVIEW, key, CharacterRef, load)
+
+    assert _lookups(metric_reader()) == {"miss": 1}
+
+
+async def test_a_batch_counts_one_lookup_per_key(metric_reader, fake_redis):
+    await fake_redis.set(_MANY[1], CharacterRef(id=1, name="Rudolf", realm="area-52", region="eu", class_id=4).model_dump_json())
+    await fake_redis.set(_MANY[3], b"{corrupt")
+
+    await cache.get_many_or_load(CacheFamily.CHAR_OVERVIEW, _MANY, CharacterRef, _BatchLoader())
+
+    assert _lookups(metric_reader()) == {"hit": 1, "miss": 3}
+
+
+async def test_a_batch_with_redis_down_counts_one_miss_per_key(metric_reader, dead_redis):
+    """BUG-003: N keys with Redis down are N misses, on the failing call and with the
+    circuit open."""
+    for _ in range(2):
+        await cache.get_many_or_load(CacheFamily.CHAR_OVERVIEW, _MANY, CharacterRef, _BatchLoader())
+
+    assert _lookups(metric_reader()) == {"miss": 8}
+
+
 def _hit(score: float) -> kb_search.Candidate:
     return kb_search.Candidate(f"c{score}", "guide", "text", (score,), {"section": "s"})
 
@@ -232,6 +300,24 @@ async def test_an_empty_search_counts_as_empty(metric_reader):
     [empty] = points["app.rag.empty_results"]
     assert (dict(empty.attributes), empty.value) == ({"app.rag.index": "all"}, 1)
     assert points["app.rag.top_score"] == []
+
+
+async def test_a_search_scoped_by_report_is_labelled_by_the_index_it_searched(metric_reader):
+    """BUG-005: a report code narrows the search to WCL chunks, so the label says wcl."""
+    searched: list[kb_search.SearchFilters] = []
+
+    async def runner(query, vector, filters, tenant_id, legs):
+        searched.append(filters)
+        return [_hit(1.0)]
+
+    request = kb_search.SearchRequest(
+        queries=(QUERY,), filters=kb_search.SearchFilters(report_code="a1B2c3"), hard=frozenset(), k=1,
+        tenant_id=uuid.uuid4(),
+    )
+    await kb_search.search(request, embedder=None, runner=runner)
+
+    assert kb_search.searched_kinds(searched[0]) == ["wcl"]
+    assert metric_reader().labels("app.rag.retrieved_chunks") == [{"app.rag.index": "wcl"}]
 
 
 async def test_a_streamed_turn_records_its_time_to_first_token_once(metric_reader, monkeypatch, use_provider):
@@ -326,3 +412,64 @@ async def test_a_final_only_answer_is_timed_under_the_model_then_in_use(metric_r
 
     [point] = metric_reader()["app.llm.stream.ttft"]
     assert dict(point.attributes) == {"gen_ai.request.model": "claude-haiku-5-5", "gen_ai.agent.name": "final_agent"}
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+def _event(part, *, partial: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(
+        author="wcl_agent",
+        partial=partial,
+        content=SimpleNamespace(parts=[part]),
+        usage_metadata=None,
+        grounding_metadata=None,
+        is_final_response=lambda: not partial,
+    )
+
+
+def _part(**fields) -> SimpleNamespace:
+    return SimpleNamespace(**{"function_call": None, "function_response": None, "thought": False, "text": None, **fields})
+
+
+class _ToolThenText:
+    """Thinks 1.0 s, calls a tool that answers 0.2 s later (under ``response_id``), streams
+    its answer 0.5 s after that."""
+
+    def __init__(self, clock: _Clock, response_id: str | None) -> None:
+        self.clock, self.response_id = clock, response_id
+
+    async def run_async(self, **kwargs):
+        self.clock.now += 1.0
+        yield _event(_part(function_call=SimpleNamespace(id="c1", name="report_title", args={"code": "a1B2c3"})))
+        self.clock.now += 0.2
+        response = SimpleNamespace(id=self.response_id, name="report_title", response={"status": "success"})
+        yield _event(_part(function_response=response))
+        self.clock.now += 0.5
+        yield _event(_part(text="It was Raid Night."), partial=True)
+
+
+@pytest.mark.parametrize("response_id", ["c1", None, "never-started"])
+async def test_time_to_first_token_runs_from_the_turn_start_across_a_tool_round(metric_reader, monkeypatch, response_id):
+    """BUG-001: the tool timer must not replace the turn's start, and a tool response without
+    a matching call id must not break the turn."""
+    clock = _Clock()
+
+    async def no_session(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(agent_runner, "time", clock)
+    monkeypatch.setattr(agent_runner, "_ensure_session", no_session)
+    monkeypatch.setattr(agent_runner, "_get_runner", lambda model: _ToolThenText(clock, response_id))
+
+    records = [r async for r in agent_runner._run_turn(CLAUDE, SESSION, QUERY)]
+    assert [r["type"] for r in records] == ["tool_start", "tool_end", "token"]
+
+    [point] = metric_reader()["app.llm.stream.ttft"]
+    assert point.count == 1
+    assert point.sum == pytest.approx(1.7)

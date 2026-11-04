@@ -55,7 +55,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(sum_over_time(genai:invocations:rate5m[$__range]) * 60)",
+          "expr": "round(sum(histogram_count(increase(gen_ai_invoke_agent_duration{service_namespace=\"wcl-agent\"}[$__range]))))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -1090,7 +1090,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum by (gen_ai_tool_name) (sum_over_time(genai:tool_calls:rate5m[$__range]) * 60)",
+          "expr": "round(sum by (gen_ai_tool_name) (histogram_count(increase(gen_ai_execute_tool_duration{service_namespace=\"wcl-agent\"}[$__range]))))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -1100,7 +1100,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "decimals": 0
         },
         "overrides": []
       },

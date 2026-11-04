@@ -221,7 +221,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(sum_over_time(app:http_requests:rate5m{service_name=\"api\"}[$__range]) * 60)",
+          "expr": "round(sum(increase(traces_spanmetrics_calls{service_name=\"api\", span_kind=\"SPAN_KIND_SERVER\", http_route!=\"\"}[$__range])))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
