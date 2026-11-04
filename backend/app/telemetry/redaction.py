@@ -65,6 +65,22 @@ _TRUNCATED = "…[truncated]"
 _SQL_PARAMETERS = "[parameters:"
 _NUMBER = re.compile(r"[\"']?-?\d+(?:\.\d+)?[\"']?")
 _MAX_DEPTH = 8
+# A content log record (ADK's operation details) holds the whole conversation so far and comes
+# again every model round. Before it is scrubbed it is cut to this much text, newest messages
+# kept, so its cost and size don't grow with the conversation (QA PERF-001; Loki refuses
+# records over 64 KB). The round's reply comes first, then the input from the newest message
+# back, then instructions and tool definitions, which the span carries too.
+CONTENT_RECORD_BUDGET = 32_000
+_BUDGET_ORDER = (
+    "gen_ai.output.messages",
+    "gen_ai.input.messages",
+    "gen_ai.system_instructions",
+    "gen_ai.tool.definitions",
+)
+# Each map entry or list item also costs this much, for the punctuation around it.
+_ITEM_COST = 8
+# Set on a content record that was cut.
+TRUNCATED_FLAG = "app.content.truncated"
 
 
 def _basic_credentials(b64: str) -> bool:
@@ -134,6 +150,63 @@ def scrub_value(value: Any, *, content_allowed: bool = True, depth: int = 0) -> 
     return value
 
 
+class _Budget:
+    def __init__(self, chars: int) -> None:
+        self.left = chars
+        self.cut = False
+
+    def spent(self) -> bool:
+        if self.left <= 0:
+            self.cut = True
+        return self.cut
+
+
+def _within(value: Any, budget: _Budget, depth: int = 0) -> Any:
+    """A copy of ``value`` with at most ``budget.left`` characters of text; a list keeps its
+    last items. Never walks past the budget, so the cost doesn't depend on ``value``'s size."""
+    if isinstance(value, str):
+        if len(value) > budget.left:
+            budget.cut = True
+            value = value[: max(0, budget.left)] + _TRUNCATED
+        budget.left -= len(value)
+        return value
+    if depth >= _MAX_DEPTH:
+        return value  # scrub_value masks it whole
+    if isinstance(value, Mapping):
+        kept: dict[Any, Any] = {}
+        for key, item in value.items():
+            if budget.spent():
+                break
+            budget.left -= _ITEM_COST + len(str(key))
+            kept[key] = _within(item, budget, depth + 1)
+        return kept
+    if isinstance(value, (list, tuple)):
+        newest: list[Any] = []
+        for item in reversed(value):
+            if budget.spent():
+                break
+            budget.left -= _ITEM_COST
+            newest.append(_within(item, budget, depth + 1))
+        return type(value)(reversed(newest))
+    return value
+
+
+def _fit_content(body: Any, attributes: Mapping[str, Any]) -> tuple[Any, dict[str, Any], bool]:
+    """A content record's body and attributes cut to ``CONTENT_RECORD_BUDGET``, and whether
+    anything was cut."""
+    budget = _Budget(CONTENT_RECORD_BUDGET)
+    body = _within(body, budget)
+    order = [key for key in attributes if key not in _BUDGET_ORDER]
+    order += [key for key in _BUDGET_ORDER if key in attributes]
+    fitted: dict[str, Any] = {}
+    for key in order:
+        if budget.spent():
+            break
+        budget.left -= _ITEM_COST + len(key)
+        fitted[key] = _within(attributes[key], budget)
+    return body, fitted, budget.cut
+
+
 def clean_attributes(attributes: Mapping[str, Any] | None, *, content_allowed: bool) -> dict[str, Any]:
     """Attributes ready to export: content keys (exception text included) dropped outside dev,
     secrets masked.
@@ -192,20 +265,26 @@ def redact_log(record: ReadableLogRecord, *, content_allowed: bool) -> ReadableL
     """A copy of ``record`` fit to leave the process, or ``None`` when it must not leave.
 
     A content record (a ``gen_ai.*`` event, or one already marked ``app.content``) is dropped
-    outside dev and marked for the 7-day content stream in dev.
+    outside dev; in dev it is cut to ``CONTENT_RECORD_BUDGET`` and marked for the 7-day content
+    stream.
     """
     original = record.log_record
-    attributes = original.attributes or {}
+    body, attributes = original.body, original.attributes or {}
     is_content = (original.event_name or "").startswith(CONTENT_EVENT_PREFIX) or (
         attributes.get(CONTENT_FLAG) == "true"
     )
     if is_content and not content_allowed:
         return None
+    cut = False
+    if is_content:
+        body, attributes, cut = _fit_content(body, attributes)
     log_record = copy.copy(original)
-    log_record.body = scrub_value(original.body, content_allowed=content_allowed)
+    log_record.body = scrub_value(body, content_allowed=content_allowed)
     cleaned = clean_attributes(attributes, content_allowed=content_allowed)
     if is_content:
         cleaned[CONTENT_FLAG] = "true"
+    if cut:
+        cleaned[TRUNCATED_FLAG] = "true"
     log_record.attributes = cleaned
     return dataclasses.replace(record, log_record=log_record)
 

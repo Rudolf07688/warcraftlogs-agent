@@ -8,9 +8,13 @@ same processors on in-memory exporters.
 
 from __future__ import annotations
 
+import atexit
 import functools
 import os
 import re
+import threading
+import time
+from collections.abc import Sequence
 from typing import Any
 
 from opentelemetry import _logs, metrics, trace
@@ -54,9 +58,11 @@ SERVICE_NAMESPACE = "wcl-agent"
 # session (each turn gets its own root span instead, see chat_turn_span). Regexes searched in
 # the request URL.
 EXCLUDED_URLS = r"/health$,/ws/chat$"
-# One export attempt, retries included, waits at most this long, so a down collector costs at
-# most a few seconds at shutdown (QA SEC-005).
+# One export attempt, retries included, waits at most this long (QA SEC-005).
 EXPORT_TIMEOUT_S = 2.0
+# The exit-time flush of all three providers together; whatever isn't sent by then is dropped,
+# however big the backlog and however slow the collector (QA BUG-003).
+SHUTDOWN_TIMEOUT_S = 3.0
 # Span attribute values are cut to the length the redaction scrubs (QA SEC-002, SEC-008).
 SPAN_LIMITS = SpanLimits(max_attribute_length=MAX_VALUE_LENGTH)
 # The only attributes a metric may carry (spec §9.3; QA SEC-003): bounded enums and templates.
@@ -136,12 +142,13 @@ def metric_exporter() -> MetricExporter:
     )
 
 
-def meter_provider(res: Resource, reader: MetricReader) -> MeterProvider:
+def meter_provider(res: Resource, reader: MetricReader, *, shutdown_on_exit: bool = True) -> MeterProvider:
     """Every instrument keeps only the allowlisted attributes, whoever recorded it."""
     return MeterProvider(
         resource=res,
         metric_readers=[reader],
         views=[View(instrument_name="*", attribute_keys=METRIC_ATTRIBUTES)],
+        shutdown_on_exit=shutdown_on_exit,
     )
 
 
@@ -189,20 +196,45 @@ def instrument() -> None:
     HTTPXClientInstrumentor().instrument()
 
 
+def shutdown(
+    providers: Sequence[TracerProvider | LoggerProvider | MeterProvider], timeout_s: float = SHUTDOWN_TIMEOUT_S
+) -> None:
+    """Shut the providers down in parallel, waiting ``timeout_s`` at most for all of them.
+
+    Each provider's own shutdown drains its whole queue, one export timeout per batch, so with
+    a hung collector it would take seconds per batch. Its daemon thread is abandoned at the
+    deadline and the rest of the backlog dies with the process.
+    """
+    deadline = time.monotonic() + timeout_s
+    threads = [
+        threading.Thread(target=provider.shutdown, name="telemetry-shutdown", daemon=True)
+        for provider in providers
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(max(0.0, deadline - time.monotonic()))
+
+
 def install(config: TelemetryConfig) -> None:
-    """Set the global providers (before ADK is imported) and instrument the libraries."""
+    """Set the global providers (before ADK is imported) and instrument the libraries.
+
+    The SDK's own exit hooks are off: one hook flushes all three within ``SHUTDOWN_TIMEOUT_S``.
+    """
     res = resource(config)
-    tracer_provider = TracerProvider(resource=res, span_limits=SPAN_LIMITS)
+    tracer_provider = TracerProvider(resource=res, span_limits=SPAN_LIMITS, shutdown_on_exit=False)
     tracer_provider.add_span_processor(
         span_processor(OTLPSpanExporter(timeout=EXPORT_TIMEOUT_S), content_allowed=config.content_allowed)
     )
     # Log records take their limits from the environment only.
     os.environ.setdefault("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", str(MAX_VALUE_LENGTH))
-    logger_provider = LoggerProvider(resource=res)
+    logger_provider = LoggerProvider(resource=res, shutdown_on_exit=False)
     logger_provider.add_log_record_processor(
         log_processor(OTLPLogExporter(timeout=EXPORT_TIMEOUT_S), content_allowed=config.content_allowed)
     )
     trace.set_tracer_provider(tracer_provider)
     _logs.set_logger_provider(logger_provider)
-    metrics.set_meter_provider(meter_provider(res, PeriodicExportingMetricReader(metric_exporter())))
+    meters = meter_provider(res, PeriodicExportingMetricReader(metric_exporter()), shutdown_on_exit=False)
+    metrics.set_meter_provider(meters)
+    atexit.register(shutdown, (tracer_provider, logger_provider, meters))
     instrument()
