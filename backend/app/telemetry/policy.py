@@ -23,7 +23,7 @@ _DEV_DEFAULTS: Mapping[str, str] = {
 _SEMCONV = ("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
 
 # Span and log attributes that carry prompt, response or tool content (ADK legacy and GenAI
-# semconv names, and HTTP bodies); outside dev they are removed before export.
+# semconv names, HTTP bodies, exception text); outside dev they are removed before export.
 CONTENT_ATTRIBUTES = frozenset(
     {
         "gen_ai.input.messages",
@@ -40,6 +40,10 @@ CONTENT_ATTRIBUTES = frozenset(
         "gcp.vertex.agent.data",
         "http.request.body.content",
         "http.response.body.content",
+        # Exception text can quote chat text, tool arguments or SQL parameters (QA SEC-001);
+        # exception.type stays.
+        "exception.message",
+        "exception.stacktrace",
     }
 )
 _CONTENT_PREFIXES = ("gen_ai.prompt.", "gen_ai.completion.")

@@ -30,22 +30,25 @@ from .policy import CONTENT_EVENT_PREFIX, CONTENT_FLAG, is_content_attribute
 # secret, API keys, DSNs. Composed with that rule, never instead of it.
 _EXTRA_KEY_WORDS = r"secret|api[_-]?key|apikey|private[_-]?key|dsn|credential"
 _EXTRA_SENSITIVE_KEY = re.compile(_EXTRA_KEY_WORDS, re.IGNORECASE)
-_KEY = rf"[\w.-]*(?:{_SENSITIVE_KEY.pattern}|{_EXTRA_KEY_WORDS})[\w.-]*"
-_PARAM = r"(?:password|passwd|[\w-]*token|api[_-]?key|apikey|key|[\w-]*secret|code|sig|signature|auth)"
+# Linear time on any input (QA SEC-002): every repeat is bounded, and a pair's key is tried
+# only where a run of key characters starts, the keyword found by a bounded lookahead.
+_KEY_WORDS = rf"(?:{_SENSITIVE_KEY.pattern}|{_EXTRA_KEY_WORDS})"
+_KEY = r"(?<![\w.-])(?=[\w.-]{0,64}?" + _KEY_WORDS + r")[\w.-]{1,128}"
+_PARAM = r"(?:password|passwd|[\w-]{0,32}token|api[_-]?key|apikey|key|[\w-]{0,32}secret|code|sig|signature|auth)"
 _SECRET_TEXT = re.compile(
     "|".join(
         (
             # Authorization header values (Basic only when it decodes to user:password).
-            r"(?P<scheme>(?-i:\bBearer)\s+)[A-Za-z0-9._~+/=-]{6,}",
-            r"(?P<basic>(?-i:\bBasic)\s+)(?P<b64>[A-Za-z0-9+/]{8,}={0,2})",
+            r"(?P<scheme>(?-i:\bBearer)\s{1,8})[A-Za-z0-9._~+/=-]{6,}",
+            r"(?P<basic>(?-i:\bBasic)\s{1,8})(?P<b64>[A-Za-z0-9+/]{8,}={0,2})",
             # user:password@ in any URL or DSN.
-            r"(?P<url>\b[a-z][a-z0-9+.-]*://)[^\s/:@]+:[^\s/@]+@",
+            r"(?P<url>\b[a-z][a-z0-9+.-]{0,31}://)[^\s/:@]{1,256}:[^\s/@]{1,256}@",
             # ?token=..., &key=..., ;sig=...
             rf"(?P<param>[?&;]{_PARAM}=)[^&\s#\"'\\]+",
             # "client_secret": "...", token='...', Cookie: ..., password=..., also inside
             # JSON that was encoded twice (\"token\": \"...\").
-            rf"(?P<pair>\\?[\"']?{_KEY}\\?[\"']?\s*[:=]\s*)"
-            r"(?P<value>(?:Bearer|Basic|Digest|Token)\s+[^\s,;\"'\\]+|\\\"(?:[^\\]|\\(?!\"))*\\\"|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s,;&}\]\"'\\]+)",
+            rf"(?P<pair>\\?[\"']?{_KEY}\\?[\"']?[ \t]{{0,8}}[:=][ \t]{{0,8}})"
+            r"(?P<value>(?:Bearer|Basic|Digest|Token)\s{1,8}[^\s,;\"'\\]+|\\\"(?:[^\\]|\\(?!\"))*\\\"|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s,;&}\]\"'\\]+)",
             # Known key shapes: Anthropic/OpenAI-style, Google API keys and OAuth tokens, JWTs.
             r"\bsk-[A-Za-z0-9_-]{16,}",
             r"\bAIza[0-9A-Za-z_-]{30,}",
@@ -55,6 +58,11 @@ _SECRET_TEXT = re.compile(
     ),
     re.IGNORECASE,
 )
+# Longest exported string; the span limit and the scrub cap are the same (QA SEC-002, SEC-008).
+MAX_VALUE_LENGTH = 16_384
+_TRUNCATED = "…[truncated]"
+# SQLAlchemy error text ends with the statement's parameters: chat text, for message rows.
+_SQL_PARAMETERS = "[parameters:"
 _NUMBER = re.compile(r"[\"']?-?\d+(?:\.\d+)?[\"']?")
 _MAX_DEPTH = 8
 
@@ -80,8 +88,13 @@ def _replace(match: re.Match[str]) -> str:
     return REDACTED
 
 
-def scrub_text(text: str) -> str:
-    """``text`` with every secret-shaped part replaced by the redaction marker."""
+def scrub_text(text: str, *, content_allowed: bool = True) -> str:
+    """``text`` capped at ``MAX_VALUE_LENGTH`` with every secret-shaped part masked; outside
+    dev also without SQL statement parameters."""
+    if len(text) > MAX_VALUE_LENGTH:
+        text = text[:MAX_VALUE_LENGTH] + _TRUNCATED
+    if not content_allowed and _SQL_PARAMETERS in text:
+        text = text[: text.index(_SQL_PARAMETERS)] + f"{_SQL_PARAMETERS} {REDACTED}]"
     return _SECRET_TEXT.sub(_replace, text)
 
 
@@ -99,26 +112,31 @@ def _has_text(value: Any) -> bool:
     return False
 
 
-def scrub_value(value: Any, depth: int = 0) -> Any:
+def scrub_value(value: Any, *, content_allowed: bool = True, depth: int = 0) -> Any:
     """A copy of an attribute value or log body with secrets masked (maps by key as well)."""
     if isinstance(value, str):
-        return scrub_text(value)
+        return scrub_text(value, content_allowed=content_allowed)
     if depth >= _MAX_DEPTH:
         return REDACTED if _has_text(value) else value
     if isinstance(value, bytes):
         return REDACTED
     if isinstance(value, Mapping):
         return {
-            k: (REDACTED if _is_secret_key(str(k)) and _has_text(v) else scrub_value(v, depth + 1))
+            k: (
+                REDACTED
+                if _is_secret_key(str(k)) and _has_text(v)
+                else scrub_value(v, content_allowed=content_allowed, depth=depth + 1)
+            )
             for k, v in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return type(value)(scrub_value(v, depth + 1) for v in value)
+        return type(value)(scrub_value(v, content_allowed=content_allowed, depth=depth + 1) for v in value)
     return value
 
 
 def clean_attributes(attributes: Mapping[str, Any] | None, *, content_allowed: bool) -> dict[str, Any]:
-    """Attributes ready to export: content keys dropped outside dev, secrets masked.
+    """Attributes ready to export: content keys (exception text included) dropped outside dev,
+    secrets masked.
 
     Only text is masked under a sensitive key: ``gen_ai.usage.input_tokens`` is a number.
     """
@@ -126,7 +144,10 @@ def clean_attributes(attributes: Mapping[str, Any] | None, *, content_allowed: b
     for key, value in (attributes or {}).items():
         if not content_allowed and is_content_attribute(key):
             continue
-        cleaned[key] = REDACTED if _is_secret_key(key) and _has_text(value) else scrub_value(value)
+        if _is_secret_key(key) and _has_text(value):
+            cleaned[key] = REDACTED
+        else:
+            cleaned[key] = scrub_value(value, content_allowed=content_allowed)
     return cleaned
 
 
@@ -147,7 +168,10 @@ def redact_span(span: ReadableSpan, *, content_allowed: bool) -> ReadableSpan:
     ]
     status = span.status
     if status.description:
-        status = Status(status.status_code, scrub_text(status.description))
+        # Outside dev only the code: the description is exception text (chat text, SQL
+        # parameters); the exception event keeps its type.
+        description = scrub_text(status.description) if content_allowed else None
+        status = Status(status.status_code, description)
     return ReadableSpan(
         name=scrub_text(span.name),
         context=span.context,
@@ -178,7 +202,7 @@ def redact_log(record: ReadableLogRecord, *, content_allowed: bool) -> ReadableL
     if is_content and not content_allowed:
         return None
     log_record = copy.copy(original)
-    log_record.body = scrub_value(original.body)
+    log_record.body = scrub_value(original.body, content_allowed=content_allowed)
     cleaned = clean_attributes(attributes, content_allowed=content_allowed)
     if is_content:
         cleaned[CONTENT_FLAG] = "true"

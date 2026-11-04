@@ -9,6 +9,7 @@ same processors on in-memory exporters.
 from __future__ import annotations
 
 import functools
+import os
 import re
 from typing import Any
 
@@ -37,15 +38,15 @@ from opentelemetry.sdk.metrics.export import (
     MetricReader,
     PeriodicExportingMetricReader,
 )
-from opentelemetry.sdk.metrics.view import ExponentialBucketHistogramAggregation
+from opentelemetry.sdk.metrics.view import ExponentialBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import Span
 from starlette.routing import compile_path
 
 from .config import TelemetryConfig
-from .redaction import RedactingLogExporter, RedactingSpanExporter
+from .redaction import MAX_VALUE_LENGTH, RedactingLogExporter, RedactingSpanExporter
 
 SERVICE_NAME = "api"
 SERVICE_NAMESPACE = "wcl-agent"
@@ -53,6 +54,45 @@ SERVICE_NAMESPACE = "wcl-agent"
 # session (each turn gets its own root span instead, see chat_turn_span). Regexes searched in
 # the request URL.
 EXCLUDED_URLS = r"/health$,/ws/chat$"
+# One export attempt, retries included, waits at most this long, so a down collector costs at
+# most a few seconds at shutdown (QA SEC-005).
+EXPORT_TIMEOUT_S = 2.0
+# Span attribute values are cut to the length the redaction scrubs (QA SEC-002, SEC-008).
+SPAN_LIMITS = SpanLimits(max_attribute_length=MAX_VALUE_LENGTH)
+# The only attributes a metric may carry (spec §9.3; QA SEC-003): bounded enums and templates.
+# Never the Host header (http.host, http.server_name, net.host.name, server.address), an id, a
+# raw path or a URL.
+METRIC_ATTRIBUTES = frozenset(
+    {
+        # HTTP server and client, old and new semantic conventions
+        "http.method",
+        "http.request.method",
+        "http.status_code",
+        "http.response.status_code",
+        "http.route",
+        "http.target",  # the route template on server metrics, never set from the raw path
+        "http.scheme",
+        "url.scheme",
+        "http.flavor",
+        "network.protocol.version",
+        "net.peer.name",  # outbound host: Warcraft Logs and the model APIs
+        "error.type",
+        # SQLAlchemy connection pool
+        "pool.name",
+        "state",
+        # GenAI (ADK)
+        "gen_ai.operation.name",
+        "gen_ai.provider.name",
+        "gen_ai.system",
+        "gen_ai.request.model",
+        "gen_ai.response.model",
+        "gen_ai.token.type",
+        "gen_ai.agent.name",
+        "gen_ai.tool.name",
+        "gen_ai.tool.type",
+        "gen_ai.workflow.nested",
+    }
+)
 
 
 def resource(config: TelemetryConfig) -> Resource:
@@ -80,6 +120,7 @@ def metric_exporter() -> MetricExporter:
     """OTLP metrics: cumulative for every instrument, exponential histograms."""
     cumulative = AggregationTemporality.CUMULATIVE
     return OTLPMetricExporter(
+        timeout=EXPORT_TIMEOUT_S,
         preferred_temporality={
             kind: cumulative
             for kind in (
@@ -96,7 +137,12 @@ def metric_exporter() -> MetricExporter:
 
 
 def meter_provider(res: Resource, reader: MetricReader) -> MeterProvider:
-    return MeterProvider(resource=res, metric_readers=[reader])
+    """Every instrument keeps only the allowlisted attributes, whoever recorded it."""
+    return MeterProvider(
+        resource=res,
+        metric_readers=[reader],
+        views=[View(instrument_name="*", attribute_keys=METRIC_ATTRIBUTES)],
+    )
 
 
 @functools.cache
@@ -146,13 +192,15 @@ def instrument() -> None:
 def install(config: TelemetryConfig) -> None:
     """Set the global providers (before ADK is imported) and instrument the libraries."""
     res = resource(config)
-    tracer_provider = TracerProvider(resource=res)
+    tracer_provider = TracerProvider(resource=res, span_limits=SPAN_LIMITS)
     tracer_provider.add_span_processor(
-        span_processor(OTLPSpanExporter(), content_allowed=config.content_allowed)
+        span_processor(OTLPSpanExporter(timeout=EXPORT_TIMEOUT_S), content_allowed=config.content_allowed)
     )
+    # Log records take their limits from the environment only.
+    os.environ.setdefault("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", str(MAX_VALUE_LENGTH))
     logger_provider = LoggerProvider(resource=res)
     logger_provider.add_log_record_processor(
-        log_processor(OTLPLogExporter(), content_allowed=config.content_allowed)
+        log_processor(OTLPLogExporter(timeout=EXPORT_TIMEOUT_S), content_allowed=config.content_allowed)
     )
     trace.set_tracer_provider(tracer_provider)
     _logs.set_logger_provider(logger_provider)

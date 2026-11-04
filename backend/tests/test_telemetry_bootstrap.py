@@ -10,17 +10,21 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-from opentelemetry.sdk.metrics import Counter, Histogram, MeterProvider
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.metrics import Counter, Histogram
 from opentelemetry.sdk.metrics.export import AggregationTemporality, InMemoryMetricReader
 from opentelemetry.sdk.metrics._internal.point import ExponentialHistogramDataPoint
 
 from backend.app import telemetry
 from backend.app.telemetry import setup
 from backend.app.telemetry.config import TelemetryConfig
+from backend.app.telemetry.redaction import MAX_VALUE_LENGTH
 
 ROOT = Path(__file__).resolve().parents[2]
 DEAD_COLLECTOR = "http://127.0.0.1:9"
@@ -86,14 +90,25 @@ if report["tracer_provider"] == "TracerProvider":
             logging.getLogger("backend.app.probe").warning("line %%d", i)
     report["health"] = TestClient(main.app).get("/health").status_code
     report["busy_s"] = time.monotonic() - started
+    with tracer.start_as_current_span("big") as span:
+        span.set_attribute("gen_ai.input.messages", "x" * 100000)
+        report["span_value_length"] = len(span.attributes["gen_ai.input.messages"])
+    report["log_value_limit"] = os.environ.get("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT")
 
+report["reported_at"] = time.time()
 print("REPORT" + json.dumps(report))
 sys.stdout.flush()
-os._exit(0)  # skip the exit-time flush to the dead collector
+if os.environ.get("PROBE_EXIT") != "normal":
+    os._exit(0)  # skip the exit-time flush to the dead collector
 """ % {"adk_env": ADK_CONTENT_ENV}
 
 
 def _probe(**env: str) -> dict:
+    return _run_probe(env)[0]
+
+
+def _run_probe(env: dict[str, str]) -> tuple[dict, float]:
+    """The probe's report, and how long the process took after reporting (its exit)."""
     clean = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "WCL_ENVIRONMENT", "WCL_GIT_SHA", "ADK_"))}
     out = subprocess.run(
         [sys.executable, "-c", PROBE],
@@ -103,9 +118,11 @@ def _probe(**env: str) -> dict:
         text=True,
         timeout=180,
     )
+    ended = time.time()
     lines = [line for line in out.stdout.splitlines() if line.startswith("REPORT")]
     assert lines, out.stderr[-3000:]
-    return json.loads(lines[0][len("REPORT") :])
+    report = json.loads(lines[0][len("REPORT") :])
+    return report, ended - report["reported_at"]
 
 
 def test_without_an_endpoint_nothing_is_installed():
@@ -169,6 +186,23 @@ def test_a_down_collector_blocks_neither_startup_nor_requests():
         "OTEL_SEMCONV_STABILITY_OPT_IN": "gen_ai_latest_experimental",
     }
     assert report["resource"]["deployment.environment.name"] == "prod"
+    # Attribute values are capped at the redaction length (QA SEC-002, SEC-008).
+    assert report["span_value_length"] == MAX_VALUE_LENGTH
+    assert report["log_value_limit"] == str(MAX_VALUE_LENGTH)
+
+
+def test_a_down_collector_delays_exit_by_a_few_seconds_at_most():
+    """The exit-time flush retries until its export timeout; three signals in a row (QA SEC-005)."""
+    _report, exit_s = _run_probe(
+        {"OTEL_EXPORTER_OTLP_ENDPOINT": DEAD_COLLECTOR, "WCL_ENVIRONMENT": "prod", "PROBE_EXIT": "normal"}
+    )
+    assert exit_s < 7  # ~3.5 s measured; the SDK's 10 s default made it 8 s and more
+
+
+def test_the_suite_runs_without_a_shells_otel_settings():
+    """bin/claude-otel exports OTEL_EXPORTER_OTLP_ENDPOINT; conftest strips it (QA SEC-005)."""
+    assert not [name for name in os.environ if name.startswith("OTEL_")]
+    assert telemetry.configure_telemetry() is None
 
 
 def test_configure_is_a_no_op_without_an_endpoint(monkeypatch):
@@ -184,9 +218,8 @@ def test_metrics_are_cumulative_with_exponential_histograms():
         preferred_temporality=exporter._preferred_temporality,
         preferred_aggregation=exporter._preferred_aggregation,
     )
-    provider = MeterProvider(
-        resource=setup.resource(TelemetryConfig(enabled=True, environment="ci", version="t")),
-        metric_readers=[reader],
+    provider = setup.meter_provider(
+        setup.resource(TelemetryConfig(enabled=True, environment="ci", version="t")), reader
     )
     meter = provider.get_meter("t")
     meter.create_histogram("latency").record(0.25)
@@ -202,4 +235,34 @@ def test_metrics_are_cumulative_with_exponential_histograms():
     assert metrics["latency"].aggregation_temporality is AggregationTemporality.CUMULATIVE
     assert metrics["calls"].aggregation_temporality is AggregationTemporality.CUMULATIVE
     assert {Counter, Histogram} <= set(exporter._preferred_temporality)
+    provider.shutdown()
+
+
+async def test_no_request_value_becomes_a_metric_label(client, monkeypatch):
+    """Host header, ids in the path: the View keeps only allowlisted keys (QA SEC-003)."""
+    from backend.app.main import app
+
+    reader = InMemoryMetricReader()
+    provider = setup.meter_provider(
+        setup.resource(TelemetryConfig(enabled=True, environment="ci", version="t")), reader
+    )
+    FastAPIInstrumentor.instrument_app(app, meter_provider=provider, **setup.FASTAPI_OPTIONS)
+    monkeypatch.setattr(app, "middleware_stack", None)  # rebuilt with the instrumentation
+    try:
+        for i in range(40):
+            await client.get(f"/api/conversations/{uuid.uuid4()}", headers={"host": f"h{i}.attacker.example"})
+    finally:
+        FastAPIInstrumentor.uninstrument_app(app)
+
+    points = [
+        point
+        for rm in reader.get_metrics_data().resource_metrics
+        for sm in rm.scope_metrics
+        for metric in sm.metrics
+        if metric.name.startswith("http.server")
+        for point in metric.data.data_points
+    ]
+    assert points and all(set(p.attributes) <= setup.METRIC_ATTRIBUTES for p in points)
+    assert "attacker" not in str([dict(p.attributes) for p in points])
+    assert len(points) <= 6  # a few instruments x one status, not one series per request
     provider.shutdown()

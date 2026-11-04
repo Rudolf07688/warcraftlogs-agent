@@ -44,6 +44,13 @@
 
 - [X] T017 Full suite via check.py, GitNexus detect-changes, board contract note (event names), live-check question, hand-off
 
+## Phase 9: QA security rework (board review:054)
+
+- [X] T018 SEC-001: outside dev drop exception.message/stacktrace and status descriptions, cut SQL parameters from any text, in backend/app/telemetry/policy.py and redaction.py; test backend/tests/test_telemetry_errors.py
+- [X] T019 SEC-002/008: linear secret pattern, 16 KiB value cap, span limits and log value limit in redaction.py and setup.py; timing tests in test_telemetry_redaction.py
+- [X] T020 SEC-003: metrics View with an attribute allowlist in setup.py; Host-header test in test_telemetry_bootstrap.py
+- [X] T021 SEC-005: conftest strips OTEL_* (granted hunk), exporter timeout 2 s; exit-time test in test_telemetry_bootstrap.py
+
 ## Dependencies
 
 T001 → T003 → US1 → US2 → US3 → US4 → US5 → T017. US5 is independent of US2–US4 except T004.

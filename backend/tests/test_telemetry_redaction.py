@@ -3,15 +3,18 @@ log record, with content on, and leaves counts and ordinary text alone."""
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from opentelemetry.sdk._logs import ReadableLogRecord
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import Event, ReadableSpan
+from opentelemetry.sdk.trace import Event, ReadableSpan, TracerProvider
 from opentelemetry.trace import Link, SpanContext, Status, StatusCode
 from opentelemetry._logs import LogRecord
 
 from backend.app.auth.redaction import REDACTED
-from backend.app.telemetry.redaction import redact_log, redact_span, scrub_text
+from backend.app.telemetry import setup
+from backend.app.telemetry.redaction import MAX_VALUE_LENGTH, redact_log, redact_span, scrub_text
 
 SECRET = "opaque-SECRET-054"
 _CTX = SpanContext(trace_id=1, span_id=2, is_remote=False)
@@ -151,3 +154,39 @@ def test_the_original_records_are_not_mutated():
     redact_log(original, content_allowed=True)
     assert original.log_record.body == f"Bearer {SECRET}"
     assert original.log_record.attributes["token"] == SECRET
+
+
+# --- cost is linear and bounded (QA SEC-002, SEC-008) ------------------------------------
+
+ADVERSARIAL = [
+    "a" * 16_384,  # one long word: the old key pattern was quadratic here (6.5 s)
+    "?" + "a" * 16_383,
+    "x://" + "a" * 16_380,
+    ("a" * 63 + " ") * 256,
+    ("a" * 30 + ":") * 528,
+    "a.b-c_" * 2730,
+    "xpasswordx " * 1489,
+    ";" * 8192 + "a" * 8192,
+    "Bearer " * 2340,
+]
+
+
+@pytest.mark.parametrize("text", ADVERSARIAL, ids=range(len(ADVERSARIAL)))
+def test_scrubbing_16k_of_adversarial_text_is_fast(text):
+    started = time.perf_counter()
+    scrub_text(text)
+    # Linear work is a few ms; the quadratic pattern took seconds. Generous for a loaded box.
+    assert time.perf_counter() - started < 0.5
+
+
+def test_values_are_capped_before_scrubbing():
+    scrubbed = scrub_text("a" * 200_000 + " token=abc")
+    assert len(scrubbed) < MAX_VALUE_LENGTH + 32 and scrubbed.endswith("[truncated]")
+
+
+def test_span_attributes_are_cut_at_the_same_length():
+    provider = TracerProvider(span_limits=setup.SPAN_LIMITS)
+    with provider.get_tracer("t").start_as_current_span("s") as span:
+        span.set_attribute("gen_ai.input.messages", "x" * 100_000)
+        assert len(span.attributes["gen_ai.input.messages"]) == MAX_VALUE_LENGTH
+    provider.shutdown()
