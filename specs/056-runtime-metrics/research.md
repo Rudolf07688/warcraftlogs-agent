@@ -1,0 +1,10 @@
+# Research: 056
+
+1. **What ADK 2.10.0 emits.** Decision: rely on it. `google/adk/telemetry/_metrics.py` creates `gen_ai.invoke_agent.duration` (gen_ai.agent.name, error.type), `gen_ai.invoke_agent.inference_calls` / `.tool_calls` (gen_ai.agent.name), `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` (agent, operation, provider, request/response model, token type), `gen_ai.execute_tool.duration` (agent, tool name/type) without any opt-in. Experimental per-invocation token metrics need `ADK_EXPERIMENTAL_TELEMETRY`: not enabled (not in AC). Workflow metrics' `gen_ai.workflow.name` and `adk.experimental.root_agent.name` are dropped by the View (not allowlisted).
+2. **Semconv opt-in.** Already set in code: `policy.content_env` adds `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` in `configure_telemetry` (054), proven by `test_a_down_collector_blocks_neither_startup_nor_requests`. No change.
+3. **Pinning.** `google-adk==2.10.0` (lock), `opentelemetry-exporter-otlp-proto-http==1.42.1` (ADK caps the SDK at 1.42.1; contrib 0.63b1 already exact).
+4. **Cache metric location.** `wcl_agent` never imports `backend`; define the counter in `cache.py` with `metrics.get_meter` (precedent: `wcl_agent/llm/generation.py` tracer). Alternative (callback registered by the backend) rejected: more machinery, same result.
+5. **Attribute keys.** Namespaced `app.*`: the allowlist is global, a bare `result`/`index` would admit any library's attribute of that name.
+6. **Histograms in Mimir.** The exporter sends exponential histograms → native histograms; rules use `histogram_quantile(0.95, sum by (...) (rate(x[5m])))` and `histogram_sum/histogram_count`, matching the existing dashboard.
+7. **Rules lint.** `grafana/mimirtool` pinned image, `rules lint` + `rules check` on runtime.yaml.
+7b. **Series names.** Mimir runs with OTLP metric suffixes off (default): `app.cache.requests` → `app_cache_requests` (no `_total`, no unit), like the existing `gen_ai_client_token_usage`.
