@@ -34,6 +34,7 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any, Callable, Literal, TypeVar
 
+from opentelemetry import metrics
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -356,7 +357,23 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d")
 
 
+# Feature 056: the same outcomes as an OTel counter (a no-op while telemetry is off), by family
+# and one of three results: the loader ran (miss), the value came from Redis (hit), or failed.
+_requests = metrics.get_meter(__name__).create_counter(
+    "app.cache.requests", unit="{request}", description="WCL cache lookups by family and result."
+)
+_RESULTS: dict[Outcome, str] = {
+    Outcome.HIT: "hit",
+    Outcome.NEG_HIT: "hit",
+    Outcome.MISS: "miss",
+    Outcome.LOCK_TIMEOUT: "miss",
+    Outcome.REDIS_ERROR: "miss",
+    Outcome.ERROR: "error",
+}
+
+
 def _record(family: CacheFamily, outcome: Outcome, load_ms: int | None = None) -> None:
+    _requests.add(1, {"app.cache.name": family.value, "app.cache.result": _RESULTS[outcome]})
     _counts[(family, outcome.value)] += 1
     if load_ms is not None:
         _counts[(family, "load_ms_sum")] += load_ms

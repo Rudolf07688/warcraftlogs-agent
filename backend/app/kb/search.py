@@ -38,6 +38,7 @@ from ..db import session as db_session
 from ..db.models import KB_DIMENSIONS, KbChatChunk, KbChunk
 from ..repositories.raw_fetches import fetch_names_code, fetch_visible_clause
 from ..services.name_resolver import ClassSpec, spec_pairs
+from ..telemetry.metrics import record_retrieval
 from ..tenancy.context import set_scope
 from .embedder import Embedder
 
@@ -569,9 +570,11 @@ async def search(
         notes.append(NO_HITS_NOTE)
     note = " ".join(notes) or None
     result = cap(SearchResult(hits, result_mode, relaxed, note=note))
+    elapsed = time.monotonic() - started
+    record_retrieval(request.filters.kind or "all", result.mode, elapsed, [hit.score for hit in result.hits])
     logger.info(
         "kb search queries=%d mode=%s hits=%d relaxed=%s capped=%s ms=%d",
         len(request.queries), result.mode, len(result.hits), ",".join(relaxed) or "-",
-        result.capped, int((time.monotonic() - started) * 1000),
+        result.capped, int(elapsed * 1000),
     )
     return result
