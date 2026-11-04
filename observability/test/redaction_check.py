@@ -20,7 +20,10 @@ import urllib.parse
 import urllib.request
 
 ALNUM = string.ascii_letters + string.digits
-BANNED_METRIC_LABELS = ["session_id", "prompt_id", "user_account_uuid", "user_email", "client_request_id"]
+BANNED_METRIC_LABELS = [
+    "session_id", "ccr_session_id", "prompt_id", "user_id", "user_account_uuid", "user_account_id",
+    "user_email", "user_groups", "organization_id", "client_request_id",
+]
 HASHED_KEYS = ["access_token", "refresh_token", "client_secret", "authorization", "api_key", "password"]
 
 
@@ -36,6 +39,19 @@ def seed() -> dict[str, str]:
         "sk": f"sk-ant-api03-{rand(40)}",
         "aiza": f"AIza{rand(35)}",
         "dsn_password": f"pw{rand(16)}",  # inside postgresql+asyncpg://app:<pw>@db:5432/wcl
+        # Build-layer shapes (SEC-001): what a tool output of .env, `env`, gcloud or git shows.
+        "env_secret": rand(24),  # WCL_CLIENT_SECRET=<value>
+        "env_secret_key": rand(24),  # SECRET_KEY=<value>
+        "env_db_password": rand(20),  # APP_DB_PASSWORD: <value>
+        "env_api_key": rand(24),  # ANTHROPIC_API_KEY="<value>"
+        "json_refresh_token": f"1//0g{rand(30)}",  # "refresh_token": "<value>"
+        "redis_password": rand(18),  # redis://:<value>@redis:6379/0
+        "https_password": rand(18),  # https://user:<value>@github.com/...
+        "ya29": f"ya29.a0{rand(40)}",
+        "github": f"ghp_{rand(36)}",
+        "pem": rand(64),  # the body of a PEM private key block
+        "bearer_lower": f"tok{rand(28)}",  # sent as "bearer <value>"
+        "basic": rand(24),  # sent as "Basic <value>"
     }
 
 
@@ -43,10 +59,21 @@ def str_attr(key: str, value: str) -> dict:
     return {"key": key, "value": {"stringValue": value}}
 
 
+def pem(s: dict[str, str]) -> str:
+    return f"-----BEGIN PRIVATE KEY-----\n{s['pem']}\n-----END PRIVATE KEY-----"
+
+
 def secret_text(s: dict[str, str]) -> str:
     return (
         f"jwt={s['jwt']} auth=Bearer {s['bearer']} anthropic={s['sk']} google={s['aiza']} "
-        f"dsn=postgresql+asyncpg://app:{s['dsn_password']}@db:5432/wcl"
+        f"dsn=postgresql+asyncpg://app:{s['dsn_password']}@db:5432/wcl\n"
+        f"WCL_CLIENT_SECRET={s['env_secret']}\nSECRET_KEY={s['env_secret_key']}\n"
+        f"APP_DB_PASSWORD: {s['env_db_password']}\nexport ANTHROPIC_API_KEY=\"{s['env_api_key']}\"\n"
+        f'{{"refresh_token": "{s["json_refresh_token"]}", "type": "authorized_user"}}\n'
+        f"cache redis://:{s['redis_password']}@redis:6379/0 "
+        f"origin https://user:{s['https_password']}@github.com/o/r.git\n"
+        f"gcloud {s['ya29']} gh {s['github']} lower bearer {s['bearer_lower']} header Basic {s['basic']}\n"
+        f"{pem(s)}\nend"
     )
 
 
@@ -57,6 +84,19 @@ def secret_attrs(s: dict[str, str], hashed: dict[str, str]) -> list[dict]:
         str_attr("seed.sk", s["sk"]),
         str_attr("seed.aiza", s["aiza"]),
         str_attr("seed.dsn", f"postgres://app:{s['dsn_password']}@db/wcl"),
+        # One shape per attribute, so each rule is the only one that can mask its value.
+        str_attr("seed.env_secret", f"WCL_CLIENT_SECRET={s['env_secret']}"),
+        str_attr("seed.env_secret_key", f"SECRET_KEY={s['env_secret_key']}"),
+        str_attr("seed.env_db_password", f"APP_DB_PASSWORD: {s['env_db_password']}"),
+        str_attr("seed.env_api_key", f"ANTHROPIC_API_KEY=\"{s['env_api_key']}\""),
+        str_attr("seed.json_refresh_token", f'{{"refresh_token": "{s["json_refresh_token"]}"}}'),
+        str_attr("seed.redis", f"redis://:{s['redis_password']}@redis:6379/0"),
+        str_attr("seed.https", f"https://user:{s['https_password']}@github.com/o/r.git"),
+        str_attr("seed.ya29", s["ya29"]),
+        str_attr("seed.github", s["github"]),
+        str_attr("seed.pem", pem(s)),
+        str_attr("seed.bearer_lower", f"bearer {s['bearer_lower']}"),
+        str_attr("seed.basic", f"Basic {s['basic']}"),
         str_attr("seed.text", secret_text(s)),
     ]
     attrs += [str_attr(k, v) for k, v in hashed.items()]
@@ -130,6 +170,14 @@ def run(otlp: str, grafana: str) -> int:
         resource = {"attributes": res_attrs}
         marker = f"redaction-{run_id}-{layer}"
 
+        def event_log(kind: str, event: str) -> dict:
+            return {
+                "timeUnixNano": now,
+                "severityText": "INFO",
+                "body": {"stringValue": f"{marker} {kind}"},
+                "attributes": [str_attr("event.name", event)],
+            }
+
         logs = [
             {  # plain log: string body + attributes
                 "timeUnixNano": now,
@@ -148,7 +196,12 @@ def run(otlp: str, grafana: str) -> int:
                 "spanId": span_id,
             },
         ]
+        if layer == "build":  # SEC-003: the build layer's routing fails closed
+            logs += [event_log("allowed", "api_request"), event_log("unknown", "brand_new_event")]
         c.post("logs", {"resourceLogs": [{"resource": resource, "scopeLogs": [{"logRecords": logs}]}]})
+        if layer == "build":  # build layer under another service.name, known by app.layer
+            renamed = {"attributes": [str_attr("service.name", "claude-renamed"), str_attr("app.layer", "build")]}
+            c.post("logs", {"resourceLogs": [{"resource": renamed, "scopeLogs": [{"logRecords": [event_log("renamed", "tool_result")]}]}]})
 
         span = {
             "traceId": trace_id,
@@ -169,6 +222,11 @@ def run(otlp: str, grafana: str) -> int:
             str_attr("user.account_uuid", f"acct-{run_id}"),
             str_attr("user.email", f"{run_id}@example.com"),
             str_attr("client_request_id", f"req-{run_id}"),
+            str_attr("user.id", f"uid-{run_id}"),
+            str_attr("user.account_id", f"user_{run_id}"),
+            str_attr("user.groups", f"group-{run_id}"),
+            str_attr("organization.id", f"org-{run_id}"),
+            str_attr("ccr.session.id", f"ccr-{run_id}"),
             str_attr("agent.name", "developer"),
         ]
         metric_res = {"attributes": res_attrs + [str_attr("session.id", f"sess-{run_id}")]}
@@ -180,7 +238,7 @@ def run(otlp: str, grafana: str) -> int:
 
         # --- what the backends stored ---
         sel = f'{{service_name="{service}", app_layer="{layer}"}}'
-        log_streams = c.poll(lambda: (r := c.loki(f'{sel} |= "{marker}"')) and len(sum((x["values"] for x in r), [])) >= 2 and r)
+        log_streams = c.poll(lambda: (r := c.loki(f'{sel} |= "{marker}"')) and len(sum((x["values"] for x in r), [])) >= len(logs) and r)
         # Re-serialised: Tempo's Go encoder writes "<" as \u003c.
         trace = c.poll(lambda: json.dumps(json.loads(c.get("tempo", f"api/v2/traces/{trace_id}"))))
         series = c.poll(lambda: json.loads(c.get("mimir", "api/v1/series", {"match[]": metric["name"]}))["data"])
@@ -188,7 +246,7 @@ def run(otlp: str, grafana: str) -> int:
             lambda: json.loads(c.get("mimir", "api/v1/series", {"match[]": f'target_info{{job="wcl-agent/{service}"}}'}))["data"]
         )
 
-        c.check(bool(log_streams), f"{layer}: both logs stored in Loki with app_layer={layer}")
+        c.check(bool(log_streams), f"{layer}: all {len(logs)} logs stored in Loki with app_layer={layer}")
         c.check(bool(trace), f"{layer}: span stored in Tempo")
         c.check(bool(series), f"{layer}: metric stored in Mimir")
         c.check(bool(target_info), f"{layer}: resource stored as Mimir target_info")
@@ -212,11 +270,21 @@ def run(otlp: str, grafana: str) -> int:
             c.check(banned not in labels, f"{layer}: metric series and target_info carry no {banned}")
         c.check("agent_name" in labels, f"{layer}: allowed metric label agent_name kept")
 
-        content = c.poll(lambda: c.loki(f'{{service_name="{service}", content="true"}} |= "{marker} content"'))
-        plain_in_content = c.loki(f'{{service_name="{service}", content="true"}} |= "{marker} plain"')
-        plain_rest = c.loki(f'{{service_name="{service}", content=""}} |= "{marker} plain"')
-        c.check(bool(content), f"{layer}: {content_event} routed to the content stream")
-        c.check(not plain_in_content and bool(plain_rest), f"{layer}: plain log stays out of the content stream")
+        def stream(kind: str, content: bool, svc: str = service) -> list[dict]:
+            return c.loki(f'{{service_name="{svc}", content="{"true" if content else ""}"}} |= "{marker} {kind}"')
+
+        def routed(kind: str, content: bool, svc: str = service) -> bool:
+            return bool(c.poll(lambda: stream(kind, content, svc))) and not stream(kind, not content, svc)
+
+        c.check(routed("content", True), f"{layer}: {content_event} routed to the content stream")
+        if layer == "runtime":
+            c.check(routed("plain", False), f"{layer}: plain log stays out of the content stream")
+        else:
+            c.check(routed("plain", True), f"{layer}: a record without event.name goes to the content stream")
+            c.check(routed("unknown", True), f"{layer}: an unknown Claude Code event goes to the content stream")
+            c.check(routed("allowed", False), f"{layer}: allowlisted api_request stays out of the content stream")
+            c.check(routed("renamed", True, "claude-renamed"),
+                    f"{layer}: app.layer=build under another service.name still routes content")
 
     print(f"redaction: {c.failures} failure(s)")
     return 1 if c.failures else 0

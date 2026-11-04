@@ -15,6 +15,10 @@ export GRAFANA_PORT="${GRAFANA_PORT:-23000}"
 OTLP="http://127.0.0.1:${ALLOY_OTLP_HTTP_PORT}"
 GRAFANA="http://127.0.0.1:${GRAFANA_PORT}"
 BACKENDS=(loki tempo mimir)
+hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
+# A fresh admin password per run (Grafana's admin login; anonymous visitors are Viewers).
+export GRAFANA_ADMIN_PASSWORD="test-$(hex 12)"
+GRAFANA_ADMIN=(-u "admin:$GRAFANA_ADMIN_PASSWORD")
 FAILURES=0
 
 # The app services interpolate these; set them empty so compose doesn't warn. The scripts
@@ -56,7 +60,6 @@ wait_ready() {
 pass() { echo "PASS  $*"; }
 fail() { echo "FAIL  $*"; FAILURES=$((FAILURES + 1)); }
 
-hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
 now_ns() { echo "$(date +%s)000000000"; }
 
 # post_otlp SIGNAL JSON: send one OTLP/HTTP JSON request to Alloy.

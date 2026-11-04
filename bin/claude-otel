@@ -6,17 +6,24 @@
 #
 #   bin/claude-otel [claude arguments...]
 #
-# ALLOY_OTLP_GRPC_PORT picks Alloy's host port (default 4317), as in docker-compose.yml.
+# Exports OTLP over http/protobuf to Alloy's HTTP port. ALLOY_OTLP_HTTP_PORT picks it (default
+# 4318), as in docker-compose.yml. The settings reach every process the session starts, so a
+# backend run from inside the session (uvicorn, whose exporters are http/protobuf) exports to
+# the right port too.
 set -euo pipefail
 
-alloy_port="${ALLOY_OTLP_GRPC_PORT:-4317}"
+alloy_port="${ALLOY_OTLP_HTTP_PORT:-4318}"
+if [[ ! "$alloy_port" =~ ^[0-9]{1,5}$ ]]; then
+  echo "claude-otel: ALLOY_OTLP_HTTP_PORT must be a port number, got: ${alloy_port@Q}" >&2
+  exit 2
+fi
 
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
 export CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
 export OTEL_METRICS_EXPORTER=otlp
 export OTEL_LOGS_EXPORTER=otlp
 export OTEL_TRACES_EXPORTER=otlp
-export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${alloy_port}"
 # Mimir wants cumulative counters; Claude Code defaults to delta.
 export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
@@ -33,7 +40,7 @@ export OTEL_LOG_TOOL_CONTENT=1
 export OTEL_RESOURCE_ATTRIBUTES="service.namespace=wcl-agent,app.layer=build,deployment.environment.name=dev"
 
 # Warn, never block: without Alloy, Claude Code runs and its exporters drop the data.
-if ! timeout 1 bash -c ": > /dev/tcp/127.0.0.1/${alloy_port}" 2>/dev/null; then
+if ! timeout 1 bash -c ': > "/dev/tcp/127.0.0.1/$1"' _ "$alloy_port" 2>/dev/null; then
   echo "claude-otel: warning: Alloy is not reachable on 127.0.0.1:${alloy_port}; telemetry from this session will be lost (start it with: docker compose up -d alloy)" >&2
 fi
 

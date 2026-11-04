@@ -112,7 +112,8 @@ services:
       - --stability.level=public-preview
       - /etc/alloy/config.alloy
     volumes:
-      - ./observability/alloy:/etc/alloy:ro
+      # ALLOY_CONFIG_DIR: the test scripts mount a copy here (mutation.sh edits only that).
+      - ${ALLOY_CONFIG_DIR:-./observability/alloy}:/etc/alloy:ro
       - alloy-data:/var/lib/alloy/data
     ports:
       - "127.0.0.1:${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
@@ -153,19 +154,24 @@ services:
     restart: unless-stopped
 
   # Grafana holds no telemetry: datasources are provisioned from the repository. Anonymous
-  # admin with no login form, so the port must stay on loopback.
+  # visitors are Viewers who can use Explore; the admin login uses GRAFANA_ADMIN_PASSWORD
+  # (unset = no admin login, see observability/grafana/entrypoint.sh). Port on loopback only.
   grafana:
     image: grafana/grafana:13.2.5
     profiles: [observability]
+    entrypoint: ["/etc/grafana/entrypoint.sh"]
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/entrypoint.sh:/etc/grafana/entrypoint.sh:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
@@ -173,7 +179,7 @@ services:
       - loki
       - tempo
       - mimir
-    mem_limit: 256m
+    mem_limit: 512m
     restart: unless-stopped
 
 volumes:

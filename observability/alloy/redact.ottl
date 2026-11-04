@@ -4,8 +4,13 @@ set(attributes["client_secret"], SHA256(attributes["client_secret"])) where attr
 set(attributes["authorization"], SHA256(attributes["authorization"])) where attributes["authorization"] != nil
 set(attributes["api_key"], SHA256(attributes["api_key"])) where attributes["api_key"] != nil
 set(attributes["password"], SHA256(attributes["password"])) where attributes["password"] != nil
+replace_all_patterns(attributes, "value", "-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----|[\\s\\S]*)", "<pem:redacted>")
 replace_all_patterns(attributes, "value", "eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]+", "<jwt:redacted>")
 replace_all_patterns(attributes, "value", "(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+", "${1}<redacted>")
+replace_all_patterns(attributes, "value", "(Basic\\s+)[A-Za-z0-9+/]{8,}=*", "${1}<redacted>")
 replace_all_patterns(attributes, "value", "sk-[A-Za-z0-9_-]{16,}", "sk-<redacted>")
 replace_all_patterns(attributes, "value", "AIza[0-9A-Za-z_-]{30,}", "AIza<redacted>")
-replace_all_patterns(attributes, "value", "(postgres(?:ql)?(?:\\+[a-z0-9]+)?://[^:/@\\s]+:)[^@\\s]+@", "${1}<redacted>@")
+replace_all_patterns(attributes, "value", "ya29\\.[A-Za-z0-9._-]+", "ya29.<redacted>")
+replace_all_patterns(attributes, "value", "(gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}", "${1}<redacted>")
+replace_all_patterns(attributes, "value", "([A-Za-z][A-Za-z0-9+.-]*://[^:/@\\s]*:)[^@\\s]+@", "${1}<redacted>@")
+replace_all_patterns(attributes, "value", "(?i)([A-Za-z0-9_.-]*(?:secret|passw(?:or)?d|token|key|credential|dsn|auth|cookie|session)[A-Za-z0-9_.-]*(?:\\\\?[\"'])?\\s*[:=]\\s*)(?:(\\\\?\")[^\"\\\\]*|(')[^']*|[^\\s\"',;&\\\\]+)", "${1}${2}${3}<redacted>")
