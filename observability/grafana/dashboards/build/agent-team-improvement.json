@@ -1485,6 +1485,15 @@
       "asDropdown": true,
       "includeVars": false,
       "keepTime": true
+    },
+    {
+      "title": "Claude Code: Agent Team",
+      "type": "link",
+      "url": "/d/wcl-agent-team",
+      "keepTime": false,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "dashboard"
     }
   ]
 }

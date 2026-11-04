@@ -28,6 +28,10 @@ from datetime import datetime, timezone
 KINDS = ("decision", "change", "notice", "question", "answer", "handoff", "merge", "blocker")
 HOOK_MAX_ENTRIES = 15
 HOOK_MAX_CHARS = 3500
+# W3C trace context, version 00, non-zero ids. Claude Code passes TRACEPARENT to every Bash
+# command it runs: the trace id is the lead session's current turn (shared by the sub-agents
+# launched in it), the span id is the posting agent's own tool span.
+TRACEPARENT = re.compile(r"00-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}")
 
 
 def root():
@@ -132,6 +136,9 @@ def cmd_post(a, r):
             e["supersedes"] = a.supersedes
         if a.ref:
             e["refs"] = a.ref
+        traceparent = os.environ.get("TRACEPARENT", "").strip()
+        if TRACEPARENT.fullmatch(traceparent):
+            e["traceparent"] = traceparent
         f.write(json.dumps(e) + "\n")
         f.flush()
         fcntl.flock(f, fcntl.LOCK_UN)

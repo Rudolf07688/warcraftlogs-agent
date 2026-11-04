@@ -122,6 +122,9 @@ services:
       # ALLOY_CONFIG_DIR: the test scripts mount a copy here (mutation.sh edits only that).
       - ${ALLOY_CONFIG_DIR:-./observability/alloy}:/etc/alloy:ro
       - alloy-data:/var/lib/alloy/data
+      # The team board (feature 055): board.py keeps it in the git common dir. In a worktree
+      # ./.git is a file, so set TEAM_BOARD_DIR to "$(git rev-parse --git-common-dir)/team-board".
+      - ${TEAM_BOARD_DIR:-./.git/team-board}:/var/lib/team-board:ro
     ports:
       - "127.0.0.1:${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
       - "127.0.0.1:${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
@@ -157,6 +160,8 @@ services:
     command: ["-config.file=/etc/mimir/mimir.yaml", "-target=all"]
     volumes:
       - ./observability/mimir/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      # MIMIR_RULES_DIR: the test scripts mount a copy here (rules.sh changes a price only there).
+      - ${MIMIR_RULES_DIR:-./observability/mimir/rules}:/etc/mimir/rules:ro
       - mimir-data:/data
     mem_limit: 1g
     restart: unless-stopped

@@ -1,0 +1,42 @@
+# LLM list prices for the runtime cost rules (feature 055, sc-410, spec §6.5).
+#
+# USD per million tokens, per model id as the backend reports it in gen_ai.request.model
+# (wcl_agent/llm/provider.py defaults plus the discovered models), per gen_ai.token.type
+# (the backend's token usage has input and output only, so cached input is priced as input:
+# an overestimate on cache-heavy turns). A dated id (claude-sonnet-5-5@20260101 or
+# claude-sonnet-5-5-20260101) is priced as its undated row.
+#
+# A price change is a commit to this file, then:
+#   uv run python observability/pricing/generate.py
+# which rewrites observability/mimir/rules/anonymous/cost.yaml (a test fails if they differ).
+# Mimir records the price in force every minute, so cost already computed keeps the old price.
+#
+# Sources (2026-11-04): Claude = Anthropic first-party API list price (Vertex AI partner
+# pricing can differ). Gemini rows are NOT verified against Google's current price list for
+# the 3.x generation: they carry the last published Flash / Flash-Lite / Pro list prices
+# (Pro: prompts up to 200k tokens). The owner confirms them (board live-check:055).
+models:
+  claude-opus-5-5:
+    input: 4.00
+    output: 20.00
+  claude-sonnet-5-5:
+    input: 2.00
+    output: 10.00
+  claude-haiku-5-5:
+    input: 0.10
+    output: 0.50
+  gemini-3.8-flash:
+    input: 0.30
+    output: 2.50
+  gemini-3.7-flash:
+    input: 0.30
+    output: 2.50
+  gemini-3.6-flash:
+    input: 0.30
+    output: 2.50
+  gemini-3.5-flash-lite:
+    input: 0.10
+    output: 0.40
+  gemini-3.1-pro-preview:
+    input: 1.25
+    output: 10.00

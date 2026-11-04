@@ -15,6 +15,9 @@ export GRAFANA_PORT="${GRAFANA_PORT:-23000}"
 OTLP="http://127.0.0.1:${ALLOY_OTLP_HTTP_PORT}"
 GRAFANA="http://127.0.0.1:${GRAFANA_PORT}"
 BACKENDS=(loki tempo mimir)
+# The team board dir Alloy tails (feature 055): a fresh empty one per run, never the real
+# board (board.sh writes test entries into it).
+export TEAM_BOARD_DIR="${TEAM_BOARD_DIR:-$(mktemp -d)}"
 hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
 # A fresh admin password per run (Grafana's admin login; anonymous visitors are Viewers).
 export GRAFANA_ADMIN_PASSWORD="test-$(hex 12)"

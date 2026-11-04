@@ -7,9 +7,12 @@
 #   bin/claude-otel [claude arguments...]
 #
 # Exports OTLP over http/protobuf to Alloy's HTTP port. ALLOY_OTLP_HTTP_PORT picks it (default
-# 4318), as in docker-compose.yml. The settings reach every process the session starts, so a
-# backend run from inside the session (uvicorn, whose exporters are http/protobuf) exports to
-# the right port too.
+# 4318), as in docker-compose.yml. These OTEL_* settings configure Claude Code itself: they do
+# NOT reach the commands its Bash tool runs. Claude Code passes only CLAUDE_CODE_ENABLE_TELEMETRY,
+# CLAUDE_CODE_ENHANCED_TELEMETRY_BETA and TRACEPARENT (its tool span) to Bash. So a backend
+# started from inside the session exports only when its endpoint is set explicitly (the compose
+# backend sets OTEL_EXPORTER_OTLP_ENDPOINT), and the team board (.claude/team/board.py) stores
+# that TRACEPARENT on each entry.
 set -euo pipefail
 
 alloy_port="${ALLOY_OTLP_HTTP_PORT:-4318}"

@@ -157,7 +157,10 @@ otelcol.processor.transform "redact" {
   output {
     metrics = [otelcol.processor.transform.metric_labels.input]
     logs    = [otelcol.processor.transform.classify.input]
-    traces  = [otelcol.processor.batch.default.input]
+    traces  = [
+      otelcol.processor.batch.default.input,
+      otelcol.processor.filter.red_sources.input,
+    ]
   }
 }
 
@@ -188,6 +191,99 @@ otelcol.processor.transform "metric_labels" {
   }
 }
 
+// RED from traces (feature 055, sc-409, spec §4.2 step 6): every redacted span, before any
+// sampling, so the numbers stay exact. The metrics go through metric_labels like all others,
+// so the banned identifiers can never become labels here either. Dimensions are bounded
+// enums only: never url.full, db.query.text, session.id or any id (board contract:session-id).
+// http.status_code is the old-semconv name the FastAPI instrumentation (0.63b1) still sets.
+// Series: traces_spanmetrics_calls and traces_spanmetrics_duration_bucket (Mimir adds no unit suffixes; seconds)
+// (with exemplars: a latency point links to its trace), labels service_name, span_name,
+// span_kind, status_code plus the dimensions. Dashboards query the aliases in
+// mimir/rules/anonymous/red.yaml.
+// Only our own services feed the connectors (board contract:faro-spans): browser spans
+// (service.name web, from Faro) carry browser-controlled names and attributes, an unbounded
+// path into Mimir. An allowlist, so a new or spoofed source stays out until named here.
+otelcol.processor.filter "red_sources" {
+  error_mode = "ignore"
+
+  traces {
+    span = [`not IsMatch(resource.attributes["service.name"], "^(api|claude-code)$")`]
+  }
+
+  output {
+    traces = [
+      otelcol.connector.spanmetrics.default.input,
+      otelcol.connector.servicegraph.default.input,
+    ]
+  }
+}
+
+otelcol.connector.spanmetrics "default" {
+  namespace = "traces.spanmetrics"
+
+  dimension {
+    name = "http.route"
+  }
+
+  dimension {
+    name = "http.response.status_code"
+  }
+
+  dimension {
+    name = "http.status_code"
+  }
+
+  dimension {
+    name = "gen_ai.operation.name"
+  }
+
+  dimension {
+    name = "gen_ai.agent.name"
+  }
+
+  dimension {
+    name = "gen_ai.tool.name"
+  }
+
+  dimension {
+    name = "gen_ai.request.model"
+  }
+
+  dimension {
+    name = "db.system.name"
+  }
+
+  dimension {
+    name = "db.operation.name"
+  }
+
+  histogram {
+    unit = "s"
+
+    explicit {
+      buckets = ["5ms", "10ms", "25ms", "50ms", "100ms", "250ms", "500ms", "1s", "2.5s", "5s", "10s", "30s", "60s", "120s"]
+    }
+  }
+
+  exemplars {
+    enabled = true
+  }
+
+  output {
+    metrics = [otelcol.processor.transform.metric_labels.input]
+  }
+}
+
+// Service graph: request counts and latency per client -> server edge (traces_service_graph_*),
+// from client/server span pairs in the same trace.
+otelcol.connector.servicegraph "default" {
+  dimensions = ["http.route"]
+
+  output {
+    metrics = [otelcol.processor.transform.metric_labels.input]
+  }
+}
+
 // Content stream (board contract:content-stream): a log record is content when it carries
 // app.content="true", is a GenAI event (event name gen_ai.*), or comes from the build layer
 // (service.name claude-code or app.layer build) and is not one of Claude Code's known
@@ -205,6 +301,9 @@ otelcol.processor.transform "metric_labels" {
 // record goes to exactly one branch. Content records
 // get the resource attribute content="true", a Loki index label with its own 7-day
 // retention_stream; the rest lose any incoming "content" attribute so the label stays bounded.
+// The team board (service.name team-board, see its section) is the one build-layer source
+// that is not content: agent prose about the work, never prompts or tool output. It keeps
+// the 30-day stream so a sprint's board stays next to its telemetry (board scope:055:board-stream).
 otelcol.processor.transform "classify" {
   error_mode = "ignore"
 
@@ -212,7 +311,7 @@ otelcol.processor.transform "classify" {
     context    = "log"
     statements = [
       `set(attributes["alloy.content_stream"], "true")`,
-      `set(attributes["alloy.content_stream"], "false") where not (attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or ((resource.attributes["service.name"] == "claude-code" or resource.attributes["app.layer"] == "build") and not IsMatch(attributes["event.name"], "^(api_request|api_refusal|subagent_completed|skill_activated|hook_registered|mcp_server_connection|plugin_loaded|plugin_installed|permission_mode_changed|retention_sweep|internal_error|at_mention|auth)$")))`,
+      `set(attributes["alloy.content_stream"], "false") where not (attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or ((resource.attributes["service.name"] == "claude-code" or resource.attributes["app.layer"] == "build") and resource.attributes["service.name"] != "team-board" and not IsMatch(attributes["event.name"], "^(api_request|api_refusal|subagent_completed|skill_activated|hook_registered|mcp_server_connection|plugin_loaded|plugin_installed|permission_mode_changed|retention_sweep|internal_error|at_mention|auth)$")))`,
     ]
   }
 
@@ -281,6 +380,122 @@ otelcol.processor.transform "mark_rest" {
 
   output {
     logs = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Team board (feature 055, sc-407, spec §14 decision 11). The board's JSONL files (one per
+// sprint, in the git common dir, mounted at /var/lib/team-board) are tailed into Loki through
+// the same chain as OTLP logs: memory limiter, stamp, redact, classify, batch. Never straight
+// to loki.write: board text can quote a secret. Only *.jsonl: the cursors/ dir and the
+// "active" file stay out. Session transcripts are not tailed (usage.py reads them on demand).
+// Each entry becomes one record: body = the entry text, timestamp = the entry's ts, and the
+// entry fields (board, author, kind, key, entry_id, supersedes) are attributes, which Loki
+// keeps as structured metadata (index labels come only from loki.yaml's resource allowlist).
+// The stored traceparent becomes the record's trace and span id, so the Loki trace_id link
+// opens the posting agent's tool span in Tempo. Tail positions live on the alloy-data volume;
+// after Loki loses its data, observability/board-backfill.sh resets them and the board is read
+// again from the start (same timestamps and lines, so a re-read does not duplicate in Loki).
+local.file_match "board" {
+  path_targets = [{"__path__" = "/var/lib/team-board/*.jsonl"}]
+  sync_period  = "10s"
+}
+
+discovery.relabel "board" {
+  targets = local.file_match.board.targets
+
+  rule {
+    source_labels = ["__path__"]
+    regex         = ".*/([^/]+)\\.jsonl"
+    target_label  = "board"
+  }
+}
+
+loki.source.file "board" {
+  targets       = discovery.relabel.board.output
+  forward_to    = [loki.process.board.receiver]
+  tail_from_end = false
+}
+
+loki.process "board" {
+  stage.json {
+    expressions = {
+      ts          = "ts",
+      text        = "text",
+      author      = "author",
+      kind        = "kind",
+      key         = "key",
+      entry_id    = "id",
+      supersedes  = "supersedes",
+      traceparent = "traceparent",
+    }
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339"
+  }
+
+  stage.regex {
+    source     = "traceparent"
+    expression = "^00-(?P<trace_id>[0-9a-f]{32})-(?P<span_id>[0-9a-f]{16})-[0-9a-f]{2}$"
+  }
+
+  stage.labels {
+    values = {
+      author     = "",
+      kind       = "",
+      key        = "",
+      entry_id   = "",
+      supersedes = "",
+      trace_id   = "",
+      span_id    = "",
+    }
+  }
+
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  stage.output {
+    source = "text"
+  }
+
+  forward_to = [otelcol.receiver.loki.board.receiver]
+}
+
+otelcol.receiver.loki "board" {
+  output {
+    logs = [otelcol.processor.transform.board.input]
+  }
+}
+
+otelcol.processor.transform "board" {
+  error_mode = "ignore"
+
+  log_statements {
+    context    = "resource"
+    statements = [
+      `set(attributes["service.name"], "team-board")`,
+      `set(attributes["service.namespace"], "wcl-agent")`,
+      `set(attributes["app.layer"], "build")`,
+      `set(attributes["deployment.environment.name"], "dev")`,
+    ]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [
+      `set(trace_id.string, attributes["trace_id"]) where attributes["trace_id"] != nil`,
+      `set(span_id.string, attributes["span_id"]) where attributes["span_id"] != nil`,
+      `delete_matching_keys(attributes, "^(trace_id|span_id|loki\\.attribute\\.labels)$")`,
+      `set(attributes["event.name"], "team_board_entry")`,
+      // A re-read must produce the identical record (Loki drops exact duplicates only).
+      `set(observed_time, time)`,
+    ]
+  }
+
+  output {
+    logs = [otelcol.processor.memory_limiter.default.input]
   }
 }
 

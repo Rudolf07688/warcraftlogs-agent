@@ -35,8 +35,18 @@ store_gateway:
 query_scheduler:
   max_outstanding_requests_per_tenant: 2000
 
+# Recording rules (feature 055, spec §8.3) from the repository: observability/mimir/rules is
+# mounted read-only at /etc/mimir/rules, one directory per tenant ("anonymous" without
+# multitenancy), one file per owner. Re-read every minute, so a rules commit (a price change)
+# loads without a restart.
 ruler_storage:
-  storage_prefix: ruler
+  backend: local
+  local:
+    directory: /etc/mimir/rules
+
+ruler:
+  rule_path: /data/ruler
+  poll_interval: 1m
 
 limits:
   # 13 months (spec §10): long enough for year-on-year trend panels.
