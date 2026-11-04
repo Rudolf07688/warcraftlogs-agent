@@ -1,3 +1,4 @@
+import { startChatSend, type ChatSend, type ChatTraceFields } from "../telemetry/context";
 import type { Encounter, ProfileProposal } from "../types";
 
 export type Frame =
@@ -38,6 +39,11 @@ export interface ChatTurn {
   content: string;
 }
 
+// Feature 057: with Faro on, a sent turn also carries the W3C traceparent of its "chat send"
+// span and the Faro session id, so the backend's turn joins the browser's trace. Additive:
+// a backend that doesn't know them ignores them.
+export type ChatFrame = ChatTurn & ChatTraceFields;
+
 /**
  * A single long-lived chat WebSocket with basic auto-reconnect. Frames are
  * delivered to onFrame; connection changes to onStatus.
@@ -46,6 +52,7 @@ export class ChatSocket {
   private ws: WebSocket | null = null;
   private readonly url: string;
   private shouldReconnect = true;
+  private chatSend: ChatSend | null = null; // the open "chat send" span of the turn in flight
 
   constructor(
     private readonly onFrame: (f: Frame) => void,
@@ -60,6 +67,7 @@ export class ChatSocket {
     this.ws.onopen = () => this.onStatus(true);
     this.ws.onclose = (e) => {
       this.onStatus(false);
+      this.endChatSend(true); // a turn cut off by the close never sees its done frame
       // 1008 = policy violation: the handshake was rejected (no/expired session or bad
       // origin). Don't hammer the server reconnecting — the app should send the user to
       // /login (feature 006). A full reload will route through RequireAuth.
@@ -70,12 +78,25 @@ export class ChatSocket {
       }
       if (this.shouldReconnect) setTimeout(() => this.connect(), 1500);
     };
-    this.ws.onmessage = (e) => this.onFrame(JSON.parse(e.data) as Frame);
+    this.ws.onmessage = (e) => {
+      const frame = JSON.parse(e.data) as Frame;
+      if (frame.type === "done") this.endChatSend(false);
+      else if (frame.type === "error") this.endChatSend(true);
+      this.onFrame(frame);
+    };
+  }
+
+  private endChatSend(failed: boolean): void {
+    this.chatSend?.end(failed);
+    this.chatSend = null;
   }
 
   send(turn: ChatTurn): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(turn));
+      this.endChatSend(false); // a new send supersedes a span whose turn never reported back
+      this.chatSend = startChatSend();
+      const frame: ChatFrame = { ...turn, ...this.chatSend?.fields };
+      this.ws.send(JSON.stringify(frame));
       return true;
     }
     return false;

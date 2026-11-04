@@ -6,7 +6,8 @@ the observability stack are untouched. When on: the content policy for ``WCL_ENV
 global tracer/meter/logger providers exporting to Alloy, and FastAPI, SQLAlchemy, Redis and
 httpx instrumentation.
 
-Traces: each websocket chat turn is the root of its own trace (``chat_turn_span``), with ADK's
+Traces: each websocket chat turn is the root of its own trace (``chat_turn_span``), or the child
+of the browser's span when the message carries a valid ``traceparent`` (``browser.py``), with ADK's
 ``invoke_agent`` / ``generate_content`` / ``execute_tool`` spans and the WCL, SQL and Redis
 spans beneath it. Queue-fed background writers (FetchWriter, KbIndexer) run in tasks started
 at boot, so their spans start their own traces.
@@ -24,7 +25,7 @@ from opentelemetry import trace
 from opentelemetry.context import Context
 
 from ..auth.redaction import RedactionFilter
-from . import policy
+from . import browser, policy
 from .config import TelemetryConfig, load_config
 
 _tracer = trace.get_tracer(__name__)
@@ -76,12 +77,20 @@ def otlp_log_handler() -> logging.Handler | None:
 
 
 @contextmanager
-def chat_turn_span() -> Iterator[trace.Span]:
-    """One websocket chat turn as the root span of its own trace (no-op when telemetry is off)."""
+def chat_turn_span(traceparent: object = None, faro_session_id: object = None) -> Iterator[trace.Span]:
+    """One websocket chat turn as a span of its own trace (no-op when telemetry is off).
+
+    The turn is a root unless the browser's ``traceparent`` (feature 057) validates, then it is
+    that span's child. ``faro_session_id`` becomes ``session.id`` when it validates; both
+    arguments are browser-controlled and an unusable one is ignored (``browser.py``).
+    """
+    attributes: dict[str, str] = {"http.route": "/ws/chat"}
+    if (session := browser.session_id(faro_session_id)) is not None:
+        attributes["session.id"] = session
     with _tracer.start_as_current_span(
         "chat turn",
-        context=Context(),
+        context=browser.parent_context(traceparent) or Context(),
         kind=trace.SpanKind.SERVER,
-        attributes={"http.route": "/ws/chat"},
+        attributes=attributes,
     ) as span:
         yield span

@@ -90,3 +90,50 @@ its volumes at the end (`KEEP=1` keeps it).
 | `test/mutation.sh` | Disabling any one redaction, label or routing rule makes the redaction check fail. Mutates a temporary copy of `alloy/` mounted only into the test project (`ALLOY_CONFIG_DIR`); the checkout's files are never written. |
 | `test/provisioning.sh` | Datasources load from file, are healthy and carry the trace↔logs and exemplar correlations; Grafana's anonymous Viewer, admin password (none when unset) and no plugin preinstall. |
 | `test/claude-otel.sh` | The wrapper's env, argument pass-through and the Alloy-down warning (stub `claude`, no Docker). |
+
+## Browser telemetry (Faro, feature 057)
+
+The React app reports Web Vitals, errors, route changes and browser traces with Grafana Faro
+(`frontend/src/telemetry/`, spec §7.1). It starts only when `VITE_FARO_URL` is set; compose
+sets it for the dev server to `http://localhost:12347/collect` (set it empty in `.env` to
+switch Faro off), with `VITE_FARO_API_KEY`, `VITE_FARO_APP_VERSION` (`WCL_GIT_SHA`) and
+`VITE_FARO_ENVIRONMENT`.
+
+- **Receiver**: `faro.receiver` at the end of `alloy/config.alloy`, published on
+  `127.0.0.1:${ALLOY_FARO_PORT:-12347}`. Its logs go through their own `otelcol.receiver.loki`
+  bridge and its traces straight into the memory limiter, so both pass the stamp and
+  redaction steps; nothing goes to Loki directly. Logs arrive as `service_name=web`,
+  `app_layer=runtime`; the lines are logfmt (`kind=measurement type=web-vitals lcp=...`).
+- **Protection** (the API key ships in the bundle and is not a secret): `x-api-key` must match
+  the receiver's `api_key`; CORS allows only `http://localhost:5173` and `http://127.0.0.1:5173`
+  (a browser's preflight from any other origin gets no grant; a non-browser client is not
+  stopped by CORS, only by the key and the rate limit); 64 KiB payload cap and a global rate
+  limit of 5/s (burst 10), about 0.3 MiB/s at most, because the receiver shares the memory
+  limiter and the export queues with the backend and the build layer (global, not per app: an
+  app name comes from the payload). Known gap (Alloy 1.21.3): the cap reads `Content-Length`,
+  so a chunked body without one is not capped; `faro.sh` reports it. Source maps are never
+  downloaded (`sourcemaps { download = false }`): the receiver would fetch any URL a stack
+  frame names. The origin, key and limits are literals in `config.alloy`: change them together
+  with `VITE_FARO_*` when the app moves.
+- **Trusted resource**: the payload is not trusted. A Faro-only transform in front of the memory
+  limiter, for logs and traces, overwrites `service.name=web`, `service.namespace=wcl-agent`,
+  `app.layer=runtime`, `deployment.environment.name=dev` and removes `content` / `app.content`
+  (and a log's `event.name`), so a payload cannot pose as the API or the build layer, nor
+  reach the content stream.
+- **Privacy**: the user is a salted SHA-256 prefix of the account id (never email or name);
+  console output is not captured; Faro's `beforeSend` (`frontend/src/telemetry/scrub.ts`) cuts the
+  query and fragment off every URL in an item (page meta, span `http.url`, route events, message
+  text), so an invite or reset `#token=` never leaves the browser. The redaction rule for `session=value` pairs also masks
+  Faro's `session_id=` in the log lines (`session_id=<redacted>`); the session id is kept as
+  the `session.id` attribute on spans (Tempo), where it links a browser session to its
+  backend traces. It is never a metric label.
+- **Click to Postgres**: Faro's tracing adds `traceparent` to same-origin REST calls, and the
+  REST client adds `x-faro-session-id`; a middleware copies that to the span attribute
+  `session.id`. A chat send opens a "chat send" span and puts its `traceparent` and the Faro
+  session id in the WebSocket message; the backend validates both (`backend/app/telemetry/browser.py`:
+  W3C format, 128-character cap, sampled only; session id 1-64 of `[A-Za-z0-9._:-]`) and
+  parents "chat turn" on it. Anything invalid or missing starts a fresh root trace.
+
+| Script | Proves |
+|---|---|
+| `test/faro.sh` | The app origin with the key is accepted; a wrong or missing key is refused; the preflight from another origin gets no CORS grant; a burst is rate limited; an oversized body is refused; no source map is fetched; a payload posing as the API / build layer lands as web / runtime / dev; Web Vitals and a log arrive in Loki with a seeded secret masked, and a browser span arrives in Tempo with its `session.id`. Needs `ALLOY_FARO_PORT` (default 24347). |

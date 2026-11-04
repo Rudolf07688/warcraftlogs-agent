@@ -5,6 +5,7 @@ import {
   logout as apiLogout,
   setCsrfToken,
 } from "../api/restClient";
+import { identifyUser } from "../telemetry/faro";
 import type { Identity } from "../types";
 import { AuthContext } from "./useAuth";
 
@@ -22,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const apply = useCallback((id: Identity | null) => {
     setIdentity(id);
     setCsrfToken(id?.csrf_token ?? null);
+    void identifyUser(id?.user_id ?? null); // feature 057: a pseudonymous hash, never the email
   }, []);
 
   const refresh = useCallback(async () => {

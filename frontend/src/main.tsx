@@ -5,6 +5,7 @@ import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./auth/RequireAuth";
 import { BackendBootGate } from "./components/BackendBootGate";
+import { initTelemetry } from "./telemetry/faro";
 import "./styles.css";
 import "./index.css";
 
@@ -58,6 +59,9 @@ const router = createBrowserRouter([
   },
   { path: "*", element: <Navigate to="/app" replace /> },
 ]);
+
+// Feature 057: Faro (browser traces, Web Vitals, route events), only when VITE_FARO_URL is set.
+void initTelemetry(router);
 
 // BackendBootGate sits outermost: nothing (not even the auth rehydrate) talks to the API
 // until the backend reports every startup step done. Shows a boot overlay meanwhile.
