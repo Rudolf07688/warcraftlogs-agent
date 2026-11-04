@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 902d37d · 2026-11-04">
+<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
 <title>Knowledge base · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -351,7 +351,7 @@
     </tbody>
   </table></div>
 
-  <p>Every search also records its latency (embedding included), its hit count and best score, and a count of empty results as OpenTelemetry metrics (<code>app.rag.*</code>, by index kind and result mode) through <code>record_retrieval()</code> in <code>backend/app/telemetry/metrics.py</code>. They are no-ops while telemetry is off; the dashboard is described on <a href="observability.html#backends">Observability</a>.</p>
+  <p>Every search also records its latency (embedding included), its hit count and best score, and a count of empty results as OpenTelemetry metrics (<code>app.rag.*</code>, by the kind searched, or <code>all</code> when more than one kind is, and by result mode; <code>searched_kinds()</code> decides both the SQL branches and the label, so a search scoped by report code counts as <code>wcl</code>) through <code>record_retrieval()</code> in <code>backend/app/telemetry/metrics.py</code>. They are no-ops while telemetry is off; the dashboard is described on <a href="observability.html#backends">Observability</a>.</p>
 
   <h3>Why</h3>
   <p class="why">Visibility lives in the SQL of every leg and nothing is post-filtered, so no filter can widen what a workspace sees.<cite>backend/app/kb/search.py (module docstring)</cite></p>
