@@ -275,6 +275,8 @@ That "bonus" row is where the two layers physically join. Section 6.6 makes the 
 
 **Rules:** follow the semantic-convention naming style; keep labels bounded (enums only); never use IDs as labels.
 
+> **As built (2026-11-04, feature 056):** only `app.cache.requests` (labels `app.cache.name`, `app.cache.result` of hit, miss or error), the four `app.rag.*` metrics (labels `app.rag.index`, and `app.rag.strategy` on the duration) and `app.llm.stream.ttft` (labels `gen_ai.request.model`, `gen_ai.agent.name`) exist; the label keys are namespaced because the metric view keeps an allowlist of attribute names. The other rows are not built.
+
 ### 6.5 LLM cost model (runtime)
 
 ADK and the GenAI conventions emit tokens, not dollars. Cost is computed in Mimir, not in the app:
@@ -283,6 +285,8 @@ ADK and the GenAI conventions emit tokens, not dollars. Cost is computed in Mimi
 2. Recording rule: `llm:cost_usd:rate5m = sum by (model, agent) (rate(gen_ai_client_token_usage_sum[5m]) * on(model, token_type) group_left llm_price_usd_per_token)`.
 3. Price changes are a config commit. Historical cost stays correct because the gauge is time-series.
 
+> **As built (2026-11-04, features 055 and 056; the code wins):** the price series is not an Alloy gauge. `observability/pricing/generate.py` turns `pricing.yaml` into Mimir recording rules (`observability/mimir/rules/anonymous/cost.yaml`) that record `llm_price_usd_per_token{gen_ai_request_model, gen_ai_token_type}` every minute. Token usage is a native (exponential) histogram, so there is no `_sum` series: the alias is `genai:cost_usd:rate5m = sum by (gen_ai_request_model, gen_ai_agent_name) (label_replace(histogram_sum(rate(gen_ai_client_token_usage[5m])), ...) * on (gen_ai_request_model, gen_ai_token_type) group_left llm_price_usd_per_token)`, where the `label_replace` prices a dated model id as its undated row. The labels are the OTLP-translated names `gen_ai_request_model`, `gen_ai_token_type` and `gen_ai_agent_name`, not `model`, `token_type` and `agent`. The prefix is `genai:`, not `llm:`. The backend reports input and output tokens only, so cached input is priced as input. The cost of a Claude Code session is Claude Code's own `cost.usage` (`cc:cost_usd:*`); the second estimate from this table was not built. See `observability/README.md` and `specs/055-build-telemetry/contracts/aliases.md`.
+
 The same table can price Claude Code tokens. This gives you a second, independent estimate to sanity-check Claude Code's built-in `cost.usage`.
 
 ### 6.6 Context propagation contract
@@ -290,7 +294,8 @@ The same table can price Claude Code tokens. This gives you a second, independen
 | Hop | Mechanism |
 |---|---|
 | Browser → API | Faro web-tracing sends W3C `traceparent` to URLs in `propagateTraceHeaderCorsUrls` ([Faro tracing](https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/frontend-observability/instrument/tracing-instrumentation/)). FastAPI CORS must allow `traceparent` and `tracestate`. |
-| Faro session → API | The frontend sends `x-faro-session-id`. Middleware copies it to the span attribute `session.id` and to baggage. |
+| Faro session → API | The frontend sends `x-faro-session-id`. Middleware copies it to the span attribute `session.id` and to baggage. *(As built, 2026-11-04, feature 057: to the span attribute only; baggage was not built, see `specs/057-browser-telemetry/spec.md`.)* |
+| Browser → API, chat socket | A browser WebSocket cannot set headers, so the chat message carries the context instead: the optional keys `traceparent` (from the browser's "chat send" span) and `faro_session_id` in the JSON message. `backend/app/telemetry/browser.py` validates both (W3C format, at most 128 characters, sampled; session id 1 to 64 of `[A-Za-z0-9._:-]`) and `chat_turn_span()` makes the "chat turn" span a child of the browser's span and sets `session.id`. Anything invalid is ignored and the turn is a root trace. |
 | API → ADK | Automatic (same process, contextvars). Set `gen_ai.conversation.id` to the ADK session ID. |
 | API → Postgres | sqlcommenter appends `traceparent` to SQL comments, so slow-query logs and `pg_stat_activity` link to traces. |
 | API → background tasks / queues | Explicit context capture and re-attach. `asyncio.create_task` keeps contextvars, but thread pools and external queues don't. |
@@ -390,6 +395,13 @@ Dashboards query aliases, not raw OTel names, so semconv churn is absorbed in on
 - `app:http_requests:rate5m`, `app:http_latency:p95`
 - `genai:tokens:rate5m`, `genai:cost_usd:rate5m`, `genai:invoke_agent_latency:p95`
 - `rag:retrieval_latency:p95`, `cache:hit_ratio`
+
+> **As built (2026-11-04, features 055 and 056; the code wins):** the rule files are `observability/mimir/rules/anonymous/{build,red,runtime,cost}.yaml`, evaluated every minute by Mimir's ruler. Besides the aliases above they define:
+> - `build.yaml`: `cc:cost_usd:rate5m`, `cc:sessions:rate5m`, `cc:active_time_seconds:rate5m`, `cc:lines_of_code:rate5m`, `cc:commits:rate5m`, `cc:pull_requests:rate5m`, `cc:edit_decisions:rate5m`.
+> - `runtime.yaml` (native histograms, real label names such as `gen_ai_request_model`, `gen_ai_agent_name`, `app_rag_index`, `app_cache_name`): `genai:invoke_agent_latency:p50`, `genai:invocations:rate5m`, `genai:inference_calls_per_invocation:avg5m`, `genai:tool_calls_per_invocation:avg5m`, `genai:model_latency:p95`, `genai:model_calls:rate5m`, `genai:tool_calls:rate5m`, `genai:tool_latency:p95`, `genai:ttft:p95`, `genai:ttft:p50`, `rag:retrieval_latency:p95`, `rag:searches:rate5m`, `rag:retrieved_chunks:avg5m`, `rag:top_score:p50`, `rag:top_score:p10`, `rag:empty_results:rate5m`, `rag:empty_ratio:5m`, `cache:requests:rate5m`, `cache:hit_ratio`, `db:client_connections:usage`.
+> - `cost.yaml` (generated): `llm_price_usd_per_token` and `genai:cost_usd:rate5m` (§6.5).
+>
+> Dashboards never query raw names; panels that need an exact count over a range may use `increase()` on the raw counter (see `specs/055-build-telemetry/contracts/aliases.md` and `specs/056-runtime-metrics/data-model.md`).
 
 ### 8.4 Alerts (Grafana-managed)
 

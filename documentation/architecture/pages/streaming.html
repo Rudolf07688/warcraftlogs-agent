@@ -45,7 +45,7 @@
     <li><b>Endpoint.</b> <code>/ws/chat</code>, the <code>chat()</code> handler in <code>backend/app/api/ws.py</code>. The browser opens it once (<code>ChatSocket</code> in <code>frontend/src/api/wsClient.ts</code>) and keeps it for the whole session, across chats.</li>
     <li><b>Handshake.</b> Before <code>accept()</code> the handler checks the <code>Origin</code> header against <code>SITE_URL</code> (<code>origin_matches</code> in <code>backend/app/auth/csrf.py</code>) and validates the <code>__Host-session</code> cookie (<code>authenticate_session</code>). Either failing closes the socket with code 1008. No token is ever read from the query string or a frame.</li>
     <li><b>Every turn re-checks the session.</b> A revoked session, disabled user or missing tenant gets an <code>error</code> frame (<code>unauthorized</code>) and a 1008 close, even mid-connection.</li>
-    <li><b>One turn at a time per socket.</b> The receive loop awaits each turn to the end, so turns on one socket never race. When telemetry is on, each turn runs inside <code>chat_turn_span()</code>, the root of its own trace, so the agent, model, tool, SQL and Redis spans of one turn belong together while the connection itself is not traced (see <a href="observability.html#runtime">Observability</a>). All sends go through <code>_TurnSocket.send_json</code>, which holds a per-socket lock, because the follow-up and title tasks send after the turn has ended.</li>
+    <li><b>One turn at a time per socket.</b> The receive loop awaits each turn to the end, so turns on one socket never race. When telemetry is on, each turn runs inside <code>chat_turn_span()</code>, a span of its own trace (the root, or the child of the browser's "chat send" span when the message carries a valid <code>traceparent</code>), so the agent, model, tool, SQL and Redis spans of one turn belong together while the connection itself is not traced (see <a href="observability.html#runtime">Observability</a>). All sends go through <code>_TurnSocket.send_json</code>, which holds a per-socket lock, because the follow-up and title tasks send after the turn has ended.</li>
     <li><b>Model resolution.</b> The requested model is mapped to the active provider's form; a model that is no longer served continues on the default (<code>resolve_chat_model</code> in <code>backend/app/model_state.py</code>, feature 032). The turn also gets its same-class sibling for a rate-limit fallback (<code>fallback_model_for</code>). See <a href="models.html">Models &amp; providers</a>.</li>
     <li><b>Per-turn context.</b> For the turn's duration the backend sets the WCL refresh actor (the per-user forced-refresh limit) and the agent identity used by backend tools; both are cleared when the stream ends, so later tasks on the socket never act as that user (sc-276, sc-222).</li>
   </ul>
@@ -60,7 +60,7 @@
   <div class="tablewrap"><table>
     <thead><tr><th>Type</th><th>Direction</th><th>Payload</th><th>When</th><th>Browser does</th></tr></thead>
     <tbody>
-      <tr><td><code>ChatTurn</code> (no <code>type</code>)</td><td>browser → server</td><td><code>conversation_id?</code>, <code>model</code>, <code>content</code> (non-empty)</td><td>the only client message; <code>null</code> id starts a new chat</td><td>sent by <code>sendText</code></td></tr>
+      <tr><td><code>ChatTurn</code> (no <code>type</code>)</td><td>browser → server</td><td><code>conversation_id?</code>, <code>model</code>, <code>content</code> (non-empty)</td><td>the only client message; <code>null</code> id starts a new chat. With browser telemetry on, the message also carries two optional keys that are not part of <code>ChatTurn</code>: <code>traceparent</code> and <code>faro_session_id</code>. <code>ws.py</code> reads them from the raw message and passes them to <code>chat_turn_span()</code>, which drops anything malformed (<a href="observability.html#runtime">Observability</a>)</td><td>sent by <code>sendText</code></td></tr>
       <tr><td><code>meta</code></td><td>server → browser</td><td><code>conversation_id</code>, <code>seq</code></td><td>user message saved, turn starts</td><td>adopts the chat id for a new chat</td></tr>
       <tr><td><code>tool_start</code></td><td>server → browser</td><td><code>name</code>, <code>report_code?</code></td><td>once per tool call (args are not forwarded)</td><td>adds a casting spell card, sets the status label</td></tr>
       <tr><td><code>tool_end</code></td><td>server → browser</td><td><code>name</code>, <code>ok</code>, <code>summary?</code> (≤ 140 chars), <code>ms?</code></td><td>a tool returned</td><td>resolves or fizzles the oldest casting card of that name</td></tr>
@@ -133,7 +133,7 @@
     <figcaption>One chat turn. Every frame to the browser is sent by <code>ws.py</code>; the records it forwards come from <code>agent_runner</code>. <code>model_retry</code>, <code>model_fallback</code> and <code>grounding</code> can arrive anywhere between <code>meta</code> and <code>done</code>.</figcaption>
   </figure>
   <ol class="steps">
-    <li>The browser sends a <code>ChatTurn</code>. <code>ws.py</code> re-checks the session, validates the body (an invalid or empty one gets <code>empty_message</code>) and resolves the model.</li>
+    <li>The browser sends a <code>ChatTurn</code>. With Faro on, <code>ChatSocket</code> first opens a "chat send" span and adds its <code>traceparent</code> and the Faro session id to the message; the span ends on the <code>done</code> or <code>error</code> frame, or when the socket closes. <code>ws.py</code> re-checks the session, validates the body (an invalid or empty one gets <code>empty_message</code>) and resolves the model.</li>
     <li>In one short transaction it resolves the conversation (a foreign or unknown id gets <code>not_found</code>) or creates one, saves the user message and commits.</li>
     <li>It sends <code>meta</code> with the conversation id and the user message's <code>seq</code>.</li>
     <li>It builds the turn preamble from stored rows: the profile, tracked raids, recently seen players, encounters and guilds, recent raids and Mythic+ runs, and the published coaching briefs for the profile's specs. The preamble rides on the turn and is never saved.</li>
@@ -269,7 +269,7 @@
     <li><code>backend/app/services/conversation_titles.py</code></li>
     <li><code>backend/app/services/tool_summary.py</code>, <code>raids.py</code>, <code>graphs.py</code>, <code>artifacts.py</code>, <code>encounters.py</code></li>
     <li><code>backend/app/model_state.py</code></li>
-    <li><code>backend/app/telemetry/__init__.py</code> (<code>chat_turn_span</code>)</li>
+    <li><code>backend/app/telemetry/__init__.py</code> (<code>chat_turn_span</code>), <code>backend/app/telemetry/browser.py</code></li>
     <li><code>backend/app/auth/csrf.py</code>, <code>backend/app/auth/dependencies.py</code></li>
     <li><code>backend/app/api/conversations.py</code>, <code>raids.py</code>, <code>recent_raids.py</code>, <code>proposals.py</code>, <code>reports.py</code></li>
     <li><code>frontend/src/api/wsClient.ts</code>, <code>frontend/src/api/restClient.ts</code></li>

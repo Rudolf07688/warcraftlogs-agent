@@ -351,6 +351,8 @@
     </tbody>
   </table></div>
 
+  <p>Every search also records its latency (embedding included), its hit count and best score, and a count of empty results as OpenTelemetry metrics (<code>app.rag.*</code>, by index kind and result mode) through <code>record_retrieval()</code> in <code>backend/app/telemetry/metrics.py</code>. They are no-ops while telemetry is off; the dashboard is described on <a href="observability.html#backends">Observability</a>.</p>
+
   <h3>Why</h3>
   <p class="why">Visibility lives in the SQL of every leg and nothing is post-filtered, so no filter can widen what a workspace sees.<cite>backend/app/kb/search.py (module docstring)</cite></p>
   <p class="why">Visibility, <code>kind</code>, <code>report_code</code> and filters the user stated are hard; the rest relax in a fixed order and the result says which, so the agent can say so. Results stay compact because they go into the model's context.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Query side)</cite></p>
@@ -485,6 +487,7 @@
     <li><code>backend/app/config.py</code>, <code>.env.example</code>, <code>docker-compose.yml</code>, <code>pyproject.toml</code></li>
     <li><code>documentation/designs/20261101_semantic_knowledge_base.md</code>, <code>specs/043-kb-store-embed/contracts/</code>, <code>specs/044-kb-search/contracts/search-knowledge.md</code>, <code>specs/044-kb-search/eval-writeup.md</code></li>
     <li><code>git log --since=2026-10-31</code> over <code>backend/app/kb</code>, <code>kb_tools.py</code>, <code>backend/cli</code>, <code>backend/evals</code>, <code>name_resolver.py</code></li>
+    <li><code>backend/app/telemetry/metrics.py</code> (<code>record_retrieval</code>)</li>
   </ul>
 </footer>
 

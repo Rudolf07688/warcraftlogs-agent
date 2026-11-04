@@ -23,22 +23,30 @@ Alloy UI: <http://127.0.0.1:12345>.
 `bin/01_start_app.sh` exports it; a plain `docker compose up` needs
 `export WCL_GIT_SHA=$(git rev-parse --short HEAD)` first, or every signal says `unknown`.
 
-**Inside a `bin/claude-otel` session** every command inherits its `OTEL_*` settings. A
-backend started there exports over http/protobuf to Alloy's port 4318 as it should (its own
-`app.layer=runtime` wins over the inherited `OTEL_RESOURCE_ATTRIBUTES`); its metric interval
-becomes the wrapper's 10 s. Any other OTel-aware tool started there exports too, tagged
-`app.layer=build`, so its logs go to the content stream.
+**Inside a `bin/claude-otel` session** the `OTEL_*` settings configure Claude Code itself and
+do **not** reach the commands its Bash tool runs: Claude Code passes only
+`CLAUDE_CODE_ENABLE_TELEMETRY`, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA` and `TRACEPARENT` (its
+tool span) to Bash. A backend started there exports only when its endpoint is set explicitly
+(`OTEL_EXPORTER_OTLP_ENDPOINT`; the compose backend has it). `board.py` stores the
+`TRACEPARENT` on each board entry (see Team board below).
 
 Host ports, all on 127.0.0.1 and overridable for a second stack: `ALLOY_OTLP_GRPC_PORT`
-(4317), `ALLOY_OTLP_HTTP_PORT` (4318), `ALLOY_UI_PORT` (12345), `GRAFANA_PORT` (3000).
-The backends publish no host ports.
+(4317), `ALLOY_OTLP_HTTP_PORT` (4318), `ALLOY_UI_PORT` (12345), `ALLOY_FARO_PORT` (12347, the
+browser receiver), `GRAFANA_PORT` (3000). The backends publish no host ports. Two mounts also
+have overrides: `TEAM_BOARD_DIR` (the board files Alloy tails, default `./.git/team-board`)
+and `MIMIR_RULES_DIR` (the recording rules, default `./observability/mimir/rules`).
 
 ## Pipeline (`alloy/config.alloy`)
 
-OTLP in → memory limiter → stamp defaults (`stamp.ottl`) → redaction (`redact.ottl` and the
+Inputs → memory limiter → stamp defaults (`stamp.ottl`) → redaction (`redact.ottl` and the
 log body rules) → metrics: drop `session.id`, `ccr.session.id`, `prompt.id`, `user.id`,
 `user.account_uuid`, `user.account_id`, `user.email`, `user.groups`, `organization.id`,
-`client_request_id` → logs: content routing → batch → exporters.
+`client_request_id` → logs: content routing → batch → exporters. The inputs are OTLP (4317,
+4318), the Faro receiver (12347, behind its own overwrite-the-resource transform) and the
+team board's files (tailed and mapped to log records); the last two join at the memory limiter,
+so they pass every later step. After redaction, traces from `api` and `claude-code` also feed
+the span-metrics and service-graph connectors, whose metrics rejoin at the identifier-dropping
+step. The recording rules in Mimir's ruler work on the stored metrics.
 
 - **Redaction** (both layers, every signal): the values of `access_token`, `refresh_token`,
   `client_secret`, `authorization`, `api_key`, `password` become their SHA-256. Masked to
@@ -94,7 +102,9 @@ Probe: `GET mimir:9009/prometheus/api/v1/rules`.
   connector (`traces_spanmetrics_calls`, `traces_spanmetrics_duration_bucket` in seconds, with
   exemplars; `traces_service_graph_*`). Only spans of `api` and `claude-code` feed the
   connectors: browser spans carry browser-controlled names.
-- `cost.yaml`: generated from `pricing/pricing.yaml` (below). `runtime.yaml`: feature 056.
+- `cost.yaml`: generated from `pricing/pricing.yaml` (below). `runtime.yaml` (feature 056): `genai:*`, `rag:*`, `cache:*` and `db:*` from the backend's
+  ADK and app metrics (`app.rag.*`, `app.cache.requests`, `app.llm.stream.ttft`), which are native
+  histograms, so sums and counts use `histogram_sum` and `histogram_count`; for D6-D8.
 
 ## LLM pricing (`pricing/pricing.yaml`, feature 055)
 
@@ -179,7 +189,7 @@ switch Faro off), with `VITE_FARO_API_KEY`, `VITE_FARO_APP_VERSION` (`WCL_GIT_SH
   `session.id`. A chat send opens a "chat send" span and puts its `traceparent` and the Faro
   session id in the WebSocket message; the backend validates both (`backend/app/telemetry/browser.py`:
   W3C format, 128-character cap, sampled only; session id 1-64 of `[A-Za-z0-9._:-]`) and
-  parents "chat turn" on it. Anything invalid or missing starts a fresh root trace.
+  parents "chat turn" on it; anything invalid or missing there starts a fresh root trace. REST calls are different: FastAPI's own instrumentation takes the browser's `traceparent` (and `baggage`) as it comes, without these checks (a known gap, backlog sc-459).
 
 | Script | Proves |
 |---|---|

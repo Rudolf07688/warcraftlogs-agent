@@ -39,8 +39,8 @@
 <section class="layer" id="runtime">
   <h2>Agent runtime</h2>
   <div class="chips"><span class="eyebrow">Tech</span>
-    <span class="chip">google-adk&gt;=2.0.0</span>
-    <span class="chip">uv.lock: google-adk 2.10.0</span>
+    <span class="chip">google-adk==2.10.0</span>
+    <span class="chip">uv.lock: google-adk 2.10.0 (pinned in pyproject.toml)</span>
     <span class="chip">google-genai 2.25.0 (via ADK)</span>
     <span class="chip">anthropic[vertex]&gt;=1.11.0</span>
     <span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span>
@@ -252,6 +252,7 @@
     <li><b>No answer text after the tools</b>: a chat turn whose model returns nothing after its last tool result (and has no pending call) ends with the fixed <code>EMPTY_ANSWER_MESSAGE</code> token, marked <code>empty</code>; it is saved but never indexed, titled or given suggestions (sc-302).</li>
   </ul>
   <p>Every turn logs one <code>turn stats</code> INFO line from <code>stream_response()</code>: model, requests, rounds, retries, seconds waited, outcome (<code>answered</code>, <code>empty</code>, <code>rate_limited</code>, <code>error</code> or <code>abandoned</code>), prompt and cached tokens, trimmed results, tool calls and the fallback model.</p>
+  <p>With telemetry on, <code>stream_response()</code> also records the turn's time to first answer text (<code>app.llm.stream.ttft</code>, by model and by the agent that wrote the text; the first non-blank streamed text, or the final response when nothing streamed) through <code>record_ttft()</code> in <code>backend/app/telemetry/metrics.py</code>. The model is the fallback model when the turn switched. See <a href="observability.html#runtime">Observability</a>.</p>
 
   <h3>Why</h3>
   <p class="why">One short transaction for setup and short ones for captures and the save, so a turn holds no database connection while the model streams.<cite>backend/app/api/ws.py (_handle_turn comments, QA PERF-006)</cite></p>
@@ -473,6 +474,7 @@
     <li><code>pyproject.toml</code>, <code>uv.lock</code></li>
     <li><code>specs/015</code>, <code>029</code>, <code>032</code>, <code>035</code>, <code>044</code>–<code>046</code>, <code>050</code>, <code>052</code> research and specs</li>
     <li><code>todo.md</code></li>
+    <li><code>backend/app/telemetry/metrics.py</code> (<code>record_ttft</code>)</li>
   </ul>
 </footer>
 
