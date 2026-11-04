@@ -1,0 +1,45 @@
+# Mimir, monolithic on local disk (feature 053). Alloy sends OTLP to /otlp.
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9009
+  grpc_listen_port: 9095
+  log_level: warn
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/storage
+
+blocks_storage:
+  storage_prefix: blocks
+  tsdb:
+    dir: /data/tsdb
+
+compactor:
+  data_dir: /data/compactor
+
+ingester:
+  ring:
+    replication_factor: 1
+    kvstore:
+      store: inmemory
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+ruler_storage:
+  storage_prefix: ruler
+
+limits:
+  # 13 months (spec §10): long enough for year-on-year trend panels.
+  compactor_blocks_retention_period: 9490h
+  native_histograms_ingestion_enabled: true
+  max_global_exemplars_per_user: 100000
+  # OTLP resource attributes promoted to series labels (spec §9.2); the rest stay on target_info.
+  promote_otel_resource_attributes: "service.namespace,service.name,deployment.environment.name,app.layer"
+
+usage_stats:
+  enabled: false

@@ -1,0 +1,30 @@
+# Tempo, single binary on local disk (feature 053). Alloy sends OTLP gRPC to :4317.
+# The metrics-generator stays off: Alloy will derive RED metrics (sprint 2).
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+compactor:
+  compaction:
+    # 7 days in dev: content-bearing traces can't be kept shorter than the rest (spec §14 decision 9).
+    block_retention: 168h
+
+usage_report:
+  reporting_enabled: false
