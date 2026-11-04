@@ -1,0 +1,150 @@
+"""Feature 056 (sc-413): the runtime dashboards query recording-rule aliases only.
+
+Dashboards query aliases, never raw OTel names, so a semantic-convention rename touches one
+rules file (spec §8.3). Every metric name in a Mimir panel query must be a rule recorded in
+``runtime.yaml`` or an alias another stream owns by contract (055: RED and cost).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+DASHBOARDS = ROOT / "observability/grafana/dashboards/runtime"
+RULES = ROOT / "observability/mimir/rules/anonymous/runtime.yaml"
+# Board contract:red-aliases and contract:cost-alias (defined by 055 in red.yaml, cost.yaml).
+CONTRACT_ALIASES = {"app:http_requests:rate5m", "app:http_latency:p95", "genai:cost_usd:rate5m"}
+D7_UID = "wcl-app-api-llm"  # D7 evolves the starter dashboard: links to it keep working
+
+_STRINGS = re.compile(r'"(?:[^"\\]|\\.)*"')
+_MATCHERS = re.compile(r"\{[^{}]*\}")
+_GROUPINGS = re.compile(r"\b(?:by|without|on|ignoring|group_left|group_right)\s*\([^()]*\)")
+_RANGES = re.compile(r"\[[^\]]*\]")
+_NAMES = re.compile(r"[A-Za-z_:][\w:]*")
+_KEYWORDS = {"by", "without", "on", "ignoring", "group_left", "group_right", "and", "or", "unless", "bool", "offset"}
+
+
+def metric_names(expr: str) -> set[str]:
+    """The metric names a PromQL expression reads: identifiers that aren't functions,
+    keywords, label names or literals."""
+    text = _RANGES.sub(" ", _GROUPINGS.sub(" ", _MATCHERS.sub(" ", _STRINGS.sub(" ", expr))))
+    names = set()
+    for match in _NAMES.finditer(text):
+        rest = text[match.end():].lstrip()
+        if rest.startswith("(") or match.group() in _KEYWORDS:
+            continue
+        names.add(match.group())
+    return names
+
+
+def recorded() -> set[str]:
+    rules = yaml.safe_load(RULES.read_text())
+    return {rule["record"] for group in rules["groups"] for rule in group["rules"]}
+
+
+def mimir_targets(dashboard: dict) -> list[tuple[dict, str]]:
+    return [
+        (panel, target["expr"])
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+        if target.get("datasource", panel.get("datasource", {})).get("type") == "prometheus"
+    ]
+
+
+def mimir_exprs(dashboard: dict) -> list[str]:
+    return [expr for _, expr in mimir_targets(dashboard)]
+
+
+# QA fix (live check #68 d): a count over the range comes from increase() on the raw counter or
+# histogram, in a stat or table only. A rate alias sums to fractions (each event is smeared over
+# five evaluations, and the alias never sees the created-time zero sample).
+RANGE_INCREASE = re.compile(r"increase\(([A-Za-z_:][\w:]*)(?:\{[^{}]*\})?\[\$__range\]\)")
+RAW_COUNTED = {
+    "traces_spanmetrics_calls",
+    "gen_ai_invoke_agent_duration",
+    "gen_ai_execute_tool_duration",
+    "app_rag_retrieval_duration",
+    "app_cache_requests",
+}
+# Amounts, not counts: a fraction of a token is noise on hundreds of thousands.
+AMOUNT_ALIASES = {"genai:tokens:rate5m"}
+_SUM_OVER_TIME = re.compile(r"sum_over_time\(([A-Za-z_:][\w:]*)")
+
+
+def counted_raw(panel: dict, expr: str) -> tuple[set[str], str]:
+    """Raw names a stat or table counts with increase() over the range, and the expression
+    without them."""
+    if panel["type"] not in ("stat", "table"):
+        return set(), expr
+    return {m.group(1) for m in RANGE_INCREASE.finditer(expr)}, RANGE_INCREASE.sub("increase(x[1m])", expr)
+
+
+DASHBOARD_FILES = sorted(DASHBOARDS.glob("*.json"))
+
+
+def test_d6_d7_d8_are_provisioned_and_d7_keeps_its_uid():
+    uids = {json.loads(path.read_text())["uid"]: path.name for path in DASHBOARD_FILES}
+    assert uids == {"wcl-api-red": "api-red.json", D7_UID: "app-api-llm.json", "wcl-rag": "rag.json"}
+
+
+@pytest.mark.parametrize("path", DASHBOARD_FILES, ids=lambda p: p.name)
+def test_every_mimir_query_reads_aliases_only(path):
+    targets = mimir_targets(json.loads(path.read_text()))
+    assert targets
+    allowed = recorded() | CONTRACT_ALIASES
+    for panel, expr in targets:
+        raw, rest = counted_raw(panel, expr)
+        assert raw <= RAW_COUNTED, (expr, raw - RAW_COUNTED)
+        names = (metric_names(rest) - {"x"}) | raw
+        assert names, expr
+        assert names - raw <= allowed, (expr, names - raw - allowed)
+
+
+@pytest.mark.parametrize("path", DASHBOARD_FILES, ids=lambda p: p.name)
+def test_counts_over_the_range_are_whole_increases_of_the_raw_series(path):
+    for panel, expr in mimir_targets(json.loads(path.read_text())):
+        assert set(_SUM_OVER_TIME.findall(expr)) <= AMOUNT_ALIASES, (panel["title"], expr)
+        if counted_raw(panel, expr)[0]:
+            assert expr.startswith("round("), (panel["title"], expr)
+            assert panel["fieldConfig"]["defaults"].get("decimals") == 0, panel["title"]
+
+
+@pytest.mark.parametrize("path", DASHBOARD_FILES, ids=lambda p: p.name)
+def test_ratios_are_fractions_on_a_fixed_axis(path):
+    """Live check #68 c: an all-zero ratio auto-scaled its percent axis to 0..10000 %."""
+    for panel, expr in mimir_targets(json.loads(path.read_text())):
+        defaults = panel["fieldConfig"]["defaults"]
+        assert defaults.get("unit") != "percent", panel["title"]  # ratios are 0..1, percentunit
+        if defaults.get("unit") != "percentunit":
+            continue
+        assert "100" not in expr, (panel["title"], expr)
+        if panel["type"] == "timeseries":
+            assert (defaults.get("min"), defaults.get("max")) == (0, 1), panel["title"]
+
+
+def test_the_name_scan_sees_raw_series():
+    """The check itself: a raw OTel series in a query is found, functions and labels are not."""
+    expr = 'histogram_quantile(0.95, sum by (le) (rate(http_server_duration{http_route!~"/ws/chat"}[5m]))) or vector(0)'
+    assert metric_names(expr) == {"http_server_duration"}
+    assert metric_names("sum_over_time(genai:tokens:rate5m[$__range]) * 60") == {"genai:tokens:rate5m"}
+
+
+def test_every_contract_alias_of_056_is_recorded():
+    """contract:recording-rules: 056 owns these four in runtime.yaml."""
+    assert {
+        "genai:tokens:rate5m",
+        "genai:invoke_agent_latency:p95",
+        "rag:retrieval_latency:p95",
+        "cache:hit_ratio",
+    } <= recorded()
+
+
+def test_latency_panels_exclude_the_chat_socket_and_streaming_routes():
+    d6 = json.loads((DASHBOARDS / "api-red.json").read_text())
+    latency = [expr for expr in mimir_exprs(d6) if "app:http_latency:p95" in expr]
+    assert latency and all('http_route!~"/ws/chat|.*/generate"' in expr for expr in latency)

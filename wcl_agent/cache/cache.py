@@ -34,6 +34,7 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any, Callable, Literal, TypeVar
 
+from opentelemetry import metrics
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -286,9 +287,10 @@ def _client() -> Redis | None:
     return client
 
 
-def _redis_failed(family: CacheFamily, exc: BaseException) -> None:
-    """Count a redis_error and open the circuit on this loop (C7). Logs once per opening."""
-    _record(family, Outcome.REDIS_ERROR)
+def _redis_failed(family: CacheFamily, exc: BaseException, *, lookups: int = 1) -> None:
+    """Count a redis_error and open the circuit on this loop (C7). Logs once per opening.
+    ``lookups``: how many key lookups this outcome concludes (0 when another record follows)."""
+    _record(family, Outcome.REDIS_ERROR, lookups=lookups)
     loop = asyncio.get_running_loop()
     if loop not in _down_until:
         logger.warning("wcl cache: Redis unavailable, bypassing the cache for %.0fs: %s", _CIRCUIT_S, exc)
@@ -356,7 +358,27 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d")
 
 
-def _record(family: CacheFamily, outcome: Outcome, load_ms: int | None = None) -> None:
+# Feature 056: the same outcomes as an OTel counter (a no-op while telemetry is off), by family
+# and one of three results: the loader ran (miss), the value came from Redis (hit), or failed.
+# It counts each key lookup once, by its final outcome (BUG-003): a step another record
+# follows (a corrupt entry before its reload, a batch-level Redis failure before the per-key
+# misses, a failed write after a load) passes ``lookups=0``; the admin counts keep every step.
+_requests = metrics.get_meter(__name__).create_counter(
+    "app.cache.requests", unit="{request}", description="WCL cache lookups by family and result."
+)
+_RESULTS: dict[Outcome, str] = {
+    Outcome.HIT: "hit",
+    Outcome.NEG_HIT: "hit",
+    Outcome.MISS: "miss",
+    Outcome.LOCK_TIMEOUT: "miss",
+    Outcome.REDIS_ERROR: "miss",
+    Outcome.ERROR: "error",
+}
+
+
+def _record(family: CacheFamily, outcome: Outcome, load_ms: int | None = None, *, lookups: int = 1) -> None:
+    if lookups:
+        _requests.add(lookups, {"app.cache.name": family.value, "app.cache.result": _RESULTS[outcome]})
     _counts[(family, outcome.value)] += 1
     if load_ms is not None:
         _counts[(family, "load_ms_sum")] += load_ms
@@ -638,7 +660,7 @@ async def _lookup(
                     _record(family, Outcome.NEG_HIT if value is None else Outcome.HIT)
                     return value
                 await client.delete(key)  # corrupt: drop it and load again (C6)
-                _record(family, Outcome.ERROR)
+                _record(family, Outcome.ERROR, lookups=0)
         won = await client.set(keys.lock(key), b"1", nx=True, px=settings.lock_ms)
     except RedisError as exc:
         _redis_failed(family, exc)
@@ -682,7 +704,7 @@ async def _load_and_store(
                 await client.set(key, payload, ex=expiry)
                 await _drop_if_gone(client, [key])
             except RedisError as exc:
-                _redis_failed(family, exc)
+                _redis_failed(family, exc, lookups=0)  # the miss above counted this lookup
         return value
     finally:
         try:  # release the lock on success, error and cancellation alike (C5, C12)
@@ -767,8 +789,8 @@ async def _get_many(
         return results
     settings = cache_settings()
     client = _client() if settings.active else None
-    if settings.active and client is None:  # circuit open
-        _record(family, Outcome.REDIS_ERROR)
+    if settings.active and client is None:  # circuit open: one miss per key follows
+        _record(family, Outcome.REDIS_ERROR, lookups=0)
     if client is not None:
         try:
             raws = await client.mget([keys_[i] for i in missing])
@@ -782,13 +804,13 @@ async def _get_many(
                     continue
                 if raw is not None:
                     corrupt.append(keys_[i])
-                    _record(family, Outcome.ERROR)
+                    _record(family, Outcome.ERROR, lookups=0)
                 still.append(i)
             if corrupt:
                 await client.delete(*corrupt)
             missing = still
         except RedisError as exc:
-            _redis_failed(family, exc)
+            _redis_failed(family, exc, lookups=0)
             client = None
     if missing:
         started = time.perf_counter()
@@ -796,7 +818,7 @@ async def _get_many(
             loaded = await batch_loader(missing)
         except Exception:
             if settings.active:
-                _record(family, Outcome.ERROR)
+                _record(family, Outcome.ERROR, lookups=len(missing))
             raise
         if settings.active:
             # One load event for the batch; one miss per key it filled.
@@ -818,7 +840,7 @@ async def _get_many(
                 await pipe.execute()
                 await _drop_if_gone(client, written)
             except RedisError as exc:
-                _redis_failed(family, exc)
+                _redis_failed(family, exc, lookups=0)
     if memo_s and not load.unshareable:
         for i in range(len(keys_)):
             if results[i] is not None:

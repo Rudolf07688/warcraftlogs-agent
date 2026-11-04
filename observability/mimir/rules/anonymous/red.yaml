@@ -1,0 +1,23 @@
+# RED aliases from Alloy's spanmetrics connector (feature 055, sc-409, spec §8.3).
+# Dashboards and alerts query these, not the raw traces_spanmetrics_* names (board
+# contract:red-aliases). Server spans only: FastAPI's internal "http send/receive" spans carry
+# the route too and would count each request three times.
+groups:
+  - name: red
+    interval: 1m
+    rules:
+      # Calls per second; status_code is the span status (STATUS_CODE_ERROR marks errors).
+      - record: app:http_requests:rate5m
+        expr: |
+          sum by (service_name, http_route, status_code) (
+            rate(traces_spanmetrics_calls{span_kind="SPAN_KIND_SERVER", http_route!=""}[5m])
+          )
+      # p95 latency in seconds. The chat WebSocket (/ws/chat, one span per whole turn) and the
+      # streaming guide generation (.*/generate) last as long as the model talks: excluded.
+      - record: app:http_latency:p95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service_name, http_route, le) (
+              rate(traces_spanmetrics_duration_bucket{span_kind="SPAN_KIND_SERVER", http_route!="", http_route!="/ws/chat", http_route!~".*/generate"}[5m])
+            )
+          )

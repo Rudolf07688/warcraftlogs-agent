@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { registerFaro, resetFaroForTests } from "../telemetry/context";
 import { getConversation } from "./restClient";
 
 // sc-213: a chart made in a chat must come back when the chat is reopened. The payload is
@@ -63,5 +64,27 @@ describe("getConversation: stored charts", () => {
     });
     const { messages } = await getConversation("c1");
     expect(messages.every((m) => m.artifacts === undefined)).toBe(true);
+  });
+});
+
+// Feature 057: the backend tags its span with the Faro session, sent as a header with Faro on.
+describe("REST calls and the Faro session", () => {
+  afterEach(() => resetFaroForTests());
+
+  const headersSent = async () => {
+    stub({ ...base, messages: [], artifacts: [], proposals: [] });
+    await getConversation("c1");
+    return (vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+  };
+
+  it("sends x-faro-session-id when Faro has a session", async () => {
+    registerFaro({
+      api: { getOTEL: () => undefined, getSession: () => ({ id: "a1B2c3D4e5" }), setUser() {}, resetUser() {} },
+    } as never);
+    expect((await headersSent())["x-faro-session-id"]).toBe("a1B2c3D4e5");
+  });
+
+  it("sends no session header with Faro off", async () => {
+    expect(await headersSent()).not.toHaveProperty("x-faro-session-id");
   });
 });

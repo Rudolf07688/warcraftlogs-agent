@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
+<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
 <title>Frontend · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -34,6 +34,7 @@
     <a href="#theme">Theme</a>
     <a href="#scroll">Scrolling</a>
     <a href="#api">Talking to the API</a>
+    <a href="#telemetry">Browser telemetry</a>
     <a href="#why">Why</a>
   </nav>
 </header>
@@ -46,9 +47,10 @@
   <div class="tablewrap"><table>
     <thead><tr><th>Path (<code>frontend/src/</code>)</th><th>Holds</th></tr></thead>
     <tbody>
-      <tr><td><code>main.tsx</code></td><td>entry: <code>BackendBootGate</code> → <code>AuthProvider</code> → router</td></tr>
+      <tr><td><code>main.tsx</code></td><td>entry: <code>BackendBootGate</code> → <code>AuthProvider</code> → router; starts browser telemetry (<code>initTelemetry</code>) before the first render</td></tr>
       <tr><td><code>App.tsx</code></td><td>the chat shell: conversation state, the frame handler, sends, PDF downloads</td></tr>
       <tr><td><code>api/</code></td><td><code>wsClient.ts</code> (<code>ChatSocket</code>, the <code>Frame</code> union) and <code>restClient.ts</code> (every REST call, CSRF, <code>ApiError</code>)</td></tr>
+      <tr><td><code>telemetry/</code></td><td>Grafana Faro setup (<code>faro.ts</code>), what the rest of the app may ask of it (<code>context.ts</code>) and the URL scrubber (<code>scrub.ts</code>); see <a href="#telemetry">Browser telemetry</a></td></tr>
       <tr><td><code>auth/</code></td><td><code>AuthProvider</code>, <code>useAuth</code>, the <code>RequireAuth</code> route guard</td></tr>
       <tr><td><code>pages/</code></td><td>the routed screens other than the chat (profile, admin, sign-in flows)</td></tr>
       <tr><td><code>components/</code></td><td>chat components (message list, spell cards, charts, sidebar, welcome page, proposal card); <code>profile/</code> tabs and dialogs</td></tr>
@@ -157,7 +159,7 @@
 
   <h3>What it does, and where it lives</h3>
   <ul>
-    <li><b>Scripts</b> (<code>frontend/package.json</code>): <code>dev</code> runs Vite, <code>build</code> runs <code>tsc -b &amp;&amp; vite build</code>, <code>test</code> runs Vitest. Tests (10 <code>*.test.tsx</code> files) run in jsdom from <code>frontend/vitest.config.ts</code>, kept apart from the build config.</li>
+    <li><b>Scripts</b> (<code>frontend/package.json</code>): <code>dev</code> runs Vite, <code>build</code> runs <code>tsc -b &amp;&amp; vite build</code>, <code>test</code> runs Vitest. Tests (14 <code>*.test.tsx</code> files) run in jsdom from <code>frontend/vitest.config.ts</code>, kept apart from the build config.</li>
     <li><b>Dev server</b> (<code>frontend/vite.config.ts</code>): port 5173, plugins <code>@vitejs/plugin-react</code> and <code>@tailwindcss/vite</code>. It proxies <code>/api</code> and <code>/ws</code> (with WebSocket upgrade) to <code>VITE_BACKEND_URL</code>, default <code>http://localhost:8000</code>, so the browser sees one origin.</li>
     <li><b>Image</b> (<code>frontend/Dockerfile</code>): a <code>deps</code> stage on <code>node:22-slim</code> (glibc, because Tailwind v4's native binaries crash on musl), a <code>dev</code> target running the Vite dev server (what docker compose uses locally), and a <code>prod</code> target that serves the built files with <code>nginx:1.27-alpine</code>.</li>
     <li><b>Production proxy</b> (<code>frontend/nginx.conf</code>): the same paths as the dev proxy, to <code>backend:8000</code>. <code>/api/</code> has a 300 s read timeout (PDF generation can take a while); <code>/ws</code> upgrades the connection and allows 3600 s, as a chat socket stays open across many turns. Hashed <code>/assets/</code> are cached for a year; every other path falls back to <code>index.html</code>.</li>
@@ -282,6 +284,23 @@
   </ul>
 </section>
 
+<section class="layer" id="telemetry">
+  <h2>Browser telemetry</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">@grafana/faro-react 2.13.0</span><span class="chip">@grafana/faro-web-tracing 2.13.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Off unless configured.</b> <code>initTelemetry()</code> in <code>telemetry/faro.ts</code> does nothing, and loads none of the Faro packages (they are dynamic imports), unless <code>VITE_FARO_URL</code> is set. Compose sets it for the dev server to <code>http://localhost:12347/collect</code>, the Faro receiver in Alloy; an empty value switches it off. The other settings are <code>VITE_FARO_API_KEY</code>, <code>VITE_FARO_APP_VERSION</code> and <code>VITE_FARO_ENVIRONMENT</code>.</li>
+    <li><b>What it reports.</b> Web Vitals, uncaught errors, route changes (through the router instrumentation) and browser traces for page loads and fetch and XHR calls; the app is named <code>web</code> in namespace <code>wcl-agent</code>. Console output is not captured.</li>
+    <li><b>Click to database.</b> Tracing adds a W3C <code>traceparent</code> to same-origin REST calls only, and <code>restClient.ts</code> adds <code>x-faro-session-id</code>. On the chat socket, a send opens a "chat send" span in <code>ChatSocket</code> and puts its <code>traceparent</code> and the session id into the message, because a browser WebSocket cannot set headers; the backend's "chat turn" span becomes its child (<a href="streaming.html#socket">Stream protocol</a>, <a href="observability.html#runtime">Observability</a>). A session that Faro did not sample sends no <code>traceparent</code>.</li>
+    <li><b>Privacy.</b> The signed-in user is reported as a salted SHA-256 prefix of the account id (<code>identifyUser</code> in <code>AuthProvider</code>), never the email. A <code>beforeSend</code> hook (<code>scrub.ts</code>) cuts the query and fragment off every URL in every item, so an invite or password-reset <code>#token=</code> never leaves the browser.</li>
+    <li><b>Where it goes.</b> To Alloy's <code>faro.receiver</code>, which stamps and redacts what it gets like any other signal (<a href="observability.html#alloy">Alloy</a>).</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The Faro key ships in the bundle and is not a secret, so the receiver's CORS list, size cap and rate limit are the protection, and the browser's payload is never trusted to name its own service.<cite>observability/alloy/config.alloy (comment above faro.receiver)</cite></p>
+</section>
+
 <section class="layer" id="why">
   <h2>Why</h2>
   <p class="why">React, Vite and TypeScript to start with: the first UI requirement met with the least machinery, and easy to extend.<cite>specs/001-streaming-chat-frontend/research.md §7</cite></p>
@@ -307,6 +326,7 @@
     <li><code>frontend/Dockerfile</code>, <code>frontend/nginx.conf</code>, <code>frontend/index.html</code></li>
     <li><code>frontend/src/main.tsx</code>, <code>App.tsx</code></li>
     <li><code>frontend/src/api/restClient.ts</code>, <code>wsClient.ts</code></li>
+    <li><code>frontend/src/telemetry/</code> (<code>faro.ts</code>, <code>context.ts</code>, <code>scrub.ts</code>)</li>
     <li><code>frontend/src/auth/</code></li>
     <li><code>frontend/src/components/StreamMarkdown.tsx</code>, <code>MessageList.tsx</code>, <code>PlotlyArtifact.tsx</code>, <code>SpellCard.tsx</code>, <code>Ambient.tsx</code>, <code>AmbientParticles.tsx</code>, <code>BackendBootGate.tsx</code>, <code>WelcomePanel.tsx</code>, <code>Sidebar.tsx</code>, <code>ProposalCard.tsx</code>, <code>ModelSelect.tsx</code>, <code>Composer.tsx</code></li>
     <li><code>frontend/src/components/ui/</code>, <code>components/profile/</code></li>

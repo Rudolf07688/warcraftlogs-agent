@@ -1,3 +1,4 @@
+import { faroSessionId } from "../telemetry/context";
 import type {
   AdminUser,
   BackendHealth,
@@ -81,6 +82,8 @@ async function send<T>(
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (opts.csrf && _csrfToken) headers["X-CSRF-Token"] = _csrfToken;
+  const faroSession = faroSessionId(); // feature 057: the backend tags its span with it
+  if (faroSession) headers["x-faro-session-id"] = faroSession;
   const res = await fetch(url, {
     method,
     headers,

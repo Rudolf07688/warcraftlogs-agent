@@ -1,7 +1,7 @@
 {
   "uid": "wcl-app-api-llm",
-  "title": "App: API and LLM",
-  "description": "The running app (runtime layer): HTTP, chat turns, model calls and tools. Starter version of D6/D7; spanmetrics, cost and the full set come in the next telemetry sprint.",
+  "title": "App: Agents and LLM",
+  "description": "D7 (feature 056): agent runs, models, tokens, cost and tools, through recording-rule aliases. HTTP moved to App: API RED (D6).",
   "tags": [
     "wcl-agent",
     "runtime"
@@ -22,12 +22,23 @@
   "annotations": {
     "list": []
   },
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "wcl-agent"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
   "panels": [
     {
-      "id": 1,
       "type": "stat",
-      "title": "Requests / min",
-      "description": "HTTP requests per minute over the last 5 minutes (chat runs over a WebSocket and is counted below).",
+      "title": "Chat turns",
+      "description": "Agent runs (one per chat message, greeting or guide job) in the range.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -44,7 +55,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(histogram_count(rate(http_server_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[5m]))) * 60",
+          "expr": "round(sum(histogram_count(increase(gen_ai_invoke_agent_duration{service_namespace=\"wcl-agent\"}[$__range]))))",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -57,10 +68,10 @@
           "unit": "short",
           "color": {
             "mode": "fixed",
-            "fixedColor": "blue"
+            "fixedColor": "text"
           },
           "noValue": "0",
-          "decimals": 1
+          "decimals": 0
         },
         "overrides": []
       },
@@ -75,14 +86,15 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
-      }
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 1
     },
     {
-      "id": 2,
       "type": "stat",
-      "title": "API p95 latency",
-      "description": "95th percentile over the range, streaming guide generation excluded.",
+      "title": "Agent run p95",
+      "description": "95th percentile of a whole agent run, last 5 minutes.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -99,7 +111,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(http_server_duration{service_namespace=\"wcl-agent\", service_name=\"api\", http_target!~\".*/generate\"}[$__range])))",
+          "expr": "max(genai:invoke_agent_latency:p95)",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -109,13 +121,12 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
+          "unit": "s",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "text"
           },
-          "noValue": "0",
-          "decimals": 0
+          "noValue": "-"
         },
         "overrides": []
       },
@@ -130,14 +141,15 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
-      }
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 2
     },
     {
-      "id": 3,
       "type": "stat",
-      "title": "5xx share",
-      "description": "Share of HTTP responses with a 5xx status.",
+      "title": "Time to first token p95",
+      "description": "Wait for the first answer text of a turn, last 5 minutes.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -154,7 +166,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "(sum(histogram_count(increase(http_server_duration{service_name=\"api\", http_status_code=~\"5..\"}[$__range]))) or vector(0)) / sum(histogram_count(increase(http_server_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__range])))",
+          "expr": "max(genai:ttft:p95)",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -164,13 +176,12 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "unit": "s",
           "color": {
             "mode": "fixed",
-            "fixedColor": "red"
+            "fixedColor": "text"
           },
-          "noValue": "0",
-          "decimals": 1
+          "noValue": "-"
         },
         "overrides": []
       },
@@ -185,14 +196,15 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
-      }
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 3
     },
     {
-      "id": 4,
       "type": "stat",
-      "title": "Chat turns",
-      "description": "Agent runs (one per chat message) in the range.",
+      "title": "LLM tokens",
+      "description": "Input + output tokens in the range.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -209,7 +221,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(histogram_count(increase(gen_ai_invoke_agent_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__range])))",
+          "expr": "sum(sum_over_time(genai:tokens:rate5m[$__range]) * 60)",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -222,7 +234,7 @@
           "unit": "short",
           "color": {
             "mode": "fixed",
-            "fixedColor": "purple"
+            "fixedColor": "text"
           },
           "noValue": "0",
           "decimals": 0
@@ -240,14 +252,15 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
-      }
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 4
     },
     {
-      "id": 5,
       "type": "stat",
-      "title": "Chat turn p95",
-      "description": "95th percentile duration of a whole agent run.",
+      "title": "Cost / hour (estimated, list price)",
+      "description": "From the pricing table (055); no data until its cost rules are deployed.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -264,7 +277,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(gen_ai_invoke_agent_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__range])))",
+          "expr": "3600 * sum(genai:cost_usd:rate5m)",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -274,13 +287,13 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "currencyUSD",
           "color": {
             "mode": "fixed",
-            "fixedColor": "purple"
+            "fixedColor": "text"
           },
-          "noValue": "0",
-          "decimals": 1
+          "noValue": "-",
+          "decimals": 2
         },
         "overrides": []
       },
@@ -295,14 +308,15 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
-      }
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 5
     },
     {
-      "id": 6,
       "type": "stat",
-      "title": "LLM tokens",
-      "description": "Input + output tokens the app sent to and received from the model.",
+      "title": "Tool error share",
+      "description": "Tool calls that raised, last 5 minutes.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -319,7 +333,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(histogram_sum(increase(gen_ai_client_token_usage{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__range])))",
+          "expr": "(sum(genai:tool_calls:rate5m{error_type!=\"none\"}) or vector(0)) / sum(genai:tool_calls:rate5m)",
           "legendFormat": "__auto",
           "refId": "A",
           "range": false,
@@ -329,12 +343,12 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "percentunit",
           "color": {
             "mode": "fixed",
-            "fixedColor": "blue"
+            "fixedColor": "text"
           },
-          "noValue": "0"
+          "noValue": "-"
         },
         "overrides": []
       },
@@ -349,13 +363,14 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
-      }
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 6
     },
     {
-      "id": 7,
       "type": "row",
-      "title": "API",
+      "title": "Agent runs",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -363,13 +378,13 @@
         "w": 24,
         "h": 1
       },
-      "panels": []
+      "panels": [],
+      "id": 7
     },
     {
-      "id": 8,
       "type": "timeseries",
-      "title": "Requests / min by route",
-      "description": "Route templates (ids collapsed), so one line per endpoint.",
+      "title": "Agent run duration",
+      "description": "Whole agent run, model and tool calls included.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -386,274 +401,8 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum by (http_method, http_target) (histogram_count(rate(http_server_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval]))) * 60",
-          "legendFormat": "{{http_method}} {{http_target}}",
-          "refId": "A",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2,
-            "showPoints": "never",
-            "spanNulls": 300000,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 9,
-      "type": "timeseries",
-      "title": "p95 latency by route",
-      "description": "Streaming guide generation excluded: it stays open for the whole answer.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 5,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "histogram_quantile(0.95, sum by (http_target) (rate(http_server_duration{service_namespace=\"wcl-agent\", service_name=\"api\", http_target!~\".*/generate\"}[$__rate_interval])))",
-          "legendFormat": "{{http_target}}",
-          "refId": "A",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2,
-            "showPoints": "never",
-            "spanNulls": 300000,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "maxDataPoints": 100,
-      "interval": "5m",
-      "id": 10,
-      "type": "timeseries",
-      "title": "Responses by status",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 13,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum by (http_status_code) (histogram_count(increase(http_server_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__interval])))",
-          "legendFormat": "{{http_status_code}}",
-          "refId": "A",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 70,
-            "lineWidth": 2,
-            "showPoints": "never",
-            "spanNulls": 300000,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "sum"
-          ],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 11,
-      "type": "timeseries",
-      "title": "Database connections",
-      "description": "SQLAlchemy pool: connections in use vs idle.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 13,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum by (state) (db_client_connections_usage{service_namespace=\"wcl-agent\", service_name=\"api\"})",
-          "legendFormat": "{{state}}",
-          "refId": "A",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2,
-            "showPoints": "never",
-            "spanNulls": 300000,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 12,
-      "type": "row",
-      "title": "Agent and LLM",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 21,
-        "w": 24,
-        "h": 1
-      },
-      "panels": []
-    },
-    {
-      "id": 13,
-      "type": "timeseries",
-      "title": "Chat turn duration",
-      "description": "Whole agent run per chat message, including model and tool calls.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 22,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "histogram_quantile(0.5, sum(rate(gen_ai_invoke_agent_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval])))",
-          "legendFormat": "p50",
+          "expr": "genai:invoke_agent_latency:p50",
+          "legendFormat": "p50 {{gen_ai_agent_name}}",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -664,8 +413,8 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(gen_ai_invoke_agent_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval])))",
-          "legendFormat": "p95",
+          "expr": "genai:invoke_agent_latency:p95",
+          "legendFormat": "p95 {{gen_ai_agent_name}}",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -677,40 +426,299 @@
           "unit": "s",
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": 300000,
+            "spanNulls": true,
             "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
+              "mode": "none"
+            }
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
+          "displayMode": "list",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      }
+      },
+      "id": 8
     },
     {
-      "id": 14,
       "type": "timeseries",
-      "title": "Model call latency by model (p95)",
-      "description": "One LLM request (generate_content).",
+      "title": "Model and tool calls per agent run (average)",
+      "description": "Per invocation of each agent; a rising line is an agent looping.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:inference_calls_per_invocation:avg5m",
+          "legendFormat": "model calls {{gen_ai_agent_name}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:tool_calls_per_invocation:avg5m",
+          "legendFormat": "tool calls {{gen_ai_agent_name}}",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Time to first token",
+      "description": "From the start of a turn to its first answer text, by the model in use.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:ttft:p50",
+          "legendFormat": "p50 {{gen_ai_request_model}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:ttft:p95",
+          "legendFormat": "p95 {{gen_ai_request_model}}",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Agent runs / min",
+      "description": "Invocations per minute by agent.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:invocations:rate5m * 60",
+          "legendFormat": "{{gen_ai_agent_name}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11
+    },
+    {
+      "type": "row",
+      "title": "Models",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 12
+    },
+    {
+      "type": "timeseries",
+      "title": "Tokens / min by model and type",
+      "description": "Input and output tokens per minute.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (genai:tokens:rate5m) * 60",
+          "legendFormat": "{{gen_ai_request_model}} {{gen_ai_token_type}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "Cost / hour by model (estimated, list price)",
+      "description": "From the pricing table (055); no data until its cost rules are deployed.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -727,7 +735,64 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "histogram_quantile(0.95, sum by (gen_ai_request_model) (rate(gen_ai_client_operation_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval])))",
+          "expr": "3600 * sum by (gen_ai_request_model) (genai:cost_usd:rate5m)",
+          "legendFormat": "{{gen_ai_request_model}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14
+    },
+    {
+      "type": "timeseries",
+      "title": "Model call latency p95",
+      "description": "One LLM request (generate_content).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:model_latency:p95",
           "legendFormat": "{{gen_ai_request_model}}",
           "refId": "A",
           "range": true,
@@ -740,106 +805,34 @@
           "unit": "s",
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": 300000,
+            "spanNulls": true,
             "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
+              "mode": "none"
+            }
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
+          "displayMode": "list",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      }
+      },
+      "id": 15
     },
     {
-      "maxDataPoints": 100,
-      "interval": "5m",
-      "id": 15,
       "type": "timeseries",
-      "title": "LLM tokens by model",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 30,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (histogram_sum(increase(gen_ai_client_token_usage{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__interval])))",
-          "legendFormat": "{{gen_ai_request_model}} {{gen_ai_token_type}}",
-          "refId": "A",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 70,
-            "lineWidth": 2,
-            "showPoints": "never",
-            "spanNulls": 300000,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "sum"
-          ],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "maxDataPoints": 100,
-      "interval": "5m",
-      "id": 16,
-      "type": "timeseries",
-      "title": "Tool calls by tool",
-      "description": "How often the agent called each tool.",
+      "title": "Model calls / min by outcome",
+      "description": "error_type none = the call succeeded.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -856,7 +849,77 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum by (gen_ai_tool_name) (histogram_count(increase(gen_ai_execute_tool_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__interval])))",
+          "expr": "sum by (gen_ai_request_model, error_type) (genai:model_calls:rate5m) * 60",
+          "legendFormat": "{{gen_ai_request_model}} {{error_type}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 16
+    },
+    {
+      "type": "row",
+      "title": "Tools",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 17
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool calls / min",
+      "description": "How often the agent called each tool.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (gen_ai_tool_name) (genai:tool_calls:rate5m) * 60",
           "legendFormat": "{{gen_ai_tool_name}}",
           "refId": "A",
           "range": true,
@@ -868,47 +931,42 @@
         "defaults": {
           "unit": "short",
           "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 70,
-            "lineWidth": 2,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": 300000,
+            "spanNulls": true,
             "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0
+              "mode": "normal"
+            }
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "sum"
-          ],
+          "displayMode": "list",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      }
+      },
+      "id": 18
     },
     {
-      "id": 17,
       "type": "timeseries",
-      "title": "Tool latency by tool (p95)",
-      "description": "",
+      "title": "Tool errors / min",
+      "description": "Tool calls that raised.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
       },
       "gridPos": {
-        "x": 0,
-        "y": 38,
+        "x": 12,
+        "y": 39,
         "w": 12,
         "h": 8
       },
@@ -918,7 +976,64 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "histogram_quantile(0.95, sum by (gen_ai_tool_name) (rate(gen_ai_execute_tool_duration{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval])))",
+          "expr": "sum by (gen_ai_tool_name, error_type) (genai:tool_calls:rate5m{error_type!=\"none\"}) * 60",
+          "legendFormat": "{{gen_ai_tool_name}} {{error_type}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 19
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool latency p95",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:tool_latency:p95",
           "legendFormat": "{{gen_ai_tool_name}}",
           "refId": "A",
           "range": true,
@@ -931,47 +1046,41 @@
           "unit": "s",
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2,
+            "fillOpacity": 10,
+            "lineWidth": 1,
             "showPoints": "never",
-            "spanNulls": 300000,
+            "spanNulls": true,
             "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
+              "mode": "none"
+            }
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
+          "displayMode": "list",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
-      }
+      },
+      "id": 20
     },
     {
-      "id": 18,
-      "type": "timeseries",
-      "title": "Model and tool calls per chat turn (average)",
-      "description": "",
+      "type": "table",
+      "title": "Tool calls in range",
+      "description": "Calls per tool over the dashboard range.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
       },
       "gridPos": {
         "x": 12,
-        "y": 38,
+        "y": 47,
         "w": 12,
         "h": 8
       },
@@ -981,84 +1090,69 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(histogram_sum(rate(gen_ai_invoke_agent_inference_calls{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval]))) / sum(histogram_count(rate(gen_ai_invoke_agent_inference_calls{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval])))",
-          "legendFormat": "model calls",
+          "expr": "round(sum by (gen_ai_tool_name) (histogram_count(increase(gen_ai_execute_tool_duration{service_namespace=\"wcl-agent\"}[$__range]))))",
+          "legendFormat": "__auto",
           "refId": "A",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(histogram_sum(rate(gen_ai_invoke_agent_tool_calls{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval]))) / sum(histogram_count(rate(gen_ai_invoke_agent_tool_calls{service_namespace=\"wcl-agent\", service_name=\"api\"}[$__rate_interval])))",
-          "legendFormat": "tool calls",
-          "refId": "B",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
+          "range": false,
+          "instant": true,
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2,
-            "showPoints": "never",
-            "spanNulls": 300000,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
+          "decimals": 0
         },
         "overrides": []
       },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "calls"
+            }
+          }
         }
-      }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "calls",
+            "desc": true
+          }
+        ]
+      },
+      "id": 21
     },
     {
-      "id": 19,
       "type": "row",
       "title": "Recent chat turns and errors",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 55,
         "w": 24,
         "h": 1
       },
-      "panels": []
+      "panels": [],
+      "id": 22
     },
     {
-      "id": 20,
       "type": "table",
       "title": "Recent chat turns (click a trace id)",
+      "description": "The 20 latest chat turns. Each is one trace: agent run, model calls, tools, database.",
       "datasource": {
         "type": "tempo",
         "uid": "tempo"
       },
       "gridPos": {
         "x": 0,
-        "y": 47,
+        "y": 56,
         "w": 12,
         "h": 9
       },
@@ -1075,19 +1169,19 @@
           "tableType": "traces"
         }
       ],
-      "description": "The 20 latest chat turns. Each is one trace: agent run, model calls, tools, database."
+      "id": 23
     },
     {
-      "id": 21,
       "type": "logs",
       "title": "Warnings and errors (api)",
+      "description": "",
       "datasource": {
         "type": "loki",
         "uid": "loki"
       },
       "gridPos": {
         "x": 12,
-        "y": 47,
+        "y": 56,
         "w": 12,
         "h": 9
       },
@@ -1107,19 +1201,8 @@
         "sortOrder": "Descending",
         "enableLogDetails": true,
         "dedupStrategy": "none"
-      }
-    }
-  ],
-  "links": [
-    {
-      "title": "Dashboards",
-      "type": "dashboards",
-      "tags": [
-        "wcl-agent"
-      ],
-      "asDropdown": true,
-      "includeVars": false,
-      "keepTime": true
+      },
+      "id": 24
     }
   ]
 }

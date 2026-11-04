@@ -39,6 +39,7 @@ from .agent_tools.profile_tools import PROFILE_TOOLS
 from .agent_tools.stored_data_tools import STORED_DATA_TOOLS
 from .config import settings
 from .scratch import TurnScratch
+from .telemetry.metrics import record_ttft
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +262,11 @@ async def stream_response(
         )
 
 
+def _record_ttft(model: str, stats: TurnStats | None, agent: str, started: float) -> None:
+    """Feature 056: the turn's wait for its first answer text, under the model then in use."""
+    record_ttft((stats.switched_to if stats else None) or model, agent, time.monotonic() - started)
+
+
 async def _run_turn(
     model: str,
     session_id: str,
@@ -293,6 +299,7 @@ async def _run_turn(
     gives no answer text after its last tool result, with no call left pending, ends with
     :data:`EMPTY_ANSWER_MESSAGE` as its last token and the outcome ``empty``.
     """
+    turn_started = time.monotonic()
     runner = _get_runner(model)
     await _ensure_session(session_id, user_id)
 
@@ -305,6 +312,8 @@ async def _run_turn(
     # and whether either was more than whitespace. ``text_sent``: any text this turn.
     streamed = False
     final_text = ""
+    final_author = ""
+    timed = False  # feature 056: the first non-blank answer text was timed
     answered = False
     text_sent = False
     grounding_emitted = False
@@ -395,16 +404,21 @@ async def _run_turn(
             if not text:
                 continue
             if getattr(event, "partial", False):
+                if not timed and text.strip():
+                    timed = True
+                    _record_ttft(model, stats, getattr(event, "author", ""), turn_started)
                 if text_sent and not streamed:
                     text = PARAGRAPH + text
                 streamed = text_sent = True
                 answered = answered or bool(text.strip())
                 yield {"type": "token", "text": text}
             elif event.is_final_response():
-                final_text = text
+                final_text, final_author = text, getattr(event, "author", "")
 
     # If the last round's text only arrived in the final (non-partial) event, emit it once.
     if not streamed and final_text.strip():
+        if not timed:
+            _record_ttft(model, stats, final_author, turn_started)
         yield {"type": "token", "text": PARAGRAPH + final_text if text_sent else final_text}
         answered = True
     if not answered and not pending_args and user_id != USER_ID:

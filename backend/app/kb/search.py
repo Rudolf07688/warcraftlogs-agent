@@ -38,6 +38,7 @@ from ..db import session as db_session
 from ..db.models import KB_DIMENSIONS, KbChatChunk, KbChunk
 from ..repositories.raw_fetches import fetch_names_code, fetch_visible_clause
 from ..services.name_resolver import ClassSpec, spec_pairs
+from ..telemetry.metrics import record_retrieval
 from ..tenancy.context import set_scope
 from .embedder import Embedder
 
@@ -276,6 +277,12 @@ def _chat_columns() -> list:
     ]
 
 
+def searched_kinds(filters: SearchFilters) -> list[Kind]:
+    """The chunk kinds a search with ``filters`` reads. A report code is a WCL filter: it
+    never lets guides or chats through (board #117)."""
+    return [filters.kind] if filters.kind else ["wcl"] if filters.report_code else list(KINDS)
+
+
 def _branches(
     query: str,
     vector: list[float] | None,
@@ -284,10 +291,8 @@ def _branches(
     legs: frozenset[Leg],
     since: datetime,
 ) -> list:
-    # A report code is a WCL filter: it never lets guides or chats through (board #117).
-    kinds = [filters.kind] if filters.kind else ["wcl"] if filters.report_code else list(KINDS)
     out = []
-    for kind in kinds:
+    for kind in searched_kinds(filters):
         if kind == "chat":
             model, columns, where, config = KbChatChunk, _chat_columns(), _chat_where(filters, tenant_id), "english"
         else:
@@ -569,9 +574,12 @@ async def search(
         notes.append(NO_HITS_NOTE)
     note = " ".join(notes) or None
     result = cap(SearchResult(hits, result_mode, relaxed, note=note))
+    elapsed = time.monotonic() - started
+    kinds = searched_kinds(request.filters)
+    record_retrieval(kinds[0] if len(kinds) == 1 else "all", result.mode, elapsed, [hit.score for hit in result.hits])
     logger.info(
         "kb search queries=%d mode=%s hits=%d relaxed=%s capped=%s ms=%d",
         len(request.queries), result.mode, len(result.hits), ",".join(relaxed) or "-",
-        result.capped, int((time.monotonic() - started) * 1000),
+        result.capped, int(elapsed * 1000),
     )
     return result

@@ -1,7 +1,8 @@
 // Grafana Alloy: the always-on collector for both layers (feature 053, spec §4).
 //
 //   OTLP in -> memory limiter -> stamp defaults -> redact -> metrics: drop banned labels
-//                                                         -> logs: split content / rest
+//                                                         -> logs: drop outside Loki's window,
+//                                                            split content / rest
 //   -> batch -> exporters with persistent, size-bounded queues
 //
 // The backends (Loki, Tempo, Mimir) only run with the `observability` compose profile.
@@ -66,6 +67,13 @@ otelcol.processor.transform "stamp" {
   log_statements {
     context    = "resource"
     statements = string.split(string.trim_space(local.file.stamp.content), "\n")
+  }
+
+  // The team board's path marker (see "board"): only the board branch, which joins after this
+  // step, may carry it. Any sender claiming it here loses it.
+  log_statements {
+    context    = "log"
+    statements = [`delete_key(attributes, "alloy.board")`]
   }
 
   metric_statements {
@@ -156,8 +164,11 @@ otelcol.processor.transform "redact" {
 
   output {
     metrics = [otelcol.processor.transform.metric_labels.input]
-    logs    = [otelcol.processor.transform.classify.input]
-    traces  = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.filter.log_window.input]
+    traces  = [
+      otelcol.processor.batch.default.input,
+      otelcol.processor.filter.red_sources.input,
+    ]
   }
 }
 
@@ -188,6 +199,129 @@ otelcol.processor.transform "metric_labels" {
   }
 }
 
+// RED from traces (feature 055, sc-409, spec §4.2 step 6): every redacted span, before any
+// sampling, so the numbers stay exact. The metrics go through metric_labels like all others,
+// so the banned identifiers can never become labels here either. Dimensions are bounded
+// enums only: never url.full, db.query.text, session.id or any id (board contract:session-id).
+// http.status_code is the old-semconv name the FastAPI instrumentation (0.63b1) still sets.
+// Series: traces_spanmetrics_calls and traces_spanmetrics_duration_bucket (Mimir adds no unit suffixes; seconds)
+// (with exemplars: a latency point links to its trace), labels service_name, span_name,
+// span_kind, status_code plus the dimensions. Dashboards query the aliases in
+// mimir/rules/anonymous/red.yaml.
+// Only our own services feed the connectors (board contract:faro-spans): browser spans
+// (service.name web, from Faro) carry browser-controlled names and attributes, an unbounded
+// path into Mimir. An allowlist, so a new or spoofed source stays out until named here.
+otelcol.processor.filter "red_sources" {
+  error_mode = "ignore"
+
+  traces {
+    span = [`not IsMatch(resource.attributes["service.name"], "^(api|claude-code)$")`]
+  }
+
+  output {
+    traces = [
+      otelcol.connector.spanmetrics.default.input,
+      otelcol.connector.servicegraph.default.input,
+    ]
+  }
+}
+
+// One aggregate per promoted resource (the attributes Mimir turns into labels, mimir.yaml), so
+// a new service.version or revision continues the same series instead of starting a second
+// generation that maps to the same labels; an aggregate idle for 5 minutes is dropped rather
+// than re-exported with frozen values until Alloy restarts (Alloy v1.21 arguments).
+otelcol.connector.spanmetrics "default" {
+  namespace                       = "traces.spanmetrics"
+  metrics_expiration              = "5m"
+  resource_metrics_key_attributes = ["service.name", "service.namespace", "deployment.environment.name", "app.layer"]
+
+  dimension {
+    name = "http.route"
+  }
+
+  dimension {
+    name = "http.response.status_code"
+  }
+
+  dimension {
+    name = "http.status_code"
+  }
+
+  dimension {
+    name = "gen_ai.operation.name"
+  }
+
+  dimension {
+    name = "gen_ai.agent.name"
+  }
+
+  dimension {
+    name = "gen_ai.tool.name"
+  }
+
+  dimension {
+    name = "gen_ai.request.model"
+  }
+
+  dimension {
+    name = "db.system.name"
+  }
+
+  dimension {
+    name = "db.operation.name"
+  }
+
+  histogram {
+    unit = "s"
+
+    explicit {
+      buckets = ["5ms", "10ms", "25ms", "50ms", "100ms", "250ms", "500ms", "1s", "2.5s", "5s", "10s", "30s", "60s", "120s"]
+    }
+  }
+
+  exemplars {
+    enabled = true
+  }
+
+  output {
+    metrics = [otelcol.processor.transform.metric_labels.input]
+  }
+}
+
+// Service graph: request counts and latency per client -> server edge (traces_service_graph_*),
+// from client/server span pairs in the same trace.
+otelcol.connector.servicegraph "default" {
+  dimensions = ["http.route"]
+
+  output {
+    metrics = [otelcol.processor.transform.metric_labels.input]
+  }
+}
+
+// Loki's accept window (board scope:055-fix:time-bound), for every log source: a record dated
+// more than 6 days back or more than 10 minutes ahead is dropped here. Loki refuses anything
+// older than a week or past its 10-minute grace, and before its schema start it answers with
+// a retryable 503: such a record would sit in the export queue and hold back every record
+// batched with it (an old board file, a skewed browser clock, any local sender). The day of
+// headroom lets a record queued during a short outage still land. A record without a time
+// is judged by its observed time, as Loki does.
+otelcol.processor.filter "log_window" {
+  error_mode = "ignore"
+
+  logs {
+    log_record = [
+      `time_unix_nano > 0 and time_unix_nano < UnixNano(Now()) - 518400000000000`,
+      `time_unix_nano > UnixNano(Now()) + 600000000000`,
+      `time_unix_nano == 0 and observed_time_unix_nano > 0 and observed_time_unix_nano < UnixNano(Now()) - 518400000000000`,
+      `time_unix_nano == 0 and observed_time_unix_nano > UnixNano(Now()) + 600000000000`,
+    ]
+  }
+
+  output {
+    logs = [otelcol.processor.transform.classify.input]
+  }
+}
+
 // Content stream (board contract:content-stream): a log record is content when it carries
 // app.content="true", is a GenAI event (event name gen_ai.*), or comes from the build layer
 // (service.name claude-code or app.layer build) and is not one of Claude Code's known
@@ -205,6 +339,11 @@ otelcol.processor.transform "metric_labels" {
 // record goes to exactly one branch. Content records
 // get the resource attribute content="true", a Loki index label with its own 7-day
 // retention_stream; the rest lose any incoming "content" attribute so the label stays bounded.
+// The team board is the one build-layer source that is not content: agent prose about the
+// work, never prompts or tool output. It keeps the 30-day stream so a sprint's board stays
+// next to its telemetry (board scope:055:board-stream). The exception keys on the path, not
+// the payload: only records from the board branch carry alloy.board (stamp deletes it from
+// everything else), so an OTLP sender calling itself team-board is still content.
 otelcol.processor.transform "classify" {
   error_mode = "ignore"
 
@@ -212,7 +351,7 @@ otelcol.processor.transform "classify" {
     context    = "log"
     statements = [
       `set(attributes["alloy.content_stream"], "true")`,
-      `set(attributes["alloy.content_stream"], "false") where not (attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or ((resource.attributes["service.name"] == "claude-code" or resource.attributes["app.layer"] == "build") and not IsMatch(attributes["event.name"], "^(api_request|api_refusal|subagent_completed|skill_activated|hook_registered|mcp_server_connection|plugin_loaded|plugin_installed|permission_mode_changed|retention_sweep|internal_error|at_mention|auth)$")))`,
+      `set(attributes["alloy.content_stream"], "false") where not (attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or ((resource.attributes["service.name"] == "claude-code" or resource.attributes["app.layer"] == "build") and attributes["alloy.board"] != "true" and not IsMatch(attributes["event.name"], "^(api_request|api_refusal|subagent_completed|skill_activated|hook_registered|mcp_server_connection|plugin_loaded|plugin_installed|permission_mode_changed|retention_sweep|internal_error|at_mention|auth)$")))`,
     ]
   }
 
@@ -258,7 +397,7 @@ otelcol.processor.transform "mark_content" {
 
   log_statements {
     context    = "log"
-    statements = [`delete_key(attributes, "alloy.content_stream")`]
+    statements = [`delete_matching_keys(attributes, "^alloy\\.(content_stream|board)$")`]
   }
 
   output {
@@ -276,11 +415,154 @@ otelcol.processor.transform "mark_rest" {
 
   log_statements {
     context    = "log"
-    statements = [`delete_key(attributes, "alloy.content_stream")`]
+    statements = [`delete_matching_keys(attributes, "^alloy\\.(content_stream|board)$")`]
   }
 
   output {
     logs = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Team board (feature 055, sc-407, spec §14 decision 11). The board's JSONL files (one per
+// sprint, in the git common dir, mounted at /var/lib/team-board) are tailed into Loki through
+// the same chain as OTLP logs from the redaction step on: redact, log window, classify, batch.
+// Never straight to loki.write: board text can quote a secret. Only the board's own files
+// (sprint-*.jsonl, selftest-*.jsonl): the cursors/ dir, the "active" file and any other JSONL
+// a mistyped TEAM_BOARD_DIR might hold stay out, and a line that is not a board entry (no
+// text or no kind) is dropped, never forwarded raw. Session transcripts are not tailed
+// (usage.py reads them on demand).
+// Each entry becomes one record: body = the entry text, timestamp = the entry's ts, and the
+// entry fields (board, author, kind, key, entry_id, supersedes) are attributes, which Loki
+// keeps as structured metadata (index labels come only from loki.yaml's resource allowlist).
+// The stored traceparent becomes the record's trace and span id, so the Loki trace_id link
+// opens the posting agent's tool span in Tempo. Tail positions live on the alloy-data volume;
+// after Loki loses its data, observability/board-backfill.sh resets them and the board is read
+// again from the start (same timestamps and lines, so a re-read does not duplicate in Loki).
+local.file_match "board" {
+  path_targets = [
+    {"__path__" = "/var/lib/team-board/sprint-*.jsonl"},
+    {"__path__" = "/var/lib/team-board/selftest-*.jsonl"},
+  ]
+  sync_period  = "10s"
+}
+
+discovery.relabel "board" {
+  targets = local.file_match.board.targets
+
+  rule {
+    source_labels = ["__path__"]
+    regex         = ".*/([^/]+)\\.jsonl"
+    target_label  = "board"
+  }
+}
+
+loki.source.file "board" {
+  targets       = discovery.relabel.board.output
+  forward_to    = [loki.process.board.receiver]
+  tail_from_end = false
+}
+
+loki.process "board" {
+  stage.json {
+    expressions = {
+      ts          = "ts",
+      text        = "text",
+      author      = "author",
+      kind        = "kind",
+      key         = "key",
+      entry_id    = "id",
+      supersedes  = "supersedes",
+      traceparent = "traceparent",
+    }
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339"
+  }
+
+  stage.regex {
+    source     = "traceparent"
+    expression = "^00-(?P<trace_id>[0-9a-f]{32})-(?P<span_id>[0-9a-f]{16})-[0-9a-f]{2}$"
+  }
+
+  stage.labels {
+    values = {
+      author     = "",
+      kind       = "",
+      key        = "",
+      entry_id   = "",
+      supersedes = "",
+      trace_id   = "",
+      span_id    = "",
+    }
+  }
+
+  stage.template {
+    source   = "board_entry"
+    template = "{{ if and .text .kind }}yes{{ end }}"
+  }
+
+  stage.labels {
+    values = {
+      board_entry = "",
+    }
+  }
+
+  stage.match {
+    selector            = "{board=~\".+\", board_entry!=\"yes\"}"
+    action              = "drop"
+    drop_counter_reason = "not_a_board_entry"
+  }
+
+  stage.label_drop {
+    values = ["filename", "board_entry"]
+  }
+
+  stage.output {
+    source = "text"
+  }
+
+  forward_to = [otelcol.receiver.loki.board.receiver]
+}
+
+otelcol.receiver.loki "board" {
+  output {
+    logs = [otelcol.processor.transform.board.input]
+  }
+}
+
+otelcol.processor.transform "board" {
+  error_mode = "ignore"
+
+  log_statements {
+    context    = "resource"
+    statements = [
+      `set(attributes["service.name"], "team-board")`,
+      `set(attributes["service.namespace"], "wcl-agent")`,
+      `set(attributes["app.layer"], "build")`,
+      `set(attributes["deployment.environment.name"], "dev")`,
+    ]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [
+      `set(trace_id.string, attributes["trace_id"]) where attributes["trace_id"] != nil`,
+      `set(span_id.string, attributes["span_id"]) where attributes["span_id"] != nil`,
+      `delete_matching_keys(attributes, "^(trace_id|span_id|loki\\.attribute\\.labels)$")`,
+      `set(attributes["event.name"], "team_board_entry")`,
+      // The path marker classify keys on (see "stamp" and "classify").
+      `set(attributes["alloy.board"], "true")`,
+      // A re-read must produce the identical record (Loki drops exact duplicates only).
+      `set(observed_time, time)`,
+    ]
+  }
+
+  // Straight to redact: past stamp, which strips the board marker from every other source.
+  // The tail reads at its own pace, so it needs no memory limiter in front.
+  output {
+    logs = [otelcol.processor.transform.redact.input]
   }
 }
 
@@ -329,8 +611,12 @@ otelcol.exporter.otlphttp "loki" {
     queue_size = 268435456 // 256 MiB
   }
 
+  // A day, not forever (board scope:055-fix:retry): a refusal that can never succeed frees its
+  // queue consumer instead of holding it and its batch for good. In an outage longer than a
+  // day the batches being retried at that moment (at most one per consumer) are dropped; the
+  // rest of the queue waits on disk and lands when Loki is back.
   retry_on_failure {
-    max_elapsed_time = "0s" // retry until Loki is back
+    max_elapsed_time = "24h"
   }
 }
 
@@ -347,5 +633,108 @@ otelcol.exporter.otlphttp "mimir" {
 
   retry_on_failure {
     max_elapsed_time = "0s" // retry until Mimir is back
+  }
+}
+
+// Faro (feature 057, spec §7.1): the browser's logs (errors, events, Web Vitals) and traces.
+// The receiver listens on 12347 (compose publishes it on loopback). Its logs enter the
+// pipeline through their own bridge at the memory limiter, and its traces at the same
+// input, so everything the browser sends passes the stamp and redaction steps above, never
+// loki.write directly.
+//
+// The API key is in the browser bundle (VITE_FARO_API_KEY), so it is not a secret: it only
+// keeps casual posts out. CORS (the app origin, the Vite dev server) and the rate limit are
+// the protection. Alloy takes no environment from compose here, so both are literals; change
+// them together with VITE_FARO_* when the app moves.
+//
+// The payload is attacker-controlled, so: source maps are never downloaded (the receiver
+// would fetch any URL a stack frame names, an SSRF from inside the network); the resource
+// and the content flags are overwritten, not filled in (see "faro" below); and the throughput
+// is capped at about 0.3 MiB/s (5 requests/s of at most 64 KiB, burst 10), because the
+// receiver shares the memory limiter and the export queues with the backend's and the
+// build layer's telemetry. The limit is global: a per-app one would key on a payload field.
+faro.receiver "browser" {
+  server {
+    listen_address           = "0.0.0.0"
+    listen_port              = 12347
+    api_key                  = "wcl-faro-local"
+    cors_allowed_origins     = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    max_allowed_payload_size = "64KiB"
+
+    rate_limiting {
+      enabled    = true
+      rate       = 5
+      burst_size = 10
+    }
+  }
+
+  sourcemaps {
+    download = false
+  }
+
+  output {
+    logs   = [otelcol.receiver.loki.faro.receiver]
+    traces = [otelcol.processor.transform.faro.input]
+  }
+}
+
+otelcol.receiver.loki "faro" {
+  output {
+    logs = [otelcol.processor.transform.faro.input]
+  }
+}
+
+// Everything the browser sends is attacker-controlled, and the stamp step only fills in what
+// is missing. So for both signals the resource is overwritten here: a payload claiming to be
+// the api, the build layer or prod lands as web, runtime, dev. The content flags are removed
+// (they route logs to the 7-day content stream), and so is event.name (which the content
+// classification reads).
+otelcol.processor.transform "faro" {
+  error_mode = "ignore"
+
+  trace_statements {
+    context    = "resource"
+    statements = [
+      `set(attributes["service.name"], "web")`,
+      `set(attributes["service.namespace"], "wcl-agent")`,
+      `set(attributes["app.layer"], "runtime")`,
+      `set(attributes["deployment.environment.name"], "dev")`,
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+    ]
+  }
+
+  trace_statements {
+    context    = "span"
+    statements = [
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+    ]
+  }
+
+  log_statements {
+    context    = "resource"
+    statements = [
+      `set(attributes["service.name"], "web")`,
+      `set(attributes["service.namespace"], "wcl-agent")`,
+      `set(attributes["app.layer"], "runtime")`,
+      `set(attributes["deployment.environment.name"], "dev")`,
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+    ]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+      `delete_key(attributes, "event.name")`,
+    ]
+  }
+
+  output {
+    logs   = [otelcol.processor.memory_limiter.default.input]
+    traces = [otelcol.processor.memory_limiter.default.input]
   }
 }

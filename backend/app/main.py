@@ -104,6 +104,7 @@ from .services.fetch_persistence import FetchWriter
 from .services.raw_fetch_reads import read_stored_fetch
 from .services.guide import load_brief_record, maybe_scan_stale_guides, touch_guide_wanted
 from .startup import ReadinessGate, StartupTracker
+from .telemetry.browser import FaroSessionMiddleware
 
 
 def _brief_used(record) -> None:
@@ -351,6 +352,7 @@ app = FastAPI(title="WCL Agent Chat API", lifespan=lifespan)
 # Added before CORS so CORS wraps it (last add_middleware = outermost): the 503s the
 # gate emits during boot still carry CORS headers.
 app.add_middleware(ReadinessGate)
+app.add_middleware(FaroSessionMiddleware)  # 057: x-faro-session-id -> session.id on the server span
 
 app.add_middleware(
     CORSMiddleware,

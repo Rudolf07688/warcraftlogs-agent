@@ -8,6 +8,7 @@ history next to the live Claude Code metrics:
   meta/team-optimisation.md     baseline table: points, weighted cost, cost per point, shares
   meta/sprints/<sprint>/usage.txt   per-agent calls and tokens (usage.py output)
   meta/sprints/<sprint>/board.jsonl team board: questions and their wait, rework, blockers
+  meta/team/<seat>.md           the roster: which name holds which seat (for the seat cost)
 
   uv run python .claude/team/teamstats.py                 # push every sprint
   uv run python .claude/team/teamstats.py --dry-run       # print the facts only
@@ -36,6 +37,11 @@ from pathlib import Path
 WEIGHTS = {"cr": 0.1, "cc": 1.25, "out": 5.0, "inp": 1.0}  # cache read, cache write, output, input
 QUEUED_KEYS = ("live-check:", "skill:")
 REWORK = re.compile(r"\brework\b|\bfollow-up\b", re.IGNORECASE)
+# The weights above are Anthropic's price ratios to the input price, so weighted M units times
+# an input list price is a USD estimate. usage.txt has no model per agent: price everything at
+# the team's default model, claude-opus-5-5 (observability/pricing/pricing.yaml, input).
+LIST_PRICE_MODEL = "claude-opus-5-5"
+INPUT_USD_PER_M = 4.0
 
 
 def role_of(agent: str) -> str:
@@ -57,6 +63,34 @@ def role_of(agent: str) -> str:
     if "probe" in a:
         return "other"
     return "developers"
+
+
+def parse_roster(team: Path) -> dict[str, str]:
+    """Seat id and member name (lower case) -> seat name, from meta/team/<seat>.md."""
+    names = {}
+    for f in sorted(team.glob("*.md")) if team.is_dir() else []:
+        fields = dict(re.findall(r"^- \*\*(\w+):\*\* (.*)$", f.read_text(), re.M))
+        if fields.get("name"):
+            names[fields.get("seat", f.stem).lower()] = fields["name"].lower()
+            names[fields["name"].lower()] = fields["name"].lower()
+    return names
+
+
+def seat_of(agent: str, roster: dict[str, str]) -> str:
+    """The seat holder an agent label names: 'Dev-1: ...', '054 backend telemetry (Nils)',
+    'QA fix round Ansel'; product-owner is po, main is the lead. Anything else (QA sweeps,
+    board sync, labels from before the seats existed) is 'unattributed'."""
+    a = agent.lower()
+    if a.startswith("main"):
+        return roster.get("lead", "team-lead")
+    if "product-owner" in a:
+        return roster.get("po", "unattributed")
+    if "scrum-master" in a or "scrum master" in a:
+        return roster.get("sm", "unattributed")
+    for word in re.findall(r"[a-z]+(?:-\d+)?", a):
+        if word in roster:
+            return roster[word]
+    return "unattributed"
 
 
 def parse_baseline(path: Path) -> dict[str, dict]:
@@ -133,6 +167,7 @@ def parse_board(path: Path) -> dict:
 
 def collect(meta: Path) -> list[dict]:
     baseline = parse_baseline(meta / "team-optimisation.md")
+    roster = parse_roster(meta / "team")
     sprints = []
     for d in sorted(p for p in (meta / "sprints").iterdir() if p.is_dir()):
         s = {"sprint": d.name, "facts": {}, "agents": []}
@@ -149,6 +184,8 @@ def collect(meta: Path) -> list[dict]:
             s["end"] = datetime.fromisoformat(d.name[:10] + "T17:00:00+00:00")
         if (d / "usage.txt").exists():
             s["agents"] = parse_usage(d / "usage.txt")
+            for a in s["agents"]:
+                a["seat"] = seat_of(a["agent"], roster)
         if s["facts"] or s["agents"]:
             sprints.append(s)
     return sprints
@@ -192,6 +229,15 @@ def build_payload(sprints: list[dict]) -> dict:
         metrics.append(gauge(f"team.agent.{key}", desc, "", [
             (s["end"], float(a[key]), {"sprint": s["sprint"], "agent": a["agent"], "role": a["role"]})
             for s in sprints for a in s["agents"]]))
+    seats = {}
+    for s in sprints:
+        for a in s["agents"]:
+            key = (s["sprint"], a["seat"])
+            seats[key] = seats.get(key, 0.0) + a["cost"] * INPUT_USD_PER_M
+    end = {s["sprint"]: s["end"] for s in sprints}
+    metrics.append(gauge("team.seat.cost_usd",
+                         f"Cost per seat and sprint, USD, estimated at {LIST_PRICE_MODEL} list price", "",
+                         [(end[sp], usd, {"sprint": sp, "seat": seat}) for (sp, seat), usd in sorted(seats.items())]))
     return {"resourceMetrics": [{
         "resource": {"attributes": [{"key": k, "value": {"stringValue": v}} for k, v in (
             ("service.name", "agent-team"), ("service.namespace", "wcl-agent"),

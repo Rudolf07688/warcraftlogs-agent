@@ -97,6 +97,12 @@ METRIC_ATTRIBUTES = frozenset(
         "gen_ai.tool.name",
         "gen_ai.tool.type",
         "gen_ai.workflow.nested",
+        # App metrics (feature 056, spec §6.4): enums only, namespaced so no library's
+        # attribute of the same bare name gets through
+        "app.cache.name",  # a WCL cache family
+        "app.cache.result",  # hit, miss, error
+        "app.rag.index",  # wcl, guide, chat, all
+        "app.rag.strategy",  # hybrid, keyword_only, vector, keyword
     }
 )
 

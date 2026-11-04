@@ -95,6 +95,13 @@ services:
       target: dev
     environment:
       VITE_BACKEND_URL: http://backend:8000
+      # Browser telemetry (feature 057): Faro posts to Alloy's receiver on the host's loopback
+      # port. Set VITE_FARO_URL empty to switch it off. The key is public (it ships in the
+      # bundle); it must match the receiver's api_key in observability/alloy/config.alloy.
+      VITE_FARO_URL: ${VITE_FARO_URL-http://localhost:12347/collect}
+      VITE_FARO_API_KEY: ${VITE_FARO_API_KEY:-wcl-faro-local}
+      VITE_FARO_APP_VERSION: ${WCL_GIT_SHA:-unknown}
+      VITE_FARO_ENVIRONMENT: dev
     depends_on:
       - backend
     ports:
@@ -115,10 +122,14 @@ services:
       # ALLOY_CONFIG_DIR: the test scripts mount a copy here (mutation.sh edits only that).
       - ${ALLOY_CONFIG_DIR:-./observability/alloy}:/etc/alloy:ro
       - alloy-data:/var/lib/alloy/data
+      # The team board (feature 055): board.py keeps it in the git common dir. In a worktree
+      # ./.git is a file, so set TEAM_BOARD_DIR to "$(git rev-parse --git-common-dir)/team-board".
+      - ${TEAM_BOARD_DIR:-./.git/team-board}:/var/lib/team-board:ro
     ports:
       - "127.0.0.1:${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
       - "127.0.0.1:${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
       - "127.0.0.1:${ALLOY_UI_PORT:-12345}:12345"
+      - "127.0.0.1:${ALLOY_FARO_PORT:-12347}:12347" # Faro receiver (feature 057)
     mem_limit: 512m
     restart: unless-stopped
 
@@ -149,6 +160,8 @@ services:
     command: ["-config.file=/etc/mimir/mimir.yaml", "-target=all"]
     volumes:
       - ./observability/mimir/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      # MIMIR_RULES_DIR: the test scripts mount a copy here (rules.sh changes a price only there).
+      - ${MIMIR_RULES_DIR:-./observability/mimir/rules}:/etc/mimir/rules:ro
       - mimir-data:/data
     mem_limit: 1g
     restart: unless-stopped

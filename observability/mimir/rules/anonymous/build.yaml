@@ -1,0 +1,35 @@
+# Build-layer aliases: Claude Code's own metrics (feature 055, sc-408, spec §5.5 and §8.3).
+# D1 (Claude Code: Overview) and D2 (Agent Team) query these, never the raw claude_code_*
+# names, so a Claude Code rename is absorbed here. All per second over 5 m unless the name
+# says otherwise; a dashboard total over its range is sum_over_time(alias[$__range]) * 60
+# (rules evaluate every minute). An empty agent_name is the main session.
+groups:
+  - name: claude-code
+    interval: 1m
+    rules:
+      # Cost as Claude Code reports it (its own list-price estimate), USD/s.
+      - record: cc:cost_usd:rate5m
+        expr: sum by (service_namespace, model, agent_name) (rate(claude_code_cost_usage{service_name="claude-code"}[5m]))
+      - record: cc:cost_usd:rate1h
+        expr: sum by (service_namespace, model, agent_name) (rate(claude_code_cost_usage{service_name="claude-code"}[1h]))
+      # Tokens/s by model, type (input, output, cacheRead, cacheCreation) and agent.
+      - record: cc:tokens:rate5m
+        expr: sum by (service_namespace, model, type, agent_name) (rate(claude_code_token_usage{service_name="claude-code"}[5m]))
+      # Share of the input side served from the prompt cache (spec §5.5):
+      # cacheRead / (input + cacheRead + cacheCreation); output tokens are not input.
+      - record: cc:cache_hit_ratio
+        expr: |
+          sum by (service_namespace) (cc:tokens:rate5m{type="cacheRead"})
+            / sum by (service_namespace) (cc:tokens:rate5m{type!="output"})
+      - record: cc:sessions:rate5m
+        expr: sum by (service_namespace) (rate(claude_code_session_count{service_name="claude-code"}[5m]))
+      - record: cc:active_time_seconds:rate5m
+        expr: sum by (service_namespace, type) (rate(claude_code_active_time_total{service_name="claude-code"}[5m]))
+      - record: cc:lines_of_code:rate5m
+        expr: sum by (service_namespace, type) (rate(claude_code_lines_of_code_count{service_name="claude-code"}[5m]))
+      - record: cc:commits:rate5m
+        expr: sum by (service_namespace) (rate(claude_code_commit_count{service_name="claude-code"}[5m]))
+      - record: cc:pull_requests:rate5m
+        expr: sum by (service_namespace) (rate(claude_code_pull_request_count{service_name="claude-code"}[5m]))
+      - record: cc:edit_decisions:rate5m
+        expr: sum by (service_namespace, decision, language) (rate(claude_code_code_edit_tool_decision{service_name="claude-code"}[5m]))

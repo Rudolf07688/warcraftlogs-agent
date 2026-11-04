@@ -10,6 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@grafana/faro-react": "2.13.0",
+    "@grafana/faro-web-tracing": "2.13.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tsparticles/react": "^4.4.0",
     "@tsparticles/slim": "^4.4.0",

@@ -1,0 +1,58 @@
+# promtool unit test for observability/mimir/rules/anonymous/runtime.yaml (feature 056).
+# Run from the repo root:
+#   docker run --rm -v $PWD:/w -w /w --entrypoint promtool prom/prometheus:v3.5.0 \
+#     test rules specs/056-runtime-metrics/rules-test/runtime_test.yaml
+rule_files:
+  - ../../../observability/mimir/rules/anonymous/runtime.yaml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # 600 tokens a minute = 10 per second.
+      - series: 'gen_ai_client_token_usage{service_namespace="wcl-agent", service_name="api", gen_ai_request_model="m", gen_ai_agent_name="a", gen_ai_token_type="input", gen_ai_operation_name="generate_content"}'
+        values: '{{schema:0 sum:0 count:0}}+{{schema:0 sum:600 count:6}}x10'
+      - series: 'app_cache_requests{service_namespace="wcl-agent", service_name="api", app_cache_name="report_summary", app_cache_result="hit"}'
+        values: '0+3x10'
+      - series: 'app_cache_requests{service_namespace="wcl-agent", service_name="api", app_cache_name="report_summary", app_cache_result="miss"}'
+        values: '0+1x10'
+      - series: 'app_cache_requests{service_namespace="wcl-agent", service_name="api", app_cache_name="char_id", app_cache_result="miss"}'
+        values: '0+2x10'
+      # 4 searches a minute on guides, 1 of them empty.
+      - series: 'app_rag_retrieved_chunks{service_namespace="wcl-agent", service_name="api", app_rag_index="guide"}'
+        values: '{{schema:0 sum:0 count:0}}+{{schema:0 sum:12 count:4}}x10'
+      - series: 'app_rag_empty_results{service_namespace="wcl-agent", service_name="api", app_rag_index="guide"}'
+        values: '0+1x10'
+      - series: 'gen_ai_execute_tool_duration{service_namespace="wcl-agent", service_name="api", gen_ai_tool_name="t", gen_ai_agent_name="a"}'
+        values: '{{schema:0 sum:0 count:0}}+{{schema:0 sum:6 count:6}}x10'
+      - series: 'gen_ai_execute_tool_duration{service_namespace="wcl-agent", service_name="api", gen_ai_tool_name="t", gen_ai_agent_name="a", error_type="ValueError"}'
+        values: '{{schema:0 sum:0 count:0}}+{{schema:0 sum:3 count:3}}x10'
+    promql_expr_test:
+      - expr: genai:tokens:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'genai:tokens:rate5m{gen_ai_request_model="m", gen_ai_agent_name="a", gen_ai_token_type="input"}'
+            value: 10
+      - expr: cache:hit_ratio
+        eval_time: 10m
+        exp_samples:
+          - labels: 'cache:hit_ratio{app_cache_name="report_summary"}'
+            value: 0.75
+          - labels: 'cache:hit_ratio{app_cache_name="char_id"}'
+            value: 0
+      - expr: rag:empty_ratio:5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'rag:empty_ratio:5m{app_rag_index="guide"}'
+            value: 0.25
+      - expr: rag:retrieved_chunks:avg5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'rag:retrieved_chunks:avg5m{app_rag_index="guide"}'
+            value: 3
+      - expr: genai:tool_calls:rate5m * 60
+        eval_time: 10m
+        exp_samples:
+          - labels: '{gen_ai_tool_name="t", error_type="none"}'
+            value: 6
+          - labels: '{gen_ai_tool_name="t", error_type="ValueError"}'
+            value: 3

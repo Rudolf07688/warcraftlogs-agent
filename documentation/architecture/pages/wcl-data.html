@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
+<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
 <title>WCL client, cache &amp; store · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -394,6 +394,7 @@ FROM pg_class c WHERE relname IN ('raw_fetches', 'raw_reports', 'raw_fetch_grant
   <h3>What it does, and where it lives</h3>
   <ul>
     <li><b>Counting.</b> Outcomes are counted in the process and flushed every 2 s in one pipeline (a hit costs no extra Redis round trip; a failed flush keeps its counts). Keys are <code>wcl:metrics:v1:{name}:{YYYYMMDD}</code>, kept <code>WCL_METRICS_RETENTION_DAYS</code> (35) days. Nothing is counted while the cache is off.</li>
+    <li><b>Telemetry counter.</b> The same outcomes are also added, once per key lookup, by its final outcome, to the OpenTelemetry counter <code>app.cache.requests</code> in <code>_record()</code>, labelled by family (<code>app.cache.name</code>) and a result of <code>hit</code> (a hit or a negative hit), <code>miss</code> (the loader ran, a lock timeout or a Redis error) or <code>error</code>. A step that another record follows (a corrupt entry before its reload, a batch-level Redis failure before the per-key misses, a failed write after a load) is not counted again; the admin counters below do count every step. It is a no-op while telemetry is off and feeds the runtime dashboards (<a href="observability.html#backends">Observability</a>); the Redis counters below are separate and unchanged.</li>
     <li><b>Per family:</b> <code>hit</code>, <code>miss</code>, <code>neg_hit</code>, <code>lock_timeout</code>, <code>error</code>, <code>redis_error</code>, plus load-time sums.</li>
     <li><b>Store probes</b> (hash <code>local</code>): <code>store_hit</code>, <code>store_miss</code>, <code>store_not_visible</code>, <code>store_timeout</code>.</li>
     <li><b>Store probes per WCL operation</b> (hash <code>store_ops</code>, fields <code>store_&lt;outcome&gt;@&lt;operation&gt;</code>, sc-332). The operation is one of the app's 14 own query names (<code>OWN_OPERATIONS</code>), anything else counts as <code>custom</code>, so the hash can't grow without bound.</li>
@@ -486,6 +487,7 @@ FROM pg_class c WHERE relname IN ('raw_fetches', 'raw_reports', 'raw_fetch_grant
     <li><code>docker-compose.yml</code>, <code>.env.example</code>, <code>pyproject.toml</code></li>
     <li><code>specs/013</code>, <code>014</code>, <code>015</code>, <code>020</code>, <code>039</code>, <code>045</code>, <code>046</code>, <code>051</code>, <code>052</code> research</li>
     <li><code>documentation/redis_cache_spec.md</code></li>
+    <li><code>wcl_agent/cache/cache.py</code> (<code>app.cache.requests</code> counter)</li>
   </ul>
 </footer>
 

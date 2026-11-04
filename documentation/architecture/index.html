@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
-<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
+<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
 <title>WCL Agent Architecture</title>
 <link rel="stylesheet" href="assets/arch.css">
 <script src="assets/nav.js" defer></script>
@@ -32,11 +32,11 @@
 
 <section class="layer" id="overview">
   <h2>Whole-system overview</h2>
-  <p>One browser tab talks to one FastAPI process. Chat turns run over a WebSocket; everything else is REST under <code>/api</code>. The agent and all background work (fetch writer, knowledge-base indexer, guide pipeline, recent raids, kickoff pre-fetch) run inside the backend process; there is no separate worker service. Docker Compose runs four app containers: <code>frontend</code>, <code>backend</code>, <code>db</code> and <code>redis</code>. A fifth, <code>alloy</code>, is the always-on telemetry collector; an optional <code>observability</code> profile adds Loki, Tempo, Mimir and Grafana.</p>
+  <p>One browser tab talks to one FastAPI process. Chat turns run over a WebSocket; everything else is REST under <code>/api</code>. The agent and all background work (fetch writer, knowledge-base indexer, guide pipeline, recent raids, kickoff pre-fetch) run inside the backend process; there is no separate worker service. Docker Compose runs four app containers: <code>frontend</code>, <code>backend</code>, <code>db</code> and <code>redis</code>. A fifth, <code>alloy</code>, is the always-on telemetry collector (it also takes the browser's Faro reports and tails the agent team's board); an optional <code>observability</code> profile adds Loki, Tempo, Mimir and Grafana.</p>
   <figure class="diagram">
     <svg class="dg" viewBox="0 0 980 620" role="img" aria-labelledby="ov-title ov-desc">
       <title id="ov-title">System overview</title>
-      <desc id="ov-desc">The browser loads the React frontend, which proxies /api and /ws to the FastAPI backend. The backend runs the Barnaby agent on Google ADK, which calls one model provider: Vertex AI (Gemini, and Claude through Model Garden) or the Anthropic API (Claude). The agent's tools call back into backend code, which reads Warcraft Logs data from Redis first, then from the raw store in PostgreSQL, and only then from the Warcraft Logs API. The backend also embeds text with Gemini embeddings for the knowledge base in PostgreSQL with pgvector, and the guide pipeline reads Blizzard's live build and hotfix news. The backend also sends traces, logs and metrics to the Alloy collector, which forwards them to an optional observability stack of Loki, Tempo, Mimir and Grafana.</desc>
+      <desc id="ov-desc">The browser loads the React frontend, which proxies /api and /ws to the FastAPI backend. The backend runs the Barnaby agent on Google ADK, which calls one model provider: Vertex AI (Gemini, and Claude through Model Garden) or the Anthropic API (Claude). The agent's tools call back into backend code, which reads Warcraft Logs data from Redis first, then from the raw store in PostgreSQL, and only then from the Warcraft Logs API. The backend also embeds text with Gemini embeddings for the knowledge base in PostgreSQL with pgvector, and the guide pipeline reads Blizzard's live build and hotfix news. The backend also sends traces, logs and metrics to the Alloy collector, and the browser sends its own telemetry to it, which forwards everything to an optional observability stack of Loki, Tempo, Mimir and Grafana.</desc>
       <defs>
         <marker id="ov-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
       </defs>
@@ -68,7 +68,7 @@
 
       <rect class="node" x="220" y="52" width="190" height="76" rx="10"/>
       <text class="t" x="315" y="76" text-anchor="middle">Alloy</text>
-      <text class="sub" x="315" y="98" text-anchor="middle">telemetry collector</text>
+      <text class="sub" x="315" y="98" text-anchor="middle">OTLP · Faro · team board</text>
       <text class="sub" x="315" y="117" text-anchor="middle">always on · disk queue</text>
 
       <rect class="node store" x="220" y="158" width="190" height="84" rx="10"/>
@@ -122,6 +122,8 @@
       <path class="flow" marker-end="url(#ov-ah)" d="M650,372 H680 V460 H708"/>
       <text class="lbl" x="672" y="420" text-anchor="end">guides</text>
       <path class="flow" marker-end="url(#ov-ah)" d="M440,215 H425 V90 H412"/>
+      <path class="flow" marker-end="url(#ov-ah)" d="M100,258 V90 H218"/>
+      <text class="lbl" x="108" y="170">Faro</text>
       <path class="flow" marker-end="url(#ov-ah)" d="M315,128 V156"/>
       <text class="lbl" x="323" y="147">OTLP</text>
       <path class="flow" marker-end="url(#ov-ah)" d="M600,390 V468"/>
@@ -154,7 +156,7 @@
     <a class="card" href="pages/deployment.html"><b>Deployment &amp; config</b><span>Four Compose services, a two-target frontend image, the root <code>.env</code> read into pydantic-settings, startup refusals for unsafe secrets, scripts and CLIs. Cloud deployment is planned, not built.</span><span>Docker Compose · uv · pydantic-settings · nginx</span></a>
     <a class="card" href="pages/backend-api.html"><b>Backend API</b><span>One async FastAPI process with 14 routers, a background boot behind a readiness gate, and in-process background tasks sharing the WCL lanes.</span><span>FastAPI · uvicorn · asyncio · Python 3.14</span></a>
     <a class="card" href="pages/auth-tenancy.html"><b>Auth &amp; multi-tenancy</b><span>Invite-only login, Argon2id passwords, opaque <code>__Host-</code> cookie sessions, CSRF, in-process rate limits, and Postgres row-level security keyed on the workspace.</span><span>pwdlib · Postgres RLS · contextvars</span></a>
-    <a class="card" href="pages/observability.html"><b>Observability</b><span>OpenTelemetry from the backend and from Claude Code into an always-on Alloy collector that redacts secrets, keeps prompt content in a 7-day stream and queues on disk; Loki, Tempo, Mimir and Grafana run in an optional profile.</span><span>OpenTelemetry · Grafana Alloy · Loki · Tempo · Mimir · Grafana</span></a>
+    <a class="card" href="pages/observability.html"><b>Observability</b><span>OpenTelemetry from the backend, the browser (Faro), Claude Code and the team board into an always-on Alloy collector that redacts secrets, keeps prompt content in a 7-day stream and queues on disk; Loki, Tempo, Mimir (with recording rules and LLM cost) and Grafana dashboards run in an optional profile.</span><span>OpenTelemetry · Grafana Alloy · Loki · Tempo · Mimir · Grafana</span></a>
   </div>
 
   <p class="eyebrow" style="margin-top:8px">Data</p>

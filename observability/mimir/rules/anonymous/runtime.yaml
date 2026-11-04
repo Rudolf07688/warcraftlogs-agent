@@ -1,0 +1,126 @@
+# Runtime-layer recording rules (feature 056, spec §8.3): the D6–D8 dashboards query these
+# aliases, never the raw OTel series, so a semantic-convention rename touches only this file.
+# Owner: 056 (contract:recording-rules). Histograms are native (exponential OTLP histograms);
+# Mimir keeps OTLP names without unit or _total suffixes. Evaluated every minute, so an amount
+# over a range is sum_over_time(<rate5m alias>[range]) * 60 (tokens). A count over a range
+# (turns, calls, searches, lookups) is round(increase(<raw counter or histogram>[range])) in its
+# stat or table: a rate alias smears each event over five evaluations and loses the created-time
+# zero sample, so its sums come out fractional.
+groups:
+  - name: runtime
+    interval: 1m
+    rules:
+      # --- Agents and LLM (D7) -------------------------------------------------------------
+      - record: genai:tokens:rate5m
+        expr: >-
+          sum by (gen_ai_request_model, gen_ai_agent_name, gen_ai_token_type) (
+            histogram_sum(rate(gen_ai_client_token_usage{service_namespace="wcl-agent"}[5m]))
+          )
+      - record: genai:invoke_agent_latency:p95
+        expr: >-
+          histogram_quantile(0.95, sum by (gen_ai_agent_name) (
+            rate(gen_ai_invoke_agent_duration{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: genai:invoke_agent_latency:p50
+        expr: >-
+          histogram_quantile(0.5, sum by (gen_ai_agent_name) (
+            rate(gen_ai_invoke_agent_duration{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: genai:invocations:rate5m
+        expr: >-
+          sum by (gen_ai_agent_name) (
+            histogram_count(rate(gen_ai_invoke_agent_duration{service_namespace="wcl-agent"}[5m]))
+          )
+      - record: genai:inference_calls_per_invocation:avg5m
+        expr: >-
+          sum by (gen_ai_agent_name) (histogram_sum(rate(gen_ai_invoke_agent_inference_calls{service_namespace="wcl-agent"}[5m])))
+          / sum by (gen_ai_agent_name) (histogram_count(rate(gen_ai_invoke_agent_inference_calls{service_namespace="wcl-agent"}[5m])))
+      - record: genai:tool_calls_per_invocation:avg5m
+        expr: >-
+          sum by (gen_ai_agent_name) (histogram_sum(rate(gen_ai_invoke_agent_tool_calls{service_namespace="wcl-agent"}[5m])))
+          / sum by (gen_ai_agent_name) (histogram_count(rate(gen_ai_invoke_agent_tool_calls{service_namespace="wcl-agent"}[5m])))
+      - record: genai:model_latency:p95
+        expr: >-
+          histogram_quantile(0.95, sum by (gen_ai_request_model) (
+            rate(gen_ai_client_operation_duration{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: genai:model_calls:rate5m
+        expr: >-
+          sum by (gen_ai_request_model, error_type) (
+            label_replace(
+              histogram_count(rate(gen_ai_client_operation_duration{service_namespace="wcl-agent"}[5m])),
+              "error_type", "none", "error_type", ""
+            )
+          )
+      - record: genai:tool_calls:rate5m
+        expr: >-
+          sum by (gen_ai_tool_name, error_type) (
+            label_replace(
+              histogram_count(rate(gen_ai_execute_tool_duration{service_namespace="wcl-agent"}[5m])),
+              "error_type", "none", "error_type", ""
+            )
+          )
+      - record: genai:tool_latency:p95
+        expr: >-
+          histogram_quantile(0.95, sum by (gen_ai_tool_name) (
+            rate(gen_ai_execute_tool_duration{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: genai:ttft:p95
+        expr: >-
+          histogram_quantile(0.95, sum by (gen_ai_request_model, gen_ai_agent_name) (
+            rate(app_llm_stream_ttft{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: genai:ttft:p50
+        expr: >-
+          histogram_quantile(0.5, sum by (gen_ai_request_model, gen_ai_agent_name) (
+            rate(app_llm_stream_ttft{service_namespace="wcl-agent"}[5m])
+          ))
+
+      # --- Knowledge base (D8) -------------------------------------------------------------
+      - record: rag:retrieval_latency:p95
+        expr: >-
+          histogram_quantile(0.95, sum by (app_rag_index, app_rag_strategy) (
+            rate(app_rag_retrieval_duration{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: rag:searches:rate5m
+        expr: >-
+          sum by (app_rag_index, app_rag_strategy) (
+            histogram_count(rate(app_rag_retrieval_duration{service_namespace="wcl-agent"}[5m]))
+          )
+      - record: rag:retrieved_chunks:avg5m
+        expr: >-
+          sum by (app_rag_index) (histogram_sum(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
+          / sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
+      - record: rag:top_score:p50
+        expr: >-
+          histogram_quantile(0.5, sum by (app_rag_index) (
+            rate(app_rag_top_score{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: rag:top_score:p10
+        expr: >-
+          histogram_quantile(0.1, sum by (app_rag_index) (
+            rate(app_rag_top_score{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: rag:empty_results:rate5m
+        expr: >-
+          sum by (app_rag_index) (rate(app_rag_empty_results{service_namespace="wcl-agent"}[5m]))
+      - record: rag:empty_ratio:5m
+        expr: >-
+          (sum by (app_rag_index) (rate(app_rag_empty_results{service_namespace="wcl-agent"}[5m])) or
+            0 * sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m]))))
+          / sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
+
+      # --- WCL cache (D8) ------------------------------------------------------------------
+      - record: cache:requests:rate5m
+        expr: >-
+          sum by (app_cache_name, app_cache_result) (rate(app_cache_requests{service_namespace="wcl-agent"}[5m]))
+      - record: cache:hit_ratio
+        expr: >-
+          (sum by (app_cache_name) (rate(app_cache_requests{service_namespace="wcl-agent", app_cache_result="hit"}[5m])) or
+            0 * sum by (app_cache_name) (rate(app_cache_requests{service_namespace="wcl-agent"}[5m])))
+          / sum by (app_cache_name) (rate(app_cache_requests{service_namespace="wcl-agent"}[5m]))
+
+      # --- Database pool (D6) --------------------------------------------------------------
+      - record: db:client_connections:usage
+        expr: >-
+          sum by (state) (db_client_connections_usage{service_namespace="wcl-agent", service_name="api"})
