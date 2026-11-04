@@ -381,6 +381,7 @@ cAdvisor container metrics, host metrics, Docker logs, and Alloy, Loki, Tempo, M
 | D10 | Redis | runtime | Memory, evictions, ops/s, Redis hit ratio vs app hit ratio, latency |
 | D11 | Infra & Meta | both | Containers, host, Alloy pipeline drops and queue, ingest rates per backend, cardinality |
 | D12 | Build ⇄ Runtime | cross | Annotations for each commit from Claude Code (`vcs.ref.head.revision`) overlaid on runtime p95 latency, error rate and LLM cost per request, keyed by `service.version`. Table: commit → authoring agent role → build cost → runtime deltas. |
+| D13 | Agent Team: Improvement | build | Per sprint: cost per point, cost shares (coordination, build, QA), minutes per point, blocking questions and their longest wait, rework rounds, blockers; per agent: context per call and weighted cost by role. Fed at each wrap-up by `.claude/team/teamstats.py` (baseline table, `usage.txt`, board export); sprint ends as annotations on the build dashboards. Added 2026-11-04 on the owner's request. |
 
 ### 8.3 Recording rules (stable aliases)
 

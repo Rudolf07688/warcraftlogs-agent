@@ -59,6 +59,15 @@ curl -sf "${GRAFANA_ADMIN[@]}" "$GRAFANA/api/user" | grep -q '"isGrafanaAdmin":t
 [[ "$(dc exec -T grafana sh -c 'ls /var/lib/grafana/plugins | wc -l' | tr -d ' ')" == 0 ]] \
   && pass "no plugins preinstalled" || fail "plugins were preinstalled"
 
+# D1/D6/D7 starters and D13: the dashboards load from the repository's JSON, in one folder
+# per layer.
+dash="$(curl -sf "$GRAFANA/api/search?type=dash-db" || true)"
+for want in "build/wcl-cc-overview" "build/wcl-team-improvement" "runtime/wcl-app-api-llm"; do
+  python3 -c 'import sys,json; f,u=sys.argv[1].split("/"); sys.exit(0 if any(d["uid"]==u and d.get("folderTitle")==f for d in json.load(sys.stdin)) else 1)' "$want" <<<"$dash" \
+    && pass "dashboard $want provisioned" || fail "dashboard $want missing"
+done
+check mimir 'j.get("timeInterval") == "60s"' "Mimir minimum interval matches the 60 s backend export"
+
 # Restarted without GRAFANA_ADMIN_PASSWORD, on the same volume: no admin login at all.
 old_password="$GRAFANA_ADMIN_PASSWORD"
 GRAFANA_ADMIN_PASSWORD="" dc up -d --wait --no-deps --force-recreate grafana >/dev/null

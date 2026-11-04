@@ -13,6 +13,9 @@ datasources:
     jsonData:
       httpMethod: POST
       prometheusType: Mimir
+      # The backend exports metrics every 60 s (Claude Code every 10 s), so $__rate_interval
+      # must cover at least two backend exports: 4 x 60 s.
+      timeInterval: 60s
       # Metric exemplar -> trace.
       exemplarTraceIdDestinations:
         - name: trace_id
