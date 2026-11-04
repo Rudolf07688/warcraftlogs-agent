@@ -360,24 +360,35 @@ otelcol.exporter.otlphttp "mimir" {
 // keeps casual posts out. CORS (the app origin, the Vite dev server) and the rate limit are
 // the protection. Alloy takes no environment from compose here, so both are literals; change
 // them together with VITE_FARO_* when the app moves.
+//
+// The payload is attacker-controlled, so: source maps are never downloaded (the receiver
+// would fetch any URL a stack frame names, an SSRF from inside the network); the resource
+// and the content flags are overwritten, not filled in (see "faro" below); and the throughput
+// is capped at about 0.3 MiB/s (5 requests/s of at most 64 KiB, burst 10), because the
+// receiver shares the memory limiter and the export queues with the backend's and the
+// build layer's telemetry. The limit is global: a per-app one would key on a payload field.
 faro.receiver "browser" {
   server {
     listen_address           = "0.0.0.0"
     listen_port              = 12347
     api_key                  = "wcl-faro-local"
     cors_allowed_origins     = ["http://localhost:5173", "http://127.0.0.1:5173"]
-    max_allowed_payload_size = "256KiB"
+    max_allowed_payload_size = "64KiB"
 
     rate_limiting {
       enabled    = true
-      rate       = 20
-      burst_size = 40
+      rate       = 5
+      burst_size = 10
     }
+  }
+
+  sourcemaps {
+    download = false
   }
 
   output {
     logs   = [otelcol.receiver.loki.faro.receiver]
-    traces = [otelcol.processor.memory_limiter.default.input]
+    traces = [otelcol.processor.transform.faro.input]
   }
 }
 
@@ -387,17 +398,57 @@ otelcol.receiver.loki "faro" {
   }
 }
 
-// Faro sets no resource: name the web app, so its logs get the service_name label and the
-// runtime layer (the stamp step supplies the namespace, environment and layer when missing).
+// Everything the browser sends is attacker-controlled, and the stamp step only fills in what
+// is missing. So for both signals the resource is overwritten here: a payload claiming to be
+// the api, the build layer or prod lands as web, runtime, dev. The content flags are removed
+// (they route logs to the 7-day content stream), and so is event.name (which the content
+// classification reads).
 otelcol.processor.transform "faro" {
   error_mode = "ignore"
 
+  trace_statements {
+    context    = "resource"
+    statements = [
+      `set(attributes["service.name"], "web")`,
+      `set(attributes["service.namespace"], "wcl-agent")`,
+      `set(attributes["app.layer"], "runtime")`,
+      `set(attributes["deployment.environment.name"], "dev")`,
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+    ]
+  }
+
+  trace_statements {
+    context    = "span"
+    statements = [
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+    ]
+  }
+
   log_statements {
     context    = "resource"
-    statements = [`set(attributes["service.name"], "web") where attributes["service.name"] == nil`]
+    statements = [
+      `set(attributes["service.name"], "web")`,
+      `set(attributes["service.namespace"], "wcl-agent")`,
+      `set(attributes["app.layer"], "runtime")`,
+      `set(attributes["deployment.environment.name"], "dev")`,
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+    ]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [
+      `delete_key(attributes, "content")`,
+      `delete_key(attributes, "app.content")`,
+      `delete_key(attributes, "event.name")`,
+    ]
   }
 
   output {
-    logs = [otelcol.processor.memory_limiter.default.input]
+    logs   = [otelcol.processor.memory_limiter.default.input]
+    traces = [otelcol.processor.memory_limiter.default.input]
   }
 }

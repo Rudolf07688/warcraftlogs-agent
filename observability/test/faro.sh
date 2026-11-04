@@ -49,13 +49,67 @@ payload() {
 JSON
 }
 
-# post ORIGIN KEY: the HTTP status of one POST to the receiver.
+# post ORIGIN KEY [PAYLOAD-FUNCTION]: the HTTP status of one POST to the receiver.
 post() {
-  payload | curl -s -o /dev/null -w '%{http_code}' -X POST "$FARO" \
+  "${3:-payload}" | curl -s -o /dev/null -w '%{http_code}' -X POST "$FARO" \
     -H 'Content-Type: application/json' -H "Origin: $1" -H "x-api-key: $2" --data-binary @-
 }
 
-code="$(post "$ORIGIN" "$KEY")"
+# post_ok FUNCTION: post as the app does, waiting out the rate limit (5/s, burst 10).
+post_ok() {
+  local code i
+  for i in 1 2 3 4 5 6; do
+    code="$(post "$ORIGIN" "$KEY" "$1")"
+    [[ "$code" != 429 ]] && { echo "$code"; return; }
+    sleep 2
+  done
+  echo "$code"
+}
+
+# SEC-002: a payload claiming to be the api, the build layer and prod, with content flags.
+SPOOF_TRACE="$(hex 16)"; SPOOF_SPAN="$(hex 8)"
+spoof() {
+  cat <<JSON
+{
+  "meta": {"sdk": {"name": "@grafana/faro-core", "version": "2.13.0"},
+           "app": {"name": "api", "namespace": "wcl-agent", "version": "x", "environment": "prod"},
+           "session": {"id": "$SESSION"}},
+  "traces": {"resourceSpans": [{
+    "resource": {"attributes": [
+      {"key": "service.name", "value": {"stringValue": "claude-code"}},
+      {"key": "service.namespace", "value": {"stringValue": "evil-ns"}},
+      {"key": "app.layer", "value": {"stringValue": "build"}},
+      {"key": "deployment.environment.name", "value": {"stringValue": "prod"}},
+      {"key": "content", "value": {"stringValue": "true"}},
+      {"key": "app.content", "value": {"stringValue": "true"}}]},
+    "scopeSpans": [{"scope": {"name": "spoof"}, "spans": [{
+      "traceId": "$SPOOF_TRACE", "spanId": "$SPOOF_SPAN", "name": "spoof-$RUN", "kind": 1,
+      "startTimeUnixNano": "$START_NS", "endTimeUnixNano": "$END_NS",
+      "attributes": [{"key": "app.content", "value": {"stringValue": "true"}}]
+    }]}]
+  }]}
+}
+JSON
+}
+
+# SEC-001: an exception whose stack frame names a URL on a listener inside the compose network.
+# (The receiver only looks for a source map when the app meta carries a release, and it caches
+# per URL, so each probe names its own file and release.)
+sourcemap() {
+  cat <<JSON
+{
+  "meta": {"sdk": {"name": "@grafana/faro-core", "version": "2.13.0"},
+           "app": {"name": "web", "namespace": "wcl-agent", "version": "faro-test", "release": "faro-test-$PROBE", "environment": "dev"},
+           "session": {"id": "$SESSION"}},
+  "exceptions": [{
+    "type": "Error", "value": "sourcemap probe $RUN", "timestamp": "$NOW_ISO",
+    "stacktrace": {"frames": [{"filename": "http://grafana:9999/main$PROBE.js", "function": "f", "lineno": 1, "colno": 10}]}
+  }]
+}
+JSON
+}
+
+code="$(post_ok payload)"
 [[ "$code" =~ ^2 ]] && pass "app origin with the key is accepted ($code)" || fail "app origin with the key got $code"
 
 code="$(post "$ORIGIN" "wrong-key")"
@@ -100,7 +154,66 @@ poll 60 tempo_has "$TRACE_ID" && pass "the Faro trace reaches Tempo" || fail "no
 tempo_trace "$TRACE_ID" | grep -q "$SESSION" \
   && pass "the Faro session id is a span attribute in Tempo" || fail "session.id missing on the Faro span"
 
-# Rate limit: a burst beyond the configured 40 gets 429s.
+# SEC-002: the spoofed resource is overwritten (web / runtime / dev), the content flags are gone.
+code="$(post_ok spoof)"
+[[ "$code" =~ ^2 ]] && pass "the spoofed payload is accepted as a normal one ($code)" || fail "the spoofed payload got $code"
+spoof_trace_ready() { tempo_trace "$SPOOF_TRACE" | grep -q resourceSpans; }
+if poll 60 spoof_trace_ready; then
+  tempo_trace "$SPOOF_TRACE" | python3 -c '
+import sys, json
+t = json.load(sys.stdin)["trace"]
+bad = []
+for rs in t["resourceSpans"]:
+    res = {a["key"]: a["value"].get("stringValue") for a in rs["resource"]["attributes"]}
+    want = {"service.name": "web", "service.namespace": "wcl-agent", "app.layer": "runtime",
+            "deployment.environment.name": "dev"}
+    bad += [f"{k}={res.get(k)}" for k, v in want.items() if res.get(k) != v]
+    bad += [k for k in ("content", "app.content") if k in res]
+    for ss in rs["scopeSpans"]:
+        for sp in ss["spans"]:
+            bad += [a["key"] for a in sp.get("attributes", []) if a["key"] in ("content", "app.content")]
+print("spoofed:", bad) if bad else None
+sys.exit(1 if bad else 0)' \
+    && pass "a payload claiming api / claude-code / build / prod lands as web / runtime / dev, content flags removed" \
+    || fail "the spoofed resource or a content flag survived"
+else
+  fail "the spoofed trace never reached Tempo"
+fi
+loki_has "{service_name=\"web\", app_layer=\"runtime\", deployment_environment_name=\"dev\"} |= \"$RUN\"" \
+  && pass "Faro logs carry web / runtime / dev" || fail "Faro logs have another resource"
+loki_has "{content=\"true\"} |= \"$RUN\"" \
+  && fail "a Faro log reached the content stream" || pass "no Faro log in the content stream"
+
+# SEC-001: the receiver never fetches a stack frame's URL (a listener in the network, appending
+# whatever connects to it).
+dc exec -T -d grafana sh -c 'rm -f /tmp/faro-sink; while true; do nc -l -p 9999 >> /tmp/faro-sink 2>&1; done'
+sleep 1
+for PROBE in 1 2 3 4; do
+  code="$(post_ok sourcemap)"
+  [[ "$code" =~ ^2 ]] || fail "the exception payload got $code"
+  sleep 2
+done
+sleep 6
+if [[ "$(dc exec -T grafana sh -c 'cat /tmp/faro-sink 2>/dev/null | wc -c')" -eq 0 ]]; then
+  pass "no request reached the listener the stack frames name"
+else
+  fail "the receiver fetched a stack frame's URL (source map download)"
+fi
+
+# SEC-003: bodies over the cap are refused, with or without a Content-Length.
+big() { python3 -c 'import sys; sys.stdout.write("{\"pad\": \"" + "x" * 100000 + "\"}")'; }
+code="$(big | curl -s -o /dev/null -w '%{http_code}' -X POST "$FARO" -H 'Content-Type: application/json' \
+  -H "Origin: $ORIGIN" -H "x-api-key: $KEY" --data-binary @-)"
+[[ "$code" =~ ^[45] ]] && pass "a 100 KB body is refused ($code)" || fail "a 100 KB body got $code"
+sleep 2
+# Known gap (Alloy v1.21.3): the size cap reads Content-Length, so a chunked body (no length) is
+# not capped. It is reported, not failed: config cannot close it (see the README).
+code="$(big | curl -s -o /dev/null -w '%{http_code}' -X POST "$FARO" -H 'Content-Type: application/json' \
+  -H "Origin: $ORIGIN" -H "x-api-key: $KEY" -H 'Transfer-Encoding: chunked' --data-binary @-)"
+echo "INFO  KNOWN GAP: a 100 KB chunked body (no Content-Length) got $code; the size cap does not apply to it"
+sleep 2
+
+# Rate limit: a burst beyond the configured 10 gets 429s.
 limited=0
 for _ in $(seq 1 120); do
   [[ "$(post "$ORIGIN" "$KEY")" == 429 ]] && limited=$((limited + 1))

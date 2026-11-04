@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { faroSessionId, resetFaroForTests } from "./context";
+import { scrubItem } from "./scrub";
 import { hashUserId, identifyUser, initTelemetry, readFaroConfig } from "./faro";
 
 // Feature 057 (sc-414): Faro initialises only with an endpoint; the user is a hash.
@@ -58,6 +59,7 @@ describe("initTelemetry", () => {
 
     const config = h.initializeFaro.mock.calls[0][0];
     expect(config).toMatchObject({ url: env.VITE_FARO_URL, apiKey: "k", app: { name: "web" } });
+    expect(config.beforeSend).toBe(scrubItem); // SEC-006: nothing leaves with a query or fragment
     expect(h.withFaroRouterInstrumentation).toHaveBeenCalledWith(router);
     expect(faroSessionId()).toBe("s1");
   });

@@ -1,5 +1,6 @@
 import type { withFaroRouterInstrumentation } from "@grafana/faro-react";
 import { registerFaro, setTelemetryUser } from "./context";
+import { scrubItem } from "./scrub";
 
 // Feature 057 (sc-414): Grafana Faro in the browser, off unless VITE_FARO_URL is set.
 // Config comes from VITE_FARO_* (compose passes them to the dev server). The API key in the
@@ -63,6 +64,7 @@ export async function initTelemetry(router: DataRouter, env: Env = import.meta.e
     url: config.url,
     apiKey: config.apiKey,
     app: { name: "web", namespace: "wcl-agent", version: config.version, environment: config.environment },
+    beforeSend: scrubItem, // no ?query or #fragment (invite and reset tokens) leaves the browser
     // Console output can carry anything the app logs; errors, vitals and traces are enough.
     instrumentations: [
       ...react.getWebInstrumentations({ captureConsole: false }),

@@ -16,6 +16,8 @@ receiver takes ingest from the browser.
 - Q: Which session ids are accepted? -> A: 1 to 64 characters of `[A-Za-z0-9._:-]`; anything else is dropped (the turn still runs). Faro ids are about 10 alphanumerics.
 - Q: Names in the chat message? -> A: `traceparent` and `faro_session_id`, read from the raw frame in `ws.py`. `ChatTurn` (schemas.py, not in the footprint) ignores extra fields, so old and new clients both validate.
 - Q: Where do the receiver's origin and key live? -> A: Literals in the Faro section of `config.alloy` (Alloy gets no env from the compose hunks 057 owns); the browser key is public by design.
+- Q: A per-app rate limit (story AC)? -> A: Global, deliberately: an app name comes from the payload and a per-app key would be rotated at will. Bounded to 5 requests/s, burst 10, 64 KiB (about 0.3 MiB/s) because the receiver shares the memory limiter and the export queues with the other telemetry (security review SEC-003). Known gap: Alloy 1.21.3 does not cap a chunked body without `Content-Length`; separate drop-when-full exporters are in the Backlog.
+- Q: Is the payload's resource trusted? -> A: No: a Faro-only transform overwrites service.name, service.namespace, app.layer and the environment on traces and logs and drops the content flags; source maps are never downloaded; a `beforeSend` strips query and fragment from every URL (SEC-001, 002, 006).
 - Q: Baggage for `session.id` (spec 6.6)? -> A: Not now: the story's AC names only the span attribute; nothing downstream reads baggage.
 
 ## User Scenarios & Testing *(mandatory)*
