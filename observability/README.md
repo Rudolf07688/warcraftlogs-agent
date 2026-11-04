@@ -89,6 +89,25 @@ re-read every minute, evaluated every minute. Dashboards query these aliases, ne
 metric names (spec §8.3); the list is in `specs/055-build-telemetry/contracts/aliases.md`.
 Probe: `GET mimir:9009/prometheus/api/v1/rules`.
 
+- `build.yaml`: `cc:*` from Claude Code's metrics (D1, D2).
+- `red.yaml`: `app:http_requests:rate5m`, `app:http_latency:p95` from the spanmetrics
+  connector (`traces_spanmetrics_calls`, `traces_spanmetrics_duration_bucket` in seconds, with
+  exemplars; `traces_service_graph_*`). Only spans of `api` and `claude-code` feed the
+  connectors: browser spans carry browser-controlled names.
+- `cost.yaml`: generated from `pricing/pricing.yaml` (below). `runtime.yaml`: feature 056.
+
+## LLM pricing (`pricing/pricing.yaml`, feature 055)
+
+List prices in USD per million tokens per model and token type. A price change is a commit to
+`pricing.yaml` plus `uv run python observability/pricing/generate.py`, which rewrites
+`mimir/rules/anonymous/cost.yaml` (a test fails when the two differ). The rules record
+`llm_price_usd_per_token{gen_ai_request_model, gen_ai_token_type}` every minute, so the price
+history is a time series and cost already recorded keeps the price of its time; from the
+backend's token usage they compute `genai:cost_usd:rate5m` (USD/s by model and agent). Cost per
+hour is `3600 * sum(genai:cost_usd:rate5m)`. Cached input is priced as input (the backend
+reports input and output only). Seat cost on D2 comes per sprint from
+`.claude/team/teamstats.py`, priced at `claude-opus-5-5`.
+
 ## Persistence and the export queue
 
 Every backend and Grafana has a named volume. Each Alloy exporter has a persistent queue
@@ -114,6 +133,9 @@ its volumes at the end (`KEEP=1` keeps it).
 | `test/mutation.sh` | Disabling any one redaction, label or routing rule makes the redaction check fail. Mutates a temporary copy of `alloy/` mounted only into the test project (`ALLOY_CONFIG_DIR`); the checkout's files are never written. |
 | `test/provisioning.sh` | Datasources load from file, are healthy and carry the trace↔logs and exemplar correlations; Grafana's anonymous Viewer, admin password (none when unset) and no plugin preinstall. |
 | `test/board.sh` | Board entries (written by `board.py`) in Loki with their traceparent and only allowlisted index labels; a seeded secret masked; an entry posted while Loki is down arrives; backfill after Loki data loss, without duplicates. |
+| `test/red.sh` | Spanmetrics and service-graph series from synthetic spans with exemplars and no id/URL/SQL/session label; browser spans stay out; the RED aliases, latency without `/ws/chat` and `.*/generate`. |
+| `test/rules.sh` | Every rule file loads and evaluates (mimirtool lint for build/red); `cc:*` from synthetic Claude Code metrics; `genai:cost_usd:rate5m` = tokens x list price for one Claude and one Gemini model; a price change (in a mounted copy) loads without a restart and cost recorded before keeps the old price. |
+| `test/dashboards.sh` | D1, D2 and D13 provision; every panel query of D1 and D2 is valid against Mimir, Loki and Tempo. |
 | `test/claude-otel.sh` | The wrapper's env, argument pass-through and the Alloy-down warning (stub `claude`, no Docker). |
 
 ## Browser telemetry (Faro, feature 057)

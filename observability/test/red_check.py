@@ -71,16 +71,20 @@ def wait(grafana: str, q: str, secs: int = 300) -> list[dict]:
 
 
 def send_round(otlp: str, run: str) -> str:
+    # The caller in the service graph is a Claude Code tool span (TRACEPARENT into the API);
+    # browser spans (service web) must never reach the connectors (board contract:faro-spans).
     """One round of traffic. Returns a trace id that carries a /api/reports server span."""
     hx = lambda n: os.urandom(n).hex()  # noqa: E731
     secret = {"session.id": f"sess-{run}", "url.full": f"http://api/api/reports?x={run}",
               "user.id": f"user-{run}", "db.query.text": f"select '{run}'", "enduser.id": run}
-    web, api = [], []
+    cc, api = [], []
+    web = [span(hx(16), hx(8), f"documentLoad /x/{run}", 2, 10, {"http.route": f"/browser/{run}"}),
+           span(hx(16), hx(8), f"fetch {run}", 3, 10, {"http.url": f"http://api/{run}"})]
     keep = ""
     for i in range(6):
         t, client, server = hx(16), hx(8), hx(8)
         keep = keep or t
-        web.append(span(t, client, "GET", 3, 40, {"http.request.method": "GET", **secret}))
+        cc.append(span(t, client, "GET", 3, 40, {"http.request.method": "GET", **secret}))
         api.append(span(t, server, "GET /api/reports", 2, 30 + i, {
             "http.route": "/api/reports", "http.status_code": 200, **secret}, parent=client))
     t = hx(16)
@@ -88,7 +92,7 @@ def send_round(otlp: str, run: str) -> str:
                     error=True))
     for route, ms in (("/ws/chat", 20000), ("/api/guides/{guide_id}/generate", 15000)):
         api.append(span(hx(16), hx(8), route, 2, ms, {"http.route": route, **secret}))
-    post(otlp, {"resourceSpans": [resource("web", web), resource("api", api)]})
+    post(otlp, {"resourceSpans": [resource("claude-code", cc), resource("api", api), resource("web", web)]})
     return keep
 
 
@@ -121,8 +125,11 @@ def main() -> int:
            for s in ex.get("data") or [] for e in s.get("exemplars", [])}
     check(bool(ids & traces), f"latency exemplars link to sent traces ({len(ids)} exemplars)")
 
-    check(bool(wait(a.grafana, 'traces_service_graph_request_total{client="web", server="api"}', 120)),
-          "service graph edge web -> api")
+    check(bool(wait(a.grafana, 'traces_service_graph_request_total{client="claude-code", server="api"}', 120)),
+          "service graph edge claude-code -> api")
+    web = query(a.grafana, 'count({__name__=~"traces_spanmetrics_.*|traces_service_graph_.*", service_name="web"}) '
+                           'or count({__name__=~"traces_service_graph_.*", client="web"})')
+    check(not web, "browser spans (service web) feed neither spanmetrics nor the service graph")
 
     rate = wait(a.grafana, 'app:http_requests:rate5m{service_name="api", http_route="/api/reports"}', 240)
     codes = {r["metric"].get("status_code") for r in rate}

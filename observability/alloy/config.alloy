@@ -159,8 +159,7 @@ otelcol.processor.transform "redact" {
     logs    = [otelcol.processor.transform.classify.input]
     traces  = [
       otelcol.processor.batch.default.input,
-      otelcol.connector.spanmetrics.default.input,
-      otelcol.connector.servicegraph.default.input,
+      otelcol.processor.filter.red_sources.input,
     ]
   }
 }
@@ -201,6 +200,24 @@ otelcol.processor.transform "metric_labels" {
 // (with exemplars: a latency point links to its trace), labels service_name, span_name,
 // span_kind, status_code plus the dimensions. Dashboards query the aliases in
 // mimir/rules/anonymous/red.yaml.
+// Only our own services feed the connectors (board contract:faro-spans): browser spans
+// (service.name web, from Faro) carry browser-controlled names and attributes, an unbounded
+// path into Mimir. An allowlist, so a new or spoofed source stays out until named here.
+otelcol.processor.filter "red_sources" {
+  error_mode = "ignore"
+
+  traces {
+    span = [`not IsMatch(resource.attributes["service.name"], "^(api|claude-code)$")`]
+  }
+
+  output {
+    traces = [
+      otelcol.connector.spanmetrics.default.input,
+      otelcol.connector.servicegraph.default.input,
+    ]
+  }
+}
+
 otelcol.connector.spanmetrics "default" {
   namespace = "traces.spanmetrics"
 
