@@ -15,7 +15,7 @@ The agent-team redesign: persistence and autonomy. Full record in
 ## Where we are
 
 - Sprint 2026-11-04 (Telemetry 1, epic 395) closed: 23/23 pts + D13 (3 pts, sc-439) added
-  live on the owner's request. Merged into main locally (57c77ba), **not pushed**. Worktrees
+  live on the owner's request. Merged into main (57c77ba) and pushed with the close-out (f5886ad) on the owner's go. Worktrees
   and sprint branches removed; QA reports copied to `qa-reports/2026-11-04*`. Stories
   Under Review; Done stays the owner's.
 - Observability stack runs from main (`docker compose -p warcraftlogs-agent --profile
@@ -31,9 +31,8 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Open with the owner
 
-1. Push main (asks every time).
-2. Longer-lived Google credentials (service account) for live passes; offered to draft.
-3. Wipe the pre-fix Mimir series? (local only)
+1. Longer-lived Google credentials (service account) for live passes; offered to draft.
+2. Wipe the pre-fix Mimir series? (local only)
 
 ## For the next sprint (mine)
 
