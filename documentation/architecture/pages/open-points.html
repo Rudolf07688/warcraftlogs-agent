@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
-<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
 <title>Open Points · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -35,6 +35,7 @@
     <tbody>
       <tr><td><b>Worker server + NATS</b> (epic-196)</td><td>A separate container for background jobs: guides kept current as new information appears, an "offline" character profile built from past chats, a NATS queue for tasks and failures (maybe dead-letter and retry queues), task state in Postgres. Marked "BIG — must be specced accordingly and done properly". No spec yet.</td><td>All background work runs in the backend process (<a href="backend-api.html">Backend API</a>). The recorded stance so far is "no job queue" (constitution Principle III; <code>specs/013-welcome-recent-raids/research.md</code> R4, R5), so a worker and NATS must be justified in the plan's Complexity Tracking.</td></tr>
       <tr><td><b>Cloud deployment</b> (sc-146)</td><td>Cloud Run plan in <code>documentation/deployment.md</code>.</td><td>Docker Compose on one host. No CI, Terraform or Cloud Build config exists (<a href="deployment.html">Deployment</a>).</td></tr>
+      <tr><td><b>Telemetry, later sprints</b></td><td>Sprint 1 (stack, Alloy redaction, the Claude Code wrapper, backend bootstrap, GenAI spans) is built. Sprints 2 and 3 plan the team board into Loki, dashboards (none are provisioned yet), span and service-graph metrics, pricing and cost rules, browser telemetry, Postgres and Redis exporters, slow-query links, profiling and local alerts (<code>specs/telemetry_spec.md</code> §14.3).</td><td>Only the three datasources and their correlations are provisioned; Grafana is used through Explore (<a href="observability.html">Observability</a>).</td></tr>
       <tr><td><b>Upload a Warcraft Logs file directly</b> (epic-102)</td><td>Analyse a log file without going through the WCL API.</td><td>All data comes from the WCL API and the raw store.</td></tr>
       <tr><td><b>Sub-agent tool</b> (epic 101)</td><td>Let Barnaby spin up a sub-agent.</td><td>One agent per turn (<a href="agent.html">Agent</a>).</td></tr>
       <tr><td><b>Skills for judging WoW numbers</b> (sc-149)</td><td>Assessment skills for the agent.</td><td>Playbooks in the instruction only.</td></tr>
@@ -63,7 +64,8 @@
       <tr><td>Raw store → Redis</td><td>A store hit for a report confirmed public still back-fills shared Redis. A report later made private can stay reachable by its code for up to the re-verify window (1 day) plus the Redis TTL (24 h). Grant-only hits no longer back-fill (sc-296). Closing it fully needs workspace-aware keys or no back-fill from the store (<code>specs/039-local-first-data/research.md</code> R9).</td></tr>
       <tr><td>Tombstones</td><td>Deleted or private report codes are remembered per process (<code>_Tombstones</code> in <code>services/fetch_persistence.py</code>, 10 min, 1024 codes) and lost on restart; Redis holds a <code>wcl:v1:gone:&lt;code&gt;</code> marker.</td></tr>
       <tr><td>Knowledge base</td><td>WCL chunks show up in search only while their fetch passes the visibility check within <code>RAW_STORE_REVERIFY_DAYS</code> (1 day). The backfill can't chunk plain damage, healing or cast tables, because stored rows keep no query text. <code>kb_chunks.region</code> and <code>realm</code> are never filled; search has no zone, guild or kill filter; there is no hit/miss metric.</td></tr>
-      <tr><td>Cost and usage</td><td>No accounting of model tokens or cost; the only record is the <code>turn stats</code> log line.</td></tr>
+      <tr><td>Cost and usage</td><td>No accounting of model cost. Token counts exist only as telemetry (GenAI spans and metrics, when an OTLP endpoint is set) and in the <code>turn stats</code> log line; no pricing rules yet (<a href="observability.html">Observability</a>).</td></tr>
+      <tr><td><code>observability/alloy/redact.ottl</code></td><td>The <code>NAME: value</code> redaction rule matches any name containing <code>session</code>, <code>key</code> or <code>auth</code>, so harmless text is masked too (a Claude Code hook name such as <code>SessionStart:…</code> shows as <code>SessionStart:&lt;redacted&gt;</code>). It is the intended trade; nothing narrows it yet. Redaction of curl <code>-u user:pw</code>, <code>--password &lt;v&gt;</code> flags and literal <code>.env</code> values is also not built.</td></tr>
       <tr><td><code>backend/migrations/versions/0021_*</code></td><td>The migration imports <code>wcl_agent.client.queries</code> and the private <code>_flight_key</code>; renaming either breaks a fresh <code>upgrade head</code>.</td></tr>
     </tbody>
   </table></div>
@@ -86,6 +88,7 @@
       <tr><td><code>specs/020-fetch-persistence/research.md</code> R4</td><td><code>asyncio.Queue(maxsize=500)</code>, one transaction per row.</td><td>Batches of up to 20 items or 8 MB since 039; since 051 the writer counts items itself and gone signals are never capped.</td></tr>
       <tr><td><code>specs/045-local-data-reads/research.md</code> R1, R6</td><td>Breaker opens on 3 timeouts in a row; tombstones are a "gone" status in <code>raw_reports</code>.</td><td>The rule from <code>specs/052-turn-and-startup-hardening/research.md</code>: a 60 s window, 3+ timeouts from 2+ workspaces making up half the probes. Tombstones are in memory.</td></tr>
       <tr><td><code>specs/051-raw-store-hardening/research.md</code> R1</td><td>Concurrent index builds run only on Postgres.</td><td>Migrations 0020 and 0021 have no dialect check; SQLite ignores the option.</td></tr>
+      <tr><td><code>specs/053-telemetry-stack/spec.md</code> (clarifications)</td><td>The Grafana dashboard login is "anonymous admin, login form off".</td><td>Anonymous visitors are Viewers (with Explore); the login form is on and <code>admin</code> takes <code>GRAFANA_ADMIN_PASSWORD</code>, random when unset (a quality-fix round after the spec).</td></tr>
       <tr><td><code>.env.example</code></td><td>Declares <code>BLIZZARD_CLIENT_ID</code>/<code>SECRET</code>; says one-shot calls use Gemini "until feature 035"; lists only <code>localhost</code> and <code>127.0.0.1</code> as local.</td><td>Nothing reads the Blizzard keys (the sources are public); 035 has shipped; the startup check also accepts <code>::1</code>. It omits <code>WCL_STORE_READS_ENABLED</code>, <code>RAW_STORE_REVERIFY_DAYS</code> and <code>RAW_STORE_PROBE_TIMEOUT_MS</code>.</td></tr>
     </tbody>
   </table></div>

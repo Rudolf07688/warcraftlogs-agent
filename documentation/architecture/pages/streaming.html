@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
 <title>Stream protocol · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -45,7 +45,7 @@
     <li><b>Endpoint.</b> <code>/ws/chat</code>, the <code>chat()</code> handler in <code>backend/app/api/ws.py</code>. The browser opens it once (<code>ChatSocket</code> in <code>frontend/src/api/wsClient.ts</code>) and keeps it for the whole session, across chats.</li>
     <li><b>Handshake.</b> Before <code>accept()</code> the handler checks the <code>Origin</code> header against <code>SITE_URL</code> (<code>origin_matches</code> in <code>backend/app/auth/csrf.py</code>) and validates the <code>__Host-session</code> cookie (<code>authenticate_session</code>). Either failing closes the socket with code 1008. No token is ever read from the query string or a frame.</li>
     <li><b>Every turn re-checks the session.</b> A revoked session, disabled user or missing tenant gets an <code>error</code> frame (<code>unauthorized</code>) and a 1008 close, even mid-connection.</li>
-    <li><b>One turn at a time per socket.</b> The receive loop awaits each turn to the end, so turns on one socket never race. All sends go through <code>_TurnSocket.send_json</code>, which holds a per-socket lock, because the follow-up and title tasks send after the turn has ended.</li>
+    <li><b>One turn at a time per socket.</b> The receive loop awaits each turn to the end, so turns on one socket never race. When telemetry is on, each turn runs inside <code>chat_turn_span()</code>, the root of its own trace, so the agent, model, tool, SQL and Redis spans of one turn belong together while the connection itself is not traced (see <a href="observability.html#runtime">Observability</a>). All sends go through <code>_TurnSocket.send_json</code>, which holds a per-socket lock, because the follow-up and title tasks send after the turn has ended.</li>
     <li><b>Model resolution.</b> The requested model is mapped to the active provider's form; a model that is no longer served continues on the default (<code>resolve_chat_model</code> in <code>backend/app/model_state.py</code>, feature 032). The turn also gets its same-class sibling for a rate-limit fallback (<code>fallback_model_for</code>). See <a href="models.html">Models &amp; providers</a>.</li>
     <li><b>Per-turn context.</b> For the turn's duration the backend sets the WCL refresh actor (the per-user forced-refresh limit) and the agent identity used by backend tools; both are cleared when the stream ends, so later tasks on the socket never act as that user (sc-276, sc-222).</li>
   </ul>
@@ -269,6 +269,7 @@
     <li><code>backend/app/services/conversation_titles.py</code></li>
     <li><code>backend/app/services/tool_summary.py</code>, <code>raids.py</code>, <code>graphs.py</code>, <code>artifacts.py</code>, <code>encounters.py</code></li>
     <li><code>backend/app/model_state.py</code></li>
+    <li><code>backend/app/telemetry/__init__.py</code> (<code>chat_turn_span</code>)</li>
     <li><code>backend/app/auth/csrf.py</code>, <code>backend/app/auth/dependencies.py</code></li>
     <li><code>backend/app/api/conversations.py</code>, <code>raids.py</code>, <code>recent_raids.py</code>, <code>proposals.py</code>, <code>reports.py</code></li>
     <li><code>frontend/src/api/wsClient.ts</code>, <code>frontend/src/api/restClient.ts</code></li>

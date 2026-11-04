@@ -10,6 +10,7 @@
       ["pages/deployment.html", "Deployment & config"],
       ["pages/backend-api.html", "Backend API"],
       ["pages/auth-tenancy.html", "Auth & multi-tenancy"],
+      ["pages/observability.html", "Observability"],
     ]},
     { group: "Data", items: [
       ["pages/database.html", "Database & migrations"],

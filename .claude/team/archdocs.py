@@ -36,6 +36,9 @@ DOCS = os.path.join(ROOT, "documentation", "architecture")
 # Page -> path prefixes it owns. First match wins, so list specific paths before broad ones.
 # "*" pages re-check on any change of these shared manifests (versions are quoted on them).
 PAGE_PATHS = [
+    ("pages/observability.html", [
+        "observability/", "backend/app/telemetry/", "bin/claude-otel",
+    ]),
     ("pages/pdf-reports.html", [
         "backend/app/api/reports.py", "backend/app/services/pdf_report.py",
         "backend/app/services/charts.py", "backend/app/services/graphs.py",
