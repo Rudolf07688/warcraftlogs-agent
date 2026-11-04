@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-04 (architecture docs rebuilt; new close-out step)
+Updated: 2026-11-04 (telemetry plan locked, on the board)
 
 ## Topic
 
@@ -28,6 +28,11 @@ The agent-team redesign: persistence and autonomy. Full record in
 - 2026-11-04: architecture docs rebuilt as index + 13 pages, checked at `1df8f6f`; close-out
   step added (PO wrap-up 5, team-launch gate 4, preference 24, `.claude/team/archdocs.py`).
   First real use: next sprint's wrap-up.
+
+- 2026-11-04 (later): telemetry/observability planned with Maren (read-only co-plan) and the
+  owner. Plan locked in `specs/telemetry_spec.md` §14: 3 sprints, 23/23/20 pts, epics 395–397,
+  27 stories in Backlog. Owner: board only, no sprint yet; wrapper `bin/claude-otel`; content
+  capture ON in dev; persistence (volumes + Alloy file queue) before Grafana.
 
 ## Open with the owner
 

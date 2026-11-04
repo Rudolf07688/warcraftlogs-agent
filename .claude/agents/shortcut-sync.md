@@ -23,8 +23,8 @@ below, then return a short report.
 - Labels by area: `ai` (agent), `ui` (frontend), `ux` (design/interaction), `backend`,
   `data` (Postgres/Redis/schemas), `infra`, `reports` (PDF), `security`, `performance`,
   `refactor`.
-- `stories-create` cannot set estimate or labels, so follow every create with
-  `stories-update`.
+- `create_story` takes `estimate` and `label_ids` directly (checked 2026-11-04); set them
+  on create instead of a follow-up update.
 
 ## Arguments
 

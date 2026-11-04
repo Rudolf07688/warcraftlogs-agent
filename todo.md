@@ -41,6 +41,10 @@ Ticket IDs refer to the Shortcut "Team 1" board.
     - (maybe deadletter, maybe retry queue?)
     - NATS backend / task state captured with postgres for persistent data requirements (including stuff like audit trails)
 - Unstructured directory `./wcl_agent/*.py` `sc-150` `sc-171`
+- Telemetry and observability across the agent team (build layer) and the app (runtime), spec `specs/telemetry_spec.md` §14
+  - Telemetry and observability: stack, build layer and backend traces `epic-395`
+  - Telemetry and observability: metrics, cost and frontend `epic-396`
+  - Telemetry and observability: data stores, profiles and build-to-runtime `epic-397`
 
 ## Reports
 - ~~PDF reports still look terrible with some html/markdown markers visible `epic-99`~~
