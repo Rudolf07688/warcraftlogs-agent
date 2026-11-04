@@ -41,10 +41,11 @@ and `MIMIR_RULES_DIR` (the recording rules, default `./observability/mimir/rules
 Inputs → memory limiter → stamp defaults (`stamp.ottl`) → redaction (`redact.ottl` and the
 log body rules) → metrics: drop `session.id`, `ccr.session.id`, `prompt.id`, `user.id`,
 `user.account_uuid`, `user.account_id`, `user.email`, `user.groups`, `organization.id`,
-`client_request_id` → logs: content routing → batch → exporters. The inputs are OTLP (4317,
-4318), the Faro receiver (12347, behind its own overwrite-the-resource transform) and the
-team board's files (tailed and mapped to log records); the last two join at the memory limiter,
-so they pass every later step. After redaction, traces from `api` and `claude-code` also feed
+`client_request_id` → logs: drop records outside Loki's accept window (below), then content
+routing → batch → exporters. The inputs are OTLP (4317, 4318), the Faro receiver (12347, behind
+its own overwrite-the-resource transform) and the team board's files (tailed and mapped to log
+records). Faro joins at the memory limiter and the board at the redaction step (it skips the
+stamp, which would strip its path marker), so both pass every later step. After redaction, traces from `api` and `claude-code` also feed
 the span-metrics and service-graph connectors, whose metrics rejoin at the identifier-dropping
 step. The recording rules in Mimir's ruler work on the stored metrics.
 
@@ -66,7 +67,17 @@ step. The recording rules in Mimir's ruler work on the stored metrics.
   `hook_registered`, `mcp_server_connection`, `plugin_loaded`, `plugin_installed`,
   `permission_mode_changed`, `retention_sweep`, `internal_error`, `at_mention`, `auth`).
   A new or unnamed Claude Code event is content. Content gets the Loki label
-  `content="true"` and is kept 7 days.
+  `content="true"` and is kept 7 days. The team board is the one build-layer source that is
+  not content, and the exception follows the path, not the payload: only records from the
+  board's own branch carry the marker attribute `alloy.board` (the stamp step deletes it
+  from every other source), so an OTLP sender that names itself `team-board` still lands in
+  the content stream.
+- **Loki's accept window** (`otelcol.processor.filter.log_window`, every log source): a
+  record dated more than 6 days back or more than 10 minutes ahead (its time, else its
+  observed time) is dropped before the export queue and counted in
+  `otelcol_processor_filter_logs_filtered_total`. Loki refuses older or later records anyway,
+  and before its schema start it answers with a retryable 503, which would hold the queue
+  and every record batched with it.
 - **Defaults stamped when missing**: `service.namespace=wcl-agent`,
   `deployment.environment.name=unknown`, `app.layer` = `build` for `claude-code`, else
   `runtime`.
@@ -75,10 +86,12 @@ step. The recording rules in Mimir's ruler work on the stored metrics.
 
 ## Team board (`.claude/team/board.py`, feature 055)
 
-Alloy tails the board's JSONL files (`$(git rev-parse --git-common-dir)/team-board/*.jsonl`,
-mounted from `TEAM_BOARD_DIR`, default `./.git/team-board`; in a worktree `./.git` is a
-file, so export `TEAM_BOARD_DIR` there) through the same chain as OTLP logs, so board text is
-redacted like everything else. One record per entry: body = text, timestamp = the entry's
+Alloy tails the board's own JSONL files, `sprint-*.jsonl` and `selftest-*.jsonl` in
+`$(git rev-parse --git-common-dir)/team-board/` (mounted from `TEAM_BOARD_DIR`, default
+`./.git/team-board`; in a worktree `./.git` is a file, so export `TEAM_BOARD_DIR` there).
+A line without both `text` and `kind` is dropped, never forwarded raw. The records go through
+the same chain as OTLP logs from redaction on, so board text is redacted like everything
+else. One record per entry: body = text, timestamp = the entry's
 `ts`, `service_name="team-board"`, the fields (`board`, `author`, `kind`, `key`, `entry_id`,
 `supersedes`) as structured metadata, and the `TRACEPARENT` Claude Code passed to the
 posting Bash command as the record's trace and span id: the Loki "View trace" link opens the
@@ -86,9 +99,13 @@ author's tool span (the trace id alone is the lead's turn, shared by its sub-age
 entries stay in the 30-day stream. Find a sprint's hand-offs with
 `{service_name="team-board"} | kind="handoff" | board="sprint-2026-11-04b"`.
 
-After Loki lost its data, `observability/board-backfill.sh` re-reads every board file
-(entries within Loki's 7-day reject window; older sprints are in `meta/sprints/`). Re-reading
-twice does not duplicate. Session transcripts are not tailed.
+After Loki lost its data, `observability/board-backfill.sh` re-reads every board file. Only
+recent history comes back: Loki refuses an entry more than about an hour behind the newest
+entry already in its stream (a 400 the exporter drops, so nothing gets stuck), and all
+boards share one stream, so older sprints' entries are lost (they are in `meta/sprints/`;
+backlog `055-board-history`; a per-board index label would fix it). Entries older than 6 days
+are dropped by the accept window anyway. Re-reading twice does not duplicate. Session
+transcripts are not tailed.
 
 ## Recording rules (`mimir/rules/anonymous/`, feature 055)
 
@@ -97,12 +114,21 @@ re-read every minute, evaluated every minute. Dashboards query these aliases, ne
 metric names (spec §8.3); the list is in `specs/055-build-telemetry/contracts/aliases.md`.
 Probe: `GET mimir:9009/prometheus/api/v1/rules`.
 
-- `build.yaml`: `cc:*` from Claude Code's metrics (D1, D2).
+- `build.yaml`: `cc:*` from Claude Code's metrics (D1, D2). `cc:cache_hit_ratio` is
+  cacheRead / (input + cacheRead + cacheCreation); output tokens are not input. Counts of
+  discrete events in D1 (sessions started, lines of code, commits, pull requests, active time)
+  and of turns, calls, searches and lookups on D6-D8 are the one exception to "aliases only":
+  `increase()` of the raw counter over the range (rounded for counts), because a rule's copy
+  loses the counter's created-time zero sample and a rate alias summed over a range gives
+  fractions. Ratio panels divide two totals with no `* 60`.
 - `red.yaml`: `app:http_requests:rate5m`, `app:http_latency:p95` from the spanmetrics
   connector (`traces_spanmetrics_calls`, `traces_spanmetrics_duration_bucket` in seconds, with
-  exemplars; `traces_service_graph_*`). Only spans of `api` and `claude-code` feed the
-  connectors: browser spans carry browser-controlled names.
-- `cost.yaml`: generated from `pricing/pricing.yaml` (below). `runtime.yaml` (feature 056): `genai:*`, `rag:*`, `cache:*` and `db:*` from the backend's
+  exemplars; `traces_service_graph_*`). An aggregate idle for 5 minutes expires, and one
+  aggregate is kept per promoted resource, so a new `service.version` continues the same
+  series. Only spans of `api` and `claude-code` feed the connectors: browser spans carry
+  browser-controlled names.
+- `cost.yaml`: generated from `pricing/pricing.yaml` (below).
+- `runtime.yaml` (feature 056): `genai:*`, `rag:*`, `cache:*` and `db:*` from the backend's
   ADK and app metrics (`app.rag.*`, `app.cache.requests`, `app.llm.stream.ttft`), which are native
   histograms, so sums and counts use `histogram_sum` and `histogram_count`; for D6-D8.
 
@@ -116,16 +142,25 @@ history is a time series and cost already recorded keeps the price of its time; 
 backend's token usage they compute `genai:cost_usd:rate5m` (USD/s by model and agent). Cost per
 hour is `3600 * sum(genai:cost_usd:rate5m)`. Cached input is priced as input (the backend
 reports input and output only). Seat cost on D2 comes per sprint from
-`.claude/team/teamstats.py`, priced at `claude-opus-5-5`.
+`.claude/team/teamstats.py`, priced at `claude-opus-5-5`. Gemini 3.6, 3.7 and 3.8 Flash are
+Google's Vertex AI list price (checked 2026-11-04): $0.75 input / $3.75 output per million
+tokens, introductory through 2026-12-31; from 2027-01-01 the standard price is $1.50 / $7.50, so
+change those rows in a commit on that day. Flash-Lite and 3.1 Pro are not verified.
 
 ## Persistence and the export queue
 
 Every backend and Grafana has a named volume. Each Alloy exporter has a persistent queue
 (`otelcol.storage.file`, public preview, hence `--stability.level=public-preview`) on the
-`alloy-data` volume, retried until the backend is back. Caps: traces 256 MiB, logs
+`alloy-data` volume, retried until the backend is back (Tempo and Mimir without limit; Loki for
+24 hours: in a longer outage the batches being retried at that moment, at most one per
+consumer, are dropped and the rest of the queue lands when Loki is back; a refusal that can
+never succeed frees its consumer instead of holding it for good). Caps: traces 256 MiB, logs
 256 MiB, metrics 64 MiB. **When a queue is full** Alloy refuses new data for that signal
 with a retryable error (the sender's SDK retries briefly, then drops it); senders never
 block, and the queued data still drains first when the backends start.
+
+Loki's schema starts 2026-01-01, well before any data: a record before the start would get a
+retryable 503.
 
 Retention: logs 30 days, content stream 7 days, traces 7 days (Tempo can't keep content
 traces shorter than the rest), metrics 13 months.
@@ -142,7 +177,8 @@ its volumes at the end (`KEEP=1` keeps it).
 | `test/redaction.sh` | Seeded secrets from both layers are hashed or masked in Loki, Tempo and Mimir; banned metric labels absent; content routing. |
 | `test/mutation.sh` | Disabling any one redaction, label or routing rule makes the redaction check fail. Mutates a temporary copy of `alloy/` mounted only into the test project (`ALLOY_CONFIG_DIR`); the checkout's files are never written. |
 | `test/provisioning.sh` | Datasources load from file, are healthy and carry the trace↔logs and exemplar correlations; Grafana's anonymous Viewer, admin password (none when unset) and no plugin preinstall. |
-| `test/board.sh` | Board entries (written by `board.py`) in Loki with their traceparent and only allowlisted index labels; a seeded secret masked; an entry posted while Loki is down arrives; backfill after Loki data loss, without duplicates. |
+| `test/board.sh` | Board entries (written by `board.py`) in Loki with their traceparent and only allowlisted index labels; a seeded secret masked; an entry posted while Loki is down arrives; backfill after Loki data loss, without duplicates; entries before the schema start or in the far future are dropped by Alloy and do not hold back current ones; only `sprint-*` and `selftest-*` files are tailed and only board entries forwarded; an OTLP sender naming itself `team-board` stays in the content stream. |
+| `test/queue-drain.sh` | A Loki export queue stuck on a refusal (an old entry before the schema start, batched with a current one) drains on the same volumes once the repository's Alloy and Loki config is deployed, and data stored before the switch is kept. `lib.sh` layers an extra compose file through `COMPOSE_OVERRIDE`. |
 | `test/red.sh` | Spanmetrics and service-graph series from synthetic spans with exemplars and no id/URL/SQL/session label; browser spans stay out; the RED aliases, latency without `/ws/chat` and `.*/generate`. |
 | `test/rules.sh` | Every rule file loads and evaluates (mimirtool lint for build/red); `cc:*` from synthetic Claude Code metrics; `genai:cost_usd:rate5m` = tokens x list price for one Claude and one Gemini model; a price change (in a mounted copy) loads without a restart and cost recorded before keeps the old price. |
 | `test/dashboards.sh` | D1, D2 and D13 provision; every panel query of D1 and D2 is valid against Mimir, Loki and Tempo. |

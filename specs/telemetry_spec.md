@@ -397,7 +397,7 @@ Dashboards query aliases, not raw OTel names, so semconv churn is absorbed in on
 - `rag:retrieval_latency:p95`, `cache:hit_ratio`
 
 > **As built (2026-11-04, features 055 and 056; the code wins):** the rule files are `observability/mimir/rules/anonymous/{build,red,runtime,cost}.yaml`, evaluated every minute by Mimir's ruler. Besides the aliases above they define:
-> - `build.yaml`: `cc:cost_usd:rate5m`, `cc:sessions:rate5m`, `cc:active_time_seconds:rate5m`, `cc:lines_of_code:rate5m`, `cc:commits:rate5m`, `cc:pull_requests:rate5m`, `cc:edit_decisions:rate5m`.
+> - `build.yaml`: `cc:cache_hit_ratio` is cacheRead / (input + cacheRead + cacheCreation) (output excluded, §5.5); also `cc:cost_usd:rate5m`, `cc:sessions:rate5m`, `cc:active_time_seconds:rate5m`, `cc:lines_of_code:rate5m`, `cc:commits:rate5m`, `cc:pull_requests:rate5m`, `cc:edit_decisions:rate5m`.
 > - `runtime.yaml` (native histograms, real label names such as `gen_ai_request_model`, `gen_ai_agent_name`, `app_rag_index`, `app_cache_name`): `genai:invoke_agent_latency:p50`, `genai:invocations:rate5m`, `genai:inference_calls_per_invocation:avg5m`, `genai:tool_calls_per_invocation:avg5m`, `genai:model_latency:p95`, `genai:model_calls:rate5m`, `genai:tool_calls:rate5m`, `genai:tool_latency:p95`, `genai:ttft:p95`, `genai:ttft:p50`, `rag:retrieval_latency:p95`, `rag:searches:rate5m`, `rag:retrieved_chunks:avg5m`, `rag:top_score:p50`, `rag:top_score:p10`, `rag:empty_results:rate5m`, `rag:empty_ratio:5m`, `cache:requests:rate5m`, `cache:hit_ratio`, `db:client_connections:usage`.
 > - `cost.yaml` (generated): `llm_price_usd_per_token` and `genai:cost_usd:rate5m` (§6.5).
 >
