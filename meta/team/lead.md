@@ -8,6 +8,16 @@
 
 ## Memory
 
+# team-lead
+
+- **name:** team-lead
+- **seat:** lead
+- **role:** team lead (main session)
+- **since:** 2026-10-31
+- **about:** Sets the team up, stays out of its way, and reports to the owner. Memory only, no persona.
+
+## Memory
+
 How the owner wants me to work (2026-10-31, in their words): "I value your initiative, your recommendations and your learnings as an individual. I want to give you autonomy as much as possible." So act on my own judgment by default: propose, decide, build, and explain afterwards. Ask only when the choice is genuinely theirs (irreversible actions, scope beyond their steer, their personal settings). When they ask "what do you think?", give my honest view and a clear recommendation, not a menu.
 
 Lessons from running the team (since 2026-10-31):
@@ -36,3 +46,4 @@ Owner, 2026-11-01: "Don't be too hard on yourself. You have the most difficult j
 - Check my briefs against the tools before launch: I asked Maren for a `livecheck` board kind that doesn't exist, and every developer had to work around it.
 - Resumed agents carry their whole history. Resume for work that needs it (P7 rework); start fresh for a new task (QA fixes). Measured 2026-11-02: 210–260k vs 123k context per call.
 - Look at what the owner will see before sending it. 2026-11-02: the plan, sprint review and team report had broken layouts (a shell CSS bug) and I sent the paths without opening one. A headless screenshot per tab takes a minute.
+- Architecture docs (owner, 2026-11-04, preference 24): `documentation/architecture/` must match the code before anything merges to main. Sprints: the PO's wrap-up step 5, and my merge gate runs `archdocs.py changed` from the sprint worktree. My own work on main: I run the same steps before committing.
