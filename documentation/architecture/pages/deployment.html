@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Deployment &amp; config · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Runtime</p>
+  <h1>Deployment &amp; config</h1>
+  <p class="lede">How the app runs today: four Docker Compose containers on a developer machine, configured from one root <code>.env</code>. This page covers the images, the proxying, every place configuration comes from, the checks that stop an unsafe start, the scripts and command-line tools, and how far the cloud deployment plan has got.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#compose">Compose stack</a>
+    <a href="#images">Images &amp; proxying</a>
+    <a href="#config">Configuration &amp; secrets</a>
+    <a href="#startup-checks">Startup checks</a>
+    <a href="#scripts">Start &amp; DB-init scripts</a>
+    <a href="#cli">Command-line tools</a>
+    <a href="#cloud">Cloud deployment plan</a>
+  </nav>
+</header>
+
+<!-- ============================================================ COMPOSE -->
+<section class="layer" id="compose">
+  <h2>Compose stack</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Docker Compose</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">redis:8-alpine</span><span class="chip">python:3.14-slim</span><span class="chip">node:22-slim</span><span class="chip">nginx:1.27-alpine (prod target)</span></div>
+
+  <h3>What runs, and where it lives</h3>
+  <p><code>docker-compose.yml</code> defines four services and one named volume (<code>pgdata</code>). <code>docker compose up --build</code> brings up the whole stack.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Service</th><th>Image / build</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>db</code></td><td><code>pgvector/pgvector:pg17-trixie</code></td><td>Postgres 17 with the pgvector extension, which the knowledge base needs (feature 043). Volume <code>pgdata</code>. Port bound to <code>127.0.0.1:5432</code> only. Health check <code>pg_isready</code> every 5 s. <code>POSTGRES_USER</code> is the owner role that runs migrations. The app's runtime role (<code>APP_DB_USER</code>) is created by migration <code>0004_rls</code>, not by an init script.</td></tr>
+      <tr><td><code>redis</code></td><td><code>redis:8-alpine</code></td><td><code>--maxmemory 256mb --maxmemory-policy allkeys-lru</code>, <code>--save ""</code>, <code>--appendonly no</code>: a bounded cache with no persistence. Port <code>127.0.0.1:6379</code> only. Health check <code>redis-cli ping</code>.</td></tr>
+      <tr><td><code>backend</code></td><td><code>backend/Dockerfile</code> (context: repo root)</td><td>Waits for healthy <code>db</code> and <code>redis</code>. Compose overrides four variables from <code>.env</code>: <code>DATABASE_URL</code> (runtime role, host <code>db</code>), <code>DATABASE_OWNER_URL</code> (owner role), <code>GOOGLE_APPLICATION_CREDENTIALS=/gcp/adc.json</code> and <code>REDIS_URL=redis://redis:6379/0</code>. The ADC file is mounted read-only from <code>${GCP_ADC_FILE}</code>, defaulting to <code>~/.config/gcloud/application_default_credentials.json</code>. Port <code>8000</code> on all interfaces.</td></tr>
+      <tr><td><code>frontend</code></td><td><code>frontend/Dockerfile</code>, target <code>dev</code></td><td>Vite dev server on port <code>5173</code> (all interfaces), with <code>VITE_BACKEND_URL=http://backend:8000</code>. Depends on <code>backend</code> (start order only, no health condition).</td></tr>
+    </tbody>
+  </table></div>
+  <p>Migrations do not run inside any container: there is no entrypoint script. They run from the host through the <a href="#scripts">scripts</a> or <code>backend.cli.init_db</code>, which reach the database on the loopback port.</p>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 660" role="img" aria-labelledby="ct-title ct-desc">
+      <title id="ct-title">Container and deployment diagram</title>
+      <desc id="ct-desc">On the developer host, Docker Compose runs four containers: frontend, backend, db and redis. The browser reaches the frontend on port 5173, which proxies /api and /ws to the backend. The backend uses db and redis on the compose network and reads the host .env and the mounted gcloud credentials file. Host tools reach db and redis on loopback ports. The backend calls Vertex AI, the Anthropic API when that provider is selected, the Warcraft Logs API and public Blizzard pages over HTTPS.</desc>
+      <defs>
+        <marker id="ct-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="ct-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="zone" x="10" y="10" width="690" height="640" rx="14"/>
+      <text class="zlbl" x="26" y="34">Developer host</text>
+      <rect class="zone" x="26" y="120" width="370" height="515" rx="12"/>
+      <text class="zlbl" x="42" y="143">docker compose network</text>
+      <rect class="zone" x="720" y="60" width="270" height="520" rx="14"/>
+      <text class="zlbl" x="736" y="84">Internet</text>
+
+      <rect class="node" x="42" y="160" width="338" height="80" rx="10"/>
+      <text class="t" x="211" y="192" text-anchor="middle">frontend</text>
+      <text class="sub" x="211" y="215" text-anchor="middle">Vite dev server :5173</text>
+
+      <rect class="node core" x="42" y="290" width="338" height="120" rx="10"/>
+      <text class="t" x="211" y="322" text-anchor="middle">backend</text>
+      <text class="sub" x="211" y="345" text-anchor="middle">uvicorn backend.app.main:app</text>
+      <text class="sub" x="211" y="367" text-anchor="middle">:8000 · FastAPI, agent, workers</text>
+      <text class="sub" x="211" y="389" text-anchor="middle">one process</text>
+
+      <rect class="node store" x="42" y="470" width="165" height="145" rx="10"/>
+      <text class="t" x="124" y="500" text-anchor="middle">db</text>
+      <text class="sub" x="124" y="523" text-anchor="middle">pgvector image</text>
+      <text class="sub" x="124" y="543" text-anchor="middle">Postgres 17</text>
+      <text class="sub" x="124" y="563" text-anchor="middle">volume pgdata</text>
+      <text class="sub" x="124" y="583" text-anchor="middle">127.0.0.1:5432</text>
+
+      <rect class="node store" x="215" y="470" width="165" height="145" rx="10"/>
+      <text class="t" x="297" y="500" text-anchor="middle">redis</text>
+      <text class="sub" x="297" y="523" text-anchor="middle">redis:8-alpine</text>
+      <text class="sub" x="297" y="543" text-anchor="middle">256 MB, LRU</text>
+      <text class="sub" x="297" y="563" text-anchor="middle">no persistence</text>
+      <text class="sub" x="297" y="583" text-anchor="middle">127.0.0.1:6379</text>
+
+      <rect class="node ext" x="415" y="160" width="270" height="80" rx="10"/>
+      <text class="t" x="550" y="192" text-anchor="middle">Browser</text>
+      <text class="sub" x="550" y="215" text-anchor="middle">localhost:5173</text>
+
+      <rect class="node ext" x="415" y="300" width="270" height="100" rx="10"/>
+      <text class="t" x="550" y="330" text-anchor="middle">Host files</text>
+      <text class="sub" x="550" y="353" text-anchor="middle">.env (env_file)</text>
+      <text class="sub" x="550" y="375" text-anchor="middle">gcloud ADC → /gcp/adc.json (ro)</text>
+
+      <rect class="node ext" x="415" y="470" width="270" height="110" rx="10"/>
+      <text class="t" x="550" y="500" text-anchor="middle">Host tools (uv run)</text>
+      <text class="sub" x="550" y="523" text-anchor="middle">bin/*.sh · alembic</text>
+      <text class="sub" x="550" y="545" text-anchor="middle">backend.cli.* · psql</text>
+      <text class="sub" x="550" y="567" text-anchor="middle">via 127.0.0.1 ports</text>
+
+      <rect class="node ext" x="735" y="100" width="240" height="95" rx="10"/>
+      <text class="t" x="855" y="130" text-anchor="middle">Vertex AI</text>
+      <text class="sub" x="855" y="153" text-anchor="middle">Gemini, Claude, embeddings</text>
+      <text class="sub" x="855" y="175" text-anchor="middle">ADC · WCL_MODEL_LOCATION</text>
+
+      <rect class="node ext" x="735" y="225" width="240" height="80" rx="10"/>
+      <text class="t" x="855" y="257" text-anchor="middle">Anthropic API</text>
+      <text class="sub" x="855" y="280" text-anchor="middle">only with provider anthropic</text>
+
+      <rect class="node ext" x="735" y="335" width="240" height="80" rx="10"/>
+      <text class="t" x="855" y="367" text-anchor="middle">Warcraft Logs API</text>
+      <text class="sub" x="855" y="390" text-anchor="middle">OAuth + GraphQL v2</text>
+
+      <rect class="node ext" x="735" y="445" width="240" height="95" rx="10"/>
+      <text class="t" x="855" y="475" text-anchor="middle">Blizzard (public)</text>
+      <text class="sub" x="855" y="498" text-anchor="middle">WoW build version,</text>
+      <text class="sub" x="855" y="520" text-anchor="middle">hotfix news (guides)</text>
+
+      <path class="flow" marker-end="url(#ct-ah)" d="M415,200 H382"/>
+      <text class="lbl" x="398" y="153" text-anchor="middle">:5173</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M211,240 V288"/>
+      <text class="lbl" x="221" y="270">proxy /api, /ws</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M124,410 V468"/>
+      <text class="lbl" x="132" y="444">SQL</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M297,410 V468"/>
+      <text class="lbl" x="305" y="444">RESP</text>
+      <path class="flow ret" marker-end="url(#ct-ah2)" d="M415,350 H382"/>
+      <path class="flow ret" marker-end="url(#ct-ah2)" d="M415,525 H382"/>
+      <path class="flow" d="M360,290 V268 H705 M705,148 V492"/>
+      <text class="lbl" x="560" y="262" text-anchor="middle">HTTPS</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M705,148 H733"/>
+      <path class="flow" marker-end="url(#ct-ah)" d="M705,265 H733"/>
+      <path class="flow" marker-end="url(#ct-ah)" d="M705,375 H733"/>
+      <path class="flow" marker-end="url(#ct-ah)" d="M705,492 H733"/>
+    </svg>
+    <figcaption>The local stack as defined in <code>docker-compose.yml</code>. The frontend (5173) and backend (8000) ports are open to the LAN; Postgres and Redis bind to loopback, for host tools only. Which model service is called depends on <code>WCL_LLM_PROVIDER</code> (see <a href="models.html">Models &amp; providers</a>).</figcaption>
+  </figure>
+
+  <h3>Why</h3>
+  <p class="why">One <code>docker compose up</code> gives a full local stack, and secrets come only from the root <code>.env</code> through <code>env_file</code>. The owner asked for exactly this: "locally testable with a docker compose file that injects our root .env file".<cite>specs/001-streaming-chat-frontend/research.md §6 · specs/001-streaming-chat-frontend/spec.md (Input)</cite></p>
+  <p class="why">Postgres and Redis bind to loopback only (QA finding SEC-001). Redis has no auth, so it must not face the LAN.<cite>docker-compose.yml (comments on the db and redis ports)</cite></p>
+  <p class="why">Redis runs without persistence and with LRU eviction. It is a disposable cache, so recreating the container just empties it.<cite>specs/014-redis-wcl-cache/research.md R11 · docker-compose.yml</cite></p>
+  <p class="why">The database image is <code>pgvector/pgvector:pg17-trixie</code>: the same major version and on-disk format as <code>postgres:17</code>, so an existing <code>pgdata</code> volume starts as is. The <code>trixie</code> tag matches the glibc of <code>postgres:17</code>; the plain <code>pg17</code> tag would leave a collation-version mismatch on an existing database.<cite>docker-compose.yml (comment on db.image) · backend/migrations/versions/0019_kb_chunks.py (docstring)</cite></p>
+  <p class="why">There are two database roles. The owner runs migrations, and the app connects as a runtime role without BYPASSRLS, so row-level security actually constrains it. The role is created by a migration rather than a mounted init script, because init scripts only run on a fresh volume and are fragile across platforms.<cite>specs/006-multi-tenancy/research.md R4 · docker-compose.yml (comment on db.environment) · backend/migrations/versions/0004_rls.py</cite></p>
+  <p class="why">ADC is mounted read-only rather than shipping a key, so the same code path works unchanged on Cloud Run with an attached service account.<cite>specs/001-streaming-chat-frontend/research.md §6 · documentation/deployment.md (Decisions)</cite></p>
+</section>
+
+<!-- ============================================================ IMAGES -->
+<section class="layer" id="images">
+  <h2>Images &amp; proxying</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">requires-python &gt;=3.14</span><span class="chip">uv (uv.lock)</span><span class="chip">uvicorn[standard]&gt;=0.30.0</span><span class="chip">vite ^5.4.2</span><span class="chip">nginx:1.27-alpine</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Backend image</b> (<code>backend/Dockerfile</code>): <code>python:3.14-slim</code>, plus the runtime libraries the PDF reports need (Pango and HarfBuzz for WeasyPrint, freetype and libpng for matplotlib) and the DejaVu, Noto CJK and Noto Color Emoji fonts. It installs <code>uv</code> with pip, copies <code>pyproject.toml</code>, <code>uv.lock</code>, <code>wcl_agent/</code> and <code>backend/</code>, runs <code>uv sync --frozen --no-dev</code> and starts <code>uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8000</code>. One uvicorn process, no <code>--workers</code> flag. See <a href="pdf-reports.html">PDF reports</a> for why the fonts matter.</li>
+    <li><b>Frontend image</b> (<code>frontend/Dockerfile</code>): a <code>deps</code> stage on <code>node:22-slim</code> runs <code>npm install</code>. Target <code>dev</code> runs <code>npm run dev -- --host 0.0.0.0</code> on 5173 (what Compose uses). Target <code>build</code> runs <code>npm run build</code>, and target <code>prod</code> copies <code>dist/</code> into <code>nginx:1.27-alpine</code> on port 80.</li>
+    <li><b>Dev proxy</b> (<code>frontend/vite.config.ts</code>): Vite proxies <code>/api</code> and <code>/ws</code> (with <code>ws: true</code>) to <code>VITE_BACKEND_URL</code>, default <code>http://localhost:8000</code> on bare metal.</li>
+    <li><b>Prod proxy</b> (<code>frontend/nginx.conf</code>): same paths. <code>/api/</code> goes to <code>http://backend:8000</code> with <code>X-Forwarded-For</code> and a 300 s read timeout for slow PDF reports. <code>/ws</code> upgrades the connection, passes <code>Origin</code> through and allows 3600 s read and send timeouts, because one chat socket stays open across many turns. <code>/assets/</code> is cached for a year as immutable; every other path falls back to <code>index.html</code> with <code>no-cache</code> (client-side routes). Gzip is on for text types.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The browser only ever talks to one origin (Vite or nginx), which proxies the API and the socket. That is what makes the <code>__Host-</code> session cookie and same-origin CSRF design work without credentialed CORS (see <a href="auth-tenancy.html">Auth &amp; multi-tenancy</a>).<cite>specs/006-multi-tenancy/research.md R3</cite></p>
+  <p class="why">The frontend Node stages use a glibc (Debian) base, not Alpine: Tailwind v4's native binaries and rollup/esbuild ship glibc prebuilts and crash on musl. The <code>prod</code> target exists so production serves a minified, code-split bundle (PERF-011).<cite>frontend/Dockerfile (header comment)</cite></p>
+  <p class="why">Python 3.14 and uv are fixed by the constitution's stack section (<code>uv sync</code>/<code>uv add</code>/<code>uv run</code>, a committed <code>uv.lock</code>). The constitution states the standard but gives no reason for it.<cite>.specify/memory/constitution.md (Technology Stack &amp; Standards)</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>No recorded reason for a single uvicorn process. It matches what the code assumes today: the login and investigate rate limiters, the kickoff pre-fetch cooldown, the background-task de-duplication and the model state on <code>app.state</code> are all per process. More workers would need those moved to shared state first; the recent-raids refresh already coordinates through a database row.</p>
+</section>
+
+<!-- ============================================================ CONFIG -->
+<section class="layer" id="config">
+  <h2>Configuration &amp; secrets</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pydantic-settings&gt;=2.4.0</span><span class="chip">python-dotenv&gt;=1.0.1</span><span class="chip">Google ADC</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li>All secrets and settings come from the root <code>.env</code> (gitignored). <code>.env.example</code> is the tracked template, with every setting explained.</li>
+    <li><code>backend/app/config.py</code> reads them into one typed <code>Settings(BaseSettings)</code>, exposed as the module-level <code>settings</code> (cached by <code>get_settings()</code>). Unknown variables are ignored (<code>extra="ignore"</code>).</li>
+    <li>The same module also calls <code>load_dotenv()</code> at import, because <code>wcl_agent/</code> and ADK read some variables straight from <code>os.getenv</code> (for example <code>WCL_LLM_PROVIDER</code>, <code>ANTHROPIC_API_KEY</code>, <code>WCL_MAX_CONCURRENCY</code>, <code>WCL_MODEL_LOCATION</code>). <code>WCL_LOAD_DOTENV=0</code> switches off both <code>load_dotenv()</code> and the settings' env file; the test suite sets it so a checkout's <code>.env</code> never reaches a test (sc-336).</li>
+    <li>Model roles (chat default, report, guide, guide review, fast, greeting) are blank in <code>Settings</code> and filled per provider by the <code>_resolve_roles</code> validator, so switching provider is one <code>.env</code> line (feature 032). Details on <a href="models.html">Models &amp; providers</a>.</li>
+    <li>Google auth is ADC everywhere. No Google key file is in the repo or in <code>.env</code>. The one API key the app can use is <code>ANTHROPIC_API_KEY</code>, read only when <code>WCL_LLM_PROVIDER=anthropic</code>.</li>
+  </ul>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Group</th><th>Main variables (defaults from <code>config.py</code>)</th><th>Read by</th></tr></thead>
+    <tbody>
+      <tr><td>Database</td><td><code>DATABASE_URL</code> (runtime role, default <code>postgresql+asyncpg://wcl:wcl@localhost:5432/wcl</code>), <code>DATABASE_OWNER_URL</code> (falls back to the runtime URL), <code>DB_POOL_SIZE</code> 10, <code>DB_MAX_OVERFLOW</code> 20, <code>DB_POOL_TIMEOUT</code> 10 s. Compose-only: <code>POSTGRES_USER/PASSWORD/DB</code>, <code>APP_DB_USER/PASSWORD</code>.</td><td><code>db/session.py</code>, Alembic <code>migrations/env.py</code>, migration <code>0004_rls</code></td></tr>
+      <tr><td>Auth &amp; sessions</td><td><code>SITE_URL</code> (<code>http://localhost:5173</code>), <code>SECRET_KEY</code>, <code>SESSION_COOKIE_NAME</code> (<code>__Host-session</code>), <code>SESSION_COOKIE_SECURE</code> (true), <code>TRUSTED_PROXIES</code> (empty), lifetimes, password policy and limiter thresholds, <code>CORS_ORIGINS</code>, <code>BOOTSTRAP_ADMIN_EMAIL/PASSWORD</code> (CLIs only)</td><td><code>backend/app/auth/</code>; see <a href="auth-tenancy.html">Auth &amp; multi-tenancy</a></td></tr>
+      <tr><td>Providers &amp; models</td><td><code>WCL_LLM_PROVIDER</code> (vertex), <code>ANTHROPIC_API_KEY</code>, <code>GOOGLE_GENAI_USE_VERTEXAI</code>, <code>GOOGLE_CLOUD_PROJECT</code>, <code>GOOGLE_CLOUD_LOCATION</code>, <code>WCL_MODEL_LOCATION</code> (global), <code>WCL_MODEL_DISCOVERY</code> (catalog), class lists, model role overrides, retry budget</td><td><code>wcl_agent/llm/</code>; see <a href="models.html">Models &amp; providers</a></td></tr>
+      <tr><td>Warcraft Logs</td><td><code>WCL_CLIENT_ID</code>, <code>WCL_CLIENT_SECRET</code>, <code>WCL_MAX_CONCURRENCY</code> (6), <code>WCL_BACKGROUND_CONCURRENCY</code> (2), <code>WCL_QUERY_TIMEOUT_S</code> (75)</td><td><code>wcl_agent/client/wcl_client.py</code>; see <a href="wcl-data.html">WCL client, cache &amp; store</a></td></tr>
+      <tr><td>Cache &amp; raw store</td><td><code>REDIS_URL</code> (empty means no cache), <code>WCL_CACHE_ENABLED</code>, per-family TTLs, <code>WCL_FETCH_PERSIST_*</code>, <code>WCL_STORE_READS_ENABLED</code>, <code>RAW_STORE_REVERIFY_DAYS</code> (1), <code>RAW_STORE_PROBE_TIMEOUT_MS</code> (400)</td><td><code>wcl_agent/cache/</code>, <code>services/fetch_persistence.py</code>, <code>services/raw_fetch_reads.py</code></td></tr>
+      <tr><td>Knowledge base</td><td><code>KB_INDEX_ENABLED</code>, <code>KB_EMBED_ENABLED</code>, <code>KB_EMBED_MODEL</code> (<code>gemini-embedding-001</code>), queue and batch sizes, <code>KB_EMBED_SWEEP_S</code> (600)</td><td><code>backend/app/kb/</code>; see <a href="knowledge-base.html">Knowledge base</a></td></tr>
+      <tr><td>Guides</td><td><code>WCL_GUIDE_*</code> (concurrency 2, review rounds 3, per-minute caps), <code>WOW_VERSION_URL</code>, <code>WOW_NEWS_URL</code></td><td><code>services/guide.py</code>, <code>services/guide_pipeline/</code></td></tr>
+      <tr><td>Welcome page</td><td><code>RECENT_RAIDS_REFRESH_MIN_S</code> (900), <code>RECENT_RAIDS_STALE_S</code> (300), <code>RECENT_RAIDS_REFRESH_TIMEOUT_S</code> (120), display caps (6 + 6), <code>WCL_INVESTIGATE_PER_MINUTE</code> (5)</td><td><code>services/recent_raids.py</code>, <code>api/raids.py</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Why</h3>
+  <p class="why">Config is read from environment variables, so only the secret source changes between the local <code>.env</code> and Secret Manager in production.<cite>specs/001-streaming-chat-frontend/research.md §9 · backend/app/config.py (module docstring)</cite></p>
+  <p class="why">The test suite switches the <code>.env</code> off at the source, so a checkout's <code>.env</code> never reaches a test (sc-336).<cite>backend/app/config.py (comment on LOAD_DOTENV)</cite></p>
+</section>
+
+<!-- ============================================================ STARTUP CHECKS -->
+<section class="layer" id="startup-checks">
+  <h2>Startup checks: refusals and warnings</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">FastAPI lifespan</span><span class="chip">pydantic validators</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Check</th><th>Where</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Weak <code>SECRET_KEY</code>: the dev default, empty, under 32 characters, or containing <code>change-me</code></td><td><code>check_startup_secrets</code> in <code>config.py</code>, first line of the lifespan in <code>main.py</code></td><td><b>Refuses to start</b> (<code>RuntimeError</code>) unless <code>SITE_URL</code> is http(s) on <code>localhost</code>, <code>127.0.0.1</code> or <code>::1</code> with no userinfo. The host is parsed the way a browser would read it (sc-356).</td></tr>
+      <tr><td>Insecure built-in defaults in use (<code>SECRET_KEY</code>, the default <code>DATABASE_URL</code>)</td><td><code>insecure_defaults</code>, same call</td><td>One warning naming each variable, never its value.</td></tr>
+      <tr><td><code>TRUSTED_PROXIES</code> that isn't a list of IPs or CIDRs</td><td><code>Settings._check_trusted_proxies</code></td><td>Settings fail to load, so the process (and any CLI) stops at import rather than at the first login.</td></tr>
+      <tr><td><code>WCL_LLM_PROVIDER=anthropic</code> without <code>ANTHROPIC_API_KEY</code></td><td><code>credentials_error()</code>, called in the boot task</td><td>One error line; boot continues, model discovery serves the degraded list and greeting priming is skipped.</td></tr>
+      <tr><td><code>WCL_GUIDE_REVIEW_MODEL</code> equals <code>WCL_GUIDE_MODEL</code></td><td><code>_boot</code> in <code>main.py</code></td><td>Warning: guides would be reviewed by their own author model.</td></tr>
+      <tr><td>A fixed model role not in the model catalog</td><td><code>_load_models</code> in <code>main.py</code></td><td>Warning that the model may be retired.</td></tr>
+      <tr><td>Unknown <code>WCL_MODEL_DISCOVERY</code> or <code>WCL_LLM_PROVIDER</code> value</td><td><code>config.py</code>, <code>wcl_agent/llm/provider.py</code></td><td>Warning, then the default (<code>catalog</code>, <code>vertex</code>).</td></tr>
+    </tbody>
+  </table></div>
+  <p>A failed required boot step does not stop the process either: it stays up and <code>/api/health</code> reports what failed (see <a href="backend-api.html#boot">Backend API</a>).</p>
+
+  <h3>Why</h3>
+  <p class="why">The secret check runs in the lifespan, not as a settings validator, so the CLIs (<code>init_db</code>, Alembic) and the test suite import the settings unchanged.<cite>specs/052-turn-and-startup-hardening/research.md (Startup check, sc-356)</cite></p>
+  <p class="why">A weak secret is allowed only when the site is this machine: then only its own browser can reach the cookies the secret protects. Anywhere else a known key would let anyone forge CSRF tokens.<cite>specs/052-turn-and-startup-hardening/spec.md (User Story 5, FR-007) · backend/app/config.py (check_startup_secrets docstring)</cite></p>
+</section>
+
+<!-- ============================================================ SCRIPTS -->
+<section class="layer" id="scripts">
+  <h2>Start &amp; DB-init scripts</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">bash</span><span class="chip">alembic&gt;=1.13.0</span><span class="chip">uv</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>bin/00_init_migrate_db.sh</code>: sources <code>.env</code>, runs <code>uv sync --all-extras</code> (creating <code>.venv</code> if that fails, then syncing again), starts only <code>db</code>, then runs <code>alembic -c backend/alembic.ini upgrade head</code>. If that upgrade fails, it tries the fresh-database path: upgrade to <code>0002_auth_tenancy</code>, run <code>backend.cli.bootstrap_admin</code>, then upgrade to head.</li>
+    <li><code>bin/01_start_app.sh [--build]</code>: runs the init script, then <code>docker compose up -d</code> (passing the flag through), prints <code>docker compose ps</code> and follows the logs. Ctrl+C or exit runs <code>docker compose down</code>, so the stack stops with the script.</li>
+    <li><code>backend/cli/init_db.py</code> does the same migrate → founder → migrate sequence as one idempotent Python command: upgrade to <code>0002_auth_tenancy</code>, create the founder only if no active platform admin exists, then upgrade to head. Safe to run on every deploy.</li>
+    <li>Alembic connects as the owner role (<code>settings.owner_database_url</code>, set in <code>backend/migrations/env.py</code>) and leaves ADK's own tables (<code>sessions</code>, <code>events</code>, <code>app_states</code>, <code>user_states</code>) out of autogenerate. The migrations are on <a href="database.html">Database &amp; migrations</a>.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The founder must exist before <code>0003_tenant_columns</code> backfills existing rows to the founder's tenant, which is why init is a three-step sequence.<cite>backend/cli/init_db.py (docstring) · specs/006-multi-tenancy/research.md R8</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>No recorded reason for the <code>bin/</code> scripts (added without a spec). They wrap the quickstart steps into one command for local bring-up. They duplicate the logic of <code>backend/cli/init_db.py</code> in shell, and any failure of the first <code>upgrade head</code> (not only a fresh database) sends them down the bootstrap path, which stops with an error when the <code>BOOTSTRAP_ADMIN_EMAIL</code> user already exists. <code>init_db</code> checks for an admin first instead.</p>
+</section>
+
+<!-- ============================================================ CLI -->
+<section class="layer" id="cli">
+  <h2>Command-line tools</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">uv run python -m</span><span class="chip">argparse</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Command</th><th>What it does</th><th>Connects as</th></tr></thead>
+    <tbody>
+      <tr><td><code>python -m backend.cli.init_db</code></td><td>Migrate, create the founder if missing, migrate to head (above).</td><td>Owner role</td></tr>
+      <tr><td><code>python -m backend.cli.bootstrap_admin</code></td><td>Creates the first platform admin with their own tenant and owner membership, after <code>0002</code> and before <code>head</code>. Email and password from <code>BOOTSTRAP_ADMIN_*</code> or a prompt; the password is checked against the policy and never echoed. No HTTP route can do this.</td><td>Owner role (the runtime role doesn't exist yet)</td></tr>
+      <tr><td><code>python -m backend.cli.kb_backfill [--kinds wcl,guide,chat] [--limit N] [--confirm]</code></td><td>Builds knowledge-base chunks for data stored before feature 043. Without <code>--confirm</code> it only counts chunks and estimates the embedding cost; with it, it writes and embeds. Resumable: sources with chunks and rows with a vector are skipped. Never a startup task.</td><td>Runtime role; chat rows per workspace under that workspace's RLS scope</td></tr>
+      <tr><td><code>python -m backend.evals.guides</code>, <code>python -m backend.evals.kb</code></td><td>Maintainer-run accuracy checks for guides and knowledge search. They call live models (and WCL), so they are not part of pytest. The KB eval refuses any database whose name doesn't start with <code>kbeval</code>.</td><td>Given database</td></tr>
+      <tr><td><code>wcl</code> (<code>wcl_agent.cli:run</code>)</td><td>The original console chat: pick an encounter, then chat with an ADK agent in the terminal. Not used by the web app.</td><td>No database</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============================================================ CLOUD -->
+<section class="layer planned" id="cloud">
+  <h2>Cloud deployment plan <span class="badge planned">Planned, not built</span></h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">none yet (Cloud Run, Cloud SQL, Secret Manager in the plan)</span></div>
+
+  <h3>Status</h3>
+  <p><code>documentation/deployment.md</code> is the design-for-later plan, and "Deployment / Hosting Plan" (sc-146) is still an open item in <code>todo.md</code>. The plan: backend on Cloud Run with an attached service account (ADC), Cloud SQL for PostgreSQL 17, secrets from Secret Manager as environment variables, session affinity for WebSockets, and CPU always allocated so in-process background work is not throttled. The frontend would be the static build on a CDN or a second Cloud Run service. Nothing in the repo provisions any of this: there is no CI, Terraform or Cloud Build config.</p>
+  <p>Things a production deployment must set or decide, taken from the code:</p>
+  <ul>
+    <li>A strong <code>SECRET_KEY</code> and a real <code>SITE_URL</code> (the backend refuses to start otherwise), <code>SESSION_COOKIE_SECURE=true</code> with HTTPS, and <code>TRUSTED_PROXIES</code> set to the proxy's address so per-client rate limits work behind it.</li>
+    <li>A Postgres with pgvector 0.8 or newer (migration <code>0019_kb_chunks</code> checks the version), and an owner role that may <code>CREATE EXTENSION</code> and <code>CREATE ROLE</code>, or a runtime role created by hand first.</li>
+    <li>A Redis, or none: without <code>REDIS_URL</code> every WCL lookup goes to the store or WCL. No managed Redis is planned yet.</li>
+    <li>One backend instance, or shared state for what is per process today (see <a href="#images">Images</a>, Why).</li>
+  </ul>
+  <p class="note"><b>Drift:</b> parts of <code>documentation/deployment.md</code> are out of date. It still says access is "public + unauthenticated for v1" and that tables are made by <code>create_all</code>; feature 006 replaced both with invite-only login and Alembic. It also predates Redis, pgvector, the Anthropic provider and the raw store. In <code>.env.example</code>, <code>BLIZZARD_CLIENT_ID</code>/<code>BLIZZARD_CLIENT_SECRET</code> are listed but no code reads them, and the provider comment still says suggestions, titles, reports and guides call Gemini "until feature 035", which has shipped.</p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>docker-compose.yml</code>, <code>backend/Dockerfile</code>, <code>frontend/Dockerfile</code>, <code>frontend/nginx.conf</code>, <code>frontend/vite.config.ts</code>, <code>frontend/package.json</code>, <code>pyproject.toml</code></li>
+    <li><code>.env.example</code>, <code>backend/app/config.py</code>, <code>backend/app/main.py</code> (lifespan, <code>_boot</code>, <code>_load_models</code>), <code>wcl_agent/llm/provider.py</code>, <code>wcl_agent/client/wcl_client.py</code></li>
+    <li><code>bin/00_init_migrate_db.sh</code>, <code>bin/01_start_app.sh</code>, <code>backend/cli/init_db.py</code>, <code>backend/cli/bootstrap_admin.py</code>, <code>backend/cli/kb_backfill.py</code>, <code>backend/evals/guides/__main__.py</code>, <code>backend/evals/kb/__main__.py</code>, <code>wcl_agent/cli.py</code></li>
+    <li><code>backend/migrations/env.py</code>, <code>backend/migrations/versions/0004_rls.py</code>, <code>backend/migrations/versions/0019_kb_chunks.py</code></li>
+    <li><code>documentation/deployment.md</code>, <code>todo.md</code>, <code>specs/001-streaming-chat-frontend/research.md</code>, <code>specs/006-multi-tenancy/research.md</code>, <code>specs/014-redis-wcl-cache/research.md</code>, <code>specs/052-turn-and-startup-hardening/research.md</code> and <code>spec.md</code>, <code>.specify/memory/constitution.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

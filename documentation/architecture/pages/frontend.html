@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Frontend · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · User-facing</p>
+  <h1>Frontend</h1>
+  <p class="lede">A React single-page app: the streaming chat with Barnaby, the sidebar of chats and raids, the welcome page, the profile and class-guide pages, and the admin and sign-in screens. It talks to the backend on the same origin through a proxy, over one WebSocket and a small typed REST client.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#structure">Structure</a>
+    <a href="#build">Build and serving</a>
+    <a href="#routes">Routes and screens</a>
+    <a href="#state">State</a>
+    <a href="#renderer">Streaming renderer</a>
+    <a href="#markdown">Markdown safety</a>
+    <a href="#charts">Charts</a>
+    <a href="#tools">Tool labels and spells</a>
+    <a href="#theme">Theme</a>
+    <a href="#scroll">Scrolling</a>
+    <a href="#api">Talking to the API</a>
+    <a href="#why">Why</a>
+  </nav>
+</header>
+
+<section class="layer" id="structure">
+  <h2>Structure</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">react ^19.3.0</span><span class="chip">react-dom ^19.3.0</span><span class="chip">typescript ^5.5.4</span><span class="chip">react-router-dom ^7.1.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Path (<code>frontend/src/</code>)</th><th>Holds</th></tr></thead>
+    <tbody>
+      <tr><td><code>main.tsx</code></td><td>entry: <code>BackendBootGate</code> → <code>AuthProvider</code> → router</td></tr>
+      <tr><td><code>App.tsx</code></td><td>the chat shell: conversation state, the frame handler, sends, PDF downloads</td></tr>
+      <tr><td><code>api/</code></td><td><code>wsClient.ts</code> (<code>ChatSocket</code>, the <code>Frame</code> union) and <code>restClient.ts</code> (every REST call, CSRF, <code>ApiError</code>)</td></tr>
+      <tr><td><code>auth/</code></td><td><code>AuthProvider</code>, <code>useAuth</code>, the <code>RequireAuth</code> route guard</td></tr>
+      <tr><td><code>pages/</code></td><td>the routed screens other than the chat (profile, admin, sign-in flows)</td></tr>
+      <tr><td><code>components/</code></td><td>chat components (message list, spell cards, charts, sidebar, welcome page, proposal card); <code>profile/</code> tabs and dialogs</td></tr>
+      <tr><td><code>components/ui/</code></td><td>23 shadcn/ui components (new-york style, CSS variables, <code>react-icons</code> as icon library, per <code>frontend/components.json</code>)</td></tr>
+      <tr><td><code>lib/</code>, <code>hooks/</code></td><td><code>streamStore</code>, <code>spells</code>, markdown plugins, <code>profileEvents</code>, <code>useSmoothText</code></td></tr>
+      <tr><td><code>toolLabels.ts</code>, <code>uiPrefs.ts</code>, <code>types.ts</code></td><td>tool status labels, local UI preferences, shared types</td></tr>
+      <tr><td><code>index.css</code>, <code>styles.css</code></td><td>theme tokens and Tailwind entry; hand-written app rules</td></tr>
+    </tbody>
+  </table></div>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 560" role="img" aria-labelledby="fe-map-t fe-map-d">
+      <title id="fe-map-t">Frontend component map</title>
+      <desc id="fe-map-d">main.tsx wraps everything in the boot gate, the auth provider and the router. The router leads to the public pages, the chat shell App, the profile page and the admin users page. App renders the sidebar, the chat header, the ambient background, and either the welcome panel or the message list, plus the composer; the composer sends through ChatSocket, which feeds frames back into App and the message list. Shared shadcn components are used by every screen.</desc>
+      <defs><marker id="fe-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+
+      <rect class="node ext" x="290" y="14" width="420" height="56" rx="10"/>
+      <text x="500" y="37" text-anchor="middle" class="t" style="font-size:14px">main.tsx: BackendBootGate → AuthProvider → Router</text>
+      <text x="500" y="58" text-anchor="middle" class="sub" style="font-size:12px">boot overlay until startup is done · RequireAuth guards</text>
+
+      <rect class="node" x="20" y="110" width="230" height="64" rx="10"/>
+      <text x="135" y="134" text-anchor="middle" class="t" style="font-size:14px">Public pages</text>
+      <text x="135" y="154" text-anchor="middle" class="sub" style="font-size:12px">/login · /accept-invite</text>
+      <text x="135" y="168" text-anchor="middle" class="sub" style="font-size:12px">/reset-password · /forbidden</text>
+
+      <rect class="node core" x="290" y="110" width="420" height="56" rx="10"/>
+      <text x="500" y="133" text-anchor="middle" class="t" style="font-size:14px">/app/* → App.tsx (chat shell)</text>
+      <text x="500" y="153" text-anchor="middle" class="sub" style="font-size:12px">conversation state · frame handler · PDF export</text>
+
+      <rect class="node" x="760" y="110" width="220" height="56" rx="10"/>
+      <text x="870" y="133" text-anchor="middle" class="t" style="font-size:14px">/profile → ProfilePage</text>
+      <text x="870" y="153" text-anchor="middle" class="sub" style="font-size:12px">lazy chunk · Tabs</text>
+      <rect class="node" x="760" y="196" width="220" height="92" rx="10"/>
+      <text x="772" y="218" class="t" style="font-size:14px">CharactersTab</text>
+      <text x="772" y="236" class="sub" style="font-size:12px">own characters, friends, guild</text>
+      <text x="772" y="260" class="t" style="font-size:14px">ClassGuidesTab</text>
+      <text x="772" y="278" class="sub" style="font-size:12px">guide viewer · report dialog</text>
+      <rect class="node" x="760" y="312" width="220" height="52" rx="10"/>
+      <text x="870" y="334" text-anchor="middle" class="t" style="font-size:14px">/admin/users (admin only)</text>
+      <text x="870" y="353" text-anchor="middle" class="sub" style="font-size:12px">AdminUsersPage · lazy</text>
+      <rect class="node ext" x="760" y="392" width="220" height="150" rx="10"/>
+      <text x="870" y="414" text-anchor="middle" class="t" style="font-size:14px">components/ui (23)</text>
+      <text x="870" y="436" text-anchor="middle" class="sub" style="font-size:12px">button · card · dialog · tabs</text>
+      <text x="870" y="454" text-anchor="middle" class="sub" style="font-size:12px">alert-dialog · toggle · item</text>
+      <text x="870" y="472" text-anchor="middle" class="sub" style="font-size:12px">badge · skeleton · tooltip</text>
+      <text x="870" y="490" text-anchor="middle" class="sub" style="font-size:12px">field · input · table · …</text>
+      <text x="870" y="518" text-anchor="middle" class="sub" style="font-size:12px">shared by every screen</text>
+
+      <rect class="node" x="20" y="206" width="230" height="96" rx="10"/>
+      <text x="32" y="228" class="t" style="font-size:14px">Sidebar</text>
+      <text x="32" y="248" class="sub" style="font-size:12px">New chat · Profile</text>
+      <text x="32" y="266" class="sub" style="font-size:12px">Pinned group + chats</text>
+      <text x="32" y="284" class="sub" style="font-size:12px">Raids (tracked, investigate)</text>
+      <rect class="node" x="270" y="206" width="220" height="96" rx="10"/>
+      <text x="282" y="228" class="t" style="font-size:14px">Chat header</text>
+      <text x="282" y="248" class="sub" style="font-size:12px">ModelSelect · pin Toggle</text>
+      <text x="282" y="266" class="sub" style="font-size:12px">chat PDF · connection badge</text>
+      <text x="282" y="284" class="sub" style="font-size:12px">Admin link · Sign out</text>
+      <rect class="node" x="510" y="206" width="210" height="96" rx="10"/>
+      <text x="522" y="228" class="t" style="font-size:14px">Ambient</text>
+      <text x="522" y="248" class="sub" style="font-size:12px">drifting gradients, grain</text>
+      <text x="522" y="266" class="sub" style="font-size:12px">AmbientParticles (lazy)</text>
+      <text x="522" y="284" class="sub" style="font-size:12px">paused while streaming</text>
+
+      <rect class="node" x="20" y="332" width="230" height="104" rx="10"/>
+      <text x="32" y="354" class="t" style="font-size:14px">WelcomePanel</text>
+      <text x="32" y="374" class="sub" style="font-size:12px">new chat, nothing asked yet</text>
+      <text x="32" y="392" class="sub" style="font-size:12px">recent raids + Mythic+ runs</text>
+      <text x="32" y="410" class="sub" style="font-size:12px">Investigate → new chat</text>
+      <rect class="node" x="270" y="332" width="450" height="124" rx="10"/>
+      <text x="282" y="354" class="t" style="font-size:14px">MessageList (use-stick-to-bottom)</text>
+      <text x="282" y="374" class="sub" style="font-size:12px">StreamMarkdown: Streamdown, KaTeX (lazy), word ink-in</text>
+      <text x="282" y="392" class="sub" style="font-size:12px">SpellCard per tool call: RuneCircle · CastBar (motion)</text>
+      <text x="282" y="410" class="sub" style="font-size:12px">PlotlyArtifact (lazy) · ProposalCard · EncounterPicker</text>
+      <text x="282" y="428" class="sub" style="font-size:12px">FollowUps · per-reply PDF · web-search, fallback notes</text>
+      <text x="282" y="446" class="sub" style="font-size:12px">LiveMessage: the only subscriber to streamStore</text>
+
+      <rect class="node" x="270" y="486" width="210" height="56" rx="10"/>
+      <text x="375" y="509" text-anchor="middle" class="t" style="font-size:14px">Composer</text>
+      <text x="375" y="528" text-anchor="middle" class="sub" style="font-size:12px">sends ChatTurn</text>
+      <rect class="node core" x="510" y="486" width="210" height="56" rx="10"/>
+      <text x="615" y="509" text-anchor="middle" class="t" style="font-size:14px">ChatSocket</text>
+      <text x="615" y="528" text-anchor="middle" class="sub" style="font-size:12px">frames → App · tokens → store</text>
+
+      <path class="flow" d="M380,70 V90 H135 V106" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M500,70 V106" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M620,70 V90 H870 V106" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M870,166 V192" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M710,42 H740 V338 H756" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M400,166 V186 H135 V202" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M440,166 V202" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M600,166 V186 H615 V202" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M290,152 H260 V384 H254" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M260,384 H266" marker-end="url(#fe-ah)"/>
+      <path class="flow" d="M480,514 H506" marker-end="url(#fe-ah)"/>
+      <path class="flow ret" d="M615,486 V460" marker-end="url(#fe-ah)"/>
+      <text x="625" y="477" class="sub" style="font-size:12px">frames</text>
+    </svg>
+    <figcaption>Component map of <code>frontend/src/</code>. The main column shows either the WelcomePanel (a new chat with no question yet) or the MessageList.</figcaption>
+  </figure>
+</section>
+
+<section class="layer" id="build">
+  <h2>Build and serving</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">vite ^5.4.2</span><span class="chip">@vitejs/plugin-react ^4.3.1</span><span class="chip">tailwindcss ^4.3.3</span><span class="chip">@tailwindcss/vite ^4.3.3</span><span class="chip">vitest ^3.2.7</span><span class="chip">jsdom ^26.1.0</span><span class="chip">@testing-library/react ^16.3.3</span><span class="chip">node:22-slim</span><span class="chip">nginx:1.27-alpine</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Scripts</b> (<code>frontend/package.json</code>): <code>dev</code> runs Vite, <code>build</code> runs <code>tsc -b &amp;&amp; vite build</code>, <code>test</code> runs Vitest. Tests (10 <code>*.test.tsx</code> files) run in jsdom from <code>frontend/vitest.config.ts</code>, kept apart from the build config.</li>
+    <li><b>Dev server</b> (<code>frontend/vite.config.ts</code>): port 5173, plugins <code>@vitejs/plugin-react</code> and <code>@tailwindcss/vite</code>. It proxies <code>/api</code> and <code>/ws</code> (with WebSocket upgrade) to <code>VITE_BACKEND_URL</code>, default <code>http://localhost:8000</code>, so the browser sees one origin.</li>
+    <li><b>Image</b> (<code>frontend/Dockerfile</code>): a <code>deps</code> stage on <code>node:22-slim</code> (glibc, because Tailwind v4's native binaries crash on musl), a <code>dev</code> target running the Vite dev server (what docker compose uses locally), and a <code>prod</code> target that serves the built files with <code>nginx:1.27-alpine</code>.</li>
+    <li><b>Production proxy</b> (<code>frontend/nginx.conf</code>): the same paths as the dev proxy, to <code>backend:8000</code>. <code>/api/</code> has a 300 s read timeout (PDF generation can take a while); <code>/ws</code> upgrades the connection and allows 3600 s, as a chat socket stays open across many turns. Hashed <code>/assets/</code> are cached for a year; every other path falls back to <code>index.html</code>.</li>
+    <li><b>Code splitting.</b> The chat (<code>App</code>) loads eagerly. Every other page, KaTeX (with its CSS and fonts), Plotly and the particle engine are separate chunks loaded on first use.</li>
+  </ul>
+</section>
+
+<section class="layer" id="routes">
+  <h2>Routes and screens</h2>
+  <h3>What it does, and where it lives</h3>
+  <p><code>createBrowserRouter</code> in <code>frontend/src/main.tsx</code>. <code>RequireAuth</code> is a UX guard only: it sends a signed-out visitor to <code>/login</code> and a non-admin away from admin routes; the server enforces every rule again.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Path</th><th>Screen</th><th>Guard</th><th>Loaded</th></tr></thead>
+    <tbody>
+      <tr><td><code>/login</code></td><td><code>pages/LoginPage.tsx</code></td><td>public</td><td>lazy</td></tr>
+      <tr><td><code>/accept-invite</code></td><td><code>pages/AcceptInvitePage.tsx</code>: reads the single-use token from the URL fragment, then scrubs it</td><td>public</td><td>lazy</td></tr>
+      <tr><td><code>/reset-password</code></td><td><code>pages/ResetPasswordPage.tsx</code>: token from the fragment, as above</td><td>public</td><td>lazy</td></tr>
+      <tr><td><code>/forbidden</code></td><td><code>pages/ForbiddenPage.tsx</code></td><td>public</td><td>lazy</td></tr>
+      <tr><td><code>/app/*</code></td><td><code>App.tsx</code>, the chat</td><td>signed in</td><td>eager</td></tr>
+      <tr><td><code>/profile</code></td><td><code>pages/ProfilePage.tsx</code>: Characters tab (own characters, friends, guild) and Class guides tab (guide viewer, report-a-problem dialog)</td><td>signed in</td><td>lazy</td></tr>
+      <tr><td><code>/admin/users</code></td><td><code>pages/AdminUsersPage.tsx</code>: users and invitations (invite, resend, revoke, enable/disable, reset link)</td><td>platform admin</td><td>lazy</td></tr>
+      <tr><td><code>*</code></td><td>redirect to <code>/app</code></td><td>n/a</td><td>n/a</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>Inside the chat.</b> The sidebar (<code>components/Sidebar.tsx</code>) has New chat, a Pinned group (most recently pinned first), the other chats in server activity order, a pin toggle per row, and the Raids section of tracked raids with one-click investigate. It is resizable; its width is kept in <code>localStorage</code> (200 to 480 px, <code>uiPrefs.ts</code>). The welcome page (<code>components/WelcomePanel.tsx</code>) is the no-conversation state, not a route: under Barnaby's greeting it lists recent raids and Mythic+ runs, polled every 3 s while a refresh runs (giving up after 3 minutes).</li>
+    <li><b>Confirmation cards.</b> <code>components/ProposalCard.tsx</code> shows an agent's proposed profile changes with approve and cancel. An approval is broadcast to every open tab through <code>lib/profileEvents.ts</code> (a <code>BroadcastChannel</code> plus a window event), so an open profile page refreshes.</li>
+    <li><b>Admin screens.</b> Only the users page has a screen. The backend's <code>GET /api/admin/guide-reports</code> and <code>GET /api/admin/cache-stats</code> have no frontend; they are read with API tools.</li>
+    <li><b>Boot gate.</b> <code>components/BackendBootGate.tsx</code> polls <code>GET /api/health</code> every second and shows the startup steps until the backend reports them done; nothing else (not even the session check) talks to the API before that.</li>
+  </ul>
+</section>
+
+<section class="layer" id="state">
+  <h2>State</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>No state library.</b> <code>App.tsx</code> holds the chat state in <code>useState</code> (models, conversations, raids, active chat, messages, status line, live spell cards, boss selection, loose proposals) and mirrors what the socket handler needs in refs, so the frame handler and the send callbacks stay stable. <code>AuthProvider</code> is the only context.</li>
+    <li><b>Streaming text lives outside React.</b> Tokens go into <code>lib/streamStore.ts</code>, a tiny external store read with <code>useSyncExternalStore</code>. Only <code>LiveMessage</code> subscribes, so a token re-renders the live message and nothing else; <code>Sidebar</code>, <code>Composer</code> and <code>MessageList</code> are memoised.</li>
+    <li><b>Per-turn buffers.</b> Charts, proposals and bosses that arrive during a turn are kept in refs and attached to the answer on <code>done</code>. A proposal belongs to the chat that made it: if the player has switched chats, it is not shown in the other one (sc-243).</li>
+    <li><b>Wire contract.</b> How frames update this state is on <a href="streaming.html">Stream protocol</a>.</li>
+  </ul>
+</section>
+
+<section class="layer" id="renderer">
+  <h2>Streaming renderer</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">streamdown ^2.7.0</span><span class="chip">remark-math ^6.0.0</span><span class="chip">rehype-katex ^7.0.1</span><span class="chip">katex ^0.19.0</span><span class="chip">unist-util-visit ^5.1.0</span><span class="chip">motion ^14.0.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Markdown.</b> <code>components/StreamMarkdown.tsx</code> wraps Streamdown, which renders GFM safely mid-stream (no flashing <code>**</code> or broken tables) and memoises finished blocks. The live reply uses streaming mode with incomplete-markdown parsing; finished messages use static mode.</li>
+    <li><b>Smoothing.</b> <code>hooks/useSmoothText.ts</code> releases the streamed text on <code>requestAnimationFrame</code> at an adaptive rate (at least 4 characters per commit, faster when behind) and commits at most every 33 ms, so the socket's uneven bursts don't look jittery.</li>
+    <li><b>Ink-in.</b> <code>lib/rehypeWordSpans.ts</code> wraps each word of the live reply in a <code>span.ink</code> that a CSS animation fades in (skipping <code>code</code> and <code>pre</code>). Finished messages skip it, as the effect has played and a span per word is costly on long answers. An ember caret trails the stream and a one-shot sheen marks the finished reply.</li>
+    <li><b>Maths.</b> KaTeX loads the first time a reply contains maths (<code>$$</code>, <code>\(</code>, <code>\[</code> or <code>$…$</code>), through Streamdown's <code>plugins.math</code> slot (<code>lib/mathPlugin.ts</code>). <code>remark-gfm</code> is declared in <code>package.json</code> but not imported; Streamdown brings GFM itself.</li>
+    <li><b>Message furniture</b> (<code>components/MessageList.tsx</code>): the spellbook of tool cards, charts, confirmation cards, a per-reply "Report" PDF button, "Used web search" and "Answered by …" notes, "Interrupted — partial response" for partial messages, and on the latest answer only, the boss picker (<code>EncounterPicker</code>) and follow-up buttons (<code>FollowUps</code>). Ticked bosses are appended to the next question as "(Focus on: …)".</li>
+  </ul>
+</section>
+
+<section class="layer" id="markdown">
+  <h2>Markdown safety</h2>
+  <h3>What it does, and where it lives</h3>
+  <p>Model output can echo text from combat logs and web pages, so the renderer treats it as untrusted. The rules live in <code>components/StreamMarkdown.tsx</code>:</p>
+  <ul>
+    <li><b>No images at all.</b> Streamdown's <code>harden</code> step is re-run with <code>allowedImagePrefixes: []</code>, so every markdown image becomes a "[Image blocked: alt]" text span (sc-157). <code>data:</code> images were already dropped by Streamdown's URL transform.</li>
+    <li><b>No <code>img</code>, <code>source</code> or <code>srcset</code> after sanitising.</b> A final rehype pass (<code>rehypeNoImages</code>) removes every <code>&lt;img&gt;</code> and <code>&lt;source&gt;</code> and strips <code>srcSet</code>. Harden only checks <code>img src</code>, a <code>&lt;picture&gt;&lt;source srcset&gt;</code> would be fetched before the image (QA BUG-001), and an allowed same-origin image such as <code>![](/api/…pdf)</code> fired an authenticated, costly GET the moment it rendered (sc-272).</li>
+    <li><b>Links need a click.</b> Links keep harden's default (any http or https), plus Streamdown's placeholder protocol for a half-streamed link, and always open in a new tab with <code>rel="noopener noreferrer"</code>, so following a Warcraft Logs source never loses the chat.</li>
+    <li>The same "no remote images" rule holds in the PDF, enforced separately on the server (<a href="pdf-reports.html#safety">PDF reports</a>).</li>
+  </ul>
+</section>
+
+<section class="layer" id="charts">
+  <h2>Charts</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">react-plotly.js ^4.1.0</span><span class="chip">plotly.js-dist-min ^4.1.1</span></div>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>components/PlotlyArtifact.tsx</code> renders the Plotly figure that the backend built from the agent's <code>ChartSpec</code>. It loads <code>react-plotly.js/factory</code> and <code>plotly.js-dist-min</code> lazily, makes the background transparent, sets the font colour, hides the mode bar and turns transitions off under reduced motion.</li>
+    <li>Charts come from the <code>artifact</code> frame and attach to the answer on <code>done</code>; on reload they come with the conversation and attach by <code>message_seq</code>.</li>
+  </ul>
+</section>
+
+<section class="layer" id="tools">
+  <h2>Tool labels and spells</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">motion ^14.0.0</span><span class="chip">react-icons ^5.7.0 (gi)</span></div>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Status labels</b> (<code>frontend/src/toolLabels.ts</code>): 24 tool names map to a friendly phrase for the thinking line ("Pulling rankings", "Searching what we already know"); any other tool shows "Searching Warcraft Logs". The same file words the rate-limit retry and model-fallback status lines.</li>
+    <li><b>Spells</b> (<code>frontend/src/lib/spells.ts</code>): 25 entries (the same 24 tools plus <code>web_search</code>), each with a game-icons.net icon, a magic-school hue, a verb and rotating flavour lines. Unknown tools get <code>DEFAULT_SPELL</code>, so a card never renders blank.</li>
+    <li><b>Cards</b> (<code>components/SpellCard.tsx</code>, <code>RuneCircle.tsx</code>, <code>CastBar.tsx</code>): casting (rune circle, cast bar, flavour) → resolved (a compact chip with the summary and duration) or fizzled. Each card stays at least 600 ms so fast or cached tools don't flicker. On a finished message the cards fold into a "📖 N spells cast" disclosure.</li>
+    <li><b>Drift:</b> <code>create_chart</code> and <code>get_coaching_brief</code> are agent tools but have no label and no spell, so they show the generic "Searching Warcraft Logs" and the default spell, although the comment in <code>spells.ts</code> says every tool must be mapped.</li>
+  </ul>
+</section>
+
+<section class="layer" id="theme">
+  <h2>Theme</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">tailwindcss ^4.3.3</span><span class="chip">radix-ui ^1.7.0</span><span class="chip">class-variance-authority ^0.7.1</span><span class="chip">clsx ^2.1.1</span><span class="chip">tailwind-merge ^3.7.0</span><span class="chip">@tsparticles/react ^4.4.0</span><span class="chip">@tsparticles/slim ^4.4.0</span></div>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>One fixed theme, "Tavern Hearth"</b> (ember gold over dark oak). Its tokens are <code>oklch()</code> values on <code>:root</code> in <code>frontend/src/index.css</code>, read by Tailwind's <code>@theme inline</code> block, by the shadcn components and by the hand-written rules in <code>styles.css</code>. There is no theme or background switcher. <code>index.html</code> sets <code>data-theme="dark"</code>, which turns on Tailwind's <code>dark:</code> variant.</li>
+    <li><b>Fonts.</b> Cinzel (display) and Alegreya Sans (body) are loaded from Google Fonts by an <code>@import</code> at the top of <code>index.css</code>; this is the app's one third-party request from the browser. The PDF uses bundled copies of the same fonts.</li>
+    <li><b>Ambient world</b> (<code>components/Ambient.tsx</code>): slow blurred gradients, grain and vignette in CSS over the fixed backdrop image (<code>--bg-image</code>, from <code>frontend/public/assets/</code>), plus a capped particle field (<code>AmbientParticles.tsx</code>, lazy). Particles and drift are off under reduced motion, and the engine pauses when the tab is hidden and while a reply streams.</li>
+    <li><b>Colour bridge.</b> The PDF copies these tokens as hex in <code>backend/app/services/report_theme.py</code>, which must be kept in step by hand.</li>
+  </ul>
+</section>
+
+<section class="layer" id="scroll">
+  <h2>Scrolling</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">use-stick-to-bottom ^1.1.6</span></div>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>MessageList</code> is a <code>StickToBottom</code> container: while the player is at the bottom, new content keeps the view pinned there, with smooth resize. Scrolling up releases it, and a "Back to bottom" button appears.</li>
+    <li><b>Scroll to the question</b> (sc-140): when an answer completes and the player was following the stream, the view scrolls so the question that produced it sits at the top, so reading starts at the beginning. It releases the stick-to-bottom lock to do that, and re-engages it when the next turn starts (BUG-006). Reopening a chat, follow-ups, a failed turn or a player who scrolled away leave the view alone. Reduced motion makes the scroll instant.</li>
+  </ul>
+</section>
+
+<section class="layer" id="api">
+  <h2>Talking to the API</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Same origin.</b> The browser only ever calls its own origin; the Vite proxy (dev) or nginx (production) forwards <code>/api</code> and <code>/ws</code> to the backend. Requests send the session cookie with <code>credentials: "include"</code>.</li>
+    <li><b>CSRF.</b> <code>AuthProvider</code> receives the per-session CSRF token from login, invitation accept or <code>GET /api/auth/me</code> and hands it to <code>setCsrfToken</code>; it lives in memory only, never in storage. Every POST, PATCH and DELETE adds it as <code>X-CSRF-Token</code>. The WebSocket needs no token: its handshake is checked by cookie and <code>Origin</code>.</li>
+    <li><b>Errors.</b> <code>send()</code> in <code>api/restClient.ts</code> turns a failed response into an <code>ApiError</code> with status, code and message from the backend's error envelope. A rejected WebSocket handshake (close code 1008) sends the browser to <code>/login</code>.</li>
+    <li><b>PDF downloads</b> are a plain <code>fetch</code> of the report URL, turned into a blob and saved through a temporary link.</li>
+  </ul>
+</section>
+
+<section class="layer" id="why">
+  <h2>Why</h2>
+  <p class="why">React, Vite and TypeScript to start with: the first UI requirement met with the least machinery, and easy to extend.<cite>specs/001-streaming-chat-frontend/research.md §7</cite></p>
+  <p class="why">React 19, Tailwind v4, shadcn/ui, <code>motion</code>, Streamdown, <code>use-stick-to-bottom</code> and tsparticles were a user-directed full adoption of the chat-UI skill stack: Streamdown (no broken markdown mid-stream), motion (declarative spell-card lifecycle) and stick-to-bottom (chat scroll) each solve a problem the hand-rolled code handled poorly. <b>Alternatives:</b> a curated subset or CSS only (declined by the user); staying on React 18 (fights the peer dependencies).<cite>specs/004-raid-sourcing-ux/research.md R7</cite></p>
+  <p class="why">One fixed theme with tokens on <code>:root</code> and no switcher: the owner wanted "one good theme we set", and one theme is simpler than a multi-theme engine. <b>Alternatives:</b> a theme switcher with View Transitions; a theme plus background toggle.<cite>specs/004-raid-sourcing-ux/research.md R8</cite></p>
+  <p class="why">Smoothing on <code>requestAnimationFrame</code>, CSS-only word ink-in, a spell registry keyed by tool name with a default fallback, and a minimum card display time, so the stream reads smoothly at 60 fps and per-tool presentation stays data-driven.<cite>specs/004-raid-sourcing-ux/research.md R9</cite></p>
+  <p class="why">shadcn/ui through the shadcn MCP is a constitution rule: one registry-backed implementation per control; hand-built components (spell cards, cast bars, rune circle) need a recorded reason.<cite>.specify/memory/constitution.md Principle VII</cite></p>
+  <p class="why">Components come in through the shadcn CLI, which brings the unified <code>radix-ui</code> package and the icon-library mapping. <b>Alternatives:</b> copying sources by hand; writing our own primitives.<cite>specs/010-shadcn-ui-adoption/research.md R1</cite></p>
+  <p class="why">Plotly in the browser: interactive, hoverable charts were the user's explicit goal; the weight is contained by <code>plotly.js-dist-min</code> and lazy loading.<cite>specs/005-guild-context-artifacts/plan.md (Complexity Tracking)</cite></p>
+  <p class="why"><code>react-router-dom</code>: public auth routes, the guarded chat and the admin page could not be expressed by the single-<code>App</code> render without a hand-rolled router.<cite>specs/006-multi-tenancy/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">The same-origin proxy is what makes the <code>__Host-</code> cookie, <code>SameSite=Lax</code> and a header CSRF token the simplest correct session design, with no credentialed CORS.<cite>specs/006-multi-tenancy/research.md R3</cite></p>
+  <p class="why">The welcome page is the no-conversation state, not a route, and learns about new raids by polling: no navigation change and no new transport at a 3 s cadence.<cite>specs/013-welcome-recent-raids/research.md R6, R11</cite></p>
+  <p class="why">Streaming text outside React state, memoised shell components and lazy chunks for KaTeX, particles and non-chat pages: a token used to re-render the whole app.<cite>documentation/ai_guide.md §17</cite></p>
+  <p class="why">No images in model markdown: a crafted log or web page could make the model emit an image URL that leaks data the moment it renders, and a same-origin image fired an authenticated, costly request; the app itself never puts images in markdown.<cite>frontend/src/components/StreamMarkdown.tsx (sc-157, sc-272 and QA BUG-001 comments)</cite></p>
+  <p class="why">Scroll to the question when the answer completes, so the reader starts at the beginning of a long answer instead of its end.<cite>frontend/src/components/MessageList.tsx (ScrollToQuestion comment, sc-140)</cite></p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>frontend/package.json</code>, <code>frontend/components.json</code></li>
+    <li><code>frontend/vite.config.ts</code>, <code>frontend/vitest.config.ts</code></li>
+    <li><code>frontend/Dockerfile</code>, <code>frontend/nginx.conf</code>, <code>frontend/index.html</code></li>
+    <li><code>frontend/src/main.tsx</code>, <code>App.tsx</code></li>
+    <li><code>frontend/src/api/restClient.ts</code>, <code>wsClient.ts</code></li>
+    <li><code>frontend/src/auth/</code></li>
+    <li><code>frontend/src/components/StreamMarkdown.tsx</code>, <code>MessageList.tsx</code>, <code>PlotlyArtifact.tsx</code>, <code>SpellCard.tsx</code>, <code>Ambient.tsx</code>, <code>AmbientParticles.tsx</code>, <code>BackendBootGate.tsx</code>, <code>WelcomePanel.tsx</code>, <code>Sidebar.tsx</code>, <code>ProposalCard.tsx</code>, <code>ModelSelect.tsx</code>, <code>Composer.tsx</code></li>
+    <li><code>frontend/src/components/ui/</code>, <code>components/profile/</code></li>
+    <li><code>frontend/src/pages/</code></li>
+    <li><code>frontend/src/lib/</code>, <code>hooks/useSmoothText.ts</code></li>
+    <li><code>frontend/src/toolLabels.ts</code>, <code>uiPrefs.ts</code>, <code>index.css</code></li>
+    <li><code>wcl_agent/agent.py</code> (tool list)</li>
+    <li><code>backend/app/api/admin_guides.py</code>, <code>cache_stats.py</code></li>
+    <li><code>specs/001-streaming-chat-frontend/research.md</code></li>
+    <li><code>specs/004-raid-sourcing-ux/research.md</code></li>
+    <li><code>specs/005-guild-context-artifacts/plan.md</code></li>
+    <li><code>specs/006-multi-tenancy/research.md</code>, <code>plan.md</code></li>
+    <li><code>specs/010-shadcn-ui-adoption/research.md</code></li>
+    <li><code>specs/013-welcome-recent-raids/research.md</code></li>
+    <li><code>documentation/ai_guide.md</code>, <code>.specify/memory/constitution.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

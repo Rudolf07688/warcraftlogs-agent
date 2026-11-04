@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Knowledge base · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Data</p>
+  <h1>Knowledge base</h1>
+  <p class="lede">The app turns what it already holds (stored Warcraft Logs responses, published class guides and finished chat exchanges) into short text chunks, embeds them with pgvector in the existing Postgres, and gives the agent one tool, <code>search_knowledge</code>, to search them before it calls Warcraft Logs. Indexing runs in the background and never holds up a fetch, a guide run or a chat turn. Every search applies each source's own visibility rule inside the SQL.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#overview">Overview</a>
+    <a href="#write-path">Write path</a>
+    <a href="#chunkers">Chunkers</a>
+    <a href="#embedder">Embedder</a>
+    <a href="#indexer">Indexer &amp; store</a>
+    <a href="#visibility">Visibility &amp; tenancy</a>
+    <a href="#read-path">Read path</a>
+    <a href="#search">Search</a>
+    <a href="#names">Name resolution</a>
+    <a href="#untrusted">Hits as data &amp; prompt</a>
+    <a href="#backfill">Backfill CLI</a>
+    <a href="#eval">Eval</a>
+    <a href="#config">Config</a>
+    <a href="#limits">Known limits</a>
+  </nav>
+</header>
+
+<!-- ============================================================ -->
+<section class="layer" id="overview">
+  <h2>Overview</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">pgvector&gt;=0.5.1 (Python)</span><span class="chip">Postgres full-text search</span><span class="chip">gemini-embedding-001 · 768-d</span><span class="chip">google-adk tool</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>The knowledge base was built in two features: 043 (chunk store, chunkers, embedder, indexer, backfill) and 044 (shared name resolver, hybrid search, the agent tool, the search-first prompt clause and the eval). All of it is backend code; the frontend has no knowledge-base UI.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Module</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>backend/app/kb/chunks.py</code></td><td><code>ChunkDraft</code>, <code>ChatChunkDraft</code>, <code>PlayerRef</code>; text bounds (<code>MAX_TEXT</code> 2,000, <code>MAX_CHAT_TEXT</code> 6,000, <code>MAX_LABEL</code> 200 characters); SHA-256 <code>content_hash</code>.</td></tr>
+      <tr><td><code>backend/app/kb/wcl_chunker.py</code></td><td>Stored WCL responses to chunks (fight summaries, tables, per-player and per-source chunks).</td></tr>
+      <tr><td><code>backend/app/kb/guide_chunker.py</code></td><td>Published guides to one chunk per markdown section.</td></tr>
+      <tr><td><code>backend/app/kb/chat_chunker.py</code></td><td>One finished exchange (question plus saved answer) to one chat chunk.</td></tr>
+      <tr><td><code>backend/app/kb/names.py</code></td><td>The chunkers' only door to the shared name resolver; never raises (unknown is stored as NULL).</td></tr>
+      <tr><td><code>backend/app/kb/embedder.py</code></td><td><code>Embedder</code> protocol, <code>VertexEmbedder</code>, <code>get_embedder()</code> / <code>set_embedder()</code>.</td></tr>
+      <tr><td><code>backend/app/kb/indexer.py</code></td><td><code>KbIndexer</code>: bounded queue, one consumer, embed sweep; hooks <code>offer_fetch</code>, <code>offer_guide</code>, <code>offer_exchange</code>.</td></tr>
+      <tr><td><code>backend/app/kb/store.py</code></td><td>The one chunk writer, shared by the indexer and the backfill.</td></tr>
+      <tr><td><code>backend/app/kb/search.py</code></td><td>Hybrid search: SQL legs, reciprocal rank fusion, relaxation, output cap, the tool payload.</td></tr>
+      <tr><td><code>backend/app/agent_tools/kb_tools.py</code></td><td><code>search_knowledge</code> and <code>KB_TOOLS = ToolGroup("Stored knowledge", ...)</code>.</td></tr>
+      <tr><td><code>backend/app/services/name_resolver.py</code></td><td>Loose names ("arms warr", "hc", "Ula'tek", a friend) to canonical filter values; shared with the stored-data tools.</td></tr>
+      <tr><td><code>backend/cli/kb_backfill.py</code></td><td>Backfill of sources stored before 043: estimate first, resumable.</td></tr>
+      <tr><td><code>backend/evals/kb/</code></td><td>Recall and latency eval (<code>run</code>), recorded embeddings (<code>record</code>), agent filter accuracy (<code>live</code>).</td></tr>
+    </tbody>
+  </table></div>
+  <p>Two tables, created by migration <code>0019_kb_chunks</code> (the DDL is on the <a href="database.html">Database &amp; migrations</a> page):</p>
+  <ul>
+    <li><code>kb_chunks</code>: global, no RLS. <code>kind</code> is <code>wcl</code> (FK <code>raw_fetch_id</code> to <code>raw_fetches.query_key</code>) or <code>guide</code> (FK <code>guide_id</code> to <code>spec_guides.id</code>); a check constraint allows exactly one of them. Both FKs <code>ON DELETE CASCADE</code>.</li>
+    <li><code>kb_chat_chunks</code>: per workspace, RLS <code>tenant_isolation</code>. Unique on <code>(tenant_id, conversation_id, message_seq)</code>; the conversation is referenced as <code>(conversation_id, tenant_id)</code>, cascade on delete.</li>
+    <li>Both: rendered <code>text</code>, <code>content_hash</code>, nullable <code>embedding vector(768)</code> (NULL = not embedded yet), <code>embed_model</code>, <code>embedded_at</code>, a generated <code>tsv</code> column, typed filter columns and <code>extra</code> JSONB. Indexes: HNSW on <code>embedding</code> (<code>vector_cosine_ops</code>), GIN on <code>tsv</code>, <code>extra</code> and <code>players</code>/<code>characters</code> (<code>jsonb_path_ops</code>), plus B-trees on the selective filters (<code>backend/app/db/models.py</code>, <code>KbChunk</code>, <code>KbChatChunk</code>).</li>
+    <li>The <code>tsv</code> column uses the <code>simple</code> config for WCL chunks and <code>english</code> for guides and chats. On SQLite (unit tests) it compiles to <code>NULL</code>; search itself needs Postgres.</li>
+  </ul>
+  <p>Neighbours: the exact stored-data lookups (<code>list_stored_fights</code>, <code>get_stored_fight_table</code>, <code>list_stored_reports_for_character</code>, feature 045) are not part of the knowledge base: they read <code>raw_fetches</code> through the 039 rule without embeddings, but share the name resolver. See <a href="wcl-data.html">WCL client, cache &amp; store</a>.</p>
+
+  <h3>Why</h3>
+  <p class="why">The goal is that the agent searches what the app already knows before it calls Warcraft Logs, with every result one the asking user may see; pgvector in the existing Postgres and Postgres full-text search merged by RRF were the owner's choices.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Goal; Owner decisions)</cite></p>
+  <p class="why">Two tables, so each gets the RLS it needs without a nullable-tenant policy; the <code>simple</code> config for WCL text keeps names, spells and report codes unstemmed.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Visibility; Storage: pgvector)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="write-path">
+  <h2>Write path: source → chunk → store → embed</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">asyncio.Queue</span><span class="chip">SQLAlchemy async</span><span class="chip">google-genai embed_content</span></div>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 500" role="img" aria-labelledby="kbw-title kbw-desc">
+      <title id="kbw-title">Knowledge base write path</title>
+      <desc id="kbw-desc">Three hooks offer jobs to the KbIndexer queue: the WCL fetch writer after a batch commit for a response whose stored body changed, the guide pipeline after a publish commit, and the chat socket after an answer is saved. The indexer's one consumer chunks each job, writes the chunks through kb/store.py into kb_chunks or kb_chat_chunks, then sends the rows without a vector to the embedder, which calls the genai client and stores each vector only if the row's content hash still matches. The backfill CLI uses the same chunkers, store and embed step without the queue.</desc>
+      <defs>
+        <marker id="kbw-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="kbw-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <text class="zlbl" x="20" y="24">Sources (hooks)</text>
+      <rect class="node" x="20" y="40" width="220" height="70" rx="10"/>
+      <text class="t" x="130" y="68" text-anchor="middle">WCL fetch writer</text>
+      <text class="sub" x="130" y="92" text-anchor="middle">body changed · offer_fetch</text>
+      <rect class="node" x="20" y="140" width="220" height="70" rx="10"/>
+      <text class="t" x="130" y="168" text-anchor="middle">Guide pipeline</text>
+      <text class="sub" x="130" y="192" text-anchor="middle">after publish · offer_guide</text>
+      <rect class="node" x="20" y="240" width="220" height="70" rx="10"/>
+      <text class="t" x="130" y="268" text-anchor="middle">Chat socket</text>
+      <text class="sub" x="130" y="292" text-anchor="middle">answer saved · offer_exchange</text>
+      <rect class="node ext" x="20" y="400" width="220" height="70" rx="10"/>
+      <text class="t" x="130" y="428" text-anchor="middle">kb_backfill CLI</text>
+      <text class="sub" x="130" y="452" text-anchor="middle">--confirm · no queue</text>
+
+      <rect class="node core" x="300" y="125" width="200" height="110" rx="10"/>
+      <text class="t" x="400" y="157" text-anchor="middle">KbIndexer</text>
+      <text class="sub" x="400" y="182" text-anchor="middle">bounded queue (1000)</text>
+      <text class="sub" x="400" y="204" text-anchor="middle">one consumer task</text>
+      <text class="sub" x="400" y="224" text-anchor="middle">full → drop + warn</text>
+
+      <rect class="node" x="570" y="40" width="180" height="70" rx="10"/>
+      <text class="t" x="660" y="68" text-anchor="middle">Chunkers</text>
+      <text class="sub" x="660" y="92" text-anchor="middle">wcl · guide · chat</text>
+      <rect class="node" x="570" y="165" width="180" height="70" rx="10"/>
+      <text class="t" x="660" y="193" text-anchor="middle">kb/store.py</text>
+      <text class="sub" x="660" y="217" text-anchor="middle">keep · rewrite · delete</text>
+      <rect class="node" x="570" y="320" width="180" height="70" rx="10"/>
+      <text class="t" x="660" y="348" text-anchor="middle">Embedder</text>
+      <text class="sub" x="660" y="372" text-anchor="middle">RETRIEVAL_DOCUMENT</text>
+
+      <rect class="node store" x="780" y="150" width="165" height="100" rx="10"/>
+      <text class="t" x="862" y="180" text-anchor="middle">Postgres</text>
+      <text class="sub" x="862" y="204" text-anchor="middle">kb_chunks</text>
+      <text class="sub" x="862" y="226" text-anchor="middle">kb_chat_chunks</text>
+      <rect class="node ext" x="780" y="320" width="165" height="70" rx="10"/>
+      <text class="t" x="862" y="348" text-anchor="middle">genai client</text>
+      <text class="sub" x="862" y="372" text-anchor="middle">Vertex or Gemini API</text>
+
+      <path class="flow" marker-end="url(#kbw-ah)" d="M240,75 H268 V150 H297"/>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M240,175 H297"/>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M240,275 H268 V210 H297"/>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M500,150 H530 V60 H567"/>
+      <text class="lbl" x="522" y="112" text-anchor="end">job</text>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M660,110 V162"/>
+      <text class="lbl" x="670" y="142">drafts</text>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M750,200 H777"/>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M500,215 H530 V355 H567"/>
+      <text class="lbl" x="520" y="290" text-anchor="end">ids without a vector</text>
+      <text class="lbl" x="520" y="310" text-anchor="end">+ sweep every 600 s</text>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M750,343 H777"/>
+      <path class="flow ret" marker-end="url(#kbw-ah2)" d="M780,368 H753"/>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M700,320 V285 H862 V253"/>
+      <text class="lbl" x="800" y="278" text-anchor="middle">vector if hash matches</text>
+      <path class="flow" marker-end="url(#kbw-ah)" d="M240,435 H548 V95 H567"/>
+      <text class="lbl" x="390" y="425" text-anchor="middle">same chunkers, store, embed</text>
+    </svg>
+    <figcaption>Writes never block their caller: the hooks only enqueue. The backfill (grey) calls the same code directly.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>A source finishes: the fetch writer commits a batch (<code>services/fetch_persistence.py</code>, <code>store_batch</code>, for each item in <code>BatchResult.changed</code>), the guide pipeline commits a publish (<code>services/guide_pipeline/__init__.py</code>), or the chat socket saves a turn's final answer (<code>api/ws.py</code>, only when the turn streamed text and was not empty).</li>
+    <li>The hook builds a small job and calls <code>KbIndexer.offer()</code>: O(1), never awaits, never raises; from another thread it hops to the indexer's loop. A full queue drops the job and counts it in a throttled warning. Without a running indexer the hooks do nothing.</li>
+    <li>The consumer takes one job, chunks it and writes the chunks in its own short transaction (<code>store.replace_source_chunks</code> or <code>store.upsert_chat_chunk</code>).</li>
+    <li>Outside any transaction, it embeds the rows that job left without a vector, <code>kb_embed_batch</code> rows at a time, and stores each vector only where the row's <code>content_hash</code> is still the one embedded.</li>
+    <li>Every <code>kb_embed_sweep_s</code> the consumer sweeps: global rows still NULL, then each workspace's chat rows under that workspace's scope, at most 2,000 rows per table (per workspace for chats) per sweep.</li>
+  </ol>
+
+  <h3>Why</h3>
+  <p class="why">Embedding must never be on the hot path: it runs in a background queue the way the 039 fetch writer does, and a chat turn never waits for it.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Embeddings: Vertex)</cite></p>
+  <p class="why">A fetch job carries only the key and the query; the consumer re-reads the body from the store, so a queued job never holds a multi-MB response.<cite>backend/app/kb/indexer.py (FetchJob, P7 SEC-001)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="chunkers">
+  <h2>Chunkers</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Python dataclasses</span><span class="chip">regex</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>Each chunker renders its source as short, readable text with the key names spelled out, and fills the filter columns from the source's structure (query variables, the response, the guide row), never from a model. Every class, spec, difficulty and player name goes through <code>kb/names.py</code>, so stored values match what search filters on. <code>chunk_key</code> is stable within a source, so a re-index keeps unchanged chunks and their vectors.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Source</th><th>Chunk (<code>chunk_key</code>)</th><th>Content and limits</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="4">WCL fetch<br><code>wcl_chunker.py</code></td><td>Fight summary <code>fight:&lt;code&gt;:&lt;id&gt;</code></td><td>From our report summary queries (<code>ReportSummary</code>, <code>ReportsBatch</code>): one per boss fight (fights with an <code>encounterID</code>), at most 60 per report. Difficulty, kill/wipe, keystone, item level, size, roster (at most 40 players with class and spec). Report title capped at 80, guild at 40 characters.</td></tr>
+      <tr><td>Table <code>table</code></td><td>One per fight and metric (<code>dataType</code> from the query text): the top 10 entries. Summary, Deaths (20) and Buffs/Debuffs/Auras uptime have their own renderings. The boss, difficulty and kill come from that report's fight-summary chunk (<code>store.fight_contexts</code>), since a table body doesn't say.</td></tr>
+      <tr><td>Per player <code>player:&lt;key&gt;</code></td><td>Only for a table of more than 10 entries: one chunk per player with amount, rank and share, at most 40.</td></tr>
+      <tr><td>Per source <code>source:&lt;id&gt;</code></td><td>A table filtered to one <code>sourceID</code>: that actor's top 10 abilities.</td></tr>
+      <tr><td>Guide<br><code>guide_chunker.py</code></td><td>Section <code>section:&lt;i&gt;:&lt;n&gt;</code></td><td>One per <code>#</code>/<code>##</code>/<code>###</code> section (text before the first heading is "Overview"), with spec, class, role, content type and section title in the text. Long sections split at paragraph breaks, at most 5 parts; claim markers stripped. Only published guides.</td></tr>
+      <tr><td>Chat<br><code>chat_chunker.py</code></td><td>Exchange (<code>tenant</code>, <code>conversation</code>, <code>message_seq</code>)</td><td>"Question: … Answer: …" up to 6,000 characters; label is the first 12 words of the question. <code>characters</code> lists the workspace's own characters, friends and known players the text names (at most 20, <code>names.mentioned_characters</code>). Tool payloads and frames never reach it: only the streamed answer the socket saved.</td></tr>
+    </tbody>
+  </table></div>
+  <p>What yields no chunks (<code>chunk_fetch</code> returns <code>[]</code>): a fetch that names no exact report code; a table across several reports; an ability-filtered table (<code>abilityID</code>), which must not pass for the metric's table; a table whose metric is unknown; any response shape the chunker doesn't recognise. On the live path the metric comes from the query text. Stored rows keep no query text, so the backfill infers it from the body (Summary, Auras or Deaths only) and skips plain damage, healing or cast tables.</p>
+
+  <h3>Why</h3>
+  <p class="why">Raw JSON embeds badly, so each chunker turns its source into short readable text and keeps a pointer back to it; metadata is extracted at write time from structure, not from a model.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Chunking; Metadata)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="embedder">
+  <h2>Embedder</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">google-genai</span><span class="chip">gemini-embedding-001</span><span class="chip">768 dimensions</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/kb/embedder.py</code>: <code>Embedder</code> is the seam. The indexer embeds chunks with task <code>RETRIEVAL_DOCUMENT</code>; search embeds queries with <code>RETRIEVAL_QUERY</code>.</li>
+    <li><code>VertexEmbedder</code> calls <code>wcl_agent.llm.generation.embed_texts</code> (the provider layer is the only code that calls model clients) with <code>output_dimensionality=768</code> and <code>auto_truncate=True</code>, under the shared rate-limit loop with its own policy (4 attempts, 2 s initial, 20 s max, 60 s budget). It sends <code>kb_embed_request_batch</code> texts per request (default 1), checks the count and the 768 dimensions, and L2-normalises every vector.</li>
+    <li>The client is <code>provider.genai_client()</code>: Vertex AI when the GCP config is set, else the Gemini API key. It is the same whichever provider serves chat, so embeddings keep working while chat runs on Anthropic.</li>
+    <li><code>get_embedder()</code> returns the test-injected embedder, else <code>None</code> when <code>kb_embed_enabled</code> is off or no genai client can be built, else the process's embedder. The availability check is cached for the life of the process. With no embedder, chunks are still written and stay keyword-searchable.</li>
+    <li><code>KB_DIMENSIONS = 768</code> lives in <code>backend/app/db/models.py</code>; each row records its <code>embed_model</code>, so a model change is a re-embed, not a schema change.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The vectors are normalised because truncated Gemini embeddings aren't unit length; <code>embed_model</code> per row makes a model switch a re-embed.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Embeddings: Vertex)</cite></p>
+  <p class="why">The recorded eval saturated at recall 1.0 for both hybrid and vector-only, so the decision stayed: keep <code>gemini-embedding-001</code>, no BM25 extension.<cite>specs/044-kb-search/eval-writeup.md (Recorded eval)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="indexer">
+  <h2>Indexer and store</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">asyncio</span><span class="chip">SQLAlchemy async</span><span class="chip">Postgres RLS</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Lifecycle</b> (<code>backend/app/main.py</code>, <code>lifespan</code>): when <code>kb_index_enabled</code>, a <code>KbIndexer(max_items=kb_index_queue_max, batch=kb_embed_batch, sweep_s=kb_embed_sweep_s)</code> starts before the fetch writer (whose commits feed it) and stops after it. <code>stop()</code> gives queued jobs 5 s, then drops the rest with a warning. Only the app lifespan starts an indexer; the CLI, the eval and tests leave the hooks as no-ops.</li>
+    <li><b>When a WCL fetch is indexed</b>: <code>offer_fetch</code> runs after the fetch writer's commit, only for items whose stored payload changed, and only queues a fetch that names an exact report code (<code>exact_report_codes</code>) and whose query is chunkable (a report summary operation or a <code>table(… dataType …)</code> query). The consumer reloads the newest stored body (<code>load_fetch_for_index</code>), parsing bodies over 256 kB off the loop. A row that has gone (report gone or private) means nothing to do: its chunks went with it by cascade.</li>
+    <li><b>When a guide is indexed</b>: right after the guide pipeline's publish commit; republishing replaces the guide's chunks.</li>
+    <li><b>When a chat is indexed</b>: after the socket saves a turn's answer, with the user's message and the final text. Turns that produced no answer are not indexed. The chunk is written inside <code>tenant_scope(tenant_id)</code>.</li>
+    <li><b>Replace semantics</b> (<code>store.replace_source_chunks</code>): makes one source's chunks exactly the drafts. New keys are inserted; changed text is rewritten with its vector cleared; keys no longer produced are deleted; unchanged rows keep their vectors. A body that now yields no chunks still runs, so old chunks are dropped. An FK error at commit (source deleted meanwhile) is rolled back and ignored.</li>
+    <li><b>Backlog in the table</b>: a NULL <code>embedding</code> means "not embedded yet". After an embedding failure the consumer pauses embedding until the next sweep (rows stay keyword-searchable). <code>store.store_vectors</code> writes a vector only <code>WHERE content_hash</code> still matches, so a re-chunk in between leaves the row pending.</li>
+    <li>Errors in a job or a sweep are counted and logged through a throttled warning (database text is described safely, <code>fetch_persistence._describe</code>); nothing reaches the caller. <code>IndexerStats</code> (dropped, failed, embedded) is kept in memory only; no endpoint shows it.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The indexer is shaped like the 039 fetch writer: hooks only enqueue and one consumer does the work, so no WCL fetch, guide run or chat turn ever waits for it.<cite>backend/app/kb/indexer.py (module docstring)</cite></p>
+  <p class="why">A body that yields no chunks is still written, so a fetch that changed shape drops its old chunks.<cite>backend/app/kb/indexer.py (_index_fetch, P7 SEC-002a)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="visibility">
+  <h2>Visibility and tenancy of chunks</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Postgres RLS</span><span class="chip">SQL EXISTS clause</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>Each source keeps the visibility it already had; chunks never add a sharing rule. The rules are applied in the SQL of every search leg (<code>kb/search.py</code>, <code>_chunk_where</code>, <code>_chat_where</code>); nothing is post-filtered, and every filter is ANDed onto the visibility predicate, so no filter can widen the scope.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Kind</th><th>Table</th><th>Who sees it</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td><code>wcl</code></td><td><code>kb_chunks</code> (global)</td><td>A workspace sees a chunk only while its fetch is visible to it under the 039 rule.</td><td><code>fetch_visible_clause(raw_fetch_id, tenant_id, since)</code> from <code>repositories/raw_fetches.py</code> (the one definition): every report code of the fetch is public, or granted to the workspace, checked within <code>raw_store_reverify_days</code> (default 1 day). Plus <code>fetch_names_code</code>: the chunk's own <code>report_code</code> must be one its fetch names.</td></tr>
+      <tr><td><code>guide</code></td><td><code>kb_chunks</code> (global)</td><td>Everyone.</td><td>Guides are global, like <code>spec_guides</code>.</td></tr>
+      <tr><td><code>chat</code></td><td><code>kb_chat_chunks</code> (RLS)</td><td>Every member of the workspace (there is no per-user column on conversations).</td><td>The search session is scoped with <code>set_scope(tenant_id)</code> so RLS applies; an explicit <code>tenant_id</code> predicate is added as defence in depth.</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li>The workspace comes only from the authenticated chat turn: <code>search_knowledge</code> reads <code>current_identity</code> and checks it against the ADK session's <code>user_id</code>. Outside a chat turn (greeting, guide jobs) the tool fails closed with "Knowledge search is unavailable in this session."</li>
+    <li>Deletes cascade: removing a stored fetch (report gone), a guide or a conversation removes its chunks.</li>
+    <li>Writers: global rows are written in plain sessions; chat rows only inside <code>tenant_scope</code>, with explicit tenant predicates in <code>store.py</code> and <code>names.mentioned_characters</code>.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Visibility is the non-negotiable part: the WCL check is joined at search time through <code>raw_fetch_id</code> and chunks never bypass it; chats stay under the same tenant RLS.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Visibility)</cite></p>
+  <p class="why">The chat chunk references its conversation together with the tenant because FK checks bypass RLS; this stops a chunk of one workspace naming another's conversation.<cite>backend/migrations/versions/0019_kb_chunks.py (docstring)</cite></p>
+  <p class="why">The chunk's report code must be one its fetch names, or it would ride on that fetch's visibility.<cite>backend/app/kb/search.py (_chunk_where, P7 SEC-001)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="read-path">
+  <h2>Read path: tool → search → hits</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">google-adk FunctionTool</span><span class="chip">asyncio.gather</span><span class="chip">pgvector HNSW</span><span class="chip">ts_rank_cd</span></div>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 620" role="img" aria-labelledby="kbr-title kbr-desc">
+      <title id="kbr-title">Sequence: a search_knowledge call</title>
+      <desc id="kbr-desc">The agent model calls search_knowledge with queries and filters. The tool takes the workspace from the chat turn, resolves names through the name resolver, and passes a request of canonical values to kb search. Search embeds all queries in one call with a 3 second timeout, falling back to keyword only. It runs one SQL statement per query in parallel against Postgres, fuses the candidates by reciprocal rank fusion, relaxes soft filters and repeats while it has fewer than k hits, then caps the result. The tool returns the payload with each hit's text in data blocks.</desc>
+      <defs>
+        <marker id="kbr-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="kbr-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <g>
+        <rect class="node ext" x="5" y="10" width="150" height="50" rx="8"/><text class="t" x="80" y="41" text-anchor="middle">Agent model</text>
+        <rect class="node core" x="165" y="10" width="150" height="50" rx="8"/><text class="t" x="240" y="41" text-anchor="middle" style="font-size:15px">search_knowledge</text>
+        <rect class="node" x="325" y="10" width="150" height="50" rx="8"/><text class="t" x="400" y="41" text-anchor="middle">Name resolver</text>
+        <rect class="node core" x="485" y="10" width="150" height="50" rx="8"/><text class="t" x="560" y="41" text-anchor="middle">kb/search.py</text>
+        <rect class="node" x="645" y="10" width="150" height="50" rx="8"/><text class="t" x="720" y="41" text-anchor="middle">Embedder</text>
+        <rect class="node store" x="805" y="10" width="150" height="50" rx="8"/><text class="t" x="880" y="41" text-anchor="middle">Postgres</text>
+      </g>
+      <path class="life" d="M80,60 V610 M240,60 V610 M400,60 V610 M560,60 V610 M720,60 V610 M880,60 V610"/>
+
+      <path class="flow" marker-end="url(#kbr-ah)" d="M80,100 H237"/><text class="lbl" x="160" y="92" text-anchor="middle">1 queries + filters</text>
+      <path class="flow" marker-end="url(#kbr-ah)" d="M240,125 H275 V150 H243"/><text class="lbl" x="285" y="142">2 workspace from chat turn</text>
+      <path class="flow" marker-end="url(#kbr-ah)" d="M240,195 H397"/><text class="lbl" x="320" y="187" text-anchor="middle">3 resolve names</text>
+      <path class="flow ret" marker-end="url(#kbr-ah2)" d="M400,235 H243"/><text class="lbl" x="320" y="227" text-anchor="middle">4 canonical values</text>
+      <path class="flow" marker-end="url(#kbr-ah)" d="M240,275 H557"/><text class="lbl" x="400" y="267" text-anchor="middle">5 SearchRequest</text>
+      <path class="flow" marker-end="url(#kbr-ah)" d="M560,315 H717"/><text class="lbl" x="640" y="307" text-anchor="middle">6 embed queries ≤ 3 s</text>
+      <path class="flow ret" marker-end="url(#kbr-ah2)" d="M720,355 H563"/><text class="lbl" x="640" y="347" text-anchor="middle">7 vectors or none</text>
+      <path class="flow" marker-end="url(#kbr-ah)" d="M560,395 H877"/><text class="lbl" x="720" y="387" text-anchor="middle">8 one statement per query, in parallel</text>
+      <path class="flow ret" marker-end="url(#kbr-ah2)" d="M880,435 H563"/><text class="lbl" x="720" y="427" text-anchor="middle">9 candidates per leg</text>
+      <path class="flow" marker-end="url(#kbr-ah)" d="M560,465 H595 V492 H563"/><text class="lbl" x="605" y="484">10 fuse; relax, repeat 8 if fewer than k</text>
+      <path class="flow ret" marker-end="url(#kbr-ah2)" d="M560,545 H243"/><text class="lbl" x="400" y="537" text-anchor="middle">11 capped SearchResult</text>
+      <path class="flow ret" marker-end="url(#kbr-ah2)" d="M240,585 H83"/><text class="lbl" x="160" y="577" text-anchor="middle">12 hits in &lt;data&gt;</text>
+    </svg>
+    <figcaption>One deadline (8 s) covers every pass of steps 8 to 10.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>The agent model calls <code>search_knowledge</code> with 1 to 5 queries and optional typed filters.</li>
+    <li>The tool takes the workspace from <code>current_identity</code> and checks it against the ADK session user; no argument can name a workspace.</li>
+    <li>It validates the arguments and resolves class, spec, difficulty, encounter and character through <code>services/name_resolver.py</code> (encounter and character in a tenant-scoped session).</li>
+    <li>It gets canonical values back, or a <code>ResolutionError</code> whose text (with close matches) goes back to the model as a tool error.</li>
+    <li>It hands <code>kb/search.search</code> a <code>SearchRequest</code> of canonical values only.</li>
+    <li>Search embeds all queries in one call (<code>RETRIEVAL_QUERY</code>, 3 s timeout).</li>
+    <li>On failure or no embedder, it continues on keywords only (<code>mode: keyword_only</code>, with a note).</li>
+    <li>Each query runs as one <code>UNION ALL</code> statement (vector and keyword branch per kind), all queries concurrently, each in its own tenant-scoped session.</li>
+    <li>Each statement returns at most 40 candidates per leg.</li>
+    <li>Candidates are fused by RRF and deduplicated by source; while there are fewer than <code>k</code> hits, the next soft filter is dropped and the pass repeats.</li>
+    <li>The result is cut to <code>k</code> hits and capped at 6,000 serialised characters.</li>
+    <li>The tool returns <code>kb_search.payload(result)</code>: each hit's text and free-text source fields inside <code>&lt;data&gt;…&lt;/data&gt;</code>.</li>
+  </ol>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="search">
+  <h2>Search</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pgvector &lt;=&gt; cosine</span><span class="chip">hnsw.iterative_scan</span><span class="chip">plainto_tsquery</span><span class="chip">RRF k=60</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>SQL legs</b> (<code>kb/search.py</code>, <code>_branches</code>, <code>run_query</code>): one statement per query, a <code>UNION ALL</code> with one branch per (kind, leg), each with its own <code>ORDER BY … LIMIT 40</code> so the HNSW and GIN indexes serve it. The vector leg orders by cosine distance (<code>&lt;=&gt;</code>) over rows with an embedding; the keyword leg filters on <code>tsv @@ query</code> and orders by <code>ts_rank_cd</code>.</li>
+    <li><b>Keyword query</b>: the query's lexemes are OR-ed (<code>plainto_tsquery</code>, then <code>&amp;</code> replaced by <code>|</code>), since natural questions rarely contain every word of a chunk. For WCL chunks (<code>simple</code> config) the words that Postgres' English dictionary would drop are removed first, or "the" would match nearly every chunk.</li>
+    <li><b>Per session</b>: a process-wide semaphore of 5 search sessions; the session is RLS-scoped to the workspace and sets, transaction-locally in one round trip, <code>statement_timeout = 3000</code> ms and <code>hnsw.iterative_scan = strict_order</code> (pgvector 0.8+, so a WHERE clause doesn't starve the HNSW scan). Not Postgres: <code>SearchUnavailable</code>, which the tool reports as "Knowledge search failed".</li>
+    <li><b>Fusion</b> (<code>fuse</code>): RRF (<code>1/(60 + rank)</code>) over each query's legs, then RRF again across the queries, then one hit per source (WCL: report, fight, label; guide: guide and section; chat: conversation and seq). Ties break on chunk id, so the order is deterministic.</li>
+    <li><b>Relaxation</b>: soft filters the agent did not list in <code>user_stated</code> are dropped one at a time, in the order spec, class_name, encounter, dates, while fewer than <code>k</code> hits come back. Hits from a relaxed pass carry <code>relaxed: true</code>; <code>relaxed</code> in the result names the filters dropped. All passes share one 8 s deadline: a timeout in the first pass is an error, a timeout in a later pass keeps the stricter hits with a note.</li>
+    <li><b>Cap</b> (<code>cap</code>): drops the lowest-ranked hits until the serialised result is at most 6,000 characters (<code>capped: true</code>); each hit is rendered once.</li>
+    <li>One log line per search: query count, mode, hits, relaxed filters, capped, milliseconds.</li>
+  </ul>
+  <h3>Filters</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Argument</th><th>Applies to</th><th>Hard or soft</th></tr></thead>
+    <tbody>
+      <tr><td><code>kind</code> (enum wcl, guide, chat)</td><td>all</td><td>hard</td></tr>
+      <tr><td><code>report_code</code> (<code>[A-Za-z0-9]{1,32}</code>)</td><td>wcl; implies <code>kind=wcl</code>, an error with guide or chat</td><td>hard</td></tr>
+      <tr><td><code>class_name</code> (roster enum)</td><td>wcl (chunk class or any player in <code>players</code>), guide</td><td>soft unless stated</td></tr>
+      <tr><td><code>spec</code> (roster enum)</td><td>wcl, guide; a spec alone matches every class that has it</td><td>soft unless stated</td></tr>
+      <tr><td><code>encounter</code> (name or id)</td><td>wcl; a difficulty word in it ("heroic ulatek") also sets <code>difficulty</code></td><td>soft unless stated</td></tr>
+      <tr><td><code>difficulty</code> (enum LFR, Normal, Heroic, Mythic, Mythic+)</td><td>wcl</td><td>never relaxed</td></tr>
+      <tr><td><code>character</code> ("Name" or "Name-Realm")</td><td>wcl (<code>players[].key</code>), chat (<code>characters[].key</code>)</td><td>never relaxed</td></tr>
+      <tr><td><code>since</code>, <code>until</code> (ISO; a bare <code>until</code> date includes that day)</td><td>wcl (<code>start_time</code>), chat (<code>created_at</code>)</td><td>soft unless stated, relaxed together</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Limits</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Constant (<code>kb/search.py</code>)</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td><code>MAX_QUERIES</code> / <code>MAX_QUERY_CHARS</code></td><td>5 queries, 300 characters each (plain text, no control characters)</td></tr>
+      <tr><td><code>DEFAULT_K</code> / <code>MAX_K</code></td><td>8 / 15 hits</td></tr>
+      <tr><td><code>LEG_LIMIT</code> / <code>RRF_K</code></td><td>40 candidates per leg and query / 60</td></tr>
+      <tr><td><code>HIT_TEXT_CHARS</code> / <code>SOURCE_TEXT_CHARS</code></td><td>400 / 120 characters</td></tr>
+      <tr><td><code>OUTPUT_CAP</code></td><td>6,000 characters of serialised result</td></tr>
+      <tr><td><code>EMBED_TIMEOUT_S</code> / <code>SEARCH_TIMEOUT_S</code> / <code>STATEMENT_TIMEOUT_MS</code></td><td>3 s / 8 s / 3,000 ms</td></tr>
+      <tr><td><code>DB_SLOTS</code></td><td>5 concurrent search sessions per process</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Why</h3>
+  <p class="why">Visibility lives in the SQL of every leg and nothing is post-filtered, so no filter can widen what a workspace sees.<cite>backend/app/kb/search.py (module docstring)</cite></p>
+  <p class="why">Visibility, <code>kind</code>, <code>report_code</code> and filters the user stated are hard; the rest relax in a fixed order and the result says which, so the agent can say so. Results stay compact because they go into the model's context.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Query side)</cite></p>
+  <p class="why">The search sessions are limited to 5 per process, well below the connection pool.<cite>backend/app/kb/search.py (DB_SLOTS, P7 SEC-001)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="names">
+  <h2>Name resolution</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">unicodedata NFKD</span><span class="chip">difflib</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/services/name_resolver.py</code> is the one place where what players write becomes canonical filter values; the chunk writers (through <code>kb/names.py</code>), <code>search_knowledge</code> and the stored-data tools all use it.</li>
+    <li><code>name_key()</code>: accents dropped (NFKD), casefolded, letters and digits only; "Ula'tek", "ulatek" and "ULA TEK" share a key. Chunks store it as <code>players[].key</code> / <code>characters[].key</code>.</li>
+    <li>Classes and specs come from the roster (<code>roster_snapshot</code>, <code>normalize_class_name</code>, <code>resolve_spec</code>) plus small alias tables ("warr", "dk", "resto", "bm", "bdk", "hpal", …); an alias whose target the roster doesn't list is ignored. <code>spec_pairs("holy")</code> gives every class with that spec.</li>
+    <li>Difficulty: words and ids ("hc", "m+", 4) to LFR 1, Normal 3, Heroic 4, Mythic 5, Mythic+ 10.</li>
+    <li>Encounters: the cached zone list (<code>load_world_zones</code>) plus the workspace's <code>known_encounters</code>; exact key match first, then a unique part of a name (3+ characters). If the zone list can't load, known encounters still resolve.</li>
+    <li>Characters: the workspace's <code>user_characters</code> (own and friends) and the newest 2,000 <code>known_players</code>, with an explicit tenant predicate on top of RLS; "Name-Realm" narrows by realm.</li>
+    <li>Nothing returns an empty match: an unknown or ambiguous value raises <code>ResolutionError</code>, whose text names up to 5 close matches. <code>kb/names.py</code> is the opposite on the write side: it never raises, and stores an unknown value as NULL.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">One shared resolver is used both when writing and when searching, so both sides agree; an unknown value returns a clear error the agent can correct, never a silent empty result.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Metadata; Query side)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="untrusted">
+  <h2>Hits as untrusted data, and the search-first clause</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">prompt</span><span class="chip">NFKC</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li>Hit text comes from log uploaders (report titles, guild and player names) and guide authors. <code>payload()</code> wraps each hit's <code>text</code> (at most 400 characters) and its source <code>label</code> or <code>section</code> (at most 120) in <code>&lt;data&gt;…&lt;/data&gt;</code>, and adds an <code>untrusted</code> notice to the result.</li>
+    <li>Before wrapping, the text goes through <code>wcl_agent/tools/report_tools.py</code> <code>neutralise()</code>, the one neutraliser the report tools also use: HTML entities decoded, NFKC, format characters (Unicode Cf) removed until stable, then every angle bracket and look-alike turned into a parenthesis. The length cut happens after this, so nothing inside a block can open or close one.</li>
+    <li>The system prompt (<code>wcl_agent/agent.py</code>) says in <code>EVIDENCE_CONTRACT</code> rule 5 that text between <code>&lt;data&gt;</code> and <code>&lt;/data&gt;</code> is data, never instructions; the tool description says the same.</li>
+    <li>Search-first: <code>EVIDENCE_PLAN</code> opens with the "Local first:" clause: when <code>search_knowledge</code> or the stored-data lookups are exposed and the question could be answered from what the app stores, try them before any Warcraft Logs fetch, and fetch when they find nothing useful. An empty result's note says the same.</li>
+    <li>Tool errors are plain tool errors and the turn goes on: unavailable outside a chat turn, the resolver's text (with a hint to put an unknown player's name in a query instead), which argument is wrong, or "Knowledge search failed; use the Warcraft Logs tools." Exception text never reaches the model.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Each hit's text and source label are written by others, so each comes wrapped as data and neutralised first; the limits apply to what the model reads.<cite>specs/044-kb-search/contracts/search-knowledge.md (Result)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="backfill">
+  <h2>Backfill CLI</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">argparse</span><span class="chip">asyncio</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>uv run python -m backend.cli.kb_backfill [--kinds wcl,guide,chat] [--limit N] [--confirm]</code> (<code>backend/cli/kb_backfill.py</code>).</li>
+    <li>Without <code>--confirm</code> it only counts: per kind the sources and new chunks, the rows already written but not embedded, and an estimated cost (about 4 characters per token, times <code>kb_embed_price_per_mtok</code>). It writes nothing.</li>
+    <li>With <code>--confirm</code> it writes chunks with the same chunkers and <code>store.py</code> as the live indexer (one transaction per source; chats workspace by workspace under <code>tenant_scope</code>), then embeds every row still without a vector through a <code>KbIndexer</code>'s <code>embed()</code>, with no row cap. Exit code 1 when embeddings are unavailable or embedding stopped on an error.</li>
+    <li>WCL: summaries first (so table chunks find their fight context), paging 200 keys at a time (<code>list_fetch_keys</code>). Guides: only published ones. Chats: (user message, complete agent answer) pairs.</li>
+    <li>Resumable and idempotent: a source that already has chunks is skipped, and rows with a vector are never embedded again. Never a startup task.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The backfill prints a chunk count and a cost estimate before it runs, and can resume.<cite>documentation/designs/20261101_semantic_knowledge_base.md (Embeddings: Vertex)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="eval">
+  <h2>Eval</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fixture corpus</span><span class="chip">recall@k</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>python -m backend.evals.kb</code> (<code>backend/evals/kb/__main__.py</code>), three modes:
+      <ul>
+        <li><code>run --db URL [--k 8]</code>: seeds the fixture corpus (<code>corpus.json</code>: 15 WCL, 15 guide and 15 chat chunks) and runs the 30 labelled questions (<code>questions.json</code>) in hybrid, vector and keyword mode; reports recall@k and p50/p95 latency of one <code>search</code> call.</li>
+        <li><code>record [--max-texts 300]</code>: embeds the corpus and questions with the real embedder into <code>embeddings.json</code> (committed; set <code>vertex:gemini-embedding-001</code>, 75 vectors). Without that file the run uses a deterministic hashed stand-in (<code>standin.py</code>), whose recall is reported, never asserted.</li>
+        <li><code>live --db URL [--max-questions 30] [--model M]</code>: asks each question as one agent turn on the fast model, with and without the search-first clause, and reports local-answer rate, search rate and filter accuracy.</li>
+      </ul>
+    </li>
+    <li>Throwaway-DB guard: <code>run</code> and <code>live</code> seed fake data and never clean up, so they ask the server for <code>current_database()</code> and refuse anything not named <code>kbeval…</code>, or a database that can't be reached (exit 2).</li>
+    <li><code>record</code> and <code>live</code> call live services and are never part of pytest; <code>backend/tests/test_kb_eval.py</code> runs the Postgres part only when <code>TEST_DATABASE_URL</code> is set.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The URL has many spellings of the same server, so the guard checks the name the server reports for the open connection.<cite>backend/evals/kb/__main__.py (refuse_database, P7 SEC-005, SEC-006)</cite></p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="config">
+  <h2>Config switches and env vars</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pydantic-settings</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>Fields in <code>backend/app/config.py</code> (no prefix: the env var is the field name in upper case); documented, commented out, in <code>.env.example</code>.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Env var</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>KB_INDEX_ENABLED</code></td><td><code>true</code></td><td>Start the background indexer in the app lifespan. Off: no new chunks; search still runs on what exists.</td></tr>
+      <tr><td><code>KB_EMBED_ENABLED</code></td><td><code>true</code></td><td>Off: no document or query embeddings; chunks stay keyword-only and search reports <code>keyword_only</code>.</td></tr>
+      <tr><td><code>KB_EMBED_MODEL</code></td><td><code>gemini-embedding-001</code></td><td>Embedding model (always 768 dimensions).</td></tr>
+      <tr><td><code>KB_INDEX_QUEUE_MAX</code></td><td><code>1000</code></td><td>Queued jobs before new ones are dropped.</td></tr>
+      <tr><td><code>KB_EMBED_BATCH</code></td><td><code>32</code></td><td>Rows read and embedded per round.</td></tr>
+      <tr><td><code>KB_EMBED_REQUEST_BATCH</code></td><td><code>1</code></td><td>Texts per embedding request.</td></tr>
+      <tr><td><code>KB_EMBED_SWEEP_S</code></td><td><code>600</code></td><td>Seconds between sweeps of rows still without a vector (minimum 1).</td></tr>
+      <tr><td><code>KB_EMBED_PRICE_PER_MTOK</code></td><td><code>0.15</code></td><td>USD per million tokens, only for the backfill's estimate.</td></tr>
+      <tr><td><code>RAW_STORE_REVERIFY_DAYS</code></td><td><code>1</code></td><td>Not a KB setting, but sets the window of the WCL visibility check search applies.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Infrastructure: the <code>db</code> service runs <code>pgvector/pgvector:pg17-trixie</code> (<code>docker-compose.yml</code>); migration 0019 creates the <code>vector</code> extension as the owner role and needs pgvector 0.8+ for <code>hnsw.iterative_scan</code>.</p>
+</section>
+
+<!-- ============================================================ -->
+<section class="layer" id="limits">
+  <h2>Known limits</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li>A dropped job (full queue, or still queued at shutdown) of a source that already has chunks stays stale until that source changes again: the backfill only picks up sources with no chunks yet (backlog <code>kb-backfill-hardening</code>, named in <code>kb/indexer.py</code> and <code>config.py</code>).</li>
+    <li>WCL chunks are only searchable while their fetch passes the 039 check within <code>raw_store_reverify_days</code>; chunks of a report not re-checked recently don't show up until it is.</li>
+    <li>Stored rows keep no query text, so the backfill can't chunk plain damage, healing or cast tables (it can't tell which they are).</li>
+    <li><code>region</code>, <code>realm</code> and <code>zone_id</code>/<code>guild</code> exist on <code>kb_chunks</code>, but the WCL chunker never fills <code>region</code> or <code>realm</code>, and search has no zone, guild or kill filter.</li>
+    <li>Indexer counters live only in memory and logs; there is no hit/miss metric for knowledge search beyond the per-search log line.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>backend/app/kb/</code>: <code>__init__.py</code>, <code>chunks.py</code>, <code>wcl_chunker.py</code>, <code>guide_chunker.py</code>, <code>chat_chunker.py</code>, <code>names.py</code>, <code>embedder.py</code>, <code>indexer.py</code>, <code>store.py</code>, <code>search.py</code></li>
+    <li><code>backend/app/agent_tools/kb_tools.py</code>, <code>backend/app/agent_runner.py</code>, <code>backend/app/agent_tools/stored_data_tools.py</code> (header)</li>
+    <li><code>backend/app/services/name_resolver.py</code>, <code>backend/app/repositories/raw_fetches.py</code> (<code>fetch_visible_clause</code>, <code>fetch_names_code</code>, <code>list_fetch_keys</code>, <code>load_fetch_for_index</code>)</li>
+    <li><code>backend/app/main.py</code> (lifespan), <code>backend/app/services/fetch_persistence.py</code> (<code>store_batch</code>), <code>backend/app/services/guide_pipeline/__init__.py</code>, <code>backend/app/api/ws.py</code>, <code>backend/app/tenancy/context.py</code></li>
+    <li><code>backend/app/db/models.py</code> (<code>KbChunk</code>, <code>KbChatChunk</code>, <code>UserCharacter</code>), <code>backend/migrations/versions/0019_kb_chunks.py</code></li>
+    <li><code>wcl_agent/llm/generation.py</code> (<code>embed_texts</code>, <code>embeddings_available</code>), <code>wcl_agent/llm/provider.py</code> (<code>genai_client</code>), <code>wcl_agent/agent.py</code> (<code>EVIDENCE_CONTRACT</code>, <code>EVIDENCE_PLAN</code>), <code>wcl_agent/tools/report_tools.py</code> (<code>neutralise</code>)</li>
+    <li><code>backend/cli/kb_backfill.py</code>, <code>backend/evals/kb/</code> (<code>__init__.py</code>, <code>__main__.py</code>, <code>harness.py</code>, <code>live.py</code>, <code>standin.py</code>, fixtures), <code>backend/tests/test_kb_eval.py</code></li>
+    <li><code>backend/app/config.py</code>, <code>.env.example</code>, <code>docker-compose.yml</code>, <code>pyproject.toml</code></li>
+    <li><code>documentation/designs/20261101_semantic_knowledge_base.md</code>, <code>specs/043-kb-store-embed/contracts/</code>, <code>specs/044-kb-search/contracts/search-knowledge.md</code>, <code>specs/044-kb-search/eval-writeup.md</code></li>
+    <li><code>git log --since=2026-10-31</code> over <code>backend/app/kb</code>, <code>kb_tools.py</code>, <code>backend/cli</code>, <code>backend/evals</code>, <code>name_resolver.py</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

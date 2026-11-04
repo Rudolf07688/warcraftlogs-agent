@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>PDF reports · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · User-facing</p>
+  <h1>PDF reports</h1>
+  <p class="lede">A player can download a whole chat, or a single answer, as a PDF. The backend does not print the transcript: a model first rewrites the chat into a findings document, which is then turned into sanitised HTML and laid out by WeasyPrint in the chat's own dark look, with the turn's charts drawn as vector graphics.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#endpoints">Endpoints</a>
+    <a href="#pipeline">The pipeline</a>
+    <a href="#rewrite">Findings rewrite</a>
+    <a href="#safety">Markdown to safe HTML</a>
+    <a href="#components">Report components</a>
+    <a href="#look">The look</a>
+    <a href="#charts">Charts in the PDF</a>
+    <a href="#limits">Limits and failure</a>
+    <a href="#why">Why</a>
+  </nav>
+</header>
+
+<section class="layer" id="endpoints">
+  <h2>Endpoints</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fastapi&gt;=0.115.0</span></div>
+  <h3>What it does, and where it lives</h3>
+  <p><code>backend/app/api/reports.py</code>. Both routes need a session and use the tenant-scoped database session, so another workspace's chat is a 404. The browser fetches the file and saves it as a blob (<code>downloadReport</code>, <code>downloadMessageReport</code> in <code>frontend/src/api/restClient.ts</code>).</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Route</th><th>Scope</th><th>Title</th><th>File name</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/conversations/{id}/report.pdf</code></td><td>every message of the chat, all its captured graphs and charts</td><td>the tracked raid whose last chat this is, else the chat title</td><td><code>wcl-report-{8 chars}.pdf</code></td></tr>
+      <tr><td><code>GET /api/conversations/{id}/messages/{message_id}/report.pdf</code></td><td>one agent answer, the nearest user question before it, and only the graphs and charts linked to that answer's <code>seq</code></td><td>the chat title; the question is printed under it; an interrupted answer is marked partial</td><td><code>wcl-message-{8 chars}.pdf</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>The chat header has a "⬇ PDF" button for the whole chat; each saved answer has a "⬇ Report" button. In production nginx gives <code>/api/</code> a 300 s read timeout, because a report can take a while.</p>
+</section>
+
+<section class="layer" id="pipeline">
+  <h2>The pipeline</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">weasyprint&gt;=70.0</span><span class="chip">markdown-it-py&gt;=4.2.0</span><span class="chip">mdit-py-plugins&gt;=0.6.1</span><span class="chip">nh3&gt;=0.3.7</span><span class="chip">matplotlib&gt;=3.11.2</span><span class="chip">pypdf&gt;=6.21.1 (tests only)</span></div>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>_synthesize_and_render</code> in <code>reports.py</code> is shared by both routes. It runs the findings rewrite (<code>backend/app/services/report_synthesis.py</code>) and the chart drawing (<code>backend/app/services/charts.py</code>) at the same time, then builds a typed <code>ReportDocument</code> and hands it to <code>render_report_pdf</code> (<code>backend/app/services/pdf_report.py</code>).</li>
+    <li><b>One render thread.</b> Chart drawing and layout are CPU-bound and hold the GIL, so parallel renders only slow each other down. A dedicated single-thread pool (<code>pdf-render</code>) runs them in turn; each chart is its own job, so a waiting render gets in after at most one chart. The chat path never waits behind a report in the default executor.</li>
+    <li>The renderer does no database access and no network fetches: the endpoint gathers plain data (<code>GraphSource</code>, <code>ChartSource</code> dataclasses) before anything reaches the thread.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 920 700" role="img" aria-labelledby="pdf-seq-t pdf-seq-d">
+      <title id="pdf-seq-t">Sequence: PDF report download</title>
+      <desc id="pdf-seq-d">The browser requests the report. reports.py checks the session and tenant, then loads the messages, captured graphs and charts from Postgres. In parallel it asks report_synthesis for a findings document from the report-role model and has the pdf-render thread draw each chart as SVG. It then has the render thread turn the findings into sanitised HTML and a PDF with WeasyPrint, and returns the file.</desc>
+      <defs>
+        <marker id="pdf-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="pdf-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <g>
+        <rect class="node ext" x="17" y="10" width="116" height="48" rx="8"/><text class="t" x="75" y="40" text-anchor="middle" style="font-size:15px">Browser</text>
+        <rect class="node core" x="152" y="10" width="126" height="48" rx="8"/><text class="t" x="215" y="40" text-anchor="middle" style="font-size:15px">reports.py</text>
+        <rect class="node store" x="297" y="10" width="116" height="48" rx="8"/><text class="t" x="355" y="40" text-anchor="middle" style="font-size:15px">Postgres</text>
+        <rect class="node" x="432" y="10" width="126" height="48" rx="8"/><text class="t" x="495" y="40" text-anchor="middle" style="font-size:15px">synthesis</text>
+        <rect class="node ext" x="577" y="10" width="126" height="48" rx="8"/><text class="t" x="640" y="40" text-anchor="middle" style="font-size:15px">Report model</text>
+        <rect class="node" x="732" y="10" width="136" height="48" rx="8"/><text class="t" x="800" y="40" text-anchor="middle" style="font-size:15px">pdf-render</text>
+      </g>
+      <path class="life" d="M75,58 V690 M215,58 V690 M355,58 V690 M495,58 V690 M640,58 V690 M800,58 V690"/>
+
+      <path class="flow" marker-end="url(#pdf-ah)" d="M75,100 H212"/><text class="lbl" x="145" y="92" text-anchor="middle">1 GET report.pdf</text>
+      <path class="flow" marker-end="url(#pdf-ah)" d="M215,142 H352"/><text class="lbl" x="285" y="134" text-anchor="middle">2 session + tenant</text>
+      <path class="flow" marker-end="url(#pdf-ah)" d="M215,184 H352"/><text class="lbl" x="285" y="176" text-anchor="middle">3 chat + charts</text>
+      <path class="flow ret" marker-end="url(#pdf-ah2)" d="M355,226 H218"/><text class="lbl" x="285" y="218" text-anchor="middle">4 rows</text>
+
+      <rect x="160" y="244" width="750" height="260" rx="8" style="fill:none;stroke:var(--muted);stroke-dasharray:3 4"/>
+      <text class="zlbl" x="170" y="499">par · in parallel</text>
+      <path class="flow" marker-end="url(#pdf-ah)" d="M215,284 H492"/><text class="lbl" x="355" y="276" text-anchor="middle">5 synthesize_findings()</text>
+      <path class="flow" marker-end="url(#pdf-ah)" d="M495,326 H637"/><text class="lbl" x="567" y="318" text-anchor="middle">6 generate_text</text>
+      <path class="flow" marker-end="url(#pdf-ah)" d="M215,368 H797"/><text class="lbl" x="720" y="360" text-anchor="middle">7 each chart → SVG</text>
+      <path class="flow ret" marker-end="url(#pdf-ah2)" d="M640,410 H498"/><text class="lbl" x="567" y="402" text-anchor="middle">8 Markdown</text>
+      <path class="flow ret" marker-end="url(#pdf-ah2)" d="M495,442 H218"/><text class="lbl" x="355" y="434" text-anchor="middle">9 findings_md</text>
+      <path class="flow ret" marker-end="url(#pdf-ah2)" d="M800,478 H218"/><text class="lbl" x="700" y="470" text-anchor="middle">10 SVG figures (≤ 20)</text>
+
+      <path class="flow" marker-end="url(#pdf-ah)" d="M215,538 H797"/><text class="lbl" x="560" y="530" text-anchor="middle">11 render_report_pdf(ReportDocument)</text>
+      <path class="flow" marker-end="url(#pdf-ah)" d="M800,560 H850 V598 H803"/><text class="lbl" x="790" y="586" text-anchor="end">12 markdown-it → nh3 → WeasyPrint</text>
+      <path class="flow ret" marker-end="url(#pdf-ah2)" d="M800,632 H218"/><text class="lbl" x="560" y="624" text-anchor="middle">13 PDF bytes</text>
+      <path class="flow ret" marker-end="url(#pdf-ah2)" d="M215,674 H78"/><text class="lbl" x="145" y="666" text-anchor="middle">14 200 PDF</text>
+    </svg>
+    <figcaption>The whole-chat download. The single-answer download is the same, scoped to one answer, its question and its charts.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>The browser requests the report URL with its session cookie.</li>
+    <li><code>require_session</code> and <code>get_tenant_db</code> resolve the identity and set the tenant for row-level security.</li>
+    <li>The endpoint loads the messages, <code>captured_graphs</code> and <code>artifacts</code>, and for the whole-chat report the tracked raid that points at this chat (for the title).</li>
+    <li>Rows come back. A foreign or unknown chat, or a message that is not an agent answer of this chat, is a 404.</li>
+    <li>The figure list is capped at 20 (captured graphs first, then the agent's charts), then <code>synthesize_findings</code> starts.</li>
+    <li>It calls the report-role model through the provider-neutral <code>generate_text</code>, with a 60 s cap.</li>
+    <li>At the same time each chart is drawn on the render thread as its own job; a chart that fails or runs out of the shared 60 s budget becomes "Chart unavailable" instead of failing the report.</li>
+    <li>The findings Markdown comes back from the model.</li>
+    <li>It is returned to the endpoint. An error, a timeout or empty output fails the report.</li>
+    <li>The SVG figures come back.</li>
+    <li>The endpoint builds a <code>ReportDocument</code> (title, scope, time, findings, question, partial flag, figures, count of omitted figures) and sends it to the render thread, with a 90 s cap.</li>
+    <li>Findings Markdown → HTML with maths as SVG → nh3 → report components → WeasyPrint with the report stylesheet and bundled fonts.</li>
+    <li>The PDF bytes come back; one log line records scope, pages, figures and milliseconds.</li>
+    <li>The endpoint returns <code>application/pdf</code> as an attachment, or 500 <code>pdf_generation_failed</code>.</li>
+  </ol>
+</section>
+
+<section class="layer" id="rewrite">
+  <h2>Findings rewrite</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>What it asks for.</b> <code>synthesize_findings</code> in <code>report_synthesis.py</code> sends one prompt: "what was discovered, not a transcript", organised by topic or encounter, with sections At a Glance (3 to 6 <code>- **Label:** value (context)</code> bullets), Summary, Key Findings, Results by Encounter / Player and Recommendations (a numbered list of bold action titles). It also asks for tables for 3+ items, one <code>&gt; [!TIP]</code> callout, <code>&gt; [!WARNING]</code> only for data caveats, and timelines as bullets starting with a backticked <code>mm:ss</code>. A chat with no analysis gets a short "No substantive findings" document.</li>
+    <li><b>Which model.</b> The report role of the active provider (<code>ModelRole.REPORT</code>, override <code>WCL_REPORT_MODEL</code>), called through <code>wcl_agent/llm/generation.py</code>; see <a href="models.html">Models &amp; providers</a>. No web search.</li>
+    <li><b>Bounds.</b> Input capped at 24,000 characters, dropping the oldest content first; output capped at 16,384 tokens (thinking included on thinking models); one attempt, so a rate limit fails the report cleanly; 60 s timeout.</li>
+    <li><b>Charts are not rewritten.</b> They are attached unchanged after the findings.</li>
+  </ul>
+</section>
+
+<section class="layer" id="safety">
+  <h2>Markdown to safe HTML</h2>
+  <h3>What it does, and where it lives</h3>
+  <p><code>findings_to_html</code> in <code>pdf_report.py</code>. Model output is untrusted, so every step assumes it could contain HTML, images or links planted by a log or a web page.</p>
+  <ol class="steps">
+    <li><b>Cap.</b> The body is cut at 60,000 characters (with a "Report shortened" note) and each table at 200 rows (with a "… N more rows not shown" row).</li>
+    <li><b>Parse.</b> markdown-it-py, CommonMark plus GFM tables and strikethrough, the <code>tasklists</code> plugin and <code>dollarmath</code> configured so "$5 and $10" is never maths. Raw HTML is parsed (<code>html=True</code>) so it can be sanitised rather than shown as text.</li>
+    <li><b>Maths.</b> Each equation is typeset with matplotlib mathtext as an SVG and parked in a private-use placeholder; it is put back only after sanitising, so the only images WeasyPrint sees are the renderer's own. Equations over 300 characters, or past the 60th, and any mathtext cannot parse, fall back to readable italic text.</li>
+    <li><b>Sanitise.</b> nh3 with an allow-list: headings, paragraphs, emphasis, code, lists, quotes, tables, <code>a</code>, <code>img</code>, <code>span</code>, <code>div</code>, <code>sup</code>/<code>sub</code>. <code>script</code>, <code>style</code>, <code>iframe</code>, <code>object</code>, <code>embed</code>, <code>svg</code> and <code>math</code> are dropped with their content. Links may be <code>http</code>, <code>https</code> or <code>mailto</code>. Attributes: <code>href</code>, <code>src</code>/<code>alt</code>, <code>ol start</code>, table-cell <code>style</code> only for text alignment, and <code>class</code> only for markdown-it's task-list classes.</li>
+    <li><b>Images become text.</b> Every <code>&lt;img&gt;</code> left in the model's HTML is replaced by its alt text or URL, whatever its scheme (remote, <code>data:</code> SVG or raster).</li>
+    <li><b>Components and wrapping.</b> The report components below are applied, then long tokens (report codes, URLs) get soft break points so tables shrink to the page.</li>
+    <li><b>Fetching.</b> WeasyPrint runs with no base URL and a fetcher (<code>_ReportFetcher</code>) that allows <code>data:</code> URLs and <code>file:</code> URLs only when they resolve inside <code>backend/app/assets/fonts</code>, after path traversal is resolved. Nothing else, local or remote, can be loaded.</li>
+  </ol>
+  <p class="note"><b>Drift:</b> <code>specs/017-proper-pdf-generation/research.md</code> R6 says the fetcher allows <code>data:</code> only. The <code>file:</code> exception for the bundled fonts came with the chat-style redesign (sc-169). The module docstring of <code>pdf_report.py</code> still says <code>data:</code> only and that the caller uses <code>asyncio.to_thread</code>; it now runs on the <code>pdf-render</code> pool.</p>
+</section>
+
+<section class="layer" id="components">
+  <h2>Report components</h2>
+  <h3>What it does, and where it lives</h3>
+  <p>After sanitising, a few passes turn the conventions the prompt asks for into renderer-owned markup (the classes are added after nh3, so they are always the renderer's). Content that does not follow a convention stays an ordinary list, quote or table.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Markdown convention</th><th>Becomes</th></tr></thead>
+    <tbody>
+      <tr><td><code>## At a Glance</code> + <code>- **Label:** value (note)</code></td><td>a grid of KPI cards (big value, small label, note)</td></tr>
+      <tr><td><code>&gt; [!TIP]</code>, <code>[!NOTE]</code>, <code>[!WARNING]</code></td><td>callout boxes: "Key takeaway", "Note", "Caveat" (ember border)</td></tr>
+      <tr><td>table columns holding only numbers</td><td>right-aligned with tabular figures, unless the model set an alignment</td></tr>
+      <tr><td>tables with 7 or more columns</td><td>a tighter, smaller "wide" table</td></tr>
+      <tr><td>list items starting with a backticked <code>mm:ss</code></td><td>timeline rows</td></tr>
+      <tr><td>the numbered list under a "Recommendation…" heading</td><td>action rows with gold numbered discs</td></tr>
+      <tr><td>task-list checkboxes</td><td>☐ / ☑ glyphs (WeasyPrint lays form inputs out as blocks)</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="layer" id="look">
+  <h2>The look</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>The chat's dark theme.</b> The page background, cards, tables and text use the chat's "Tavern Hearth" colours, converted once from the frontend's <code>oklch()</code> tokens to hex in <code>backend/app/services/report_theme.py</code> (so the renderer doesn't depend on CSS Color 4). They have to be kept in step with <code>frontend/src/index.css</code> by hand.</li>
+    <li><b>Fonts.</b> Cinzel (headings and title) and Alegreya Sans (body: regular, italic, medium, bold) ship with the app in <code>backend/app/assets/fonts</code> with their OFL licences, so host and container render alike. Fallbacks: DejaVu Sans and Noto Sans CJK SC for body text, DejaVu Serif for headings, DejaVu Sans Mono for code. Emoji come from fontconfig fallback to Noto Color Emoji: naming an emoji font in the stack makes Pango 1.56 draw digits, <code>#</code> and <code>*</code> as keycaps.</li>
+    <li><b>Container.</b> <code>backend/Dockerfile</code> installs Pango and HarfBuzz for WeasyPrint, freetype and libpng for matplotlib, and <code>fonts-dejavu-core</code>, <code>fonts-noto-cjk</code> and <code>fonts-noto-color-emoji</code>.</li>
+    <li><b>Page.</b> A4, 20/18/18 mm margins; the report title runs in the header from page 2; "Page X of Y" bottom right; headings stay with what follows; table header rows repeat; rows, figures, KPI cards and timeline rows never split. The title block shows the title, "Whole conversation" or "Single answer", the UTC generation time, the question (single answer) and an "Interrupted — partial answer" note when it applies.</li>
+  </ul>
+</section>
+
+<section class="layer" id="charts">
+  <h2>Charts in the PDF</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Two sources.</b> Captured WCL graphs (<code>captured_graphs</code>, stored when <code>get_report_graph</code> succeeded in a turn) are drawn by <code>graph_to_svg</code>; the agent's charts (<code>artifacts.spec_json</code>, from <code>create_chart</code>) by <code>chart_spec_to_svg</code>. The same <code>ChartSpec</code> also feeds <code>chart_spec_to_plotly</code> for the browser, so one spec has two renderers.</li>
+    <li><b>Drawing.</b> matplotlib's object-oriented <code>Figure</code> API (never pyplot, so threads share no global state), saved as transparent SVG and embedded as a <code>data:</code> URI. Each series differs by colour, line style and marker (or hatch for bars), so series stay apart without colour. Large y values get thousands separators. At most 12 series and 500 points per series.</li>
+    <li><b>Layout.</b> A "Charts" section starts on a new page after the findings; each figure is captioned "Figure N — title" with a "source" link when it has an http(s) source URL (a WCL report link for captured graphs). Figures past 20 are counted in "N more charts not shown".</li>
+    <li><b>No re-fetch.</b> The PDF draws from the stored graph JSON; it never calls Warcraft Logs at export time.</li>
+  </ul>
+  <p class="note"><b>Drift:</b> the <code>plotly</code> Python package is declared in <code>pyproject.toml</code>, and <code>specs/005-guild-context-artifacts/plan.md</code> (Complexity Tracking) justifies it for building the figure JSON, but no module imports it: <code>chart_spec_to_plotly</code> builds the dict by hand, and the browser draws it with <code>plotly.js-dist-min</code>.</p>
+</section>
+
+<section class="layer" id="limits">
+  <h2>Limits and failure</h2>
+  <h3>What it does, and where it lives</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Limit</th><th>Value</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>figures per report</td><td>20</td><td><code>_MAX_FIGURES</code>, <code>reports.py</code></td></tr>
+      <tr><td>chart drawing budget (all charts)</td><td>60 s</td><td><code>_CHARTS_TIMEOUT_S</code></td></tr>
+      <tr><td>layout and PDF write</td><td>90 s</td><td><code>_RENDER_TIMEOUT_S</code></td></tr>
+      <tr><td>findings call</td><td>60 s, one attempt, 16,384 output tokens, 24,000 input characters</td><td><code>report_synthesis.py</code></td></tr>
+      <tr><td>findings body</td><td>60,000 characters, 200 rows per table</td><td><code>pdf_report.py</code></td></tr>
+      <tr><td>equations</td><td>300 characters each, 60 per report</td><td><code>pdf_report.py</code></td></tr>
+      <tr><td>chart series / points</td><td>12 / 500</td><td><code>charts.py</code></td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>Fail closed.</b> A rewrite error, timeout or empty output, a failure of the chart step as a whole, or a render failure returns 500 <code>pdf_generation_failed</code>. A partial file is never sent.</li>
+    <li><b>One bad chart is not fatal.</b> A spec that doesn't validate, a drawing error or the chart budget running out gives that figure "Chart unavailable".</li>
+    <li>Work that overruns its wait can't be killed and keeps the render thread until it ends; the input caps bound how long that can be.</li>
+  </ul>
+</section>
+
+<section class="layer" id="why">
+  <h2>Why</h2>
+  <p class="why">WeasyPrint supports CSS Paged Media (running headers, "page X of Y", headings kept with their content, repeating table headers) with no layout code of ours, adds no browser process and rendered in 0.21 s in the spike. <b>Alternatives:</b> headless Chromium via Playwright (about 300 MB, a subprocess per request, weaker paged media); patching the ReportLab parser (failed three times); xhtml2pdf (weak CSS).<cite>specs/017-proper-pdf-generation/research.md R1; plan.md (Complexity Tracking)</cite></p>
+  <p class="why">markdown-it-py follows CommonMark and GFM tables, and <code>dollarmath</code> leaves "$5 and $10" alone. <b>Alternatives:</b> Python-Markdown (unused and poor at nested lists and maths, so removed); mistune.<cite>specs/017-proper-pdf-generation/research.md R2</cite></p>
+  <p class="why">nh3 with an allow-list keeps basic tags and drops the rest with their content; model images never reach the renderer. <b>Alternatives:</b> <code>html=False</code> (tags would print as text); bleach (deprecated upstream).<cite>specs/017-proper-pdf-generation/research.md R3</cite></p>
+  <p class="why">Locking the fetcher matters for <code>file:</code> as much as for the network: without it, an <code>&lt;img src="file:///etc/passwd"&gt;</code> in model output could pull server files into a PDF.<cite>specs/017-proper-pdf-generation/research.md R6</cite></p>
+  <p class="why">Equations and charts as matplotlib SVG: WeasyPrint runs no JavaScript (no KaTeX) and renders no MathML, and matplotlib was already a dependency. <b>Alternatives:</b> latex2mathml; a TeX toolchain; KaTeX through Node; Plotly static export via kaleido (bundles Chromium).<cite>specs/017-proper-pdf-generation/research.md R4, R5</cite></p>
+  <p class="why">The PDF looks like the chat, dark page included: the owner's choice on 2026-10-20.<cite>backend/app/services/report_theme.py (module docstring)</cite></p>
+  <p class="why">The chat fonts are bundled so host and container render alike; emoji come from fontconfig fallback because naming an emoji font made Pango draw digits as keycaps.<cite>backend/app/services/pdf_report.py (comment above _FONT_DIR)</cite></p>
+  <p class="why">CJK and emoji fonts are system packages so no glyph renders as a box, at about 120 MB of image size; <code>fonts-noto-cjk</code> is the one line to drop if size matters more.<cite>specs/017-proper-pdf-generation/research.md R7, R8</cite></p>
+  <p class="why">One render thread: chart drawing and layout hold the GIL, so parallel renders only slow each other down (four renders: 1.8 s one at a time, 2.7 s two at a time), and queued reports must not take threads the chat path needs.<cite>backend/app/api/reports.py (comment above _RENDER_POOL)</cite></p>
+  <p class="why">A findings document instead of a transcript: the owner asked for reports on what was discovered, not what was said, for both the chat and the single answer.<cite>todo.md (Phase 5, "Improve PDF report downloads")</cite></p>
+  <p class="why">The PDF draws captured graph JSON instead of re-calling Warcraft Logs at export time, which would spend rate budget and might miss the exact filters used.<cite>backend/app/services/graphs.py (module docstring); specs/002-agent-enhancements/research.md §6</cite></p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>backend/app/api/reports.py</code></li>
+    <li><code>backend/app/services/pdf_report.py</code></li>
+    <li><code>backend/app/services/report_synthesis.py</code></li>
+    <li><code>backend/app/services/report_theme.py</code></li>
+    <li><code>backend/app/services/charts.py</code>, <code>graphs.py</code>, <code>artifacts.py</code></li>
+    <li><code>backend/app/assets/fonts/</code></li>
+    <li><code>backend/app/schemas.py</code> (<code>ChartSpec</code>)</li>
+    <li><code>wcl_agent/llm/generation.py</code>, <code>wcl_agent/llm/provider.py</code></li>
+    <li><code>backend/Dockerfile</code>, <code>pyproject.toml</code></li>
+    <li><code>frontend/src/api/restClient.ts</code>, <code>frontend/src/App.tsx</code>, <code>frontend/nginx.conf</code></li>
+    <li><code>specs/017-proper-pdf-generation/research.md</code>, <code>plan.md</code></li>
+    <li><code>specs/005-guild-context-artifacts/plan.md</code></li>
+    <li><code>specs/002-agent-enhancements/research.md</code></li>
+    <li><code>todo.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

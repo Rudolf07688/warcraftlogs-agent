@@ -277,12 +277,24 @@ M, and the scrum master owns them in tier L.
    Record this triage in `<sprint-dir>/qa-triage.md`.
 4. **Board sync:** run `/shortcut-sync` (the `shortcut-sync` sub-agent type) and a final
    change detection on the sprint branch.
-5. **Sprint review:** write `<sprint-dir>/sprint-report.html` with `report.py build`, like the plan.
+5. **Architecture docs** (owner's rule, 2026-11-04: they always show the current state).
+   After the QA fixes are merged, bring `documentation/architecture/` up to the sprint tip,
+   following `documentation/architecture/pages/maintaining.html`:
+   - `python3 .claude/team/archdocs.py changed` lists the pages whose code moved since their
+     stamp, plus any unmapped paths.
+   - Re-verify those sections against the code, not the specs. Add new components, remove
+     what's gone, and update `index.html` (layer table, system diagram) when a layer changed.
+   - Then run `archdocs.py stamp` and `archdocs.py check`, screenshot each changed page, and
+     commit on the sprint branch.
+   - One fresh tier-S developer may do it when several pages moved. A sprint that changed no
+     mapped code only needs `stamp`.
+   - Name the pages you changed in the sprint review.
+6. **Sprint review:** write `<sprint-dir>/sprint-report.html` with `report.py build`, like the plan.
    Use tabs for the work groups, and include delivered against planned, each story's state,
    the QA triage, deferred tickets, decisions, risks and the owner's live-check list.
    Commit it.
-6. **Memory:** update your own memory, if anything lasting came out of the sprint.
-7. **Final report:** send team-lead one message: the branch and tip, the points delivered,
+7. **Memory:** update your own memory, if anything lasting came out of the sprint.
+8. **Final report:** send team-lead one message: the branch and tip, the points delivered,
    the report paths, and anything the owner must decide (such as merging to `main`).
 
 ## Owner's rules

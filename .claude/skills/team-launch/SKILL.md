@@ -118,7 +118,11 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
        (add this sprint's row there too)
      - the coordination, build and QA shares
      - what worked and what to change next time
-4. **Report to the owner:**
+4. **Architecture docs gate** (owner's rule, 2026-11-04): run from the sprint worktree,
+   `python3 .claude/team/archdocs.py changed` must report nothing left to re-check, and `archdocs.py check` must be clean. The product owner does this in its
+   wrap-up; if it's missing, send the product owner back before you ask the merge question.
+   In single-pass mode, the lead does the step from `documentation/architecture/pages/maintaining.html`.
+5. **Report to the owner:**
    - the paths to the plan, the sprint review and the team report
    - the points delivered
    - the owner's live checks
@@ -129,12 +133,12 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    `git worktree remove` deletes it silently (2026-11-02: lost, then rebuilt from the
    transcripts). Only then remove the worktrees and run
    `node .gitnexus/run.cjs analyze --index-only`.
-5. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,
+6. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,
    apply the sprint's `skill:<name>` board notices and any lesson of your own that every agent
    doing that task should know. Rewrite or cut rather than append. In tool-generated skills
    (`speckit-*`, `gitnexus-*`), put changes in a marked "Local learnings" section. List the
    skill changes in the team report and commit them with the memories.
-6. **Memory:**
+7. **Memory:**
    - Update the sprint status memory note.
    - Update your lead memory (`member.py remember --seat lead -`) whenever a lasting lesson
      about how you lead comes up, not only at wrap-up. It's capped at 1000 words, so cut

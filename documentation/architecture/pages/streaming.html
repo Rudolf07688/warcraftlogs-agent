@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Stream protocol · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · User-facing</p>
+  <h1>Stream protocol</h1>
+  <p class="lede">One WebSocket carries every chat turn: the browser sends the question, the backend streams back the answer as typed JSON frames, with tool cards, charts, follow-ups and errors along the way. A handful of REST endpoints load and manage the conversations around it.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#socket">The socket</a>
+    <a href="#frames">Frames</a>
+    <a href="#turn">A turn, in order</a>
+    <a href="#tools">Tool cards</a>
+    <a href="#captures">Charts, graphs and cards</a>
+    <a href="#after">After done</a>
+    <a href="#errors">Errors and interruption</a>
+    <a href="#reconnect">Reconnection</a>
+    <a href="#rest">REST around the chat</a>
+    <a href="#why">Why</a>
+  </nav>
+</header>
+
+<section class="layer" id="socket">
+  <h2>The socket</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fastapi&gt;=0.115.0</span><span class="chip">uvicorn[standard]&gt;=0.30.0</span><span class="chip">pydantic (via fastapi)</span><span class="chip">browser WebSocket API</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Endpoint.</b> <code>/ws/chat</code>, the <code>chat()</code> handler in <code>backend/app/api/ws.py</code>. The browser opens it once (<code>ChatSocket</code> in <code>frontend/src/api/wsClient.ts</code>) and keeps it for the whole session, across chats.</li>
+    <li><b>Handshake.</b> Before <code>accept()</code> the handler checks the <code>Origin</code> header against <code>SITE_URL</code> (<code>origin_matches</code> in <code>backend/app/auth/csrf.py</code>) and validates the <code>__Host-session</code> cookie (<code>authenticate_session</code>). Either failing closes the socket with code 1008. No token is ever read from the query string or a frame.</li>
+    <li><b>Every turn re-checks the session.</b> A revoked session, disabled user or missing tenant gets an <code>error</code> frame (<code>unauthorized</code>) and a 1008 close, even mid-connection.</li>
+    <li><b>One turn at a time per socket.</b> The receive loop awaits each turn to the end, so turns on one socket never race. All sends go through <code>_TurnSocket.send_json</code>, which holds a per-socket lock, because the follow-up and title tasks send after the turn has ended.</li>
+    <li><b>Model resolution.</b> The requested model is mapped to the active provider's form; a model that is no longer served continues on the default (<code>resolve_chat_model</code> in <code>backend/app/model_state.py</code>, feature 032). The turn also gets its same-class sibling for a rate-limit fallback (<code>fallback_model_for</code>). See <a href="models.html">Models &amp; providers</a>.</li>
+    <li><b>Per-turn context.</b> For the turn's duration the backend sets the WCL refresh actor (the per-user forced-refresh limit) and the agent identity used by backend tools; both are cleared when the stream ends, so later tasks on the socket never act as that user (sc-276, sc-222).</li>
+  </ul>
+</section>
+
+<section class="layer" id="frames">
+  <h2>Frames</h2>
+  <div class="chips"><span class="eyebrow">Contract</span><span class="chip">backend/app/schemas.py</span><span class="chip">frontend/src/api/wsClient.ts (Frame union)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>The browser sends one message type. The server declares 16 frame types (16 frame classes in <code>schemas.py</code>, 16 members of the <code>Frame</code> union) and sends 15 of them; <code>tool_progress</code> is declared on both sides but nothing emits it. <code>App.tsx</code> has a <code>case</code> for the 15 that are sent. Every frame is JSON with a <code>type</code> field.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Type</th><th>Direction</th><th>Payload</th><th>When</th><th>Browser does</th></tr></thead>
+    <tbody>
+      <tr><td><code>ChatTurn</code> (no <code>type</code>)</td><td>browser → server</td><td><code>conversation_id?</code>, <code>model</code>, <code>content</code> (non-empty)</td><td>the only client message; <code>null</code> id starts a new chat</td><td>sent by <code>sendText</code></td></tr>
+      <tr><td><code>meta</code></td><td>server → browser</td><td><code>conversation_id</code>, <code>seq</code></td><td>user message saved, turn starts</td><td>adopts the chat id for a new chat</td></tr>
+      <tr><td><code>tool_start</code></td><td>server → browser</td><td><code>name</code>, <code>report_code?</code></td><td>once per tool call (args are not forwarded)</td><td>adds a casting spell card, sets the status label</td></tr>
+      <tr><td><code>tool_end</code></td><td>server → browser</td><td><code>name</code>, <code>ok</code>, <code>summary?</code> (≤ 140 chars), <code>ms?</code></td><td>a tool returned</td><td>resolves or fizzles the oldest casting card of that name</td></tr>
+      <tr><td><code>raid_tracked</code></td><td>server → browser</td><td><code>report_code</code>, <code>label</code></td><td>a report seen for the first time became a tracked raid</td><td>reloads the sidebar's Raids list</td></tr>
+      <tr><td><code>artifact</code></td><td>server → browser</td><td><code>artifact_id</code>, <code>kind</code>, <code>title</code>, <code>figure {data, layout}</code></td><td>after a successful <code>create_chart</code></td><td>holds the chart until <code>done</code></td></tr>
+      <tr><td><code>encounters</code></td><td>server → browser</td><td><code>report_code</code>, <code>encounters[]</code></td><td>after a successful <code>get_report_fights</code> with bosses</td><td>holds the bosses for the focus picker</td></tr>
+      <tr><td><code>proposal</code></td><td>server → browser</td><td><code>proposal</code> (stored <code>ProfileProposalOut</code>)</td><td>after a successful <code>propose_profile_changes</code></td><td>holds the confirmation card until <code>done</code></td></tr>
+      <tr><td><code>grounding</code></td><td>server → browser</td><td><code>used</code>, <code>sources[{title, uri}]</code></td><td>at most once per turn, when web search was used (Gemini models only)</td><td>status "Searching the web…", "Used web search" note</td></tr>
+      <tr><td><code>model_retry</code></td><td>server → browser</td><td><code>attempt</code>, <code>max_attempts</code>, <code>wait_s</code></td><td>before each rate-limit backoff</td><td>status "Model busy — retrying (n of m)…"</td></tr>
+      <tr><td><code>model_fallback</code></td><td>server → browser</td><td><code>from_model</code>, <code>to_model</code></td><td>at most once per turn, on the switch to the sibling</td><td>status line, then an "Answered by …" note</td></tr>
+      <tr><td><code>token</code></td><td>server → browser</td><td><code>text</code></td><td>each streamed answer chunk</td><td>appends to <code>streamStore</code></td></tr>
+      <tr><td><code>done</code></td><td>server → browser</td><td><code>message_id</code></td><td>answer saved; the composer unlocks</td><td>commits the message with its cards, charts, bosses and proposals</td></tr>
+      <tr><td><code>conversation_title</code></td><td>server → browser</td><td><code>conversation_id</code>, <code>title</code></td><td>after the first answer of an auto-named chat, once the title is saved</td><td>reloads the conversation list</td></tr>
+      <tr><td><code>suggestions</code></td><td>server → browser</td><td><code>message_id</code>, <code>suggestions[≤ 3]</code></td><td>after <code>done</code>; omitted when empty</td><td>attaches follow-ups to that message, if it is still open</td></tr>
+      <tr><td><code>error</code></td><td>server → browser</td><td><code>code</code>, <code>message</code></td><td>see <a href="#errors">Errors</a></td><td>shows the message, ends the turn</td></tr>
+      <tr><td><code>tool_progress</code></td><td>server → browser</td><td><code>id</code>, <code>done</code>, <code>total</code>, <code>note?</code></td><td><b>never sent</b>: declared for determinate cast bars, no tool reports progress</td><td>no handler</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note"><b>Typed, mostly.</b> Eleven of the sent frames are built from their Pydantic model. Four go out as plain dicts: <code>token</code> and <code>grounding</code> are forwarded from the runner's records, and <code>tool_start</code> and <code>tool_end</code> are built by hand in <code>_forward_tool_start</code> and <code>_handle_tool_end</code>. <code>ToolStartFrame</code>, <code>ToolEndFrame</code>, <code>TokenFrame</code> and <code>GroundingFrame</code> describe those shapes but are not used to build them.</p>
+</section>
+
+<section class="layer" id="turn">
+  <h2>A turn, in order</h2>
+  <h3>What it does, and where it lives</h3>
+  <p><code>_handle_turn</code> in <code>ws.py</code> drives the turn; <code>stream_response</code> in <code>backend/app/agent_runner.py</code> runs the ADK agent in a producer task and yields records (<code>tool_start</code>, <code>tool_end</code>, <code>token</code>, <code>grounding</code>, plus <code>model_retry</code> and <code>model_fallback</code> pushed in by the model wrapper). <code>ws.py</code> turns each record into frames. The setup, each capture and the final save each use their own short tenant-scoped transaction, so no database connection is held while the model streams.</p>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 850" role="img" aria-labelledby="st-seq-t st-seq-d">
+      <title id="st-seq-t">Sequence: one chat turn over the WebSocket</title>
+      <desc id="st-seq-d">The browser sends a ChatTurn. ws.py saves the user message in Postgres and sends meta, reads the preamble data, then calls stream_response. In each tool round the model asks for tool calls; ws.py sends tool_start, the tools run, ws.py sends tool_end, stores captures and sends capture frames. In the last round the model streams text and ws.py sends token frames. ws.py saves the answer, sends done, then the title and suggestions frames from background tasks.</desc>
+      <defs>
+        <marker id="st-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="st-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="node ext" x="20" y="10" width="120" height="44" rx="8"/><text class="t" x="80" y="38" text-anchor="middle" style="font-size:15px">Browser</text>
+      <rect class="node core" x="225" y="10" width="130" height="44" rx="8"/><text class="t" x="290" y="38" text-anchor="middle" style="font-size:15px">ws.py</text>
+      <rect class="node store" x="400" y="10" width="120" height="44" rx="8"/><text class="t" x="460" y="38" text-anchor="middle" style="font-size:15px">Postgres</text>
+      <rect class="node" x="560" y="10" width="140" height="44" rx="8"/><text class="t" x="630" y="38" text-anchor="middle" style="font-size:15px">agent_runner</text>
+      <rect class="node ext" x="735" y="10" width="110" height="44" rx="8"/><text class="t" x="790" y="38" text-anchor="middle" style="font-size:15px">Model</text>
+      <rect class="node ext" x="870" y="10" width="110" height="44" rx="8"/><text class="t" x="925" y="38" text-anchor="middle" style="font-size:15px">Tools</text>
+      <path class="life" d="M80,54 V840 M290,54 V840 M460,54 V840 M630,54 V840 M790,54 V840 M925,54 V840"/>
+
+      <path class="flow" marker-end="url(#st-ah)" d="M80,94 H287"/><text class="lbl" x="185" y="87" text-anchor="middle" style="font-size:13px">ChatTurn</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M290,128 H457"/><text class="lbl" x="375" y="121" text-anchor="middle" style="font-size:13px">save user message</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,162 H83"/><text class="lbl" x="185" y="155" text-anchor="middle" style="font-size:13px">meta</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M290,196 H457"/><text class="lbl" x="375" y="189" text-anchor="middle" style="font-size:13px">preamble reads</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M290,230 H627"/><text class="lbl" x="460" y="223" text-anchor="middle" style="font-size:13px">stream_response()</text>
+
+      <rect x="14" y="246" width="976" height="314" rx="8" style="fill:none;stroke:var(--muted);stroke-dasharray:3 4"/>
+      <text class="zlbl" x="24" y="266">loop · each tool round</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M630,282 H787"/><text class="lbl" x="710" y="275" text-anchor="middle" style="font-size:13px">model request</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M790,316 H633"/><text class="lbl" x="710" y="309" text-anchor="middle" style="font-size:13px">function calls</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,350 H83"/><text class="lbl" x="185" y="343" text-anchor="middle" style="font-size:13px">tool_start × call</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M630,384 H922"/><text class="lbl" x="778" y="377" text-anchor="middle" style="font-size:13px">run tools</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M925,418 H633"/><text class="lbl" x="778" y="411" text-anchor="middle" style="font-size:13px">results</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,452 H83"/><text class="lbl" x="185" y="445" text-anchor="middle" style="font-size:13px">tool_end</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M290,486 H457"/><text class="lbl" x="375" y="479" text-anchor="middle" style="font-size:13px">captures</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,520 H83"/><text class="lbl" x="185" y="513" text-anchor="middle" style="font-size:13px">capture frames</text>
+      <text class="sub" x="185" y="545" text-anchor="middle" style="font-size:12px">raid_tracked · artifact · encounters · proposal</text>
+
+      <path class="flow" marker-end="url(#st-ah)" d="M630,594 H787"/><text class="lbl" x="710" y="587" text-anchor="middle" style="font-size:13px">next request</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M790,628 H633"/><text class="lbl" x="710" y="621" text-anchor="middle" style="font-size:13px">text deltas</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,662 H83"/><text class="lbl" x="185" y="655" text-anchor="middle" style="font-size:13px">token × many</text>
+      <path class="flow" marker-end="url(#st-ah)" d="M290,696 H457"/><text class="lbl" x="375" y="689" text-anchor="middle" style="font-size:13px">save answer</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,730 H83"/><text class="lbl" x="185" y="723" text-anchor="middle" style="font-size:13px">done</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,778 H83"/><text class="lbl" x="185" y="771" text-anchor="middle" style="font-size:13px">conversation_title</text>
+      <path class="flow ret" marker-end="url(#st-ah2)" d="M290,816 H83"/><text class="lbl" x="185" y="809" text-anchor="middle" style="font-size:13px">suggestions</text>
+      <text class="sub" x="310" y="800" style="font-size:12px">background tasks, after done</text>
+    </svg>
+    <figcaption>One chat turn. Every frame to the browser is sent by <code>ws.py</code>; the records it forwards come from <code>agent_runner</code>. <code>model_retry</code>, <code>model_fallback</code> and <code>grounding</code> can arrive anywhere between <code>meta</code> and <code>done</code>.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>The browser sends a <code>ChatTurn</code>. <code>ws.py</code> re-checks the session, validates the body (an invalid or empty one gets <code>empty_message</code>) and resolves the model.</li>
+    <li>In one short transaction it resolves the conversation (a foreign or unknown id gets <code>not_found</code>) or creates one, saves the user message and commits.</li>
+    <li>It sends <code>meta</code> with the conversation id and the user message's <code>seq</code>.</li>
+    <li>It builds the turn preamble from stored rows: the profile, tracked raids, recently seen players, encounters and guilds, recent raids and Mythic+ runs, and the published coaching briefs for the profile's specs. The preamble rides on the turn and is never saved.</li>
+    <li>It calls <code>stream_response()</code> with a per-turn scratch folder for large tool results.</li>
+    <li>Each tool round: the model returns function calls; <code>tool_start</code> goes out once per call; the tools run; <code>tool_end</code> goes out per result; then the captures are stored and their frames sent (next sections).</li>
+    <li>In the last round the model streams text, sent as <code>token</code> frames. Text after a tool round starts a new paragraph. If the model gives no answer text after its last tool result, the runner ends the turn with a fixed "I couldn't put an answer together this time…" message instead (sc-302).</li>
+    <li>The answer is saved; this turn's charts, graphs and confirmation cards are linked to it by <code>seq</code>.</li>
+    <li>The saved exchange is offered to the knowledge-base indexer (enqueue only; see <a href="knowledge-base.html">Knowledge base</a>), then <code>done</code> goes out and the composer unlocks.</li>
+    <li>In the background: <code>conversation_title</code> for the first answer of an auto-named chat, and <code>suggestions</code>. A no-answer turn gets neither and is not indexed.</li>
+  </ol>
+</section>
+
+<section class="layer" id="tools">
+  <h2>Tool cards</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>One <code>tool_start</code> per call.</b> <code>_run_turn</code> skips function-call parts on partial events and announces each call from the model's final event, which always carries the complete args and call id; a call id seen before is skipped (sc-289). Before this, Anthropic models (one partial event per argument chunk) could start several cards for one call.</li>
+    <li><b>User-safe payload.</b> <code>tool_start</code> forwards only the tool <code>name</code> and a string <code>report_code</code> if the args have one. <code>tool_end</code> adds <code>ok</code> (the result's <code>status == "success"</code>), a one-line <code>summary</code> from <code>backend/app/services/tool_summary.py</code> (cut to 140 characters) and the elapsed <code>ms</code>.</li>
+    <li><b>Correlation.</b> The frames carry no call id. The browser resolves the oldest still-casting card with the same name, so parallel calls of the same tool resolve in FIFO order.</li>
+    <li><b>Full results stay on the server.</b> Each result is also written to the turn's scratch folder (<code>backend/app/scratch.py</code>), removed when the stream ends.</li>
+    <li>How the cards look (labels, "spells") is on the <a href="frontend.html#tools">Frontend</a> page.</li>
+  </ul>
+</section>
+
+<section class="layer" id="captures">
+  <h2>Charts, graphs and cards</h2>
+  <h3>What it does, and where it lives</h3>
+  <p>After forwarding a successful <code>tool_end</code>, <code>_handle_tool_end</code> opens one tenant-scoped transaction and routes the full record to the capture services. Failed calls capture nothing and open no transaction.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Capture</th><th>Trigger</th><th>Stored</th><th>Frame</th></tr></thead>
+    <tbody>
+      <tr><td>Tracked raid (<code>services/raids.py</code>)</td><td>a report-scoped tool with a <code>report_code</code></td><td><code>tracked_raids</code> upsert, boss list merged from <code>get_report_fights</code></td><td><code>raid_tracked</code>, only when the raid is new; a known raid is refreshed on <code>done</code></td></tr>
+      <tr><td>Graph (<code>services/graphs.py</code>)</td><td><code>get_report_graph</code> with a non-truncated <code>graph</code></td><td><code>captured_graphs</code> (for the PDF)</td><td>none: graphs are not shown in the chat</td></tr>
+      <tr><td>Chart (<code>services/artifacts.py</code>)</td><td><code>create_chart</code> whose <code>chart</code> validates as a <code>ChartSpec</code></td><td><code>artifacts.spec_json</code></td><td><code>artifact</code>, with the Plotly figure built by <code>chart_spec_to_plotly</code></td></tr>
+      <tr><td>Known players and encounters (<code>services/known_entities.py</code>)</td><td>tools that return them</td><td>known-entity rows for later preambles</td><td>none</td></tr>
+      <tr><td>Bosses (<code>services/encounters.py</code>)</td><td><code>get_report_fights</code> with boss pulls</td><td>not stored separately</td><td><code>encounters</code>, deduped by encounter id</td></tr>
+      <tr><td>Profile proposal (feature 031)</td><td><code>propose_profile_changes</code></td><td>already stored by the tool; re-read here, scoped to this user</td><td><code>proposal</code> with the stored row, not the tool result the model saw</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>Charts and cards wait for <code>done</code>.</b> The browser holds <code>artifact</code> and <code>proposal</code> frames and attaches them to the answer when it is committed, so no chart renders mid-stream. A proposal whose turn failed still shows as a standalone card in the chat that made it.</li>
+    <li><b>Every way a turn ends links its captures.</b> On a normal end they go to the answer's <code>seq</code>. On an interruption they go to the partial answer, or to the user message when nothing streamed; on a rate-limit failure, to the user message. A capture left unlinked would otherwise show up under a later answer (sc-213).</li>
+    <li><b>Reload.</b> <code>GET /api/conversations/{id}</code> returns the chat's charts (Plotly figures rebuilt from the stored spec) and proposals, which the client attaches to messages by <code>message_seq</code>. Tool cards, the web-search note, the fallback note, the boss picker and follow-ups are not stored; they exist only for the session that saw the turn.</li>
+  </ul>
+</section>
+
+<section class="layer" id="after">
+  <h2>After <code>done</code></h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Follow-up suggestions</b> (<code>backend/app/suggestions.py</code>): one non-streaming call to the fast-role model, thinking off, one attempt, at most 256 output tokens and a 4 s cap. The output is parsed to at most three clean questions. It runs as a task that the socket's next turn cancels; any failure means no <code>suggestions</code> frame.</li>
+    <li><b>Generated titles</b> (<code>backend/app/services/conversation_titles.py</code>, feature 019): only for a chat whose <code>title_source</code> is <code>auto</code>. The chat is claimed first (<code>auto → generated</code>), so a failed attempt is never retried; the fast-role model gets 15 s. The next turn does not cancel it. The frame is best-effort: the title is already saved, so the next list load shows it anyway.</li>
+    <li><b>Knowledge base</b> (feature 043): the saved question and answer are queued as a chat chunk for the workspace (<code>kb_indexer.offer_exchange</code>). Only the streamed answer goes in, never tool results.</li>
+  </ul>
+</section>
+
+<section class="layer" id="errors">
+  <h2>Errors and interruption</h2>
+  <h3>What it does, and where it lives</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th><code>error.code</code></th><th>When</th><th>Message</th><th>What is saved</th></tr></thead>
+    <tbody>
+      <tr><td><code>unauthorized</code></td><td>the session failed its per-turn check</td><td>"Session is no longer valid." then a 1008 close</td><td>nothing</td></tr>
+      <tr><td><code>empty_message</code></td><td>the frame is not a valid <code>ChatTurn</code></td><td>"Invalid or empty message."</td><td>nothing; the socket stays open</td></tr>
+      <tr><td><code>not_found</code></td><td>the conversation id is unknown or another tenant's</td><td>"Conversation not found."</td><td>nothing</td></tr>
+      <tr><td><code>rate_limited</code></td><td>the model's retry budget ran out (and the sibling's, after a fallback)</td><td>fixed wording, "…try again in about a minute"; "Both {class} models…" after a switch</td><td>the user message only, so the player can resend</td></tr>
+      <tr><td><code>agent_error</code></td><td>any other failure in the stream, or the answer could not be saved</td><td>fixed: "Something went wrong while answering. Please try again. If it keeps happening, mention reference {ref}."</td><td>whatever streamed, as a <code>partial</code> message</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>No internal details reach the player.</b> Provider, database and WCL errors can carry project ids or SQL, so <code>agent_error</code> always has the fixed text plus an 8-character reference that is also on the logged exception (QA SEC-001).</li>
+    <li><b>Interruption.</b> There is no stop button and no client-to-server cancel frame. A turn is interrupted when the socket goes away (tab closed, reload, network loss). The server notices on its next send: the reply streamed so far is saved with <code>status="partial"</code> and the runner's producer task is cancelled. The chat shows "Interrupted — partial response" under such a message on reload.</li>
+    <li><b>Failed setup.</b> If the turn's setup (preamble, commit or scratch folder) fails or is cancelled, the WCL cache's open turn is closed without being counted and its user is cleared (<code>abandon_turn</code>, sc-357).</li>
+    <li><b>Turn metrics.</b> Every turn, whatever the outcome, logs one <code>turn stats</code> line (requests, rounds, retries, tokens, tool calls, fallback); see <a href="agent.html">Agent runtime &amp; tools</a>.</li>
+  </ul>
+</section>
+
+<section class="layer" id="reconnect">
+  <h2>Reconnection</h2>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>ChatSocket</code> reconnects 1.5 s after any close, with no backoff and no attempt limit, and reports the connection to the header's "connected / disconnected" badge. The composer is disabled while disconnected.</li>
+    <li>A 1008 close (rejected handshake or revoked session) stops reconnecting and sends the browser to <code>/login</code>.</li>
+    <li>A send while the socket is not open fails at once: the turn is not started and the chat shows "Not connected to the server. Retrying…".</li>
+    <li>Nothing is replayed after a reconnect: an interrupted turn is not resumed, and the open chat is not reloaded. Also, nothing in <code>App.tsx</code> clears the "streaming" state when the socket drops mid-turn, so the composer stays locked until the page is reloaded (noted on the open-points page).</li>
+  </ul>
+</section>
+
+<section class="layer" id="rest">
+  <h2>REST around the chat</h2>
+  <h3>What it does, and where it lives</h3>
+  <p>The chat screen also uses these endpoints, all under <code>/api</code>, all session-authenticated and tenant-scoped; the unsafe ones need the CSRF header. The full router list is on <a href="backend-api.html">Backend API</a>.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Endpoint</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/models</code></td><td>model picker: served models, default, provider, degraded flag</td></tr>
+      <tr><td><code>GET /api/conversations</code></td><td>sidebar list; reloaded on <code>done</code> and <code>conversation_title</code></td></tr>
+      <tr><td><code>GET /api/conversations/{id}</code></td><td>open a chat: messages, charts (rebuilt figures) and proposals</td></tr>
+      <tr><td><code>PATCH /api/conversations/{id}</code></td><td>pin or unpin</td></tr>
+      <tr><td><code>DELETE /api/conversations/{id}</code></td><td>delete a chat</td></tr>
+      <tr><td><code>GET /api/greeting</code></td><td>Barnaby's greeting for a new chat, from a cache primed at startup; an empty greeting on any failure, never a 500</td></tr>
+      <tr><td><code>GET /api/raids</code>, <code>POST /api/raids/{report_code}/investigate</code></td><td>tracked raids; one-click investigate creates an empty chat and returns the kickoff text, which the browser sends as a normal first turn</td></tr>
+      <tr><td><code>GET /api/recent-raids</code>, <code>POST /api/recent-raids/refresh</code>, <code>POST /api/recent-raids/mplus/{report_code}/{fight_id}/investigate</code></td><td>welcome page (recent raids and Mythic+ runs)</td></tr>
+      <tr><td><code>POST /api/profile/proposals/{id}/approve</code>, <code>…/cancel</code></td><td>the in-chat confirmation card</td></tr>
+      <tr><td><code>GET /api/conversations/{id}/report.pdf</code>, <code>…/messages/{message_id}/report.pdf</code></td><td>PDF downloads (<a href="pdf-reports.html">PDF reports</a>)</td></tr>
+    </tbody>
+  </table></div>
+  <p>Follow-up suggestions have no REST endpoint: they only arrive as the <code>suggestions</code> frame. <code>POST /api/conversations</code> exists but the frontend does not call it; new chats are created by the first <code>ChatTurn</code> with no id, or by the investigate endpoints.</p>
+</section>
+
+<section class="layer" id="why">
+  <h2>Why</h2>
+  <p class="why">WebSocket rather than SSE or polling: the owner asked for WebSockets; it is bidirectional, fits incremental token delivery, and one long-lived connection avoids per-chunk HTTP overhead, with room for client-to-server control frames later. <b>Alternatives:</b> Server-Sent Events (simpler, one-way); HTTP polling (no real streaming).<cite>specs/001-streaming-chat-frontend/research.md §1</cite></p>
+  <p class="why">The socket was kept when the UI moved to the "spellcasting" design: the existing frames map one to one onto that design's events, so an SSE-over-POST rewrite would be pure rework. Only <code>tool_end.summary</code>/<code>ms</code> and the optional <code>tool_progress</code> frame were added.<cite>specs/004-raid-sourcing-ux/research.md R6</cite></p>
+  <p class="why">The handshake checks the session cookie and <code>Origin</code> before <code>accept()</code>: one session model for HTTP and WS, the Origin check is the WebSocket analogue of CSRF, and the per-turn re-check makes a revoked session take effect mid-connection. <b>Alternatives:</b> a query-string token (leaks into logs); a separate auth message (reinvents the cookie).<cite>specs/006-multi-tenancy/research.md R6</cite></p>
+  <p class="why">Follow-ups come from a separate, non-streaming call after the answer: the streamed answer stays clean, the shape (at most three) can be enforced, and first-token latency is unaffected. <b>Alternatives:</b> an in-band trailing block; structured output on the main turn.<cite>specs/003-chat-followups-ux/research.md R1</cite></p>
+  <p class="why"><code>done</code> goes before <code>suggestions</code>, the suggestions run as a cancellable background task and all sends share a per-socket lock, so the composer is never held up.<cite>documentation/ai_guide.md §17</cite></p>
+  <p class="why">Generated titles reach the browser as a typed frame on which it refetches the list, so the list stays the one source of truth. <b>Alternatives:</b> polling after <code>done</code>; patching state from the frame.<cite>specs/019-sidebar-conversations/research.md R8</cite></p>
+  <p class="why">A failed turn shows a fixed message with a log reference, because provider, database and WCL errors can carry internal details such as project ids or SQL.<cite>backend/app/api/ws.py (AGENT_ERROR_MESSAGE comment, QA SEC-001)</cite></p>
+  <p class="why">A tool card starts from the model's final event only, because partial events carry fragments of a call (Anthropic: one per argument chunk; Gemini: a copy the final event repeats), while the final event always has every call with its complete args and id.<cite>backend/app/agent_runner.py (_run_turn, sc-289 comment)</cite></p>
+  <p class="why">Frames crossing the boundary are meant to be explicit typed models.<cite>.specify/memory/constitution.md Principle IV</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Charts and proposal cards wait for <code>done</code> rather than rendering mid-stream, which keeps the message layout stable while text streams and gives each answer one place where everything that belongs to it is attached.</p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>backend/app/api/ws.py</code></li>
+    <li><code>backend/app/agent_runner.py</code></li>
+    <li><code>backend/app/schemas.py</code></li>
+    <li><code>backend/app/suggestions.py</code></li>
+    <li><code>backend/app/greeting.py</code>, <code>backend/app/api/greeting.py</code></li>
+    <li><code>backend/app/services/conversation_titles.py</code></li>
+    <li><code>backend/app/services/tool_summary.py</code>, <code>raids.py</code>, <code>graphs.py</code>, <code>artifacts.py</code>, <code>encounters.py</code></li>
+    <li><code>backend/app/model_state.py</code></li>
+    <li><code>backend/app/auth/csrf.py</code>, <code>backend/app/auth/dependencies.py</code></li>
+    <li><code>backend/app/api/conversations.py</code>, <code>raids.py</code>, <code>recent_raids.py</code>, <code>proposals.py</code>, <code>reports.py</code></li>
+    <li><code>frontend/src/api/wsClient.ts</code>, <code>frontend/src/api/restClient.ts</code></li>
+    <li><code>frontend/src/App.tsx</code>, <code>frontend/src/components/MessageList.tsx</code></li>
+    <li><code>specs/001-streaming-chat-frontend/research.md</code></li>
+    <li><code>specs/003-chat-followups-ux/research.md</code></li>
+    <li><code>specs/004-raid-sourcing-ux/research.md</code></li>
+    <li><code>specs/006-multi-tenancy/research.md</code></li>
+    <li><code>specs/019-sidebar-conversations/research.md</code></li>
+    <li><code>documentation/ai_guide.md</code></li>
+    <li><code>.specify/memory/constitution.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

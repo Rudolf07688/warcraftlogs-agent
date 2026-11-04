@@ -626,3 +626,12 @@ through respawns as the same named member, with its own small, curated memory. I
   reports, which `git worktree remove` had deleted (gitignored); `team-launch` copies them
   first now. Added an "Earlier sprints" tab to the team report on request. Owner: "Well
   done"; pushed on their go.
+- **2026-11-04:** The owner asked for the architecture docs to match the code exactly and to
+  stay current: "make sure this is written down somewhere that part of the sprint close-out
+  step this architecture documentation must be updated to always reflect the current
+  state". Rebuilt `documentation/architecture/` from 3 long pages into an index plus 13
+  topic pages. Six parallel agents each re-checked one area line by line at `1df8f6f`; the
+  old pages were 6–9 days and about 240 commits behind (no knowledge base, provider switch
+  or local-first store). New close-out step: the product owner's wrap-up step 5 runs
+  `.claude/team/archdocs.py changed` → re-verify → `stamp` → `check`, and team-lead gates
+  the merge question on it (`team-launch` wrap-up step 4). Owner preference 24.

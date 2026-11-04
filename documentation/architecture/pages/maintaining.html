@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Keeping Docs Current · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Status</p>
+  <h1>Keeping these docs current</h1>
+  <p class="lede">These pages describe the system as it is at the commit stamped on each page, not as a spec once planned it. They are re-checked against the code at the close of every sprint, so the stamp never falls more than one sprint behind <code>main</code>.</p>
+  <div class="toolbar"><span class="muted verified"></span></div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#rule">The rule</a>
+    <a href="#procedure">Close-out procedure</a>
+    <a href="#map">Which page owns which code</a>
+    <a href="#writing">Writing rules</a>
+    <a href="#serve">Viewing the site</a>
+  </nav>
+</header>
+
+<section class="layer" id="rule">
+  <h2>The rule</h2>
+  <p class="why">"Make sure this is written down somewhere that part of the sprint close-out step this architecture documentation must be updated to always reflect the current state."<cite>meta/owner-preferences.md, preference 24 (2026-11-04)</cite></p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Who</th><th>When</th><th>Where it is written</th></tr></thead>
+    <tbody>
+      <tr><td>The product owner (or one fresh tier-S developer it launches)</td><td>Sprint wrap-up, after the QA fixes are merged and before the sprint review, on the sprint branch</td><td><code>.claude/agents/product-owner.md</code>, "Wrap up", step 5</td></tr>
+      <tr><td>Team-lead</td><td>Before asking the owner to merge the sprint into <code>main</code>: a gate, not a second pass</td><td><code>.claude/skills/team-launch/SKILL.md</code>, "Wrap up", step 4</td></tr>
+      <tr><td>Whoever lands the change</td><td>Single-pass work and changes made outside a sprint, before the merge to <code>main</code></td><td>This page; <code>CLAUDE.md</code> points here</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="layer" id="procedure">
+  <h2>Close-out procedure</h2>
+  <p>Run every command from the repo root of the checkout that holds the sprint tip (the sprint worktree during a sprint).</p>
+  <ol class="steps">
+    <li><b>See what moved.</b> <code>python3 .claude/team/archdocs.py changed</code> reads each page's <code>verified-at</code> stamp, diffs the code from that commit to <code>HEAD</code>, and lists the changed files under the page that owns them. Tests, specs, sprint and meta files are ignored. Exit code 0 means nothing to re-check.</li>
+    <li><b>Place unmapped paths.</b> Files no page owns are listed as <i>unmapped</i>. Decide which page describes them (or whether a new page is needed), write it up, and add the path to <code>PAGE_PATHS</code> in <code>archdocs.py</code> so the next sprint finds it.</li>
+    <li><b>Re-verify, don't append.</b> For every listed page, read the diff and the code, then fix every sentence it touches: paths, names, env vars, defaults, limits, counts, versions, sequences. Count in the code; never copy a number from a spec. Remove what's gone. Describe the system as it now is, not the sprint's ticket history.</li>
+    <li><b>Update the overview.</b> When a layer gained or lost a component, a store or an external service, update the layer table, the cards and the system diagram on <a href="../index.html">the overview</a>.</li>
+    <li><b>New page?</b> Copy <code>pages/_template.html</code>, add it to <code>PAGES</code> in <code>assets/nav.js</code> and to <code>PAGE_PATHS</code> in <code>archdocs.py</code>.</li>
+    <li><b>Stamp.</b> <code>python3 .claude/team/archdocs.py stamp</code> writes the current commit and date into every page. Stamping a page says "every fact on it holds at this commit", so stamp only after step 3. A sprint that changed no mapped code goes straight to this step.</li>
+    <li><b>Check.</b> <code>python3 .claude/team/archdocs.py check</code> must be clean: every page in the nav, every local link and anchor resolves, tags balance, no duplicate ids, no <code>&lt;style&gt;</code> blocks, no external resources.</li>
+    <li><b>Look at it.</b> Screenshot each changed page at desktop and phone width and read the images: no horizontal scroll at 390&nbsp;px, diagram labels inside their boxes and not overlapping.
+      <pre>google-chrome --headless=new --hide-scrollbars --window-size=1300,7000 \
+  --screenshot=/tmp/&lt;scratch&gt;/page.png "file://$PWD/documentation/architecture/pages/&lt;page&gt;.html"</pre></li>
+    <li><b>Commit and report.</b> Commit on the sprint branch (<code>docs(architecture): …</code>) and name the changed pages in the sprint review.</li>
+  </ol>
+  <p class="note">Done when <code>archdocs.py changed</code> exits 0 and <code>archdocs.py check</code> is clean on the sprint tip. That is the gate team-lead checks before the merge question.</p>
+</section>
+
+<section class="layer" id="map">
+  <h2>Which page owns which code</h2>
+  <p>The authoritative map is <code>PAGE_PATHS</code> in <code>.claude/team/archdocs.py</code>; the first matching prefix wins. In short:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Page</th><th>Code it describes</th></tr></thead>
+    <tbody>
+      <tr><td><a href="deployment.html">Deployment &amp; config</a></td><td>Compose file, Dockerfiles, nginx, <code>bin/</code>, <code>.env.example</code>, <code>backend/app/config.py</code>, <code>startup.py</code>, <code>backend/cli/</code>, <code>pyproject.toml</code></td></tr>
+      <tr><td><a href="backend-api.html">Backend API</a></td><td>Everything in <code>backend/app/</code> that no more specific page owns: <code>main.py</code>, routers, services, background work</td></tr>
+      <tr><td><a href="auth-tenancy.html">Auth &amp; multi-tenancy</a></td><td><code>backend/app/auth/</code>, <code>tenancy/</code>, the auth and admin-user routers, user/session/invitation/reset/tenant/audit repositories and services</td></tr>
+      <tr><td><a href="database.html">Database &amp; migrations</a></td><td><code>backend/migrations/</code>, <code>backend/app/db/</code></td></tr>
+      <tr><td><a href="wcl-data.html">WCL client, cache &amp; store</a></td><td><code>wcl_agent/client/</code>, <code>wcl_agent/cache/</code>, fetch persistence, store reads, <code>raw_fetches</code> repository, kickoff pre-fetch, stored-data tools, cache stats</td></tr>
+      <tr><td><a href="knowledge-base.html">Knowledge base</a></td><td><code>backend/app/kb/</code>, <code>kb_tools.py</code>, the name resolver, <code>backend/evals/</code></td></tr>
+      <tr><td><a href="agent.html">Agent runtime &amp; tools</a></td><td><code>agent_runner.py</code>, <code>agent_tools/</code>, guides and the guide pipeline, profile proposals, the rest of <code>wcl_agent/</code></td></tr>
+      <tr><td><a href="models.html">Models &amp; providers</a></td><td><code>model_state.py</code>, the models router, model and provider code in <code>wcl_agent/</code>, generated titles</td></tr>
+      <tr><td><a href="streaming.html">Stream protocol</a></td><td><code>backend/app/api/ws.py</code> and the frontend's frame handling</td></tr>
+      <tr><td><a href="frontend.html">Frontend</a></td><td><code>frontend/</code></td></tr>
+      <tr><td><a href="pdf-reports.html">PDF reports</a></td><td>The reports router, <code>pdf_report.py</code>, charts, graphs, artifacts, bundled fonts</td></tr>
+      <tr><td><a href="open-points.html">Planned, drift &amp; open points</a></td><td>No code: re-read it at every close-out, strike what was built, add new drift</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="layer" id="writing">
+  <h2>Writing rules</h2>
+  <ul>
+    <li><b>Code wins.</b> Where a spec, plan or ticket disagrees with the code, the page describes the code and says so in one line (and the drift goes on <a href="open-points.html">the open-points page</a>).</li>
+    <li><b>Same shape per section:</b> what it does and where it lives, the technology with its version range from the manifests, a diagram where a flow is hard to follow in words, then why.</li>
+    <li><b>Reasons are sourced.</b> A green <code>p.why</code> bar carries a <code>&lt;cite&gt;</code> to a file that really says it (constitution, <code>specs/NNN-*/research.md</code> or <code>plan.md</code>, <code>documentation/</code>). Without a written source, use the amber Inferred badge.</li>
+    <li><b>Plain language.</b> Short sentences, present tense. Tickets by a short plain name, the id in brackets at most (owner preference 23).</li>
+    <li><b>Self-contained.</b> All styling in <code>assets/arch.css</code>, the nav and stamp display in <code>assets/nav.js</code>, inline SVG only, nothing fetched from the network. Pages work served over HTTP and opened as files.</li>
+    <li><b>Diagrams:</b> <code>svg.dg</code> with <code>&lt;title&gt;</code> and <code>&lt;desc&gt;</code>, node classes <code>node</code>, <code>node ext</code>, <code>node store</code>, <code>node core</code>, animated arrows <code>flow</code> / <code>flow ret</code>, marker ids unique per page, and a numbered text version after every sequence diagram.</li>
+  </ul>
+</section>
+
+<section class="layer" id="serve">
+  <h2>Viewing the site</h2>
+  <p>Open <code>documentation/architecture/index.html</code> in a browser, or serve the folder:</p>
+  <pre>python3 -m http.server 8099 -d documentation/architecture
+# then open http://localhost:8099/</pre>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>.claude/team/archdocs.py</code></li>
+    <li><code>.claude/agents/product-owner.md</code></li>
+    <li><code>.claude/skills/team-launch/SKILL.md</code></li>
+    <li><code>meta/owner-preferences.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

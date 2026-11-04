@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>PAGE TITLE · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · GROUP</p>
+  <h1>PAGE TITLE</h1>
+  <p class="lede">Two or three sentences: what this part of the system is for and how it fits the whole.</p>
+  <div class="toolbar">
+    <!-- Only on pages with animated diagrams: -->
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#section-a">Section A</a>
+    <a href="#section-b">Section B</a>
+  </nav>
+</header>
+
+<!-- One <section class="layer"> per topic. Keep this shape in every section:
+     h2 title · tech chips · "What it does, and where it lives" · optional diagram + numbered steps · "Why" -->
+<section class="layer" id="section-a">
+  <h2>Section A</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fastapi&gt;=0.115</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/main.py</code>: facts, each one checked against the code at the commit above.</li>
+  </ul>
+
+  <!-- Diagrams: inline SVG with class="dg", a <title> and <desc>, marker ids unique per page,
+       animated arrows with class="flow" (class="flow ret" for returns), node classes node/ext/store/core.
+       Follow a sequence diagram with an <ol class="steps"> text version for small screens. -->
+
+  <h3>Why</h3>
+  <p class="why">A reason recorded in the repo.<cite>specs/014-redis-wcl-cache/plan.md (Complexity Tracking)</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>A reason nobody wrote down: our best reading of the trade-off.</p>
+</section>
+
+<!-- Planned work: <section class="layer planned"> with <span class="badge planned">Planned, not built</span> in the h2. -->
+<!-- Something that changed since the previous snapshot may carry <span class="badge changed">Changed</span> — optional. -->
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>backend/app/main.py</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

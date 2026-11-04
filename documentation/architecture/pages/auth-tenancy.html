@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Auth &amp; multi-tenancy · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Runtime</p>
+  <h1>Auth &amp; multi-tenancy</h1>
+  <p class="lede">Who may use the app and whose data they see. Accounts are invite-only, sessions are opaque server-side tokens in a cookie, and every tenant-owned row is guarded twice: by an explicit <code>tenant_id</code> in every query and by Postgres row-level security. A chat turn carries the same identity into the agent's tools for that turn only.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#accounts">Accounts &amp; admin</a>
+    <a href="#passwords">Passwords</a>
+    <a href="#sessions">Sessions &amp; CSRF</a>
+    <a href="#ratelimits">Rate limits</a>
+    <a href="#audit">Audit &amp; redaction</a>
+    <a href="#tenancy">Tenant scoping &amp; RLS</a>
+    <a href="#turn-identity">Turn-scoped agent identity</a>
+  </nav>
+</header>
+
+<!-- ============================================================ ACCOUNTS -->
+<section class="layer" id="accounts">
+  <h2>Accounts &amp; admin</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">FastAPI</span><span class="chip">secrets.token_bytes (32 bytes)</span><span class="chip">sha256 digests</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>The first admin</b> is created only from the command line (<code>backend/cli/bootstrap_admin.py</code>, or <code>backend/cli/init_db.py</code>), with their own tenant and owner membership. No HTTP route can create an admin (see <a href="deployment.html#cli">Command-line tools</a>).</li>
+    <li><b>Invitations</b> (<code>backend/app/services/invitation_service.py</code>, routes under <code>/api/admin</code>): a platform admin invites an email. That creates a user with status <code>invited</code> if none exists, revokes any open invitation for the email, and stores the sha256 of a new 32-byte token, valid 24 h. Resend rotates the token and expiry, so the old link stops working; revoke marks it revoked. An email that is disabled or already has a workspace gets a 409.</li>
+    <li><b>Accepting</b> (<code>POST /api/auth/accept-invitation</code>) runs as one transaction: check the token, set the first password, activate the user, create their workspace (a tenant plus an owner membership), open a session and write the audit trail. Every failure is the same generic error.</li>
+    <li><b>Link delivery</b> (<code>backend/app/services/link_delivery.py</code>): there is no email provider. The link is returned once in the admin's API response for them to share by hand. It is built from <code>SITE_URL</code>, never the request's <code>Host</code>, and the raw token sits in the URL fragment (<code>/accept-invite#token=…</code>, <code>/reset-password#token=…</code>).</li>
+    <li><b>Password reset</b> (<code>backend/app/services/password_reset_service.py</code>): an admin triggers it (<code>POST /api/admin/users/{id}/reset</code>), which issues a single-use token valid 1 h. Completing it sets the new password, consumes the token and revokes all of the user's sessions. The admin never sees or sets the password. <code>POST /api/auth/forgot-password</code> exists but only returns a neutral 202 and sends nothing.</li>
+    <li><b>User admin</b>: list users, disable or enable one. Disabling revokes the user's sessions at once and is refused for the last active platform admin. Membership endpoints are deliberately absent: one workspace per user in v1, although <code>tenant_memberships</code> exists.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why"><code>documentation/multi_tenancy_guide.md</code> is the governing contract. Feature 006 adopts it and records only app-specific adaptations.<cite>specs/006-multi-tenancy/research.md (preamble)</cite></p>
+  <p class="why">Founder-mediated links behind one delivery seam: there is no email provider at launch, and an email implementation (with self-service reset) can drop in behind the same functions later. The token goes in the fragment because a query string leaks into logs and the <code>Referer</code> header.<cite>specs/006-multi-tenancy/research.md R9 · backend/app/services/link_delivery.py (docstring)</cite></p>
+  <p class="why">The founder is operator-only and must exist before migration <code>0003</code> backfills existing rows to their tenant.<cite>specs/006-multi-tenancy/research.md R8 · backend/cli/bootstrap_admin.py (docstring)</cite></p>
+  <p class="why"><code>tenants</code> and <code>tenant_memberships</code> are kept although v1 is one user per tenant. This matches the guide's RLS contract and avoids a second painful migration later.<cite>specs/006-multi-tenancy/plan.md (Constitution Check, Principle III) · backend/app/api/admin_users.py (comment on deferred membership endpoints)</cite></p>
+</section>
+
+<!-- ============================================================ PASSWORDS -->
+<section class="layer" id="passwords">
+  <h2>Passwords</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pwdlib[argon2]&gt;=0.2.1</span><span class="chip">anyio.to_thread</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/auth/passwords.py</code>: Argon2id through <code>PasswordHash.recommended()</code>. Hashing and verifying run in a worker thread under a semaphore of <code>PASSWORD_HASH_MAX_CONCURRENCY</code> (4).</li>
+    <li>Policy: 15 to 256 characters, not in a short built-in list of obvious passwords, not one repeated character.</li>
+    <li>Login with an unknown email verifies against a dummy hash computed at import, so the timing matches a real account. A stored hash with outdated parameters is re-hashed on the next successful login.</li>
+  </ul>
+  <h3>Why</h3>
+  <p class="why">pwdlib's recommended Argon2id hasher is what the guide prescribes. Running it off the event loop under a semaphore keeps the backend non-blocking and bounds CPU and memory during a login flood. <b>Alternatives:</b> passlib (less aligned with current FastAPI guidance); hashing on the event loop; a new dummy hash per request.<cite>specs/006-multi-tenancy/research.md R2 · documentation/multi_tenancy_guide.md (Password hashing)</cite></p>
+</section>
+
+<!-- ============================================================ SESSIONS -->
+<section class="layer" id="sessions">
+  <h2>Sessions &amp; CSRF</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">__Host- cookie</span><span class="chip">HMAC-SHA256</span><span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Sessions</b> (<code>backend/app/auth/sessions.py</code>, <code>tokens.py</code>, <code>repositories/sessions.py</code>): a random 32-byte token in the cookie <code>SESSION_COOKIE_NAME</code> (default <code>__Host-session</code>; HttpOnly, Secure, SameSite=Lax, Path=/, no Domain). Only its sha256 digest is stored, in <code>auth_sessions</code>, with the active tenant and a hash of the user agent. A session expires after 7 days idle or 30 days absolute; an expired one is revoked when it is next seen. <code>last_seen_at</code> is written at most every 5 minutes.</li>
+    <li><b>Identity</b> (<code>backend/app/auth/dependencies.py</code>): <code>authenticate_session</code> resolves the cookie in its own short transaction: live session, active user, and, when the session has an active tenant, an active membership and an active tenant. The result is a frozen <code>RequestIdentity</code> (<code>user_id</code>, <code>tenant_id</code>, <code>membership_role</code>, <code>is_platform_admin</code>, <code>session_id</code>), built only from the session, never from client input. Login picks the user's first membership as the active tenant.</li>
+    <li><b>Dependencies</b>: <code>require_session</code> (401 without a live session), <code>require_platform_admin</code> (403 unless admin), <code>require_csrf</code> (identity plus the CSRF check on unsafe methods), <code>get_tenant_db</code> (a tenant-scoped transaction; see <a href="#tenancy">below</a>).</li>
+    <li><b>CSRF</b> (<code>backend/app/auth/csrf.py</code>): every unsafe request (anything but GET, HEAD, OPTIONS, TRACE) through <code>require_csrf</code> needs both an <code>X-CSRF-Token</code> header equal to HMAC-SHA256(<code>SECRET_KEY</code>, session id), compared in constant time, and an <code>Origin</code> (or, failing that, <code>Referer</code>) matching <code>SITE_URL</code>. A request with neither header is refused. The token comes back in the login, accept and <code>/me</code> responses. Logout checks CSRF only when a live session is present, so a stale cookie still gets a clean 204.</li>
+    <li><b>WebSocket</b> (<code>backend/app/api/ws.py</code>): before <code>accept()</code> the handshake must pass the Origin check and carry a valid session with a tenant, else it is closed with 1008. The session is checked again before every turn, so a disabled user or revoked session is cut off mid-connection. No token is ever read from the query string or a frame.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 560" role="img" aria-labelledby="rq-title rq-desc">
+      <title id="rq-title">Sequence: an authenticated, tenant-scoped write</title>
+      <desc id="rq-desc">The browser sends a POST with the session cookie and the CSRF header through the same-origin proxy. FastAPI's dependencies look up the session by its sha256 digest in Postgres, then check Origin and the HMAC CSRF token. get_tenant_db opens a transaction and sets app.tenant_id and app.user_id transaction-locally in one set_config statement. The handler's queries filter by tenant_id and row-level security checks the same value. The transaction commits, which drops the settings, and the response returns.</desc>
+      <defs>
+        <marker id="rq-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="rq-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="node ext" x="40" y="20" width="150" height="50" rx="8"/>
+      <text class="t" x="115" y="51" text-anchor="middle">Browser</text>
+      <rect class="node ext" x="265" y="20" width="150" height="50" rx="8"/>
+      <text class="t" x="340" y="51" text-anchor="middle">Vite / nginx</text>
+      <rect class="node core" x="490" y="20" width="170" height="50" rx="8"/>
+      <text class="t" x="575" y="51" text-anchor="middle">FastAPI deps</text>
+      <rect class="node store" x="765" y="20" width="150" height="50" rx="8"/>
+      <text class="t" x="840" y="51" text-anchor="middle">Postgres</text>
+      <line class="life" x1="115" y1="70" x2="115" y2="540"/>
+      <line class="life" x1="340" y1="70" x2="340" y2="540"/>
+      <line class="life" x1="575" y1="70" x2="575" y2="540"/>
+      <line class="life" x1="840" y1="70" x2="840" y2="540"/>
+
+      <path class="flow" marker-end="url(#rq-ah)" d="M115,110 H338"/>
+      <text class="lbl" x="227" y="100" text-anchor="middle">POST + cookie + CSRF</text>
+      <path class="flow" marker-end="url(#rq-ah)" d="M340,155 H573"/>
+      <text class="lbl" x="457" y="145" text-anchor="middle">same origin, XFF</text>
+      <path class="flow" marker-end="url(#rq-ah)" d="M575,200 H838"/>
+      <text class="lbl" x="707" y="190" text-anchor="middle">session by sha256</text>
+      <path class="flow ret" marker-end="url(#rq-ah2)" d="M840,240 H577"/>
+      <text class="lbl" x="707" y="230" text-anchor="middle">user, tenant active</text>
+      <rect class="node" x="455" y="262" width="240" height="56" rx="8"/>
+      <text class="sub" x="575" y="285" text-anchor="middle">Origin = SITE_URL</text>
+      <text class="sub" x="575" y="306" text-anchor="middle">HMAC CSRF, constant time</text>
+      <path class="flow" marker-end="url(#rq-ah)" d="M575,355 H838"/>
+      <text class="lbl" x="707" y="345" text-anchor="middle">set_config(…, true)</text>
+      <path class="flow" marker-end="url(#rq-ah)" d="M575,405 H838"/>
+      <text class="lbl" x="707" y="395" text-anchor="middle">WHERE tenant_id + RLS</text>
+      <path class="flow" marker-end="url(#rq-ah)" d="M575,455 H838"/>
+      <text class="lbl" x="707" y="445" text-anchor="middle">COMMIT</text>
+      <path class="flow ret" marker-end="url(#rq-ah2)" d="M575,505 H117"/>
+      <text class="lbl" x="345" y="495" text-anchor="middle">response</text>
+    </svg>
+    <figcaption>One tenant-scoped write through <code>require_csrf</code> and <code>get_tenant_db</code>. The session lookup is its own short transaction; the tenant settings live only inside the handler's transaction.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>The browser sends the request with the session cookie and <code>X-CSRF-Token</code> to its own origin; Vite or nginx forwards it to the backend.</li>
+    <li><code>require_session</code> hashes the cookie and loads the live session, user, membership and tenant (one short transaction that also refreshes <code>last_seen_at</code> when due).</li>
+    <li><code>require_csrf</code> checks <code>Origin</code>/<code>Referer</code> against <code>SITE_URL</code> and the HMAC token.</li>
+    <li><code>get_tenant_db</code> opens a transaction and sets <code>app.tenant_id</code> and <code>app.user_id</code> transaction-locally.</li>
+    <li>The handler's queries carry <code>tenant_id</code>; RLS enforces the same value.</li>
+    <li>Commit ends the transaction and its settings; the response returns.</li>
+  </ol>
+
+  <h3>Why</h3>
+  <p class="why">Opaque server-side sessions in a <code>__Host-</code> cookie, with a header CSRF token. Same-origin deployment through the Vite or nginx proxy makes this the simplest correct design, with no credentialed CORS. <b>Alternatives:</b> JWT (the guide forbids it, and JWTs can't be revoked server-side); double-submit CSRF cookie (weaker); tokens in <code>localStorage</code> (readable by XSS).<cite>specs/006-multi-tenancy/research.md R3</cite></p>
+  <p class="why">The WebSocket reuses the cookie at the handshake, with the Origin check as its CSRF analogue, and re-validates each turn so disabling takes effect mid-session. <b>Alternatives:</b> a query-string token (leaks into logs); a separate auth message (reinvents the cookie).<cite>specs/006-multi-tenancy/research.md R6</cite></p>
+  <p class="note"><b>Drift from research:</b> R3 planned a stored sha256 of a random CSRF token. The code derives it statelessly with HMAC instead, so a reload or another tab recovers the same token; the reason is in the <code>backend/app/auth/csrf.py</code> docstring. <code>.env.example</code> explains when to drop the <code>__Host-</code> prefix and <code>Secure</code> for plain-HTTP development (Safari drops the cookie otherwise).</p>
+</section>
+
+<!-- ============================================================ RATE LIMITS -->
+<section class="layer" id="ratelimits">
+  <h2>Rate limits</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">in-process limiter</span><span class="chip">ipaddress (stdlib)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p><code>backend/app/auth/rate_limit.py</code> has one <code>InProcessRateLimiter</code> class behind a <code>RateLimiter</code> protocol, and five process-wide instances.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Instance</th><th>Key</th><th>Rule</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td><code>login_limiter</code></td><td>normalised email + client source</td><td>Progressive delay from the 5th consecutive failure, doubling, capped at 30 s; never a lockout. Success clears it. 429 with <code>Retry-After</code>.</td><td><code>services/auth_service.py</code></td></tr>
+      <tr><td><code>token_limiter</code></td><td><code>accept:</code>, <code>reset:</code>, <code>forgot:</code> or <code>admin-invite:</code> + client source</td><td>Fixed window, 20 per minute (<code>RATE_LIMIT_TOKEN_PER_MINUTE</code>)</td><td><code>api/auth.py</code>, <code>api/admin_users.py</code> (create invitation)</td></tr>
+      <tr><td><code>guide_limiter</code></td><td>user id</td><td>10 per minute</td><td>Generate a guide</td></tr>
+      <tr><td><code>guide_report_limiter</code></td><td>user id</td><td>5 per minute</td><td>Report a guide inaccuracy</td></tr>
+      <tr><td><code>investigate_limiter</code></td><td>user id</td><td>5 per minute, checked before the endpoint takes a DB connection (sc-352)</td><td><code>POST /api/raids/{code}/investigate</code></td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Client source</b> (<code>client_source</code>): the direct peer address, unless that peer is in <code>TRUSTED_PROXIES</code> (IPs or CIDRs, parsed once per value). Then it walks <code>X-Forwarded-For</code> from the right and takes the nearest hop that isn't a trusted proxy. Ports are stripped and IPv4-mapped IPv6 counts as IPv4. A hop that isn't an address falls back to the peer (logged once). With no trusted proxies, forwarded headers are ignored, so behind a proxy every client shares the proxy's bucket.</p>
+  <h3>Why</h3>
+  <p class="why">The limiter is in-process at single-process scale, behind an interface so a shared backend can replace it. <b>Alternative:</b> Redis at the time (speculative infrastructure, YAGNI).<cite>specs/006-multi-tenancy/research.md R7 · backend/app/auth/rate_limit.py (module docstring)</cite></p>
+  <p class="why">The nearest untrusted hop is the address our own proxy saw; the leftmost entries are whatever the client wrote, so keying on them would let a client pick its own bucket (sc-158).<cite>backend/app/auth/rate_limit.py (client_source docstring) · .env.example (TRUSTED_PROXIES)</cite></p>
+  <p class="note"><b>Drift from research:</b> R7 says login throttling is backed per account by <code>users.failed_login_count</code> and <code>login_blocked_until</code>. In the code the throttle is in memory only, keyed by account and source together. <code>failed_login_count</code> is incremented and reset but never read for a decision, and <code>login_blocked_until</code> is only ever cleared. The guide also recommends shared limits once there are several workers; Redis exists since feature 014, but every limiter is still per process.</p>
+</section>
+
+<!-- ============================================================ AUDIT -->
+<section class="layer" id="audit">
+  <h2>Audit &amp; redaction</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">logging.Filter</span><span class="chip">append-only table</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/repositories/audit.py</code> appends to <code>auth_audit_events</code>: event type, outcome, actor, target, tenant, optional request id and metadata. Events written today include <code>login</code> (success and failure), <code>logout</code>, <code>invitation.created</code>/<code>resent</code>/<code>revoked</code>, <code>password_reset.requested</code>, <code>user.disabled</code> and <code>user.enabled</code>. Metadata goes through the redaction helper first.</li>
+    <li><code>backend/app/auth/redaction.py</code>: values of keys matching <code>password|token|authorization|cookie|set-cookie|csrf</code> (any case, substring) become <code>«redacted»</code>, recursively to depth 6. <code>RedactionFilter</code> applies it to log records' dict args and extras; <code>main.py</code> installs it on the root logger, its handlers and uvicorn's loggers.</li>
+  </ul>
+  <p>The table itself is on <a href="database.html">Database &amp; migrations</a>.</p>
+  <h3>Why</h3>
+  <p class="why">Secrets never reach logs, APM or the audit table: raw tokens leave the server once and are otherwise only stored as digests; the filter is defence in depth for structured log data.<cite>backend/app/auth/tokens.py (docstring) · backend/app/main.py (_install_log_redaction docstring) · specs/006-multi-tenancy/research.md (Cross-cutting: audit, redaction, config, tests)</cite></p>
+</section>
+
+<!-- ============================================================ TENANCY -->
+<section class="layer" id="tenancy">
+  <h2>Tenant scoping &amp; row-level security</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">PostgreSQL row-level security</span><span class="chip">set_config(…, true)</span><span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Two roles.</b> The app connects as the runtime role (<code>APP_DB_USER</code>, created by migration <code>0004_rls</code> as <code>NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS</code>, with DML on all tables and default privileges for later ones). Alembic runs as the owner. See <a href="deployment.html#config">Configuration</a>.</li>
+    <li><b>Scope per transaction</b> (<code>backend/app/tenancy/context.py</code>): <code>set_scope</code> runs one statement, <code>SELECT set_config('app.tenant_id', …, true), set_config('app.user_id', …, true)</code> (one round trip since sc-270). The <code>true</code> makes both settings transaction-local, so they vanish at commit and never leak to the next user of a pooled connection. Entry points: <code>get_tenant_db</code> / <code>tenant_session(identity)</code> for requests, <code>tenant_scope(tenant_id, user_id=…)</code> for sockets, tools and jobs, and <code>commit_and_rescope</code> after a mid-handler commit (otherwise the next query would see no tenant and RLS would return nothing). On SQLite (tests) the call is skipped and the app-level filters are what the tests check.</li>
+    <li><b>App-level filter.</b> Every tenant-owned repository function takes a keyword-only <code>tenant_id</code>, and lookups combine id and tenant in one predicate, so a foreign row is a 404.</li>
+    <li><b>RLS.</b> 17 tenant-owned tables have row-level security enabled and forced (migrations 0004, 0005, 0010, 0014, 0016, 0018, 0019). 16 use the policy <code>tenant_isolation</code>: <code>tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid</code> for both <code>USING</code> and <code>WITH CHECK</code>. <code>profile_proposals</code> uses <code>tenant_user_isolation</code>, which also requires <code>user_id</code> to match <code>app.user_id</code> (migration 0017, sc-222). Global tables (guides, the raw WCL store, <code>kb_chunks</code>) have no RLS by design; the table list is on <a href="database.html">Database &amp; migrations</a>.</li>
+    <li><b>Global-data routes</b> such as <code>/api/guides</code> use the non-tenant <code>get_session</code> but still require a session, CSRF on writes and per-user caps.</li>
+    <li><b>Outside Postgres tables:</b> ADK's session tables are isolated by ADK <code>user_id</code> = tenant id, not by RLS. The Redis WCL cache is shared by all tenants and its keys never hold a user or tenant id; a load answered from a report visible only through one tenant's grant is marked unshareable and kept out of the shared cache (045). The per-turn scratch store is per conversation.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">RLS plus a separate non-owner runtime role is defence in depth for the feature's worst risk, cross-tenant leaks. The tenant id is set transaction-locally, because a session-level <code>SET</code> leaks across pooled connections. <b>Alternatives:</b> app-level scoping only (a single point of failure); one superuser role (bypasses RLS).<cite>specs/006-multi-tenancy/research.md R4</cite></p>
+  <p class="why">An explicit <code>tenant_id</code> argument on every repository function, with one combined id-and-tenant lookup that returns 404 for a foreign row. <b>Alternative:</b> a global SQLAlchemy event that injects filters, rejected as too implicit and easy to bypass.<cite>specs/006-multi-tenancy/research.md R5</cite></p>
+  <p class="why">The database itself enforces "same user" on proposals, so a future background job or query can't read or act on another user's proposal in the same tenant.<cite>specs/036-profile-write-hardening/spec.md (User Story 2, sc-222)</cite></p>
+  <p class="why">Guides are a global library without RLS, because they are generic class advice, not user data.<cite>specs/008-profile-class-pages/research.md Decision 1 · backend/app/api/guides.py (docstring)</cite></p>
+  <p class="note"><b>Drift from research:</b> 006 R5(d) put a tenant prefix on WCL cache keys. Feature 014 removed it when the cache moved to shared Redis (014 research R10); private data is now kept per tenant by the raw store's grants and the unshareable flag instead (see <a href="wcl-data.html">WCL client, cache &amp; store</a>).</p>
+</section>
+
+<!-- ============================================================ TURN IDENTITY -->
+<section class="layer" id="turn-identity">
+  <h2>Turn-scoped agent identity</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">contextvars.ContextVar</span><span class="chip">ADK ToolContext</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>current_identity</code> (<code>backend/app/tenancy/context.py</code>) is a <code>ContextVar[RequestIdentity | None]</code>, default <code>None</code>. The chat socket sets it just before streaming a turn and resets it in the turn's <code>finally</code> (<code>backend/app/api/ws.py</code>). ADK's producer task copies the context, so tools see it inside the turn and nowhere else.</li>
+    <li>Backend agent tools act as that user and fail closed without it: <code>propose_profile_changes</code> (<code>agent_tools/profile_tools.py</code>), <code>search_knowledge</code> (<code>agent_tools/kb_tools.py</code>) and the stored-data lookups (<code>agent_tools/stored_data_tools.py</code>) all return a plain "unavailable" error unless the identity exists and its <code>tenant_id</code> equals the ADK <code>tool_context.user_id</code>. They then open their own <code>tenant_scope</code> (with <code>user_id</code> where proposals are involved).</li>
+    <li>The WCL data path reads the same variable: the fetch writer records which tenant fetched a response (for that tenant's grant on private reports), and DB-first reads answer only what that tenant may see. Without an identity (greeting, guide jobs) only public data qualifies.</li>
+    <li>Every task started with <code>background.spawn</code> gets a fresh, empty context, so it never inherits a turn's identity. The one job that acts for a user, the kickoff pre-fetch, sets the clicking user's identity inside its own task.</li>
+    <li>Alongside, the turn sets the cache's refresh actor to the user id at turn start and clears it at the end (<code>set_refresh_actor</code>), which also closes the turn for the local-answer metrics (sc-276, 045).</li>
+  </ul>
+  <h3>Why</h3>
+  <p class="why">Tools need to know who they act for, but the identity must exist only during the chat turn, so a later task on the same socket or a spawned job can't act as the wrong user.<cite>specs/036-profile-write-hardening/spec.md (User Story 2, sc-222) · backend/app/tenancy/context.py (comment on current_identity)</cite></p>
+  <p class="why">A fresh context per spawned task rather than copying and resetting only the identity, which would keep leaking the other context variables.<cite>specs/036-profile-write-hardening/research.md R3</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>No recorded reason for the extra <code>tenant_id == tool_context.user_id</code> check. It ties the identity to the ADK session the tool runs in, so a tool can't act if the two ever disagree (for example a tool called from a disposable greeting or guide session).</p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>backend/app/auth/</code> (<code>csrf.py</code>, <code>dependencies.py</code>, <code>passwords.py</code>, <code>rate_limit.py</code>, <code>redaction.py</code>, <code>sessions.py</code>, <code>tokens.py</code>), <code>backend/app/tenancy/context.py</code></li>
+    <li><code>backend/app/api/auth.py</code>, <code>api/admin_users.py</code>, <code>api/guides.py</code>, <code>api/raids.py</code>, <code>api/ws.py</code>, <code>backend/app/main.py</code></li>
+    <li><code>backend/app/services/auth_service.py</code>, <code>invitation_service.py</code>, <code>password_reset_service.py</code>, <code>link_delivery.py</code>, <code>background.py</code>, <code>kickoff_prefetch.py</code>, <code>fetch_persistence.py</code>, <code>raw_fetch_reads.py</code>; <code>backend/app/repositories/audit.py</code>, <code>users.py</code>; <code>backend/app/agent_tools/*.py</code>; <code>backend/app/config.py</code></li>
+    <li>Migrations <code>0004_rls</code>, <code>0005_known_entities</code>, <code>0010_recent_raids</code>, <code>0014_recent_mplus_runs</code>, <code>0016_profile_proposals</code>, <code>0017_proposal_user_rls</code>, <code>0018_raw_store_visibility</code>, <code>0019_kb_chunks</code></li>
+    <li><code>wcl_agent/cache/cache.py</code> (<code>keys</code>, <code>mark_unshareable</code>, <code>set_refresh_actor</code>), <code>.env.example</code></li>
+    <li><code>specs/006-multi-tenancy/research.md</code> and <code>plan.md</code>, <code>specs/008-profile-class-pages/research.md</code>, <code>specs/014-redis-wcl-cache/research.md</code>, <code>specs/036-profile-write-hardening/spec.md</code> and <code>research.md</code>, <code>documentation/multi_tenancy_guide.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Database &amp; migrations · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Data</p>
+  <h1>Database &amp; migrations</h1>
+  <p class="lede">One PostgreSQL 17 database, with the pgvector extension, holds all app state: accounts and workspaces, chats, profiles, guides, the raw Warcraft Logs store and the knowledge base. The backend reaches it through async SQLAlchemy over asyncpg as a non-privileged role that row-level security constrains. Alembic owns the schema and runs as a separate owner role.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#overview">Postgres and the two roles</a>
+    <a href="#access">Engine, sessions &amp; repositories</a>
+    <a href="#tables">Tables</a>
+    <a href="#rls">Row-level security</a>
+    <a href="#indexes">Notable indexes</a>
+    <a href="#migrations">Migrations</a>
+    <a href="#portability">SQLite tests &amp; timestamps</a>
+  </nav>
+</header>
+
+<!-- ============================================================ OVERVIEW -->
+<section class="layer" id="overview">
+  <h2>Postgres and the two roles</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">PostgreSQL 17</span><span class="chip">pgvector &ge; 0.8 (extension)</span><span class="chip">citext (extension)</span><span class="chip">pgvector&gt;=0.5.1 (Python)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>docker-compose.yml</code> service <code>db</code>: image <code>pgvector/pgvector:pg17-trixie</code>, which is Postgres 17 plus the pgvector extension. It uses the same major version and on-disk format as <code>postgres:17</code>, so an existing <code>pgdata</code> volume starts as it is. The <code>-trixie</code> tag matches <code>postgres:17</code>'s Debian 13 glibc. The plain <code>pg17</code> tag is built on bookworm and would leave a collation-version mismatch. The port is published on loopback only (<code>127.0.0.1:5432</code>), with a <code>pg_isready</code> healthcheck that the backend waits on.</li>
+    <li><b>Owner role</b> (<code>POSTGRES_USER</code>, <code>DATABASE_OWNER_URL</code>): owns the tables and runs Alembic. <code>Settings.owner_database_url</code> in <code>backend/app/config.py</code> falls back to the runtime URL when <code>DATABASE_OWNER_URL</code> is empty, for single-role dev setups.</li>
+    <li><b>Runtime role</b> (<code>APP_DB_USER</code>, default <code>wcl_app</code>, <code>DATABASE_URL</code>): what the app connects as. It is not a superuser or a table owner and has no <code>BYPASSRLS</code>, so the RLS policies bind it. Migration <code>0004_rls</code> creates it if it is missing, so there is no init script. The <code>DATABASE_URL</code> default is <code>postgresql+asyncpg://wcl:wcl@localhost:5432/wcl</code>.</li>
+    <li>ADK's <code>DatabaseSessionService</code> (agent session history) lives in the same database. It reuses the app's engine (<code>backend/app/main.py</code>) and creates its own tables with <code>prepare_tables()</code>, outside Alembic. <code>0004_rls</code> grants the runtime role <code>CREATE</code> on <code>public</code> for that reason.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 470" role="img" aria-labelledby="db-roles-title db-roles-desc">
+      <title id="db-roles-title">Who connects to Postgres, and as which role</title>
+      <desc id="db-roles-desc">The FastAPI app connects as the runtime role. It sets app.tenant_id and app.user_id for each transaction and reaches the 17 tenant tables under forced row-level security, and the 12 global tables, which have no RLS. ADK's DatabaseSessionService shares the app's engine and writes its own tables. Alembic and the init_db command connect as the owner role and run DDL, RLS policies, grants and CREATE EXTENSION.</desc>
+      <defs>
+        <marker id="db-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="db-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+
+      <rect class="zone" x="470" y="14" width="476" height="442" rx="14"/>
+      <text class="zlbl" x="486" y="40">db · Postgres 17 + pgvector</text>
+
+      <rect class="node core" x="20" y="40" width="300" height="90" rx="10"/>
+      <text class="t" x="170" y="76" text-anchor="middle">FastAPI app</text>
+      <text class="sub" x="170" y="100" text-anchor="middle">runtime role · RLS applies</text>
+
+      <rect class="node" x="20" y="190" width="300" height="90" rx="10"/>
+      <text class="t" x="170" y="226" text-anchor="middle">ADK session service</text>
+      <text class="sub" x="170" y="250" text-anchor="middle">same engine and pool</text>
+
+      <rect class="node ext" x="20" y="340" width="300" height="90" rx="10"/>
+      <text class="t" x="170" y="376" text-anchor="middle">Alembic · init_db</text>
+      <text class="sub" x="170" y="400" text-anchor="middle">owner role</text>
+
+      <rect class="node store" x="500" y="60" width="420" height="90" rx="10"/>
+      <text class="t" x="710" y="96" text-anchor="middle">17 tenant tables</text>
+      <text class="sub" x="710" y="120" text-anchor="middle">RLS enabled + forced</text>
+
+      <rect class="node store" x="500" y="190" width="420" height="90" rx="10"/>
+      <text class="t" x="710" y="226" text-anchor="middle">12 global tables</text>
+      <text class="sub" x="710" y="250" text-anchor="middle">auth, guides, raw store, kb_chunks · no RLS</text>
+
+      <rect class="node store" x="500" y="320" width="420" height="90" rx="10"/>
+      <text class="t" x="710" y="356" text-anchor="middle">ADK tables</text>
+      <text class="sub" x="710" y="380" text-anchor="middle">made by prepare_tables(), not Alembic</text>
+
+      <path class="flow" marker-end="url(#db-ah)" d="M320,85 H497"/>
+      <text class="lbl" x="408" y="75" text-anchor="middle">set_config(…)</text>
+      <path class="flow" marker-end="url(#db-ah)" d="M320,115 H420 V225 H497"/>
+      <path class="flow" marker-end="url(#db-ah)" d="M320,235 H390 V355 H497"/>
+      <path class="flow ret" marker-end="url(#db-ah2)" d="M320,415 H467"/>
+      <text class="lbl" x="393" y="405" text-anchor="middle">DDL, RLS, grants</text>
+    </svg>
+    <figcaption>The app and ADK share one async engine as the runtime role. Only Alembic (directly or through <code>backend.cli.init_db</code>) uses the owner role.</figcaption>
+  </figure>
+
+  <h3>Why</h3>
+  <p class="why">PostgreSQL 17 was the owner's call: "We will spin up a backend postgres 17 database to keep track of app state over time".<cite>specs/001-streaming-chat-frontend/spec.md (Input)</cite></p>
+  <p class="why">The vectors live in the same Postgres through the pgvector image, not in a separate vector database, which the owner's design rejected. The <code>-trixie</code> tag avoids a collation mismatch on the existing volume.<cite>specs/043-kb-store-embed/research.md R1</cite></p>
+  <p class="why">Two roles exist so RLS really constrains the app. A single superuser role could bypass RLS and defeat it. The owner role is used only by Alembic.<cite>specs/006-multi-tenancy/research.md R4</cite></p>
+</section>
+
+<!-- ============================================================ ACCESS -->
+<section class="layer" id="access">
+  <h2>Engine, sessions &amp; repositories</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span><span class="chip">asyncpg&gt;=0.29.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/db/session.py</code>: one module-level <code>engine</code> (<code>create_async_engine</code>, <code>pool_pre_ping=True</code>) and <code>SessionLocal</code> (<code>async_sessionmaker</code>, <code>expire_on_commit=False</code>). The pool is set by <code>DB_POOL_SIZE</code> (10), <code>DB_MAX_OVERFLOW</code> (20) and <code>DB_POOL_TIMEOUT</code> (10 s). <code>get_session()</code> is the FastAPI dependency: it commits on success and rolls back on error.</li>
+    <li><code>backend/app/tenancy/context.py</code>: <code>tenant_session</code> (per request), <code>tenant_scope</code> (background jobs) and <code>set_scope</code>. They open a transaction and set <code>app.tenant_id</code> and <code>app.user_id</code> transaction-locally in one <code>set_config(…, true)</code> statement (sc-270). <code>commit_and_rescope</code> re-applies them after a mid-handler commit. How a request gets its identity is on <a href="auth-tenancy.html">Auth &amp; multi-tenancy</a>.</li>
+    <li><code>backend/app/db/repository.py</code>: data access for conversations, messages, artifacts, graphs, tracked and recent raids, M+ runs, known entities, characters, guild and guides. Every tenant-owned function takes a keyword-only <code>tenant_id</code> and puts it in the SQL, so a row is never fetched by id alone.</li>
+    <li><code>backend/app/repositories/</code>: <code>users</code>, <code>tenants</code>, <code>invitations</code>, <code>sessions</code>, <code>reset_tokens</code>, <code>audit</code> (auth), <code>profile_proposals</code> and <code>raw_fetches</code> (the raw WCL store). The knowledge base reads and writes through <code>backend/app/kb/store.py</code> and <code>search.py</code>.</li>
+  </ul>
+  <p>Concurrency patterns the code relies on:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Pattern</th><th>Where</th><th>What it protects</th></tr></thead>
+    <tbody>
+      <tr><td><code>SELECT … FOR UPDATE</code> on the conversation row</td><td><code>repository._next_seq</code></td><td>Two messages added to one conversation at once get consecutive <code>seq</code> numbers, not a clash on <code>uq_message_conv_seq</code> (sc-255).</td></tr>
+      <tr><td>Lock order: proposal cards, then the conversation</td><td><code>backend/app/api/ws.py</code>, <code>repositories/profile_proposals.py</code> (<code>for_update=True</code>)</td><td>A card approve or cancel during the answer's final save waits instead of deadlocking.</td></tr>
+      <tr><td><code>pg_advisory_xact_lock</code> keyed on <code>profile:&lt;tenant&gt;</code></td><td><code>repository.lock_profile</code></td><td>Parallel character adds can't both pass the duplicate check and the caps (<code>MAX_OWN_CHARACTERS</code> 10, <code>MAX_FRIENDS</code> 50) (sc-223).</td></tr>
+      <tr><td>Conditional <code>UPDATE … RETURNING</code></td><td><code>repository</code> refresh claim on <code>recent_raid_refresh</code></td><td>One welcome-page refresh per tenant across instances. A stale <code>running</code> claim is taken over.</td></tr>
+      <tr><td><code>INSERT … ON CONFLICT DO NOTHING</code></td><td><code>repository._insert</code> (Postgres or SQLite dialect)</td><td>Idempotent writes of recent raids, M+ runs and their character links.</td></tr>
+      <tr><td>Transaction-local <code>statement_timeout</code></td><td><code>repositories/raw_fetches.py</code> (2000 ms), <code>kb/search.py</code> (3000 ms, plus <code>hnsw.iterative_scan</code>)</td><td>Caps a slow stored-reports list or knowledge-base search inside its own transaction.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Why</h3>
+  <p class="why">The app owns a small schema with SQLAlchemy 2.0 async and asyncpg, so history can be queried for the sidebar and survives restarts. <b>Alternative:</b> ADK's <code>DatabaseSessionService</code> as the only store. It was deferred because it couples our data to ADK's internal schema. ADK sessions were added alongside later.<cite>specs/001-streaming-chat-frontend/research.md §5</cite></p>
+  <p class="why">The refresh claim is one row and one <code>UPDATE … RETURNING</code>, so it works the same on one instance or many. <b>Alternatives:</b> an in-memory set, or <code>pg_advisory_lock</code>, which is held per connection, records no outcome and doesn't exist on SQLite.<cite>specs/013-welcome-recent-raids/research.md R4</cite></p>
+</section>
+
+<!-- ============================================================ TABLES -->
+<section class="layer" id="tables">
+  <h2>Tables</h2>
+  <div class="chips"><span class="eyebrow">Source</span><span class="chip">backend/app/db/models.py</span><span class="chip">29 ORM tables</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p><code>backend/app/db/models.py</code> declares 29 tables on one <code>Base</code>: 17 are tenant-scoped under RLS and 12 are global. ADK's tables come on top. The raw store's behaviour is on <a href="wcl-data.html">WCL client, cache &amp; store</a>, and the knowledge base's on <a href="knowledge-base.html">Knowledge base</a>.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Area</th><th>Table</th><th>What a row is</th><th>Scope</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="7">Auth &amp; tenancy</td><td><code>users</code></td><td>A person: <code>citext</code> email, Argon2 hash, status, login throttle fields, <code>is_platform_admin</code></td><td>Global</td></tr>
+      <tr><td><code>tenants</code></td><td>A private workspace</td><td>Global</td></tr>
+      <tr><td><code>tenant_memberships</code></td><td>User and tenant link with a role (<code>tenant_admin</code> or <code>member</code>)</td><td>Global</td></tr>
+      <tr><td><code>invitations</code></td><td>An invite: sha256 of the token, expiry, at most one open per email</td><td>Global</td></tr>
+      <tr><td><code>auth_sessions</code></td><td>A login session: token digest, active tenant, <code>expires_at</code>, <code>last_seen_at</code>. Named so it doesn't clash with ADK's <code>sessions</code></td><td>Global</td></tr>
+      <tr><td><code>password_reset_tokens</code></td><td>A single-use reset token digest</td><td>Global</td></tr>
+      <tr><td><code>auth_audit_events</code></td><td>Auth audit log (<code>BIGINT</code> autoincrement id, event type, outcome, metadata JSONB)</td><td>Global</td></tr>
+
+      <tr><td rowspan="4">Chat</td><td><code>conversations</code></td><td>A chat: title, <code>title_source</code>, model, <code>pinned_at</code>. <code>UNIQUE (id, tenant_id)</code> is the target for <code>kb_chat_chunks</code></td><td>Tenant RLS</td></tr>
+      <tr><td><code>messages</code></td><td>One user or agent message, numbered by <code>seq</code>, <code>status</code> <code>complete</code> or <code>partial</code></td><td>Tenant RLS</td></tr>
+      <tr><td><code>artifacts</code></td><td>A chart spec the agent declared, linked to its message by <code>message_seq</code></td><td>Tenant RLS</td></tr>
+      <tr><td><code>captured_graphs</code></td><td>WCL graph JSON fetched during a chat, kept for the PDF</td><td>Tenant RLS</td></tr>
+
+      <tr><td rowspan="3">Profile &amp; proposals</td><td><code>user_characters</code></td><td>An own character (<code>role='self'</code>) or a friend, with class, active spec and an optional <code>raid_role</code></td><td>Tenant RLS</td></tr>
+      <tr><td><code>guild_profile</code></td><td>The workspace's main guild and its generated summary</td><td>Tenant RLS</td></tr>
+      <tr><td><code>profile_proposals</code></td><td>A profile change the agent proposed: items as JSON, status, expiry, applied only on approval</td><td>Tenant + user RLS</td></tr>
+
+      <tr><td rowspan="2">Agent memory</td><td><code>known_players</code></td><td>A player seen in tool results, so a bare name resolves later</td><td>Tenant RLS</td></tr>
+      <tr><td><code>known_encounters</code></td><td>A boss or zone the user asked about</td><td>Tenant RLS</td></tr>
+
+      <tr><td rowspan="6">Raids &amp; activity</td><td><code>tracked_raids</code></td><td>A report the user pulled data for, with its deduped boss list</td><td>Tenant RLS</td></tr>
+      <tr><td><code>recent_raids</code></td><td>A report an own character was logged in (welcome page), final once ended</td><td>Tenant RLS</td></tr>
+      <tr><td><code>recent_raid_characters</code></td><td>Which own characters were in that report</td><td>Tenant RLS</td></tr>
+      <tr><td><code>recent_raid_refresh</code></td><td>One row per tenant: refresh status and the cross-instance claim</td><td>Tenant RLS</td></tr>
+      <tr><td><code>recent_mplus_runs</code></td><td>A completed keystone fight in such a report</td><td>Tenant RLS</td></tr>
+      <tr><td><code>recent_mplus_run_characters</code></td><td>Which own characters were in that run</td><td>Tenant RLS</td></tr>
+
+      <tr><td rowspan="2">Class guides</td><td><code>spec_guides</code></td><td>One guide per (class, spec, content type): the published version plus the latest run's state</td><td>Global</td></tr>
+      <tr><td><code>guide_inaccuracy_reports</code></td><td>A user's "report an inaccuracy" note on a guide (no FK, so it survives regeneration)</td><td>Global</td></tr>
+
+      <tr><td rowspan="3">Raw WCL store</td><td><code>raw_fetches</code></td><td>One WCL GraphQL response per <code>query_key</code>: <code>payload</code> JSONB, <code>report_codes</code>, <code>payload_hash</code>, <code>own_summary</code></td><td>Global</td></tr>
+      <tr><td><code>raw_reports</code></td><td>What WCL last showed about a report: visibility, end time, <code>checked_at</code></td><td>Global</td></tr>
+      <tr><td><code>raw_fetch_grants</code></td><td>This tenant fetched this report code from WCL itself, at <code>granted_at</code></td><td>Tenant RLS</td></tr>
+
+      <tr><td rowspan="2">Knowledge base</td><td><code>kb_chunks</code></td><td>A chunk of a stored fetch (<code>kind='wcl'</code>) or a published guide (<code>'guide'</code>): text, <code>vector(768)</code> (NULL until embedded), generated <code>tsv</code>, filter columns</td><td>Global</td></tr>
+      <tr><td><code>kb_chat_chunks</code></td><td>One finished chat exchange of a workspace, same content columns</td><td>Tenant RLS</td></tr>
+
+      <tr><td>Agent sessions</td><td><code>sessions</code>, <code>events</code>, <code>app_states</code>, <code>user_states</code></td><td>ADK's own tables. <code>backend/migrations/env.py</code> keeps these names out of autogenerate</td><td>ADK-managed</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Cascades follow ownership. Deleting a tenant cascades to all its tenant-scoped rows. Deleting a conversation cascades to its messages, artifacts, graphs, proposals and chat chunks, but only sets <code>tracked_raids.last_conversation_id</code> to NULL. Deleting a character removes its recent-raid and M+ links. Deleting a <code>raw_fetches</code> or <code>spec_guides</code> row deletes its <code>kb_chunks</code>.</p>
+
+  <h3>Why</h3>
+  <p class="why"><code>raw_fetches</code> is global because Warcraft Logs data is public, like the shared Redis cache. <code>report_codes</code> is its own JSONB array with a GIN index, so batched rows can be found by report code without parsing GraphQL.<cite>specs/020-fetch-persistence/research.md R7 · backend/migrations/versions/0013_raw_fetches.py</cite></p>
+  <p class="why"><code>spec_guides</code> is global with no RLS because guides are generic class and spec advice, not user data.<cite>backend/migrations/versions/0007_spec_guides.py · backend/app/db/models.py (SpecGuide)</cite></p>
+</section>
+
+<!-- ============================================================ RLS -->
+<section class="layer" id="rls">
+  <h2>Row-level security</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Postgres RLS</span><span class="chip">set_config(…, true)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li>Each of the 17 tenant tables has RLS <b>enabled and forced</b>, so the table owner is bound too. Each has one policy, applied with <code>USING</code> and <code>WITH CHECK</code>:
+      <pre>tenant_isolation:       tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+tenant_user_isolation:  the tenant predicate AND
+                        user_id = NULLIF(current_setting('app.user_id', true), '')::uuid</pre>
+    </li>
+    <li><code>tenant_user_isolation</code> exists only on <code>profile_proposals</code> (<code>0017</code>, feature 036). It replaced the tenant-only policy, which was dropped rather than kept: Postgres ORs permissive policies together, so keeping it would have let any user in the tenant through.</li>
+    <li>If the setting is missing, <code>NULLIF</code> turns it into NULL and the predicate matches no rows. A forgotten scope reads nothing; it never reads everything.</li>
+    <li>The settings are transaction-local (<code>set_config(…, true)</code>), so a pooled connection never carries one tenant's scope into the next transaction. The raw store sets only <code>app.tenant_id</code> (<code>raw_fetches.scope_tenant</code>), because no raw-store policy reads the user.</li>
+    <li><code>kb_chat_chunks</code> names its conversation through a composite FK <code>(conversation_id, tenant_id)</code> → <code>conversations (id, tenant_id)</code>. FK checks bypass RLS, so this is what stops tenant B's chunk from pointing at tenant A's conversation. The unique key leads with <code>tenant_id</code>, so a foreign id fails on the FK and never reveals that the row exists.</li>
+    <li>Grants: <code>0004_rls</code> grants the runtime role DML on all tables and sequences, plus <code>ALTER DEFAULT PRIVILEGES</code> for tables the owner creates later. Each later migration also grants DML on its new tables explicitly.</li>
+    <li>The global tables have no RLS. Code scopes them instead: the raw store serves a row only by its visibility rule (<a href="wcl-data.html">WCL client, cache &amp; store</a>), and the knowledge base joins WCL chunks through that same rule (<a href="knowledge-base.html">Knowledge base</a>).</li>
+    <li>Tests: <code>backend/tests/test_rls.py</code> and the <code>*_pg.py</code> tests run only when <code>TEST_DATABASE_URL</code> points at a migrated Postgres. Otherwise they are skipped. The default suite runs on SQLite and checks app-level scoping.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">RLS is defence in depth: if an app-level <code>WHERE tenant_id</code> is ever missed, the database still blocks cross-tenant reads and writes. Settings are transaction-local because pooled connections must never keep a session-level <code>SET</code>. <b>Alternatives:</b> app scoping only (a single point of failure for the worst risk), or one superuser role (bypasses RLS).<cite>specs/006-multi-tenancy/research.md R4</cite></p>
+  <p class="why">User-level RLS on proposals: the rule is "same user", and before <code>0017</code> only the app enforced it.<cite>backend/migrations/versions/0017_proposal_user_rls.py (docstring)</cite></p>
+  <p class="why">The composite conversation FK on chat chunks closes the hole that FK checks skip RLS.<cite>backend/migrations/versions/0019_kb_chunks.py (docstring)</cite></p>
+</section>
+
+<!-- ============================================================ INDEXES -->
+<section class="layer" id="indexes">
+  <h2>Notable indexes</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">HNSW (pgvector)</span><span class="chip">GIN</span><span class="chip">partial indexes</span><span class="chip">CREATE INDEX CONCURRENTLY</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>Most tenant tables have a tenant-leading btree index (for example <code>ix_conversations_tenant_updated</code>, <code>ix_messages_tenant_conv_seq</code>), so every list query starts at the tenant. The ones worth knowing beyond that:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Index</th><th>Kind</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><code>ix_kb_chunks_embedding</code>, <code>ix_kb_chat_chunks_embedding</code></td><td>HNSW, <code>vector_cosine_ops</code></td><td>Vector search. Filtered scans need pgvector 0.8+ (<code>hnsw.iterative_scan</code>), and <code>0019</code> refuses older versions.</td></tr>
+      <tr><td><code>ix_kb_chunks_tsv</code>, <code>ix_kb_chat_chunks_tsv</code></td><td>GIN on a generated <code>tsvector</code></td><td>Keyword search. WCL chunks use the <code>simple</code> config so names, spells and codes stay intact; guides and chats use <code>english</code>.</td></tr>
+      <tr><td><code>ix_kb_chunks_players</code>, <code>ix_kb_chat_chunks_characters</code></td><td>GIN, <code>jsonb_path_ops</code></td><td>"Chunks that mention this player" containment filters</td></tr>
+      <tr><td><code>ix_kb_chunks_extra</code>, <code>ix_kb_chat_chunks_extra</code></td><td>GIN</td><td>Filters on the <code>extra</code> JSONB</td></tr>
+      <tr><td><code>ix_raw_fetches_report_codes</code></td><td>GIN on JSONB</td><td>Every stored row naming a report (<code>report_codes ? '&lt;code&gt;'</code>), batches too</td></tr>
+      <tr><td><code>ix_raw_fetches_own_summary_codes</code></td><td>Partial GIN <code>WHERE own_summary</code>, built concurrently</td><td>The stored-reports lookup: our own report-summary rows by code</td></tr>
+      <tr><td><code>ix_raw_reports_public_checked</code></td><td>Partial btree <code>WHERE visibility = 'public'</code>, built concurrently</td><td>Reports recently confirmed public (lookup candidates)</td></tr>
+      <tr><td><code>ix_raw_fetch_grants_tenant_granted</code></td><td>Btree, built concurrently</td><td>A tenant's recent grants (lookup candidates)</td></tr>
+      <tr><td><code>uq_open_invitation</code></td><td>Partial unique <code>WHERE accepted_at IS NULL AND revoked_at IS NULL</code></td><td>At most one open invitation per email</td></tr>
+      <tr><td><code>ix_auth_sessions_user_active</code></td><td>Partial <code>WHERE revoked_at IS NULL</code></td><td>A user's live sessions</td></tr>
+      <tr><td><code>ix_guide_reports_open</code></td><td>Partial <code>WHERE status = 'open'</code></td><td>Open inaccuracy reports for a guide</td></tr>
+    </tbody>
+  </table></div>
+  <p>The partial index <code>ix_raw_fetches_summaries</code> from <code>0020</code> no longer exists. <code>0021</code> drops it and replaces it with the three concurrent indexes above.</p>
+
+  <h3>Why</h3>
+  <p class="why">Indexes on the busy <code>raw_fetches</code> table are built <code>CONCURRENTLY</code> in an autocommit block, because a plain <code>CREATE INDEX</code> locks writes for the whole build. A failed concurrent build leaves an INVALID index behind, so each step drops it first and a re-run converges.<cite>specs/051-raw-store-hardening/research.md R1</cite></p>
+  <p class="why">Each chunk carries its keyword index from the moment it is written. The 768-d vector arrives later from the background indexer (NULL until then), so a chunk that is not embedded yet is still found by keyword.<cite>backend/app/db/models.py (knowledge base block comment)</cite></p>
+</section>
+
+<!-- ============================================================ MIGRATIONS -->
+<section class="layer" id="migrations">
+  <h2>Migrations</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">alembic&gt;=1.13.0</span><span class="chip">21 revisions, linear</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/alembic.ini</code> and <code>backend/migrations/</code>. <code>env.py</code> runs async, injects <code>settings.owner_database_url</code> so no credentials sit in <code>alembic.ini</code>, uses <code>Base.metadata</code> as the target, and excludes ADK's tables from autogenerate.</li>
+    <li>The app never creates or alters tables at startup (<code>main.py</code> lifespan). The schema is set up with <code>uv run python -m backend.cli.init_db</code>, which runs <code>upgrade 0002_auth_tenancy</code>, creates the founder if there is none, then runs <code>upgrade head</code>. It is idempotent and safe on every deploy. The steps are separate because <code>0003</code> backfills existing rows to the founder's tenant and fails loudly if no platform admin exists. The backend container does not run migrations itself.</li>
+    <li>Revision ids must fit <code>alembic_version.version_num</code> (<code>varchar(32)</code>), so two ids are shorter than their file names (marked below).</li>
+  </ul>
+  <div class="tablewrap"><table>
+    <thead><tr><th>#</th><th>File · feature</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>0001</td><td><code>0001_baseline</code> · 006</td><td>Snapshot of the pre-Alembic schema: <code>conversations</code>, <code>messages</code>, <code>tracked_raids</code>, <code>captured_graphs</code>, <code>user_characters</code>, <code>guild_profile</code>, <code>artifacts</code>. Each is created only if missing, so it adopts an old <code>create_all</code> database. It can't be downgraded.</td></tr>
+      <tr><td>0002</td><td><code>0002_auth_tenancy</code> · 006</td><td><code>CREATE EXTENSION citext</code>. The seven auth and tenancy tables, with sha256 token digests and the partial unique open-invitation index.</td></tr>
+      <tr><td>0003</td><td><code>0003_tenant_columns</code> · 006</td><td>Phased <code>tenant_id</code> on the 7 baseline tables: nullable, backfill to the founder tenant, NOT NULL, FK, tenant-leading index. Uniqueness becomes per tenant for <code>tracked_raids</code> and <code>user_characters</code>.</td></tr>
+      <tr><td>0004</td><td><code>0004_rls</code> · 006</td><td>Creates the runtime role if missing (<code>NOBYPASSRLS</code>), grants CONNECT and <code>USAGE, CREATE</code> on <code>public</code>, enables and forces RLS with <code>tenant_isolation</code> on the 7 tables, and grants DML plus default privileges.</td></tr>
+      <tr><td>0005</td><td><code>0005_known_entities</code> · 007</td><td><code>known_players</code>, <code>known_encounters</code>, with RLS</td></tr>
+      <tr><td>0006</td><td><code>0006_raid_role</code> · 007</td><td><code>user_characters.raid_role</code> (nullable, no backfill)</td></tr>
+      <tr><td>0007</td><td><code>0007_spec_guides</code> · 008</td><td>Global <code>spec_guides</code>, backfilled from per-character guides that were ready (newest per spec)</td></tr>
+      <tr><td>0008</td><td><code>0008_drop_character_guide_columns</code> (rev <code>0008_drop_guide_columns</code>) · 008</td><td>Drops the per-character guide columns. A one-way data move: downgrade adds the columns back empty.</td></tr>
+      <tr><td>0009</td><td><code>0009_spec_guide_provenance</code> (rev <code>0009_guide_provenance</code>) · 009</td><td><code>game_patch</code>, <code>generated_at</code>, <code>sources</code>, <code>major_cooldowns</code> on guides</td></tr>
+      <tr><td>0010</td><td><code>0010_recent_raids</code> · 013</td><td><code>recent_raids</code>, <code>recent_raid_characters</code>, <code>recent_raid_refresh</code>, with RLS</td></tr>
+      <tr><td>0011</td><td><code>0011_guide_content_types</code> · 015</td><td>Adds <code>content_type</code> to the guide identity, the published and latest-run columns, staleness and <code>last_wanted_at</code>. Existing guides become <code>legacy</code> raid guides, and those in use are stamped so they regenerate. Adds global <code>guide_inaccuracy_reports</code>.</td></tr>
+      <tr><td>0012</td><td><code>0012_conversation_pin_title</code> · 019</td><td><code>pinned_at</code> and <code>title_source</code>. Existing chats are backfilled to <code>legacy</code>, with FORCE RLS lifted for the <code>UPDATE</code> only.</td></tr>
+      <tr><td>0013</td><td><code>0013_raw_fetches</code> · 020</td><td>Global <code>raw_fetches</code>, with a btree on <code>report_code</code> and a GIN on <code>report_codes</code></td></tr>
+      <tr><td>0014</td><td><code>0014_recent_mplus_runs</code> · 022</td><td><code>recent_mplus_runs</code>, <code>recent_mplus_run_characters</code>, with RLS</td></tr>
+      <tr><td>0015</td><td><code>0015_rescan_mplus_runs</code> · 022 fix</td><td>Data only: clears stored M+ runs and reopens non-raid reports, so the next refresh rebuilds them with the corrected matching. FORCE is lifted around each statement.</td></tr>
+      <tr><td>0016</td><td><code>0016_profile_proposals</code> · 029</td><td><code>profile_proposals</code>, with tenant RLS</td></tr>
+      <tr><td>0017</td><td><code>0017_proposal_user_rls</code> · 036</td><td>Replaces that policy with <code>tenant_user_isolation</code> (tenant and user)</td></tr>
+      <tr><td>0018</td><td><code>0018_raw_store_visibility</code> · 039</td><td>Global <code>raw_reports</code>, <code>raw_fetch_grants</code> with RLS, and <code>raw_fetches.payload_hash</code></td></tr>
+      <tr><td>0019</td><td><code>0019_kb_chunks</code> · 043</td><td>Postgres only. <code>CREATE EXTENSION vector</code>, fails if pgvector is older than 0.8. Adds <code>uq_conversations_id_tenant</code>, <code>kb_chunks</code>, and <code>kb_chat_chunks</code> with RLS and the composite FK, plus the HNSW, GIN and filter indexes.</td></tr>
+      <tr><td>0020</td><td><code>0020_raw_fetch_summary_index</code> · 047, 051</td><td>Partial index <code>ix_raw_fetches_summaries</code>, built concurrently. Superseded by 0021.</td></tr>
+      <tr><td>0021</td><td><code>0021_raw_fetch_own_summary</code> · 051</td><td><code>raw_fetches.own_summary</code> with a constant default, a backfill in committed chunks of 1000 rows, three indexes built concurrently, and 0020's index dropped. Everything runs outside the migration transaction. It imports the query text and key function from <code>wcl_agent.client</code> to apply the old rule.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Rules for new migrations</h3>
+  <ul>
+    <li><b>Lock rule</b>, written in <code>backend/migrations/script.py.mako</code> (sc-359), so every new revision starts with it: on an existing busy table, never hold a lock for longer than one short statement. Work in <code>op.get_context().autocommit_block()</code>. Add columns with a constant default (a metadata-only change) and <code>if_not_exists</code>. Backfill in short batches that commit one by one. Drop any leftover index (<code>if_exists</code>, concurrently) before you <code>create_index(…, postgresql_concurrently=True)</code>. Every step must be safe to re-run.</li>
+    <li>Conventions the existing revisions follow: RLS, grants and Postgres-only types sit behind <code>if bind.dialect.name != "postgresql": return</code>. A new tenant table gets <code>ENABLE</code> and <code>FORCE</code> RLS, the <code>tenant_isolation</code> policy and an explicit DML grant to <code>APP_DB_USER</code>. A data <code>UPDATE</code> on a forced-RLS table lifts FORCE around the statement, as in <code>0012</code> and <code>0015</code>, because the owner is bound by its own policy.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Alembic replaced <code>create_all</code> plus hand-written <code>ALTER … IF NOT EXISTS</code>. Multi-tenancy needed phased NOT NULL backfills, FKs, per-tenant unique constraints, RLS and grants, all reversible and in order. <b>Alternatives:</b> more hand-written ALTERs (no phased backfill, no downgrade), drop and recreate (destroys the founder's data), or SQLModel (needless churn).<cite>specs/006-multi-tenancy/research.md R1</cite></p>
+  <p class="why"><code>0001_baseline</code> still matters only for databases that existed before feature 006: it lets Alembic adopt their tables without recreating them. A fresh install simply creates them.<cite>backend/migrations/versions/0001_baseline.py (docstring)</cite></p>
+</section>
+
+<!-- ============================================================ PORTABILITY -->
+<section class="layer" id="portability">
+  <h2>SQLite tests &amp; timestamps</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">aiosqlite&gt;=0.22.1 (test)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li>The default test suite builds the schema with <code>Base.metadata.create_all</code> on SQLite (<code>backend/tests/conftest.py</code>), not through Alembic. So the models are written to work on both databases:
+      <ul>
+        <li>JSON columns use <code>JSON().with_variant(JSONB(), "postgresql")</code>.</li>
+        <li>Ids use the generic <code>Uuid</code> type.</li>
+        <li><code>Vector(768)</code> is accepted by SQLite's loose typing.</li>
+        <li>The generated <code>tsv</code> column compiles to <code>to_tsvector(…)</code> on Postgres and <code>NULL</code> on SQLite (<code>_TsVector</code> with <code>@compiles</code>).</li>
+      </ul>
+    </li>
+    <li>Postgres-only behaviour (RLS, <code>FOR UPDATE</code>, advisory locks, <code>citext</code>, <code>set_config</code>) is skipped on SQLite through dialect checks. The <code>*_pg.py</code> tests cover it against a real Postgres.</li>
+    <li>The model declares <code>users.email</code> as <code>String(320)</code>, but migration <code>0002</code> creates it as <code>citext</code>, so uniqueness is case-insensitive in Postgres. The app also lowercases emails.</li>
+    <li><code>backend/app/db/timestamps.py</code>: <code>as_utc(value)</code>. All timestamp columns are <code>DateTime(timezone=True)</code> and the app stores UTC. SQLite returns them without a zone, so a naive value read back is treated as UTC (feature 029, decision D15).</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">One set of portable models backs both production and fast unit tests. RLS can't run on SQLite, so a separate Postgres-only test covers it.<cite>specs/006-multi-tenancy/research.md R1, R4</cite></p>
+  <p class="why">The knowledge-base columns keep the models honest about the schema on both databases, rather than leaving <code>tsv</code> out of the metadata.<cite>specs/043-kb-store-embed/research.md R3</cite></p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>docker-compose.yml</code>, <code>pyproject.toml</code>, <code>backend/app/config.py</code>, <code>.env.example</code>, <code>README.md</code> (database setup)</li>
+    <li><code>backend/app/db/session.py</code>, <code>models.py</code>, <code>repository.py</code>, <code>timestamps.py</code></li>
+    <li><code>backend/app/tenancy/context.py</code>, <code>backend/app/repositories/*.py</code>, <code>backend/app/kb/search.py</code>, <code>backend/app/api/ws.py</code>, <code>backend/app/main.py</code></li>
+    <li><code>backend/alembic.ini</code>, <code>backend/migrations/env.py</code>, <code>script.py.mako</code>, <code>versions/0001…0021</code></li>
+    <li><code>backend/cli/init_db.py</code>, <code>backend/tests/conftest.py</code>, <code>backend/tests/test_rls.py</code>, <code>backend/tests/test_047_card_lock_pg.py</code></li>
+    <li><code>specs/001-streaming-chat-frontend/</code>, <code>specs/006-multi-tenancy/research.md</code>, <code>specs/013-welcome-recent-raids/research.md</code>, <code>specs/020-fetch-persistence/research.md</code>, <code>specs/043-kb-store-embed/research.md</code>, <code>specs/051-raw-store-hardening/research.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

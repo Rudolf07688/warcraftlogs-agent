@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Backend API · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Runtime</p>
+  <h1>Backend API</h1>
+  <p class="lede">One FastAPI process serves the REST API, the chat WebSocket and all background work. This page covers how the app is assembled, every router, the boot sequence behind the readiness gate, error handling, the in-process background tasks and lanes, and the service layer at a glance. The agent itself is on <a href="agent.html">Agent runtime &amp; tools</a>; the socket protocol is on <a href="streaming.html">Stream protocol</a>.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#app">The app</a>
+    <a href="#routers">Routers</a>
+    <a href="#boot">Boot &amp; readiness</a>
+    <a href="#errors">Error handling</a>
+    <a href="#background">Background work &amp; lanes</a>
+    <a href="#layers">Services layer</a>
+  </nav>
+</header>
+
+<!-- ============================================================ APP -->
+<section class="layer" id="app">
+  <h2>The app</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fastapi&gt;=0.115.0</span><span class="chip">uvicorn[standard]&gt;=0.30.0</span><span class="chip">asyncio</span><span class="chip">google-adk&gt;=2.0.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/main.py</code> builds <code>FastAPI(title="WCL Agent Chat API", lifespan=lifespan)</code>. Middleware, outermost first: <code>CORSMiddleware</code> (origins from <code>CORS_ORIGINS</code>, credentials allowed), then <code>ReadinessGate</code>. CORS is added last so the gate's 503s still carry CORS headers. Then the error handler and the 14 routers.</li>
+    <li>Logging is set up at import: one root handler if none exists, <code>backend.app</code> and <code>wcl_agent</code> at INFO (uvicorn only configures its own loggers), then the <code>RedactionFilter</code> on the root logger, its handlers and the uvicorn loggers (see <a href="auth-tenancy.html#audit">Auth</a>).</li>
+    <li>The code is layered: routers in <code>backend/app/api/</code> → logic in <code>backend/app/services/</code> (and <code>kb/</code>, <code>agent_tools/</code>) → queries in <code>backend/app/db/repository.py</code> and <code>backend/app/repositories/</code> → ORM in <code>backend/app/db/models.py</code>. Boundary types live in <code>backend/app/schemas.py</code>.</li>
+    <li>The standalone <code>wcl_agent/</code> package holds the WCL client, the Redis cache, the agent and its WCL tools, and the model/provider layer. It has no database imports; the backend plugs persistence in through hooks it sets at startup (the fetch sink, the fetch source, the brief loader). See <a href="wcl-data.html">WCL client, cache &amp; store</a>.</li>
+    <li>Runtime model state (the selectable models, the default, a degraded flag) lives on <code>app.state</code> and is read through <code>backend/app/model_state.py</code>.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">FastAPI with asyncio is a constitution rule: all endpoints are <code>async def</code>, and request-path I/O is non-blocking. "A single async framework keeps I/O-bound work (the dominant cost in this app — external API calls) efficient and the backend consistent."<cite>.specify/memory/constitution.md Principle V · specs/001-streaming-chat-frontend/spec.md (Input)</cite></p>
+  <p class="why">Blocking or CPU-heavy work (password hashing, model probes, PDF rendering, large payload parsing) is pushed to threads, not run on the event loop.<cite>.specify/memory/constitution.md Principle V</cite></p>
+  <p class="why">Pydantic models are for data that crosses a boundary (API bodies, frames, cached WCL values); frozen dataclasses are for internal value objects such as <code>RequestIdentity</code> and <code>StartupStep</code>. Pydantic itself is not listed in <code>pyproject.toml</code>; it comes in through FastAPI and pydantic-settings.<cite>.specify/memory/constitution.md Principle IV</cite></p>
+</section>
+
+<!-- ============================================================ ROUTERS -->
+<section class="layer" id="routers">
+  <h2>Routers</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">FastAPI APIRouter</span><span class="chip">Depends()</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>14 routers in <code>backend/app/api/</code> (plus <code>errors.py</code>, which only installs the error handler), all included in <code>main.py</code>. They hold 45 routes: 44 HTTP and one WebSocket. With the two health paths in <code>main.py</code> the app serves 47 routes. Auth columns name the FastAPI dependency; see <a href="auth-tenancy.html">Auth &amp; multi-tenancy</a> for what each does.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Router</th><th>Prefix</th><th>Routes</th><th>Auth / DB</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>auth.py</code></td><td><code>/api/auth</code></td><td>6</td><td>public, <code>require_session</code> on <code>/me</code></td><td>Login, logout, <code>/me</code> (re-issues the CSRF token), accept invitation, reset password, forgot password (a neutral 202, no email)</td></tr>
+      <tr><td><code>admin_users.py</code></td><td><code>/api/admin</code></td><td>7</td><td><code>require_platform_admin</code> + CSRF</td><td>Create, list, resend and revoke invitations; list users, enable or disable a user, trigger a password reset</td></tr>
+      <tr><td><code>admin_guides.py</code></td><td><code>/api/admin</code></td><td>1</td><td><code>require_platform_admin</code></td><td><code>GET /guide-reports</code>: "report an inaccuracy" notes on guides</td></tr>
+      <tr><td><code>cache_stats.py</code></td><td><code>/api/admin</code></td><td>1</td><td><code>require_platform_admin</code></td><td><code>GET /cache-stats</code>: per-family hit rates and Redis health</td></tr>
+      <tr><td><code>models.py</code></td><td><code>/api</code></td><td>1</td><td><code>require_session</code></td><td><code>GET /models</code>: the startup-validated model list and default</td></tr>
+      <tr><td><code>greeting.py</code></td><td><code>/api</code></td><td>1</td><td><code>require_session</code></td><td><code>GET /greeting</code>: cached new-chat greeting, never a 500</td></tr>
+      <tr><td><code>conversations.py</code></td><td><code>/api/conversations</code></td><td>5</td><td><code>get_tenant_db</code>, CSRF on writes</td><td>List, create, open, patch (pin, rename), delete chats</td></tr>
+      <tr><td><code>reports.py</code></td><td><code>/api/conversations</code></td><td>2</td><td><code>get_tenant_db</code></td><td>PDF downloads for a whole chat or one answer (see <a href="pdf-reports.html">PDF reports</a>)</td></tr>
+      <tr><td><code>profile.py</code></td><td><code>/api/profile</code></td><td>9</td><td><code>get_tenant_db</code>, CSRF on writes</td><td>Profile read; add, edit, remove own characters (<code>/self</code>) and friends; set or clear the guild. Writes go through <code>services/profile_service.py</code></td></tr>
+      <tr><td><code>proposals.py</code></td><td><code>/api/profile/proposals</code></td><td>2</td><td><code>require_csrf</code>; the service opens a tenant + user scope</td><td><code>POST /{id}/approve</code>, <code>POST /{id}/cancel</code> for the agent's profile change proposals; each decision saves one follow-up line in the same transaction</td></tr>
+      <tr><td><code>guides.py</code></td><td><code>/api/guides</code></td><td>4</td><td><code>get_session</code> (global, no RLS), CSRF + per-user caps on writes</td><td>Guide library list, one guide, generate, report an inaccuracy</td></tr>
+      <tr><td><code>raids.py</code></td><td><code>/api/raids</code></td><td>2</td><td><code>get_tenant_db</code>; investigate is CSRF + per-user cap</td><td>Tracked raids; <code>POST /{code}/investigate</code> starts a chat and the kickoff pre-fetch</td></tr>
+      <tr><td><code>recent_raids.py</code></td><td><code>/api/recent-raids</code></td><td>3</td><td><code>get_tenant_db</code>, CSRF on writes</td><td>Welcome-page raids and Mythic+ runs (may start a refresh), forced refresh, investigate a Mythic+ run</td></tr>
+      <tr><td><code>ws.py</code></td><td>none</td><td>1</td><td>cookie + Origin at the handshake, re-checked every turn</td><td><code>/ws/chat</code>: streaming chat turns, one at a time per socket</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Health: <code>GET /health</code> and <code>GET /api/health</code>, one function in <code>main.py</code>. It returns <code>status</code> (<code>booting</code>, <code>ok</code> or <code>error</code>), <code>db</code> (a <code>SELECT 1</code> with a 2 s timeout) and the <code>startup</code> snapshot.</p>
+</section>
+
+<!-- ============================================================ BOOT -->
+<section class="layer" id="boot">
+  <h2>Boot &amp; readiness</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">FastAPI lifespan</span><span class="chip">pure ASGI middleware</span><span class="chip">gc.freeze()</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>The lifespan in <code>backend/app/main.py</code> does only quick work before the port opens, then runs the slow boot as a background task. <code>StartupTracker</code> and <code>ReadinessGate</code> live in <code>backend/app/startup.py</code>.</p>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 960 600" role="img" aria-labelledby="bt-title bt-desc">
+      <title id="bt-title">Lifespan and boot sequence</title>
+      <desc id="bt-desc">The lifespan checks secrets, starts the knowledge base indexer and the fetch writer, then starts the boot task and yields so the port opens. The boot task runs six tracked steps: serializers, sessions, roster, guides, models and greeting, then marks the app ready and freezes the garbage collector. Until then the readiness gate answers 503 to HTTP and closes WebSockets with code 1013, except the health paths. On shutdown the lifespan cancels the boot, drains the fetch writer, stops the indexer, closes the WCL and Redis clients and disposes the database engine.</desc>
+      <defs>
+        <marker id="bt-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="zone" x="10" y="10" width="450" height="490" rx="14"/>
+      <text class="zlbl" x="26" y="34">Lifespan</text>
+      <rect class="zone" x="490" y="10" width="460" height="490" rx="14"/>
+      <text class="zlbl" x="506" y="34">Boot task (StartupTracker)</text>
+
+      <rect class="node" x="30" y="50" width="410" height="60" rx="10"/>
+      <text class="t" x="46" y="75">check_startup_secrets</text>
+      <text class="sub" x="46" y="97">refuse a weak SECRET_KEY off localhost</text>
+      <rect class="node" x="30" y="125" width="410" height="60" rx="10"/>
+      <text class="t" x="46" y="150">KbIndexer.start()</text>
+      <text class="sub" x="46" y="172">if KB_INDEX_ENABLED</text>
+      <rect class="node" x="30" y="200" width="410" height="60" rx="10"/>
+      <text class="t" x="46" y="225">FetchWriter.start()</text>
+      <text class="sub" x="46" y="247">+ set_fetch_source when store reads are on</text>
+      <rect class="node core" x="30" y="275" width="410" height="60" rx="10"/>
+      <text class="t" x="46" y="300">create_task(_boot) · yield</text>
+      <text class="sub" x="46" y="322">the port opens now</text>
+      <rect class="node" x="30" y="385" width="410" height="100" rx="10"/>
+      <text class="t" x="46" y="410">shutdown</text>
+      <text class="sub" x="46" y="432">cancel boot · drain FetchWriter</text>
+      <text class="sub" x="46" y="452">stop KbIndexer · close WCL + Redis clients</text>
+      <text class="sub" x="46" y="472">dispose the DB engine</text>
+
+      <path class="flow" marker-end="url(#bt-ah)" d="M235,110 V123"/>
+      <path class="flow" marker-end="url(#bt-ah)" d="M235,185 V198"/>
+      <path class="flow" marker-end="url(#bt-ah)" d="M235,260 V273"/>
+      <path class="flow" marker-end="url(#bt-ah)" d="M440,305 H470 V75 H508"/>
+
+      <rect class="node" x="510" y="50" width="420" height="46" rx="8"/>
+      <text class="t" x="526" y="79">1 serializers</text><text class="sub" x="914" y="79" text-anchor="end">required</text>
+      <rect class="node" x="510" y="104" width="420" height="46" rx="8"/>
+      <text class="t" x="526" y="133">2 sessions (ADK tables)</text><text class="sub" x="914" y="133" text-anchor="end">required</text>
+      <rect class="node" x="510" y="158" width="420" height="46" rx="8"/>
+      <text class="t" x="526" y="187">3 roster</text><text class="sub" x="914" y="187" text-anchor="end">optional</text>
+      <rect class="node" x="510" y="212" width="420" height="46" rx="8"/>
+      <text class="t" x="526" y="241">4 guides (brief loader)</text><text class="sub" x="914" y="241" text-anchor="end">optional</text>
+      <rect class="node" x="510" y="266" width="420" height="46" rx="8"/>
+      <text class="t" x="526" y="295">5 models (discovery)</text><text class="sub" x="914" y="295" text-anchor="end">required</text>
+      <rect class="node" x="510" y="320" width="420" height="46" rx="8"/>
+      <text class="t" x="526" y="349">6 greeting (prime task)</text><text class="sub" x="914" y="349" text-anchor="end">required</text>
+      <rect class="node core" x="510" y="390" width="420" height="60" rx="10"/>
+      <text class="t" x="526" y="415">tracker.finish() → ready</text>
+      <text class="sub" x="526" y="437">gc.collect() + gc.freeze()</text>
+      <path class="flow" marker-end="url(#bt-ah)" d="M720,366 V388"/>
+
+      <rect class="node ext" x="10" y="520" width="940" height="70" rx="10"/>
+      <text class="t" x="480" y="548" text-anchor="middle">ReadinessGate until ready</text>
+      <text class="sub" x="480" y="572" text-anchor="middle">HTTP: 503 + Retry-After: 2 with the startup snapshot · WebSocket: close 1013 · /health and /api/health always pass</text>
+    </svg>
+    <figcaption>Left: what the lifespan does before and after <code>yield</code>. Right: the six steps of <code>BOOT_STEPS</code>, each reported to <code>/api/health</code>.</figcaption>
+  </figure>
+
+  <ol class="steps">
+    <li><code>check_startup_secrets(settings)</code>: refuse a weak <code>SECRET_KEY</code> unless the site is local; warn naming insecure defaults (see <a href="deployment.html#startup-checks">Startup checks</a>).</li>
+    <li>Create a <code>StartupTracker</code> on <code>app.state.startup</code>.</li>
+    <li>Start the <code>KbIndexer</code> when <code>KB_INDEX_ENABLED</code> (feature 043). It starts first because the fetch writer's commits offer it changed fetches.</li>
+    <li>Start the <code>FetchWriter</code> when <code>WCL_FETCH_PERSIST_ENABLED</code> (feature 020), which installs itself as the WCL client's fetch sink. When <code>WCL_STORE_READS_ENABLED</code>, also install <code>read_stored_fetch</code> as the fetch source (feature 039: Redis → store → WCL). Both start before boot because the roster step already fetches from WCL.</li>
+    <li>Start <code>_boot</code> as a task and <code>yield</code>: uvicorn opens the port.</li>
+    <li>Boot step <code>serializers</code>: build the google-genai serializers eagerly, so ADK can serialise genai types during parallel tool calls.</li>
+    <li><code>sessions</code>: ADK's <code>DatabaseSessionService</code> on the app's engine, <code>prepare_tables()</code>, then registered for the agent runner.</li>
+    <li><code>roster</code> (optional): load the live class and spec roster from WCL game data; on failure the static roster is used.</li>
+    <li><code>guides</code> (optional): register the coaching-brief loader for agent tools and start a background scan for stale guides. Warn if the guide review model equals the author model.</li>
+    <li>Log the LLM provider and any missing credential, then <code>models</code>: model discovery off the event loop, shared through the <code>model_catalog</code> cache family in catalog mode, into <code>app.state</code> (see <a href="models.html">Models &amp; providers</a>).</li>
+    <li><code>greeting</code>: create an empty greeting cache and start the greeting as a separate task (skipped when the provider has no credential). The step itself finishes at once.</li>
+    <li><code>tracker.finish()</code>: the gate opens. Then <code>gc.collect()</code> and <code>gc.freeze()</code>.</li>
+    <li>On shutdown: cancel an unfinished boot, uninstall the fetch source, drain the fetch writer (bounded), stop the indexer (bounded), close every WCL HTTP pool and the cache's Redis clients, dispose the engine.</li>
+  </ol>
+  <p>A failed required step marks the boot <code>failed</code>. The process stays up, the gate keeps answering 503 with <code>backend_failed</code> and the error, and <code>/api/health</code> shows which step failed. An optional step that fails is marked <code>skipped</code>. The frontend polls the health endpoint and shows a boot overlay until <code>ready</code> (see <a href="frontend.html">Frontend</a>).</p>
+
+  <h3>Why</h3>
+  <p class="why">Boot runs in the background so the port opens at once and <code>/api/health</code> can show which step failed instead of a dead port.<cite>backend/app/main.py (_boot docstring and except clause) · backend/app/startup.py (module docstring)</cite></p>
+  <p class="why">After boot, <code>gc.freeze()</code> moves the startup heap out of the cyclic garbage collector's reach. Each collection triggered by parsing a large WCL payload used to walk it, measured at about 80 ms of event-loop stall; frozen, about 3 ms.<cite>backend/app/main.py (comment before gc.freeze, feature 013 SC-008)</cite></p>
+  <p class="why">The gate is pure ASGI and holds back all non-health traffic, so no handler can read half-initialised <code>app.state</code>.<cite>backend/app/startup.py (module docstring)</cite></p>
+  <p class="note"><b>Open point:</b> "the app waits for model discovery before serving anything" is still listed as an open medium QA finding (PERF-001, sc-156) in <code>todo.md</code>. The <code>models</code> step is required, so the gate stays shut until discovery finishes or a cached catalog is found.</p>
+</section>
+
+<!-- ============================================================ ERRORS -->
+<section class="layer" id="errors">
+  <h2>Error handling</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Starlette exception handlers</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>backend/app/api/errors.py</code> installs one handler for <code>HTTPException</code>. When <code>detail</code> is a dict with a <code>code</code> (auth, admin, guides, rate limits), the response becomes <code>{"error": {"code", "message", "request_id"}}</code>, with <code>request_id</code> taken from an <code>X-Request-ID</code> header if the client sent one. A plain-string <code>detail</code> (most older endpoints, for example <code>"not_found"</code>) keeps FastAPI's <code>{"detail": ...}</code> shape.</li>
+    <li>Public auth errors are generic: one <code>invalid_credentials</code> for every login failure, one invalid-token error for invitations and resets, so responses never reveal whether an account exists.</li>
+    <li>Rate limits answer 429 with <code>code: "rate_limited"</code>; login and investigate also send <code>Retry-After</code>.</li>
+    <li>On the chat socket, a failed turn sends an <code>error</code> frame with code <code>agent_error</code> and a short log reference, never the exception text; a spent model retry budget sends <code>rate_limited</code>. The partial answer is saved where it can be. Details on <a href="streaming.html">Stream protocol</a>.</li>
+  </ul>
+  <h3>Why</h3>
+  <p class="why">The envelope applies only to dict details so the endpoints that existed before feature 006 keep their response shape.<cite>backend/app/api/errors.py (module docstring)</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>No recorded reason for keeping two error shapes long term. The frontend's REST client reads both (<code>frontend/src/api/restClient.ts</code>), so nothing forces a change; unifying them would touch every older endpoint and its tests.</p>
+</section>
+
+<!-- ============================================================ BACKGROUND -->
+<section class="layer" id="background">
+  <h2>Background work &amp; lanes</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">asyncio tasks</span><span class="chip">contextvars</span><span class="chip">LaneLimiter</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>All background work runs in the backend process; there is no job queue or worker container. Two kinds exist: fire-and-forget tasks started from a request or turn, and long-lived consumers started by the lifespan.</p>
+  <ul>
+    <li><b><code>spawn(coro, key)</code></b> (<code>backend/app/services/background.py</code>) keeps a strong reference to each task so it isn't garbage-collected mid-run, and skips a key already running in this process. Each task runs in a fresh, empty <code>contextvars.Context()</code>, so it never inherits the caller's acting identity, refresh actor or lane (sc-222). Without a running loop it closes the coroutine and does nothing.</li>
+    <li><b>Lanes</b> (<code>wcl_agent/client/wcl_client.py</code>): at most <code>WCL_MAX_CONCURRENCY</code> (6) WCL requests are in flight per process. Code inside <code>background_lane()</code> may hold at most <code>WCL_BACKGROUND_CONCURRENCY</code> (2) of them and never takes a slot while a chat lookup is waiting. A chat turn that joins a background request in flight promotes it to the interactive lane (048). Details on <a href="wcl-data.html">WCL client, cache &amp; store</a>.</li>
+  </ul>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Work</th><th>Started by</th><th>Where</th><th>Lane / limits</th></tr></thead>
+    <tbody>
+      <tr><td>Recent-raids refresh</td><td><code>GET /api/recent-raids</code> when due, or the forced refresh</td><td><code>services/recent_raids.py</code></td><td>Background lane, 120 s timeout. A database claim row per tenant is the cross-instance lock; a <code>running</code> claim older than 5 min is reclaimable.</td></tr>
+      <tr><td>Kickoff pre-fetch</td><td><code>POST /api/raids/{code}/investigate</code>, after commit</td><td><code>services/kickoff_prefetch.py</code></td><td>Report summary interactive, up to 10 boss tables in the background lane. Skipped when store reads are off or the store's breaker skips this workspace; one per workspace and report per 10 min (in-process). Acts as the clicking user's workspace.</td></tr>
+      <tr><td>Guide generation, stale-guide scan, "wanted" stamps</td><td>Guide generate route; the stale scan at most every 10 min from boot, the library and the chat preamble; brief use</td><td><code>services/guide.py</code>, <code>services/guide_pipeline/</code></td><td>Background lane; at most <code>WCL_GUIDE_MAX_CONCURRENCY</code> (2) generations at once.</td></tr>
+      <tr><td>Character guides, guild summary</td><td>Locking a character or guild on the profile, approving a proposal</td><td><code>services/guide.py</code></td><td>As above.</td></tr>
+      <tr><td>Conversation title</td><td>A finished answer</td><td><code>services/conversation_titles.py</code></td><td>One per chat at a time.</td></tr>
+      <tr><td>Greeting priming</td><td>Boot step <code>greeting</code></td><td><code>backend/app/greeting.py</code></td><td>Plain task on <code>app.state</code>; the endpoint awaits it on a miss.</td></tr>
+      <tr><td>Follow-up suggestions</td><td>A finished answer</td><td><code>api/ws.py</code></td><td>Per-socket task, cancelled when the socket closes.</td></tr>
+      <tr><td><code>FetchWriter</code> consumer</td><td>Lifespan</td><td><code>services/fetch_persistence.py</code></td><td>Bounded queue (500 items, 64 MB); a full queue drops new responses, never blocks.</td></tr>
+      <tr><td><code>KbIndexer</code> consumer + sweep</td><td>Lifespan</td><td><code>backend/app/kb/indexer.py</code></td><td>Bounded queue (1000); embeds outside transactions; sweeps rows without a vector every 600 s. See <a href="knowledge-base.html">Knowledge base</a>.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Why</h3>
+  <p class="why">Background jobs are in-process tasks, with a database row as the lock where several instances could race. This needs no job queue (Principle III). The in-memory key set is a cheap first filter; the claim row is the real lock.<cite>specs/013-welcome-recent-raids/research.md R4, R5</cite></p>
+  <p class="why">Lanes: one limiter where background work only takes a slot when no chat lookup waits. Two separate semaphores would still let background work take interactive slots while chat is queued.<cite>specs/013-welcome-recent-raids/research.md R8</cite></p>
+  <p class="why">A fresh context per spawned task, because every context variable in the code defaults to the value that is right for a job (no identity, no refresh actor, lane set by the job). Copying the context and resetting only the identity would keep leaking the others.<cite>specs/036-profile-write-hardening/research.md R3</cite></p>
+  <p class="note"><span class="badge planned">Planned, not built</span> A separate worker container with a NATS queue for long-running jobs (guides, offline profile building) is listed in <code>todo.md</code> as "Worker server" (epic-196). Nothing of it is in the code.</p>
+</section>
+
+<!-- ============================================================ LAYERS -->
+<section class="layer" id="layers">
+  <h2>Services layer at a glance</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span><span class="chip">asyncpg&gt;=0.29.0</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p><code>backend/app/services/</code> holds 27 modules plus the 10-module <code>guide_pipeline/</code> package. Data access is split between one large module for app data (<code>db/repository.py</code>, conversations, messages, raids, graphs, profile, guides, recent raids) and 8 focused modules in <code>repositories/</code>.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Area</th><th>Modules</th><th>Detail page</th></tr></thead>
+    <tbody>
+      <tr><td>Auth</td><td><code>auth_service</code>, <code>invitation_service</code>, <code>password_reset_service</code>, <code>link_delivery</code>; <code>repositories/</code> <code>users</code>, <code>tenants</code>, <code>sessions</code>, <code>invitations</code>, <code>reset_tokens</code>, <code>audit</code></td><td><a href="auth-tenancy.html">Auth &amp; multi-tenancy</a></td></tr>
+      <tr><td>Chat turn support</td><td><code>profile_context</code> (per-turn preamble), <code>content_type</code>, <code>known_entities</code>, <code>raids</code> (tracked raids), <code>graphs</code>, <code>artifacts</code>, <code>charts</code>, <code>tool_summary</code>, <code>conversation_titles</code>, <code>encounters</code>; <code>backend/app/agent_runner.py</code>, <code>scratch.py</code>, <code>suggestions.py</code></td><td><a href="agent.html">Agent runtime &amp; tools</a>, <a href="streaming.html">Stream protocol</a></td></tr>
+      <tr><td>Profile</td><td><code>profile_service</code> (the one write path), <code>profile_proposals</code>; <code>repositories/profile_proposals</code></td><td><a href="agent.html">Agent runtime &amp; tools</a></td></tr>
+      <tr><td>WCL data</td><td><code>fetch_persistence</code>, <code>raw_fetch_reads</code>, <code>recent_raids</code>, <code>recent_raid_types</code>, <code>kickoff_prefetch</code>, <code>name_resolver</code>; <code>repositories/raw_fetches</code></td><td><a href="wcl-data.html">WCL client, cache &amp; store</a></td></tr>
+      <tr><td>Knowledge base</td><td><code>backend/app/kb/</code> (chunkers, embedder, indexer, search, store); <code>agent_tools/kb_tools.py</code>, <code>agent_tools/stored_data_tools.py</code></td><td><a href="knowledge-base.html">Knowledge base</a></td></tr>
+      <tr><td>Guides</td><td><code>guide</code>, <code>guide_pipeline/</code> (briefing, datasheet, research, authoring, checks, review, render)</td><td><a href="agent.html">Agent runtime &amp; tools</a></td></tr>
+      <tr><td>Reports</td><td><code>pdf_report</code>, <code>report_synthesis</code>, <code>report_theme</code></td><td><a href="pdf-reports.html">PDF reports</a></td></tr>
+    </tbody>
+  </table></div>
+  <p>Two database dependencies exist: <code>get_session</code> (<code>db/session.py</code>) for global data and auth, and <code>get_tenant_db</code> for tenant data with the RLS settings applied. Work outside a request uses <code>tenant_scope(tenant_id, user_id=…)</code>. The engine has a pool of 10 plus 20 overflow, shared with ADK's session store.</p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>backend/app/main.py</code>, <code>backend/app/startup.py</code>, <code>backend/app/api/*.py</code> (all 15 modules), <code>backend/app/api/errors.py</code>, <code>backend/app/model_state.py</code>, <code>backend/app/db/session.py</code></li>
+    <li><code>backend/app/services/background.py</code>, <code>services/recent_raids.py</code>, <code>services/kickoff_prefetch.py</code>, <code>services/guide.py</code>, <code>services/conversation_titles.py</code>, <code>services/fetch_persistence.py</code>, <code>backend/app/kb/indexer.py</code>, module docstrings of every file in <code>services/</code>, <code>repositories/</code>, <code>kb/</code>, <code>agent_tools/</code></li>
+    <li><code>wcl_agent/client/wcl_client.py</code> (lanes, <code>aclose_clients</code>), <code>backend/app/config.py</code></li>
+    <li><code>todo.md</code>, <code>.specify/memory/constitution.md</code>, <code>specs/013-welcome-recent-raids/research.md</code>, <code>specs/036-profile-write-hardening/research.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

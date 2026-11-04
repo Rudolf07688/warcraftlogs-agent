@@ -5,6 +5,13 @@ For technologies, project structure, and other important context, read that plan
 and the project constitution at .specify/memory/constitution.md.
 <!-- SPECKIT END -->
 
+# Architecture docs
+
+`documentation/architecture/` (serve or open `index.html`) describes the system as it is at the
+commit stamped on each page. Read it for orientation; the code wins where they differ. Every
+sprint close-out re-verifies it (`.claude/team/archdocs.py changed`, procedure in
+`documentation/architecture/pages/maintaining.html`).
+
 <!-- META START -->
 # Meta work (team / agent setup)
 

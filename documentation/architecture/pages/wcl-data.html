@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>WCL client, cache &amp; store · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Data</p>
+  <h1>WCL client, cache &amp; store</h1>
+  <p class="lede">Every piece of Warcraft Logs data the app uses goes through one async API client. In front of it sit two local layers: a shared Redis cache of typed values, and a Postgres store that keeps every raw response and answers repeat queries from it. A lookup tries Redis first, then the store, then Warcraft Logs, and the store only serves what the asking workspace is allowed to see.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#glance">At a glance</a>
+    <a href="#lookup">One lookup, end to end</a>
+    <a href="#client">API client</a>
+    <a href="#cache">Redis cache</a>
+    <a href="#writes">Store: writes</a>
+    <a href="#reads">Store: reads</a>
+    <a href="#gone">Deleted &amp; private reports</a>
+    <a href="#stored">Exact lookups</a>
+    <a href="#prefetch">Kickoff pre-fetch</a>
+    <a href="#metrics">Counters &amp; stats</a>
+    <a href="#blizzard">Blizzard sources</a>
+    <a href="#config">Settings</a>
+  </nav>
+</header>
+
+<!-- ============================================================ GLANCE -->
+<section class="layer" id="glance">
+  <h2>At a glance</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">httpx&gt;=0.27.0</span><span class="chip">redis&gt;=6 (redis.asyncio)</span><span class="chip">redis:8-alpine</span><span class="chip">sqlalchemy[asyncio]&gt;=2.0.0</span><span class="chip">asyncpg&gt;=0.29.0</span><span class="chip">pydantic</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>The <code>wcl_agent</code> package holds the client and the cache and has no database code, so the CLI and the evals run without Postgres (and without Redis). The backend plugs the store in at start-up through two hooks on the client: a <b>fetch sink</b> that receives every response, and a <b>fetch source</b> that may answer a query before the network is used.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Part</th><th>Module</th><th>Job</th></tr></thead>
+    <tbody>
+      <tr><td>API client</td><td><code>wcl_agent/client/wcl_client.py</code>, <code>queries.py</code>, <code>aio.py</code></td><td>OAuth, single-flight, lanes, retries, cost logging, the sink and source hooks.</td></tr>
+      <tr><td>Redis cache</td><td><code>wcl_agent/cache/cache.py</code>, <code>cache_models.py</code>, <code>normalize.py</code></td><td><code>get_or_load</code>, 15 key families, locks, memo, counters, report eviction.</td></tr>
+      <tr><td>Store writer</td><td><code>backend/app/services/fetch_persistence.py</code></td><td><code>FetchWriter</code>: queue, batches, grants, report statuses, gone handling, tombstones.</td></tr>
+      <tr><td>Store reads</td><td><code>backend/app/services/raw_fetch_reads.py</code></td><td><code>StoreSource</code> (the fetch source), freshness rule, breaker, probe counters.</td></tr>
+      <tr><td>Store SQL</td><td><code>backend/app/repositories/raw_fetches.py</code></td><td>The only module that reads <code>raw_fetches</code> (a guard test, <code>test_only_the_repository_reads_the_raw_store</code>, enforces it). Holds the one visibility rule.</td></tr>
+      <tr><td>Stored-data tools</td><td><code>backend/app/agent_tools/stored_data_tools.py</code></td><td>The agent's exact lookups in stored data.</td></tr>
+      <tr><td>Kickoff pre-fetch</td><td><code>backend/app/services/kickoff_prefetch.py</code></td><td>Warms a recent raid's data before its first chat turn.</td></tr>
+      <tr><td>Stats endpoint</td><td><code>backend/app/api/cache_stats.py</code></td><td><code>GET /api/admin/cache-stats</code>.</td></tr>
+      <tr><td>Blizzard sources</td><td><code>backend/app/services/guide_pipeline/briefing.py</code></td><td>Live game build and hotfix news for the guide pipeline.</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>Wiring</b> (<code>backend/app/main.py</code>, <code>lifespan</code>): the knowledge-base indexer starts first, then the <code>FetchWriter</code> (when <code>WCL_FETCH_PERSIST_ENABLED</code>), which installs itself as the sink. Only when the writer runs <i>and</i> <code>WCL_STORE_READS_ENABLED</code> is on does <code>set_fetch_source(read_stored_fetch)</code> install the store as the source. Shutdown reverses it: source removed, writer drained (5 s), indexer drained, then <code>aclose_clients()</code> closes the HTTP pools and Redis clients.</li>
+    <li>Table definitions and migrations (<code>raw_fetches</code>, <code>raw_reports</code>, <code>raw_fetch_grants</code>; migrations 0013, 0018, 0020, 0021) are on <a href="database.html">Database &amp; migrations</a>. The knowledge base that indexes stored fetches is on <a href="knowledge-base.html">Knowledge base</a>.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ LOOKUP -->
+<section class="layer" id="lookup">
+  <h2>One lookup, end to end</h2>
+  <p>The read order is Redis → store → Warcraft Logs. Redis is asked by the caller (<code>get_or_load</code>); the store is asked inside the client, so every query, cached family or not, gets the store check and every network answer is persisted.</p>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1040 815" role="img" aria-labelledby="sq1-title sq1-desc">
+      <title id="sq1-title">Sequence: one WCL lookup through Redis, the raw store and the API</title>
+      <desc id="sq1-desc">A tool calls get_or_load. On a Redis miss it takes a lock and runs its loader, which calls the WCL client. The client joins or starts a single-flight, takes a lane slot and asks the store source, which reads Postgres through the visibility and freshness rules. On a store hit the body is returned at once. Otherwise the client posts to the Warcraft Logs API, offers the response to the FetchWriter, and returns it. get_or_load writes the model to Redis unless the store answered through a grant only, releases the lock and returns. The FetchWriter later upserts the response into Postgres.</desc>
+      <defs>
+        <marker id="sq1-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="sq1-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <g>
+        <rect class="node" x="3" y="10" width="124" height="48" rx="8"/><text class="t" x="65" y="40" text-anchor="middle">Tool</text>
+        <rect class="node core" x="133" y="10" width="124" height="48" rx="8"/><text class="t" x="195" y="40" text-anchor="middle">get_or_load</text>
+        <rect class="node store" x="263" y="10" width="124" height="48" rx="8"/><text class="t" x="325" y="40" text-anchor="middle">Redis</text>
+        <rect class="node core" x="393" y="10" width="124" height="48" rx="8"/><text class="t" x="455" y="40" text-anchor="middle">WCL client</text>
+        <rect class="node" x="523" y="10" width="124" height="48" rx="8"/><text class="t" x="585" y="40" text-anchor="middle">Store source</text>
+        <rect class="node store" x="653" y="10" width="124" height="48" rx="8"/><text class="t" x="715" y="40" text-anchor="middle">Postgres</text>
+        <rect class="node ext" x="783" y="10" width="124" height="48" rx="8"/><text class="t" x="845" y="40" text-anchor="middle">WCL API</text>
+        <rect class="node" x="913" y="10" width="124" height="48" rx="8"/><text class="t" x="975" y="40" text-anchor="middle">FetchWriter</text>
+      </g>
+      <path class="life" d="M65,58 V805 M195,58 V805 M325,58 V805 M455,58 V805 M585,58 V805 M715,58 V805 M845,58 V805 M975,58 V805"/>
+
+      <path class="flow" marker-end="url(#sq1-ah)" d="M65,100 H192"/><text class="lbl" x="130" y="92" text-anchor="middle">1 get_or_load(key)</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M195,142 H322"/><text class="lbl" x="260" y="134" text-anchor="middle">2 GET key</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M325,184 H198"/><text class="lbl" x="260" y="176" text-anchor="middle">3 miss (hit: done)</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M195,226 H322"/><text class="lbl" x="260" y="218" text-anchor="middle">4 SET lock NX PX</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M195,268 H452"/><text class="lbl" x="325" y="260" text-anchor="middle">5 loader() → query()</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M455,298 H495 V322 H458"/><text class="lbl" x="504" y="316">6 single-flight · lane slot</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M455,364 H582"/><text class="lbl" x="520" y="356" text-anchor="middle">7 stored?</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M585,406 H712"/><text class="lbl" x="650" y="398" text-anchor="middle">8 probe ≤ 400 ms</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M715,448 H588"/><text class="lbl" x="650" y="440" text-anchor="middle">9 body or miss</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M585,490 H458"/><text class="lbl" x="520" y="482" text-anchor="middle">10 hit: skip to 14</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M455,532 H842"/><text class="lbl" x="650" y="524" text-anchor="middle">11 token · POST GraphQL + _cost</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M845,574 H458"/><text class="lbl" x="650" y="566" text-anchor="middle">12 200, or retry on 429 / 5xx</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M455,616 H972"/><text class="lbl" x="715" y="608" text-anchor="middle">13 offer(response), never waits</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M455,658 H198"/><text class="lbl" x="325" y="650" text-anchor="middle">14 payload → model</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M195,700 H322"/><text class="lbl" x="260" y="692" text-anchor="middle">15 SET value*, DEL lock</text>
+      <path class="flow ret" marker-end="url(#sq1-ah2)" d="M195,742 H68"/><text class="lbl" x="130" y="734" text-anchor="middle">16 model</text>
+      <path class="flow" marker-end="url(#sq1-ah)" d="M975,784 H718"/><text class="lbl" x="845" y="776" text-anchor="middle">17 batch upsert</text>
+    </svg>
+    <figcaption>One cached lookup today. * Not written (nor memoised) when the store answered through the workspace's grant only. Uncached queries (whole-raid tables, events, graphs, rankings, hand-written GraphQL) start at step 5 without steps 2–4 and 15. Only queries that name reports the strict parser can read are looked up in the store; others skip steps 7–10 without a database call.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>A tool, a background job or the pre-fetch calls <code>get_or_load</code> with a typed family and key.</li>
+    <li>It reads the key from Redis (memoised families first check the process memo).</li>
+    <li>On a hit it decodes the model and returns it. Done.</li>
+    <li>On a miss it takes a per-key lock. A lock loser in another process polls for the winner's value for up to 2 s.</li>
+    <li>The loader calls <code>AsyncWCLClient.query</code>.</li>
+    <li>The client joins an identical in-flight request from the same workspace, or starts one, and waits for a lane slot.</li>
+    <li>Inside the slot it asks the fetch source for a stored body (first attempt only).</li>
+    <li>The store source reads the row through the visibility and freshness rules, bounded by 400 ms and a breaker.</li>
+    <li>Postgres returns the body, or nothing.</li>
+    <li>On a hit the body goes back with no token, no network call, no sink offer and no grant. The flow continues at step 14.</li>
+    <li>On a miss the client gets an OAuth token and POSTs the GraphQL query with an injected cost field.</li>
+    <li>A 429 or 5xx is retried up to twice with backoff, outside the slot.</li>
+    <li>The raw response is offered to the <code>FetchWriter</code>. This never blocks; a full queue drops it from storage only.</li>
+    <li>The body is parsed (off the loop above 256 KB) and the loader builds the family's Pydantic model.</li>
+    <li>The model goes to Redis with its TTL and jitter (unless the answer was grant-only), and the lock is released.</li>
+    <li>The model goes back to the caller.</li>
+    <li>Later, the writer's own task upserts the response into <code>raw_fetches</code>, with grants and report statuses, in a batch.</li>
+  </ol>
+
+  <h3>Why</h3>
+  <p class="why">The store is asked from inside <code>query()</code> because every read passes there. Redis-cached families call it from their loaders, so the order Redis → store → WCL and the Redis back-fill come for free, and the heavy uncached calls (tables, events, graphs) gain most. <b>Rejected:</b> asking it from a place shared by callers of different workspaces, which would serve one workspace's visibility decision to another.<cite>specs/039-local-first-data/research.md R5 · specs/045-local-data-reads/research.md R3</cite></p>
+</section>
+
+<!-- ============================================================ CLIENT -->
+<section class="layer" id="client">
+  <h2>Warcraft Logs API client</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">httpx&gt;=0.27.0</span><span class="chip">asyncio</span><span class="chip">GraphQL v2</span><span class="chip">OAuth2 client credentials</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>wcl_agent/client/wcl_client.py</code>: <code>AsyncWCLClient</code> on an <code>httpx.AsyncClient</code> (timeout 60 s, connect 5 s, at most 16 connections), one per event loop (<code>get_async_client()</code>, which needs <code>WCL_CLIENT_ID</code> and <code>WCL_CLIENT_SECRET</code>). It posts to <code>https://www.warcraftlogs.com/api/v2/client</code>. The app's fixed queries live in <code>wcl_agent/client/queries.py</code>; <code>wcl_agent/client/aio.py</code> has <code>gather_settled</code> for fan-out inside one tool.</li>
+    <li><b>One chokepoint.</b> <code>query()</code> does single-flight: one shared task per sha256 of the query plus its sorted variables, cancelled only when its last waiter leaves. With a fetch source installed the flight key also carries the source's scope (the workspace id), so callers of different workspaces never share a flight. <code>_fetch</code> does the rest: the 75 s overall timeout (<code>WCL_QUERY_TIMEOUT_S</code>, slot wait included), the store probe, OAuth, the POST, retries, cost logging and the sink.</li>
+    <li><b>OAuth.</b> A process memo per client id (shared across loops), then the shared <code>oauth_token</code> Redis entry, then <code>https://www.warcraftlogs.com/oauth/token</code>. Tokens are renewed 60 s before expiry (3600 s assumed when the answer has no <code>expires_in</code>); an <code>asyncio.Lock</code> makes concurrent first calls fetch one. A 401 refreshes once, never reuses the rejected token, and retries.</li>
+    <li><b>Lanes</b> (<code>LaneLimiter</code>, one per loop). <code>WCL_MAX_CONCURRENCY</code> (6) caps requests in flight. Work inside <code>background_lane()</code> (guides and their data sheets, the patch lookup, recent raids, the kickoff pre-fetch's boss tables) holds at most <code>WCL_BACKGROUND_CONCURRENCY</code> (2, clamped to 1…total−1) slots, and never takes one while a chat lookup waits. Waiters are served first in, first out. A flight carries a <code>LaneTicket</code>: when a chat caller joins a background flight, <code>promote()</code> moves it to the interactive lane, so a chat turn never waits on the background cap for a warm-up that shares its query.</li>
+    <li><b>Retries.</b> 429 and 5xx get up to 2 retries: <code>0.5 s · 2^n</code> plus up to 0.25 s jitter, or <code>Retry-After</code> capped at 10 s. Backoff waits outside the slot and is skipped when it would outlast the query timeout. A 429 whose <code>Retry-After</code> is longer than 10 s means the hourly budget is spent: the client answers every later call with a synthetic 429 until then. With a store installed, the probe still runs first, so stored answers keep working while WCL refuses us.</li>
+    <li><b>Cost.</b> Every query without fragments gets <code>_cost: rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn }</code> inserted into its top-level selection. Each response logs <code>wcl_cost op=&lt;operation&gt; points_this_hour=… delta=…</code>, and the latest snapshot answers <code>acheck_rate_limit()</code> for 30 s without a request of its own. Callers never see <code>_cost</code>; the store strips it too.</li>
+    <li><b>Errors.</b> A body with GraphQL <code>errors</code> raises <code>RuntimeError</code> after the gone check below. Bodies above 256 KB are parsed in a thread.</li>
+    <li><b>Fetch sink</b> (<code>set_fetch_sink</code>, feature 020). After a successful network call <code>_fetch</code> hands the sink a <code>FetchedResponse</code> (query key, query, variables, raw bytes, <code>fetched_at</code>, <code>requested_at</code>), or a <code>ReportGone</code> instead when the answer says the report is gone (<a href="#gone">below</a>). The sink must be O(1); a failing sink never fails the fetch. It is unset in the CLI, evals and tests.</li>
+    <li><b>Fetch source</b> (<code>set_fetch_source</code>, a <code>FetchSource</code> protocol with <code>__call__</code> and <code>scope()</code>, feature 039/045). It returns a <code>StoredFetch(content, shared)</code> or <code>None</code>; any exception is a miss. The answer's origin is <code>network</code>, <code>shared</code> (every report public) or <code>private</code> (visible through a grant). In each caller's own context, <code>network</code> marks the chat turn and the cache load as external; <code>private</code> marks the cache load unshareable, so it stays out of shared Redis and the memo.</li>
+    <li><b>Report-code parsing</b>, which the store trusts: <code>report_codes()</code>, the strict <code>exact_report_codes()</code> (None for comments, a <code>report(</code> field whose code it can't read, or a padded code) and <code>returned_report_code()</code> (a plain one-report query whose response really holds that report). Hand-written queries (<code>run_wcl_graphql</code>) can't earn a grant or delete a report through them.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">A native async httpx client replaced <code>requests</code> plus threads: real cancellation, no GIL contention (QA measured 35 ms average and 157 ms worst-case loop lag), and no new dependency. <b>Alternatives:</b> aiohttp (a new dependency); threads with cancel flags.<cite>specs/013-welcome-recent-raids/research.md R7</cite></p>
+  <p class="why">Lanes keep background work out of the chat's slots in about 40 lines. <b>Alternatives:</b> two semaphores (background could still take interactive slots); a priority-queue dispatcher.<cite>specs/013-welcome-recent-raids/research.md R8</cite></p>
+  <p class="why">A chat turn that joins a background flight promotes it, because the kickoff turn's identical queries otherwise waited on the 2-slot background lane (QA PERF-001).<cite>specs/046-big-report-turns/research.md R4 (As built)</cite></p>
+  <p class="why">Retries and cost injection at the one chokepoint cover every call, uncached and agent-written ones included. <b>Alternative:</b> a separate <code>rateLimitData</code> query per call (doubles requests).<cite>specs/014-redis-wcl-cache/research.md R6</cite></p>
+  <p class="why">The token memo sits in front of Redis, so a Redis outage never turns into an OAuth request per WCL call.<cite>specs/014-redis-wcl-cache/research.md R5</cite></p>
+  <p class="why">One shared client is the constitution's own example of single-source code.<cite>.specify/memory/constitution.md Principle I</cite></p>
+</section>
+
+<!-- ============================================================ CACHE -->
+<section class="layer" id="cache">
+  <h2>Redis cache</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">redis&gt;=6 (redis.asyncio)</span><span class="chip">redis:8-alpine</span><span class="chip">pydantic models as JSON</span><span class="chip">fakeredis&gt;=2.30 (tests)</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><code>wcl_agent/cache/cache.py</code>: <code>get_or_load(family, key, model, loader, ttl=…, force_refresh=…)</code> is the only way code reads or writes cached data; <code>get_many_or_load</code> is its batched form (one <code>MGET</code>, one loader call for all misses, one pipelined write, no lock) for background batches. Values are Pydantic models from <code>cache_models.py</code>, stored as JSON. All keys are built in the <code>keys</code> class, and no <code>wcl:</code> key holds a user, tenant or conversation id: everyone shares one entry.</li>
+    <li><b>Loads.</b> A loader returning None caches a <code>{"_missing":true}</code> marker for <code>WCL_NEG_CACHE_TTL</code> (60 s). TTLs are stretched by a random 0–10 % (<code>WCL_CACHE_JITTER</code>), except the OAuth token. A value that fails validation is deleted and loaded again. Values above 256 KB are decoded in a thread.</li>
+    <li><b>Locks and joiners.</b> Concurrent callers of one key in one process share one load (a per-loop single-flight). Across processes, the first caller takes <code>SET lock:&lt;key&gt; NX PX</code> (<code>WCL_CACHE_LOCK_MS</code>, 90 s, longer than the 75 s query timeout); losers poll every 100 ms for up to <code>WCL_CACHE_LOCK_WAIT_MS</code> (2 s), then load themselves without writing. <code>force_refresh</code> never joins a flight. <b>Grant-only rule:</b> when the shared load was served by the store through the first caller's grant (marked unshareable), a joiner never takes its value; it runs its own lookup and gets what it would get alone (QA SEC-001).</li>
+    <li><b>Process memo.</b> <code>char_id</code>, <code>world_zones</code> and <code>game_classes</code> are also kept in-process (up to 1024 entries) in front of Redis, so they stay cheap when Redis is slow or absent. Memoised values are shared instances (read-only).</li>
+    <li><b>Fail-open.</b> One Redis client per event loop with 250 ms socket timeouts; after a Redis error that loop leaves Redis alone for 5 s (a circuit). Without <code>REDIS_URL</code>, or with <code>WCL_CACHE_ENABLED=false</code>, the loader is simply called and nothing is counted. A Redis problem never reaches the caller.</li>
+    <li><b>Finished reports</b> (<code>wcl_agent/cache/normalize.py</code>, <code>FINAL_AFTER</code>): a report is finished once its end time is at least 2 h old. The three report families keep their family TTL only then; a report still being logged gets <code>WCL_CACHE_UNFINISHED_TTL</code> (120 s) (<code>_report_ttl</code> in <code>wcl_agent/tools/report_tools.py</code>). The store uses the same rule.</li>
+    <li><b>Report eviction</b> (<code>evict_report</code>): when a report is found gone, the writer first sets <code>wcl:v1:gone:&lt;code&gt;</code> (for <code>WCL_CACHE_LOCK_MS</code>), then SCANs and deletes <code>wcl:v1:report:&lt;code&gt;:*</code> (the code glob-escaped). Every report-family write checks for that marker after its SET and deletes its own key, so a load that read old data can't write it back.</li>
+    <li><b>Forced refresh.</b> The character rankings tools may force a reload at most once per user per character per minute (<code>chat:refresh:&lt;user&gt;:&lt;char_id&gt;</code>, the one key with a user id, outside the <code>wcl:</code> space).</li>
+    <li><b>Compose</b> (<code>docker-compose.yml</code>): <code>redis:8-alpine</code> with <code>maxmemory 256mb</code>, <code>allkeys-lru</code>, no persistence, port bound to 127.0.0.1 only (it has no auth). The backend container gets <code>REDIS_URL=redis://redis:6379/0</code>.</li>
+  </ul>
+
+  <h3>The 15 cache families</h3>
+  <p>Eight hold Warcraft Logs data or its OAuth token; six (the code's feature-015 group) cache guide-pipeline inputs, from the WCL class roster to Blizzard's live build; one holds the model catalog. Every TTL can be overridden with <code>WCL_CACHE_TTL_&lt;FAMILY&gt;</code>. "Review below" is the hit rate under which the stats endpoint says <code>review</code>.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Family</th><th>Key</th><th>TTL</th><th>Memo</th><th>Review below</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td><code>char_id</code></td><td><code>wcl:v1:char_id:{region}:{realm}:{name}</code></td><td>24 h</td><td>1 h</td><td>0.90</td><td>Character lookups in <code>wcl_agent/tools/report_tools.py</code> (single and batch)</td></tr>
+      <tr><td><code>char_overview</code></td><td><code>wcl:v1:char:{id}:overview:zone:…</code> / <code>…:enc:…</code></td><td>10 min</td><td>–</td><td>0.60</td><td>Character zone and encounter rankings tools</td></tr>
+      <tr><td><code>char_reports</code></td><td><code>wcl:v1:char:{id}:reports:{limit}</code></td><td>5 min</td><td>–</td><td>0.60</td><td><code>backend/app/services/recent_raids.py</code> (batched)</td></tr>
+      <tr><td><code>report_summary</code></td><td><code>wcl:v1:report:{code}:summary:keystone</code></td><td>24 h finished, else 120 s</td><td>–</td><td>0.40</td><td><code>load_report_summary</code> / <code>load_report_summaries</code></td></tr>
+      <tr><td><code>report_player</code></td><td><code>wcl:v1:report:{code}:player:{source}:table:…</code></td><td>24 h finished, else 120 s</td><td>–</td><td>0.40</td><td>One player's report table</td></tr>
+      <tr><td><code>report_participants</code></td><td><code>wcl:v1:report:{code}:participants:{fight}</code></td><td>24 h finished, else 120 s</td><td>–</td><td>0.40</td><td><code>wcl_agent/tools/participants.py</code></td></tr>
+      <tr><td><code>oauth_token</code></td><td><code>wcl:v1:oauth:token</code></td><td>token expiry − 60 s, no jitter</td><td>own memo</td><td>0.90</td><td><code>AsyncWCLClient._token</code></td></tr>
+      <tr><td><code>world_zones</code></td><td><code>wcl:v1:world:zones</code></td><td>1 h</td><td>5 min</td><td>0.90</td><td><code>wcl_agent/menu.py</code> (the patch lookup runs every chat turn)</td></tr>
+      <tr><td><code>game_classes</code></td><td><code>wcl:v1:game:classes</code></td><td>24 h</td><td>1 h</td><td>0.90</td><td><code>wcl_agent/game/roster.py</code> (class/spec roster from WCL)</td></tr>
+      <tr><td><code>spec_datasheet</code></td><td><code>wcl:v1:datasheet:{type}:{class}:{spec}:{scope}</code></td><td>12 h</td><td>–</td><td>0.50</td><td><code>guide_pipeline/datasheet.py</code></td></tr>
+      <tr><td><code>guide_research</code></td><td><code>guide:research:v1:…</code></td><td>6 h</td><td>–</td><td>0.50</td><td><code>guide_pipeline/research.py</code></td></tr>
+      <tr><td><code>talent_names</code></td><td><code>ext:talents:v1:{source}</code></td><td>7 days</td><td>–</td><td>0.50</td><td><code>guide_pipeline/datasheet.py</code> (optional, off by default)</td></tr>
+      <tr><td><code>live_version</code></td><td><code>ext:wow_version:v1:{region}</code></td><td>15 min</td><td>–</td><td>0.50</td><td><code>guide_pipeline/briefing.py</code></td></tr>
+      <tr><td><code>hotfix_feed</code></td><td><code>ext:hotfix:v1</code></td><td>30 min</td><td>–</td><td>0.50</td><td><code>guide_pipeline/briefing.py</code></td></tr>
+      <tr><td><code>model_catalog</code></td><td><code>ext:models:v2:{provider}:{project}:{location}:{sig}</code></td><td>6 h</td><td>–</td><td>0.50</td><td>Model discovery at start-up, <code>backend/app/main.py</code> (see <a href="models.html">Models &amp; providers</a>)</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Not cached in Redis: whole-raid tables, events, graphs, master data, arbitrary rankings and hand-written GraphQL. Those still pass through the client, so the store keeps and can serve the report-scoped ones.</p>
+
+  <h3>Why</h3>
+  <p class="why">Redis was the owner's choice, with <code>documentation/redis_cache_spec.md</code> as the design: fewer Warcraft Logs calls and less latency on repeat lookups, staying under the rate limit, and a visible hit rate per key family.<cite>specs/014-redis-wcl-cache/spec.md (Input) · documentation/redis_cache_spec.md §1</cite></p>
+  <p class="why">A shared Redis replaced the in-process cache, which was per process, lost on restart and had no cross-process stampede protection.<cite>specs/014-redis-wcl-cache/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">Keys hold no user or conversation id because the data is public and users share entries; this removed feature 006's tenant-scoped cache.<cite>documentation/redis_cache_spec.md §2 (Rules) · specs/014-redis-wcl-cache/research.md R10</cite></p>
+  <p class="why">Typed Pydantic values (Principle IV), with validation failure as the "corrupt" path. A same-process lock loser re-sends the same GraphQL, which the client's single-flight joins, so it costs no second request.<cite>specs/014-redis-wcl-cache/research.md R3</cite></p>
+  <p class="why">One client per loop, short timeouts and a circuit, so a dead Redis costs at most 250 ms and then nothing, and <code>wcl_agent</code> stays usable without Redis. <b>Alternatives:</b> one global client (breaks multi-loop tests and the CLI); no circuit.<cite>specs/014-redis-wcl-cache/research.md R4</cite></p>
+  <p class="why"><code>world_zones</code> went beyond the design doc's six families because <code>current_patch()</code> runs every chat turn; uncached it would cost one WCL request per turn.<cite>specs/014-redis-wcl-cache/plan.md (Complexity Tracking)</cite></p>
+  <p class="why">Grant-only answers stay out of shared Redis because Redis keys are tenant-less: a hit visible only through one workspace's grant would otherwise reach every workspace that knows the code. <b>Alternative:</b> tenant-aware Redis keys for non-public reports (more keys, every caller changes).<cite>specs/045-local-data-reads/research.md R5</cite></p>
+  <p class="why">The gone marker uses write-then-check ordering, which is safe without Lua: a write before the marker is caught by the SCAN, a write after it deletes itself.<cite>specs/045-local-data-reads/research.md R7</cite></p>
+</section>
+
+<!-- ============================================================ WRITES -->
+<section class="layer" id="writes">
+  <h2>Raw store: writing every response</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">asyncio queue + one consumer</span><span class="chip">PostgreSQL JSONB</span><span class="chip">SQLAlchemy Core upserts</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1040 290" role="img" aria-labelledby="wr-title wr-desc">
+      <title id="wr-title">Write path of the raw fetch store</title>
+      <desc id="wr-desc">The WCL client offers each response or gone signal to the FetchWriter queue. A full queue drops fetches, but salvages gone findings from our own summaries. One consumer writes batches to Postgres in one transaction each. After the commit, changed fetches go to the knowledge base indexer, and gone report codes are evicted from Redis.</desc>
+      <defs>
+        <marker id="wr-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="node core" x="10" y="40" width="150" height="80" rx="8"/>
+      <text class="t" x="85" y="72" text-anchor="middle">WCL client</text>
+      <text class="sub" x="85" y="96" text-anchor="middle">_fetch → sink</text>
+
+      <rect class="node" x="250" y="40" width="190" height="80" rx="8"/>
+      <text class="t" x="345" y="66" text-anchor="middle">Writer queue</text>
+      <text class="sub" x="345" y="90" text-anchor="middle">≤ 500 items, ≤ 64 MB</text>
+      <text class="sub" x="345" y="109" text-anchor="middle">gone signals: no cap</text>
+
+      <rect class="node core" x="530" y="40" width="190" height="80" rx="8"/>
+      <text class="t" x="625" y="66" text-anchor="middle">Batch writer</text>
+      <text class="sub" x="625" y="90" text-anchor="middle">≤ 20 items, ≤ 8 MB</text>
+      <text class="sub" x="625" y="109" text-anchor="middle">10 s, then item by item</text>
+
+      <rect class="node store" x="810" y="40" width="220" height="80" rx="8"/>
+      <text class="t" x="920" y="66" text-anchor="middle">Postgres</text>
+      <text class="sub" x="920" y="90" text-anchor="middle">raw_fetches, raw_reports,</text>
+      <text class="sub" x="920" y="109" text-anchor="middle">raw_fetch_grants</text>
+
+      <rect class="node ext" x="250" y="200" width="190" height="70" rx="8"/>
+      <text class="t" x="345" y="228" text-anchor="middle">Dropped</text>
+      <text class="sub" x="345" y="252" text-anchor="middle">own summaries salvaged</text>
+
+      <rect class="node" x="530" y="200" width="190" height="70" rx="8"/>
+      <text class="t" x="625" y="228" text-anchor="middle">Knowledge base</text>
+      <text class="sub" x="625" y="252" text-anchor="middle">offer_fetch()</text>
+
+      <rect class="node store" x="810" y="200" width="220" height="70" rx="8"/>
+      <text class="t" x="920" y="228" text-anchor="middle">Redis</text>
+      <text class="sub" x="920" y="252" text-anchor="middle">evict_report(code)</text>
+
+      <path class="flow" marker-end="url(#wr-ah)" d="M160,80 H247"/><text class="lbl" x="204" y="70" text-anchor="middle">offer</text>
+      <path class="flow" marker-end="url(#wr-ah)" d="M440,80 H527"/><text class="lbl" x="484" y="70" text-anchor="middle">batch</text>
+      <path class="flow" marker-end="url(#wr-ah)" d="M720,80 H807"/><text class="lbl" x="764" y="70" text-anchor="middle">1 txn</text>
+      <path class="flow" marker-end="url(#wr-ah)" d="M345,120 V197"/><text class="lbl" x="355" y="165">full</text>
+      <path class="flow" marker-end="url(#wr-ah)" d="M600,120 V197"/><text class="lbl" x="590" y="165" text-anchor="end">after commit</text>
+      <path class="flow" marker-end="url(#wr-ah)" d="M690,120 V175 H920 V197"/><text class="lbl" x="810" y="167" text-anchor="middle">gone codes</text>
+    </svg>
+    <figcaption>The write side. Nothing here can slow or fail a chat turn: the client's offer only enqueues.</figcaption>
+  </figure>
+  <ul>
+    <li><b>Offer</b> (<code>FetchWriter.offer</code>, installed by <code>start()</code>): O(1), never awaits, hops threads with <code>call_soon_threadsafe</code>. It reads the tenant from <code>current_identity</code> in the fetching task's context, so the item remembers which workspace's turn fetched it (None outside a turn).</li>
+    <li><b>Bounds.</b> At most <code>WCL_FETCH_PERSIST_QUEUE_MAX</code> (500) fetches and <code>WCL_FETCH_PERSIST_QUEUE_MB</code> (64) MB wait. Beyond that the newest fetch is dropped and counted in a warning at most once a minute. A <code>ReportGone</code> is never capped, and a dropped summary of our own query that holds a private or null report is parsed in a tracked task so its gone codes still queue (sc-353).</li>
+    <li><b>Batches.</b> One consumer takes up to 20 items and 8 MB per transaction, with a 10 s timeout. On any error, a timeout included, each item is retried alone (10 s each), so one bad item loses only itself and a gone signal is never lost with a batch. Failure logs carry only the exception class and SQLSTATE, never the statement's parameters.</li>
+    <li><b>Upsert</b> (<code>upsert_raw_fetch</code>): one row per query key; only a newer <code>fetched_at</code> replaces a row. The hash is sha256 of the body without <code>_cost</code>; an unchanged body only moves <code>fetched_at</code> and sets <code>own_summary</code>, without sending the payload. Postgres decodes the JSON and drops <code>data._cost</code> (<code>CAST AS jsonb #- '{data,_cost}'</code>), so no multi-MB parse runs on the loop. Operation names are cut to 120 characters, a code over 32 characters leaves <code>report_code</code> empty (it stays in <code>report_codes</code>), and <code>\u0000</code> escapes are stripped.</li>
+    <li><b>Report statuses.</b> Only our own summary queries (<code>REPORT_SUMMARY</code> and the batch <code>ReportsBatch</code>, which select <code>code visibility endTime</code>) record what WCL showed about each report in <code>raw_reports</code>; an older observation never wins. <code>own_summary</code> is set on exactly those rows (same query text, exact codes, exactly their own variables).</li>
+    <li><b>Grants</b> come from what WCL returned, never from the query text alone: a summary grants each code whose report object came back; any other query grants its one code only when it is plain and its body holds that report. A workspace's grant is rewritten only when at least an hour older (<code>GRANT_REFRESH</code>). Grants sit under row-level security, so the writer sets the transaction's <code>app.tenant_id</code> once per tenant.</li>
+    <li><b>After the commit</b>, each fetch whose stored payload changed goes to the knowledge base indexer (<code>kb_indexer.offer_fetch</code>), and gone codes are evicted from Redis with a 5 s bound, outside the timed DB write.</li>
+    <li><b>Stop:</b> the sink is removed, then the queue gets 5 s to drain; what is left is dropped and logged.</li>
+    <li><b>Retention:</b> none by age (the owner's rule). Finished reports are kept for good; a report's rows go only when WCL says it is deleted or private. Size check (<code>specs/039-local-first-data/quickstart.md</code> §3):
+      <pre>SELECT relname, pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+       c.reltuples::bigint AS approx_rows
+FROM pg_class c WHERE relname IN ('raw_fetches', 'raw_reports', 'raw_fetch_grants');</pre></li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The sink sits at the end of <code>_fetch</code>, which runs exactly once per network call, sees raw responses and covers uncached callers too. <b>Alternatives:</b> hooking <code>get_or_load</code> (misses uncached queries, sees typed models); hooking <code>query()</code> (once per single-flight waiter).<cite>specs/020-fetch-persistence/research.md R1</cite></p>
+  <p class="why">One consumer behind a bounded queue never slows the chat, uses one DB connection and keeps ordering simple. <b>Alternative:</b> a bounded task set (N connections, unordered writes).<cite>specs/020-fetch-persistence/research.md R4</cite></p>
+  <p class="why">Feature 020 wrote one row per transaction; feature 039 batches, because the store grows with every fetch and DB-first reads make it permanent, so it must stay cheap: batched commits, no rewrite of an unchanged payload, odd inputs that never fail an insert. The per-item retry keeps "one bad row loses only itself". The owner chose to refresh the fetch time of an unchanged payload rather than skip it.<cite>specs/039-local-first-data/spec.md (User Story 2, Clarifications, FR-008, FR-009) · research.md R8</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>Refreshing <code>fetched_at</code> matters for freshness: a row first fetched while a report was live only becomes servable for good once it is known to have been fetched after the report finished.<cite>backend/app/services/raw_fetch_reads.py (is_fresh)</cite></p>
+  <p class="why">The database decodes the JSON because parsing in a thread would still leave SQLAlchemy's JSON bind running <code>json.dumps</code> on the loop.<cite>specs/020-fetch-persistence/research.md R3</cite></p>
+  <p class="why">A grant is written when the workspace's own turn fetched the code from WCL, because WCL checked access at that moment. Chat-pasted codes live only in free-text messages, so a union over raids and messages would miss them. Only our own summaries may state visibility, because a hand-written query could alias another field to forge one.<cite>specs/039-local-first-data/research.md R2, R3</cite></p>
+  <p class="why">A lost gone signal lets a private report's data be written back and served to a workspace with a grant, so an attacker must not be able to drop it by flooding the queue. Gone signals are never capped; a dropped summary is salvaged rather than exempting whole summaries from the cap, so memory doesn't grow with body size.<cite>specs/051-raw-store-hardening/spec.md (User Story 2) · research.md R3</cite></p>
+</section>
+
+<!-- ============================================================ READS -->
+<section class="layer" id="reads">
+  <h2>Raw store: DB-first reads</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">PostgreSQL JSONB + GIN</span><span class="chip">row-level security on grants</span><span class="chip">asyncio.timeout</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>The source</b> (<code>StoreSource</code>, the instance <code>read_stored_fetch</code> in <code>backend/app/services/raw_fetch_reads.py</code>). It answers only queries for which <code>exact_report_codes</code> finds at least one report; character, ranking and world queries get None at once, with no database call. Its <code>scope()</code> is the turn's tenant id.</li>
+    <li><b>Visibility</b> (<code>fetch_visible_clause</code> in <code>backend/app/repositories/raw_fetches.py</code>, the one definition). A row is served to a workspace only when it names at least one report, every code is at most 32 characters, and every code is either <b>public</b> (a <code>raw_reports</code> row with <code>visibility = 'public'</code>) or <b>granted</b> to that workspace, each confirmed within <code>RAW_STORE_REVERIFY_DAYS</code> (1 day). No workspace (public-only reads) sees public reports only. The knowledge-base search applies the same clause.</li>
+    <li><b>Freshness</b> (<code>is_fresh</code>): a row younger than <code>WCL_CACHE_UNFINISHED_TTL</code> (120 s) is fresh. Otherwise it is fresh only when every report it names was seen finished and the row was fetched after that report finished: then it is served for good. Rows naming no report are never served; Redis TTLs govern them.</li>
+    <li><b>The probe</b> (<code>probe_visible_fetch</code>) uses at most four statements: the row's codes and <code>fetched_at</code>; the codes' statuses for the freshness check; the tenant scope, only when a code isn't publicly confirmed; then the visibility clause (for the tenant and for public-only) and the payload as bytes, pinned to the <code>fetched_at</code> of step one, so a row replaced meanwhile is a miss. Outcomes: <code>hit</code>, <code>miss</code>, <code>not_visible</code>. A hidden row answers exactly like a missing one.</li>
+    <li><b>Fail-fast.</b> The probe runs in the lane slot of the flight's first attempt (so a fan-out holds at most that many DB connections), before the token and before the spent-budget check, with a <code>RAW_STORE_PROBE_TIMEOUT_MS</code> (400 ms) timeout. A timeout, a connection error or any other error is a miss: a turn never fails because of the store.</li>
+    <li><b>Back-fill.</b> A hit whose reports are all public back-fills the shared Redis entry through the unchanged loader. A grant-only hit does not (see <a href="#cache">Redis cache</a>). A report made private can therefore stay reachable by code for at most the re-verify window plus the Redis TTL (about 48 h).</li>
+  </ul>
+
+  <h3>The store breaker</h3>
+  <p>A process-wide <code>Breaker</code> keeps a failing store out of the hot path. It counts outcomes over turns and workspaces, not one turn's burst of timeouts, and it opens for everyone only when more than one workspace sees the store failing (sc-355).</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>State</th><th>What a probe does</th><th>Moves on when</th></tr></thead>
+    <tbody>
+      <tr><td>Closed</td><td>Probes. A workspace with 3 timeouts inside the last 60 s skips the store itself until they leave the window.</td><td>Opens on a connection-class error at once (<code>OSError</code>, <code>OperationalError</code>, <code>InterfaceError</code>, an invalidated connection), or when the 60 s window holds at least 3 timeouts, from at least two workspaces, making up at least half of the window's probes.</td></tr>
+      <tr><td>Open</td><td>Skips the store for 30 s; the query goes straight to WCL. A warning is logged once.</td><td>After 30 s it is half-open.</td></tr>
+      <tr><td>Half-open</td><td>One call probes (the trial); the others skip.</td><td>Trial success closes it; a trial timeout or connection error opens it again; a trial that is cancelled or ends in another error frees the trial for the next call.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">A timeout here is the probe's own timeout or a wait for a pool connection. Other errors (a bug, a bad row) count as a miss and never open the breaker. At most 1024 workspaces and 256 outcomes are remembered. <code>Breaker.skips()</code> answers "would this workspace skip?" without taking the trial; the kickoff pre-fetch uses it.</p>
+
+  <h3>Why</h3>
+  <p class="why">The store answers only what WCL would show this workspace: the app uses client credentials, so WCL never returns a private report to it, and "private or deleted" shows up as a null report on a later fetch. The leaks to prevent are another workspace's unlisted data and data still served after its owner hid it.<cite>specs/039-local-first-data/research.md R1</cite></p>
+  <p class="why">Freshness follows the Redis rule for live reports; finished report data is effectively immutable and is kept and served for good. Non-report data stays with the Redis TTLs.<cite>specs/039-local-first-data/research.md R6</cite></p>
+  <p class="why">Public status and grants count for one day, not seven, because a store hit back-fills shared Redis: the exposure window for a report made private is the re-verify window plus the Redis TTL.<cite>specs/039-local-first-data/research.md R4, R9</cite></p>
+  <p class="why">400 ms and a breaker because a healthy local Postgres answers in 1–5 ms, and a hit is only worth it when fast; a bug shouldn't disable the store for everyone.<cite>specs/045-local-data-reads/research.md R1</cite></p>
+  <p class="why">The breaker counts timeouts per workspace and opens globally only across workspaces, so one account's turns, tabs and pre-fetches can't switch the store off for everyone, while a store slow for most reads still opens it.<cite>specs/052-turn-and-startup-hardening/research.md (Breaker rule, Identity)</cite></p>
+  <p class="why">The probe runs inside single-flight and a lane slot so identical concurrent probes are deduplicated and DB connections are capped at the lane limit; it precedes the spent-budget check so stored answers keep working while WCL refuses us.<cite>specs/045-local-data-reads/research.md R3</cite></p>
+</section>
+
+<!-- ============================================================ GONE -->
+<section class="layer" id="gone">
+  <h2>Deleted and private reports</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">in-process tombstones</span><span class="chip">Redis gone marker</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Detection in the client</b> (<code>_gone_codes</code>): only our own <code>REPORT_SUMMARY</code> query, with one exact code and a body of at most 4 KB, can say a report is gone: <code>reportData.report</code> is null and every GraphQL error (if any) is about the report itself and reads as not-found or permission. The client then offers a <code>ReportGone(codes, seen_at)</code> instead of the response. A null caused by a failing sub-field, a transient error or a hand-written query deletes nothing.</li>
+    <li><b>Detection in the writer:</b> a stored summary (single or batch) that shows a report as <code>private</code>, or a batch entry that came back null, is a gone finding too (sc-322, sc-353).</li>
+    <li><b>What happens:</b> the writer deletes every <code>raw_fetches</code> row whose <code>report_codes</code> contains the code (GIN-indexed) and its <code>raw_reports</code> row, then evicts the report's Redis keys. Grants stay: the rows they would unlock are gone, and rows only come back through a fresh WCL fetch. Rows whose query the strict parser couldn't read are filed under every string they contain (<code>stored_codes</code>), so delete-on-gone still finds them.</li>
+    <li><b>Tombstones</b> (<code>_Tombstones</code> in <code>fetch_persistence.py</code>): the writer remembers each gone code for 10 minutes (at most 1024 codes). A fetch whose request was sent at or before its report was seen gone is not written: not its row, its statuses or its grant. When the cap evicts a young tombstone, a <code>floor</code> time keeps its protection, so a flood of made-up codes can't flush a real one. Only the private findings of a stale summary still count. Tombstones are per process and lost on restart.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Deleting on gone is the owner's retention rule, and only our own summary query decides, because a hand-written query could alias, pad or hide what it really asks for.<cite>specs/039-local-first-data/research.md R7 · specs/039-local-first-data/spec.md FR-007</cite></p>
+  <p class="why">Tombstones close a real race: a table request started before a summary's null answer and finished after it would otherwise re-insert its row, and the kept grant would make it visible again.<cite>specs/045-local-data-reads/research.md R6</cite></p>
+  <p class="why">The overflow floor keeps the memory bound and still protects real tombstones. <b>Alternatives:</b> never evicting young entries (memory then rests on the WCL rate only); tombstoning only codes the store knows (misses a report's first fetch in flight).<cite>specs/051-raw-store-hardening/research.md R2</cite></p>
+</section>
+
+<!-- ============================================================ STORED LOOKUPS -->
+<section class="layer" id="stored">
+  <h2>Exact lookups in stored data</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Google ADK function tools</span><span class="chip">partial GIN index</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p><code>backend/app/agent_tools/stored_data_tools.py</code> gives the agent three tools (group "Stored data") that answer from the store without calling Warcraft Logs; the full tool list is on <a href="agent.html">Agent runtime &amp; tools</a>. The data path:</p>
+  <ul>
+    <li><b>Who asks</b> comes only from the authenticated chat turn (<code>current_identity</code>, checked against the ADK user id). Every read runs in a tenant-scoped session, through the same visibility and freshness rules as the probe.</li>
+    <li><code>list_stored_fights</code> and <code>get_stored_fight_table</code> build exactly the query the WCL tools send, compute its query key and read that one row with <code>read_visible_fetch</code>. Tables are compacted like the live tool's.</li>
+    <li><code>list_stored_reports_for_character</code> reads up to 200 newest visible summaries (<code>list_visible_summaries</code>) and returns at most 25 reports whose roster names the character. On Postgres the lookup is driven by the workspace's grants and the reports confirmed public within the re-verify window: it reads only <code>own_summary</code> rows naming one of those codes (partial GIN index <code>ix_raw_fetches_own_summary_codes</code>), each body cut down in SQL to code, title, start, zone and actor names, under a 2 s statement timeout (sc-354).</li>
+    <li>Absent, hidden and stale rows all give one <code>not_stored</code> answer, so the agent falls back to the WCL tools and learns nothing about other workspaces' data.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Exact keys plus one <code>not_stored</code> answer keep the visibility rule as the only gate, and identical results never leak that a row exists.<cite>specs/045-local-data-reads/research.md R9</cite></p>
+  <p class="why">The grants-and-public driver is complete: a visible row names at least one code that is public-checked or granted inside the window, so the driver removes only invisible rows while never scanning the whole history. Only <code>own_summary</code> rows count, so hand-written look-alikes can't crowd them out.<cite>specs/051-raw-store-hardening/research.md R5</cite></p>
+</section>
+
+<!-- ============================================================ PREFETCH -->
+<section class="layer" id="prefetch">
+  <h2>Kickoff pre-fetch</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">background task</span><span class="chip">background lane</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>Clicking a recent raid (<code>POST /api/raids/{code}/investigate</code>, <code>backend/app/api/raids.py</code>) creates the conversation, commits, then calls <code>kickoff_prefetch.schedule()</code>. The agent's side of the kickoff turn is on <a href="agent.html">Agent runtime &amp; tools</a>; this is the data path.</p>
+  <ul>
+    <li><b>What it warms:</b> the report summary (<code>load_report_summary</code>, through Redis, in the interactive lane) and one raw <code>Summary</code> table per boss (<code>load_report_table</code>, in <code>background_lane()</code>), at most 10 tables: each boss's last kill, else its last pull. It calls the tools' own loaders, so every query is byte for byte the one the turn will send, and the turn then hits Redis, the store or the pre-fetch's own in-flight request.</li>
+    <li><b>As whom:</b> the clicking user's workspace (<code>current_identity</code> set in a fresh context). The sink therefore grants the report to that workspace exactly as its own turn would, and the store answers only what it may see. It is not a chat turn: no refresh actor, no turn counted.</li>
+    <li><b>Gates:</b> it starts only after the endpoint's 404 rule (the report is the workspace's own recent or tracked raid), only when store reads are on and the store is installed (otherwise a whole-raid table is kept nowhere the turn could read), not while the breaker would skip this workspace, and once per (workspace, report) per 600 s (in-process). The endpoint itself is limited per user (<code>WCL_INVESTIGATE_PER_MINUTE</code>, 5). At most 11 WCL requests per click; failures are only logged.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Identical tool calls give identical query keys, so the turn's calls become store or single-flight hits; acting as the workspace that passed the 404 rule gives the same grants its own turn would. <b>Rejected:</b> injecting data into the turn (puts WCL text in the prompt).<cite>specs/046-big-report-turns/research.md R4</cite></p>
+  <p class="why">The endpoint commits before it schedules, so a failed commit starts no pre-fetch.<cite>specs/052-turn-and-startup-hardening/research.md (Commit before schedule) · backend/app/api/raids.py (investigate_raid)</cite></p>
+  <p class="why">It is skipped without store reads, or while the store would skip the workspace, because the turn could not read what it fetched: the job would warm nothing.<cite>backend/app/services/kickoff_prefetch.py (module docstring)</cite></p>
+</section>
+
+<!-- ============================================================ METRICS -->
+<section class="layer" id="metrics">
+  <h2>Counters and cache stats</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Redis hashes per UTC day</span><span class="chip">FastAPI</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Counting.</b> Outcomes are counted in the process and flushed every 2 s in one pipeline (a hit costs no extra Redis round trip; a failed flush keeps its counts). Keys are <code>wcl:metrics:v1:{name}:{YYYYMMDD}</code>, kept <code>WCL_METRICS_RETENTION_DAYS</code> (35) days. Nothing is counted while the cache is off.</li>
+    <li><b>Per family:</b> <code>hit</code>, <code>miss</code>, <code>neg_hit</code>, <code>lock_timeout</code>, <code>error</code>, <code>redis_error</code>, plus load-time sums.</li>
+    <li><b>Store probes</b> (hash <code>local</code>): <code>store_hit</code>, <code>store_miss</code>, <code>store_not_visible</code>, <code>store_timeout</code>.</li>
+    <li><b>Store probes per WCL operation</b> (hash <code>store_ops</code>, fields <code>store_&lt;outcome&gt;@&lt;operation&gt;</code>, sc-332). The operation is one of the app's 14 own query names (<code>OWN_OPERATIONS</code>), anything else counts as <code>custom</code>, so the hash can't grow without bound.</li>
+    <li><b>Local-answer rate</b> (hash <code>local</code>: <code>turns</code>, <code>local_turns</code>). <code>set_refresh_actor</code> in <code>backend/app/api/ws.py</code> opens and closes a chat turn; a turn is local when it made no network WCL call (failed calls count as network), and waiting on another caller's WCL load counts as network too. A turn whose setup failed is closed uncounted (<code>abandon_turn</code>).</li>
+    <li><b><code>GET /api/admin/cache-stats?days=1..35</code></b> (default 7; platform admins only; <code>backend/app/api/cache_stats.py</code>, model <code>CacheStats</code>): per-family hits, misses, hit rate, average load time and status (<code>ok</code>, <code>review</code>, <code>no_data</code>), Redis health from <code>INFO</code> (keyspace hit rate, evicted keys, memory), the store totals and hit rate, <code>store_by_operation</code>, and the local-answer rate. An unreachable or disabled Redis gives the same shape with <code>available: false</code>.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">Application-level counters per family, not Redis <code>INFO</code> alone, because <code>INFO</code> is server-wide and can't say which family needs a TTL review.<cite>documentation/redis_cache_spec.md §4 (Why not just use INFO)</cite></p>
+  <p class="why">Per-operation store counts live in their own hash with a fixed allowlist of names, so the totals stay unchanged and an agent-written query name can't create unbounded keys.<cite>specs/052-turn-and-startup-hardening/research.md (Per-op counters)</cite></p>
+</section>
+
+<!-- ============================================================ BLIZZARD -->
+<section class="layer" id="blizzard">
+  <h2>Blizzard / Battle.net sources</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">httpx&gt;=0.27.0</span><span class="chip">html.parser (stdlib)</span><span class="chip">Redis families live_version, hotfix_feed</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <p>The class-guide pipeline needs the exact live build and the newest hotfixes, so a guide never targets the wrong patch. Warcraft Logs only knows the patch as major.minor. Both come straight from Blizzard, in <code>backend/app/services/guide_pipeline/briefing.py</code>. The guide pipeline itself is on <a href="agent.html">Agent runtime &amp; tools</a>.</p>
+  <ul>
+    <li>Each call opens a short-lived <code>httpx.AsyncClient</code> (10 s timeout, its own User-Agent). It is not the WCL client: no lanes, no OAuth, no fetch sink, so these pages are not stored in Postgres.</li>
+    <li><b>Live build</b> (<code>fetch_live_version</code>): <code>GET</code> <code>WOW_VERSION_URL</code> (<code>https://us.version.battle.net/v2/products/wow/versions</code>), the launcher's unauthenticated pipe-separated file. <code>parse_versions()</code> reads only the <code>us</code> row of product <code>wow</code>, so a PTR build can't leak in. Cached in <code>live_version</code> for 15 minutes.</li>
+    <li><b>Hotfixes</b> (<code>fetch_hotfix_feed</code>): <code>GET</code> <code>WOW_NEWS_URL</code> (<code>https://worldofwarcraft.blizzard.com/en-us/news</code>), find the newest "Hotfixes:" article, read its JSON-LD date and walk its body with <code>html.parser</code> into per-class and per-spec entries. Cached in <code>hotfix_feed</code> for 30 minutes.</li>
+    <li><b>Best effort.</b> A failure is logged and returns None; it is not cached, so the next call tries again (a parse that finds nothing caches the 60 s "not found" marker). <code>build_briefing</code> then uses WCL's major.minor patch (looked up in the background lane), and without a hotfix feed no spec is marked as touched. Only when both Blizzard and WCL fail is generation postponed (<code>PatchUnknown</code>).</li>
+    <li>Blizzard's official sites are also tier-1, fetchable sources in the research step's <code>SOURCE_TIERS</code> (<code>guide_pipeline/research.py</code>). The class/spec roster comes from Warcraft Logs (<code>wcl_agent/game/roster.py</code>), not Blizzard's Game Data API.</li>
+  </ul>
+
+  <h3>Why</h3>
+  <p class="why">The versions endpoint is the only source of the exact build; it needs no credentials but is undocumented, hence the 15-minute cache and the WCL floor. <b>Alternatives:</b> WCL partitions only (too coarse); scraping patch notes.<cite>specs/015-grounded-class-guides/research.md R1</cite></p>
+  <p class="why">The news "Hotfixes:" articles are the official source and give per-spec detail, so only touched specs go stale; the parse needs only the stdlib.<cite>specs/015-grounded-class-guides/research.md R2</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span><code>.env.example</code> declares <code>BLIZZARD_CLIENT_ID</code> and <code>BLIZZARD_CLIENT_SECRET</code>, but no code reads them. They look reserved for a future Game Data API client; both sources above are public and unauthenticated.<cite>.env.example; text search of backend/ and wcl_agent/</cite></p>
+</section>
+
+<!-- ============================================================ CONFIG -->
+<section class="layer" id="config">
+  <h2>Settings</h2>
+  <p>The <code>wcl_agent</code> package reads its settings with <code>os.getenv</code> at call time; <code>backend/app/config.py</code> declares the same names for documentation and for the backend-only ones. Defaults below are the code's.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>WCL_CLIENT_ID</code>, <code>WCL_CLIENT_SECRET</code></td><td>required</td><td>API client credentials.</td></tr>
+      <tr><td><code>WCL_MAX_CONCURRENCY</code></td><td>6</td><td>WCL requests in flight per loop.</td></tr>
+      <tr><td><code>WCL_BACKGROUND_CONCURRENCY</code></td><td>2</td><td>Slots the background lane may hold.</td></tr>
+      <tr><td><code>WCL_QUERY_TIMEOUT_S</code></td><td>75</td><td>One query, slot wait included.</td></tr>
+      <tr><td><code>REDIS_URL</code></td><td>empty (compose: <code>redis://redis:6379/0</code>)</td><td>No URL: no cache.</td></tr>
+      <tr><td><code>WCL_CACHE_ENABLED</code></td><td>true</td><td>Turns the cache off.</td></tr>
+      <tr><td><code>WCL_CACHE_TTL_&lt;FAMILY&gt;</code></td><td>see the family table</td><td>Per-family TTL in seconds.</td></tr>
+      <tr><td><code>WCL_CACHE_UNFINISHED_TTL</code></td><td>120</td><td>TTL of a report still being logged; also the store's live window.</td></tr>
+      <tr><td><code>WCL_CACHE_JITTER</code></td><td>0.10</td><td>TTL × U(1, 1 + jitter).</td></tr>
+      <tr><td><code>WCL_CACHE_LOCK_MS</code> / <code>WCL_CACHE_LOCK_WAIT_MS</code></td><td>90000 / 2000</td><td>Loader lock lifetime (and gone marker); how long a loser polls.</td></tr>
+      <tr><td><code>WCL_NEG_CACHE_TTL</code></td><td>60</td><td>"Not found" marker.</td></tr>
+      <tr><td><code>WCL_METRICS_RETENTION_DAYS</code></td><td>35</td><td>Daily counter hashes.</td></tr>
+      <tr><td><code>WCL_FETCH_PERSIST_ENABLED</code></td><td>true</td><td>Starts the writer (and allows store reads).</td></tr>
+      <tr><td><code>WCL_FETCH_PERSIST_QUEUE_MAX</code> / <code>_QUEUE_MB</code></td><td>500 / 64</td><td>Writer queue bounds.</td></tr>
+      <tr><td><code>WCL_STORE_READS_ENABLED</code></td><td>true</td><td>Installs the store as the fetch source; off keeps writes.</td></tr>
+      <tr><td><code>RAW_STORE_REVERIFY_DAYS</code></td><td>1</td><td>How long "public" and grants count.</td></tr>
+      <tr><td><code>RAW_STORE_PROBE_TIMEOUT_MS</code></td><td>400</td><td>One store probe.</td></tr>
+      <tr><td><code>WCL_INVESTIGATE_PER_MINUTE</code></td><td>5</td><td>Recent-raid investigations per user (each may start a pre-fetch).</td></tr>
+      <tr><td><code>WOW_VERSION_URL</code>, <code>WOW_NEWS_URL</code></td><td>Blizzard URLs above</td><td>Guide briefing sources.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Fixed in code, not configurable: Redis timeouts 250 ms and circuit 5 s; memo 1024 entries; writer batch 20 items / 8 MB, write timeout 10 s, eviction 5 s, shutdown drain 5 s; tombstones 10 min / 1024; breaker 30 s, window 60 s, 3 timeouts; grant refresh 1 h; stored-summaries statement timeout 2 s; pre-fetch cooldown 600 s and 10 boss tables. <code>WCL_STORE_READS_ENABLED</code>, <code>RAW_STORE_REVERIFY_DAYS</code> and <code>RAW_STORE_PROBE_TIMEOUT_MS</code> are not listed in <code>.env.example</code>.</p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>wcl_agent/client/wcl_client.py</code></li>
+    <li><code>wcl_agent/client/queries.py</code></li>
+    <li><code>wcl_agent/client/aio.py</code></li>
+    <li><code>wcl_agent/cache/cache.py</code></li>
+    <li><code>wcl_agent/cache/cache_models.py</code></li>
+    <li><code>wcl_agent/cache/normalize.py</code></li>
+    <li><code>wcl_agent/tools/report_tools.py</code></li>
+    <li><code>wcl_agent/tools/participants.py</code></li>
+    <li><code>backend/app/services/fetch_persistence.py</code></li>
+    <li><code>backend/app/services/raw_fetch_reads.py</code></li>
+    <li><code>backend/app/repositories/raw_fetches.py</code></li>
+    <li><code>backend/app/agent_tools/stored_data_tools.py</code></li>
+    <li><code>backend/app/services/kickoff_prefetch.py</code></li>
+    <li><code>backend/app/services/background.py</code></li>
+    <li><code>backend/app/services/recent_raids.py</code></li>
+    <li><code>backend/app/services/guide_pipeline/briefing.py</code></li>
+    <li><code>backend/app/api/cache_stats.py</code></li>
+    <li><code>backend/app/api/raids.py</code></li>
+    <li><code>backend/app/api/ws.py</code> (turn boundary)</li>
+    <li><code>backend/app/main.py</code> (lifespan)</li>
+    <li><code>backend/app/config.py</code></li>
+    <li><code>backend/app/schemas.py</code> (<code>CacheStats</code>)</li>
+    <li><code>docker-compose.yml</code>, <code>.env.example</code>, <code>pyproject.toml</code></li>
+    <li><code>specs/013</code>, <code>014</code>, <code>015</code>, <code>020</code>, <code>039</code>, <code>045</code>, <code>046</code>, <code>051</code>, <code>052</code> research</li>
+    <li><code>documentation/redis_cache_spec.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

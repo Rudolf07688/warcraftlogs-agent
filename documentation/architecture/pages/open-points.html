@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Open Points · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Status</p>
+  <h1>Planned, drift &amp; open points</h1>
+  <p class="lede">What the other pages deliberately leave out: work that is planned but not built, places where specs and older docs disagree with the code, and gaps found while checking every page line by line. Re-read this page at every sprint close-out: strike what was built or fixed, add what's new.</p>
+  <div class="toolbar"><span class="muted verified"></span></div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#planned">Planned, not built</a>
+    <a href="#gaps">Gaps and probable bugs</a>
+    <a href="#drift">Docs and specs vs code</a>
+    <a href="#unused">Unused or half-wired</a>
+  </nav>
+</header>
+
+<section class="layer planned" id="planned">
+  <h2><span class="badge planned">Planned, not built</span>Planned work</h2>
+  <p>Nothing here exists in the code yet. Sources: <code>todo.md</code> and the code comments named.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Plan</th><th>What the owner's note says</th><th>Today instead</th></tr></thead>
+    <tbody>
+      <tr><td><b>Worker server + NATS</b> (epic-196)</td><td>A separate container for background jobs: guides kept current as new information appears, an "offline" character profile built from past chats, a NATS queue for tasks and failures (maybe dead-letter and retry queues), task state in Postgres. Marked "BIG — must be specced accordingly and done properly". No spec yet.</td><td>All background work runs in the backend process (<a href="backend-api.html">Backend API</a>). The recorded stance so far is "no job queue" (constitution Principle III; <code>specs/013-welcome-recent-raids/research.md</code> R4, R5), so a worker and NATS must be justified in the plan's Complexity Tracking.</td></tr>
+      <tr><td><b>Cloud deployment</b> (sc-146)</td><td>Cloud Run plan in <code>documentation/deployment.md</code>.</td><td>Docker Compose on one host. No CI, Terraform or Cloud Build config exists (<a href="deployment.html">Deployment</a>).</td></tr>
+      <tr><td><b>Upload a Warcraft Logs file directly</b> (epic-102)</td><td>Analyse a log file without going through the WCL API.</td><td>All data comes from the WCL API and the raw store.</td></tr>
+      <tr><td><b>Sub-agent tool</b> (epic 101)</td><td>Let Barnaby spin up a sub-agent.</td><td>One agent per turn (<a href="agent.html">Agent</a>).</td></tr>
+      <tr><td><b>Skills for judging WoW numbers</b> (sc-149)</td><td>Assessment skills for the agent.</td><td>Playbooks in the instruction only.</td></tr>
+      <tr><td><b>Knowledge-base backfill hardening</b></td><td>Named only in comments (<code>backend/app/kb/indexer.py</code>, <code>backend/app/config.py</code>) as backlog <code>kb-backfill-hardening</code>; not in <code>todo.md</code>.</td><td>The backfill skips sources that already have chunks, so a source whose re-index job was dropped stays stale (<a href="knowledge-base.html">Knowledge base</a>).</td></tr>
+      <tr><td><b>UI work</b></td><td>Chat interface redesign (epic-105), Raids page rework (epic-106), a per-chat character filter (epic-107), sending new accounts to the profile page (epic-162), character avatars.</td><td>The current screens (<a href="frontend.html">Frontend</a>).</td></tr>
+      <tr><td><b>Fewer requests for class guides</b> (sc-163)</td><td>Building a class guide makes so many requests that it can run out before the guide is done; a skill or pattern should help the agent find what it needs faster.</td><td>The guide pipeline caps its concurrency and caches its sources (<a href="agent.html">Agent</a>).</td></tr>
+      <tr><td><b>Still open from the Data list</b></td><td>"Implement redis - confirm browser cache usage" (sc-147). "Every single fetch must be stored in the db" (epic-103) is built, but its goal of answering 80% of questions without API calls is not yet confirmed. The semantic search store (epic-100) is built as the <a href="knowledge-base.html">knowledge base</a> but not yet struck in <code>todo.md</code>.</td><td>The local-answer rate in <code>GET /api/admin/cache-stats</code> measures the 80% goal (<a href="wcl-data.html">WCL data</a>).</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="layer" id="gaps">
+  <h2>Gaps and probable bugs</h2>
+  <p>Found by reading the code, not by running it. Each is worth a ticket or a decision; none is fixed by these docs.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Where</th><th>What</th></tr></thead>
+    <tbody>
+      <tr><td><code>frontend/src/App.tsx</code></td><td><b>Probable bug:</b> if the socket drops mid-turn, nothing clears the streaming state, so the composer stays locked until the page is reloaded.</td></tr>
+      <tr><td><code>backend/app/api/recent_raids.py</code></td><td><code>POST /api/recent-raids/mplus/{code}/{fight}/investigate</code> has no per-user investigate limit; the raid endpoint <code>POST /api/raids/{code}/investigate</code> has one (sc-352).</td></tr>
+      <tr><td><code>bin/00_init_migrate_db.sh</code></td><td>Any failed <code>alembic upgrade head</code> falls into the bootstrap path, which stops with an error when the <code>BOOTSTRAP_ADMIN_EMAIL</code> user already exists. <code>backend/cli/init_db.py</code> checks for an admin first and doesn't have this problem.</td></tr>
+      <tr><td>In-process state</td><td>All five rate limiters, the kickoff pre-fetch cooldown (<code>services/kickoff_prefetch.py</code>), spawn de-duplication (<code>services/background.py</code>), raw-store tombstones and indexer stats live in memory, although Redis exists. This blocks running more than one uvicorn worker; the backend image runs a single process.</td></tr>
+      <tr><td>Readiness gate (PERF-001, sc-156)</td><td>The models boot step is required, so the readiness gate stays shut until live model discovery finishes.</td></tr>
+      <tr><td><code>backend/app/kb/embedder.py</code>, <code>wcl_agent/llm/generation.py</code></td><td>Embeddings always use the Google genai client, also under <code>WCL_LLM_PROVIDER=anthropic</code>. Decision D2 in <code>sprints/2026-10-31/decisions.md</code> says <code>anthropic</code> covers every model call and Google credentials aren't needed.</td></tr>
+      <tr><td><code>build_agent</code></td><td>No web search on Claude chat turns, on either provider (<code>web_search = not _is_anthropic(model)</code>). Guide research does search on Claude.</td></tr>
+      <tr><td><code>WCL_ANTHROPIC_CLASSES</code></td><td>The default <code>haiku:1,sonnet:1,opus:1</code> gives each Claude class one model, so the same-class fallback never has a sibling for Claude, including every turn under <code>anthropic</code>.</td></tr>
+      <tr><td>Raw store → Redis</td><td>A store hit for a report confirmed public still back-fills shared Redis. A report later made private can stay reachable by its code for up to the re-verify window (1 day) plus the Redis TTL (24 h). Grant-only hits no longer back-fill (sc-296). Closing it fully needs workspace-aware keys or no back-fill from the store (<code>specs/039-local-first-data/research.md</code> R9).</td></tr>
+      <tr><td>Tombstones</td><td>Deleted or private report codes are remembered per process (<code>_Tombstones</code> in <code>services/fetch_persistence.py</code>, 10 min, 1024 codes) and lost on restart; Redis holds a <code>wcl:v1:gone:&lt;code&gt;</code> marker.</td></tr>
+      <tr><td>Knowledge base</td><td>WCL chunks show up in search only while their fetch passes the visibility check within <code>RAW_STORE_REVERIFY_DAYS</code> (1 day). The backfill can't chunk plain damage, healing or cast tables, because stored rows keep no query text. <code>kb_chunks.region</code> and <code>realm</code> are never filled; search has no zone, guild or kill filter; there is no hit/miss metric.</td></tr>
+      <tr><td>Cost and usage</td><td>No accounting of model tokens or cost; the only record is the <code>turn stats</code> log line.</td></tr>
+      <tr><td><code>backend/migrations/versions/0021_*</code></td><td>The migration imports <code>wcl_agent.client.queries</code> and the private <code>_flight_key</code>; renaming either breaks a fresh <code>upgrade head</code>.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="layer" id="drift">
+  <h2>Docs and specs that disagree with the code</h2>
+  <p>The architecture pages follow the code. These older documents still say otherwise.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Document</th><th>Says</th><th>The code</th></tr></thead>
+    <tbody>
+      <tr><td><code>documentation/deployment.md</code></td><td>Access is "public, unauthenticated"; tables come from <code>create_all</code> and migrations should be introduced.</td><td>Invite-only auth and Alembic since feature 006. It also predates Redis, pgvector (Cloud SQL needs pgvector 0.8+ for migration 0019), the Anthropic provider and the raw store.</td></tr>
+      <tr><td><code>documentation/oauth_integration_guide.md</code></td><td>A byte-for-byte copy of <code>multi_tenancy_guide.md</code>.</td><td>There is no separate OAuth design.</td></tr>
+      <tr><td><code>documentation/redis_cache_spec.md</code> §2; <code>backend/app/schemas.py</code> (cache-stats comment); <code>specs/014-redis-wcl-cache/contracts/cache-stats-api.md</code></td><td>6 families in scope; "all seven families".</td><td>15 cache families.</td></tr>
+      <tr><td><code>documentation/designs/20261101_semantic_knowledge_base.md</code></td><td>Image <code>pgvector/pgvector:pg17</code>; <code>raw_reports</code> drives WCL visibility; <code>text-embedding-005</code> as an option.</td><td><code>pg17-trixie</code>; visibility through <code>fetch_visible_clause</code> on <code>raw_fetches</code>; <code>gemini-embedding-001</code>.</td></tr>
+      <tr><td><code>specs/006-multi-tenancy/research.md</code> R7</td><td>Logins throttled per account in the database (<code>failed_login_count</code>, <code>login_blocked_until</code>).</td><td>In-memory throttle keyed by email and source (<code>auth/rate_limit.py</code>). <code>failed_login_count</code> is written but never read; <code>login_blocked_until</code> is only cleared.</td></tr>
+      <tr><td><code>specs/006-multi-tenancy/research.md</code> R5(d); <code>plan.md</code></td><td>Tenant-prefixed WCL cache keys; a <code>sessions</code> table.</td><td>Superseded by <code>specs/014-redis-wcl-cache/research.md</code> R10 (no tenant prefix; grants and <code>mark_unshareable</code> protect private data); the table is <code>auth_sessions</code>.</td></tr>
+      <tr><td><code>specs/013-welcome-recent-raids/research.md</code> R8</td><td>The lane limiter uses <code>asyncio.Condition</code>.</td><td><code>LaneLimiter</code> is a first-in-first-out queue of futures with a <code>promote()</code> step (048).</td></tr>
+      <tr><td><code>specs/017-proper-pdf-generation/research.md</code> R6, R7, R9; <code>pdf_report.py</code> docstring</td><td>The fetcher allows <code>data:</code> URLs only; DejaVu fonts; rendering via <code>asyncio.to_thread</code>.</td><td><code>data:</code> plus <code>file:</code> inside <code>backend/app/assets/fonts</code>; Cinzel and Alegreya Sans; a single-thread <code>pdf-render</code> pool in <code>api/reports.py</code>.</td></tr>
+      <tr><td><code>specs/020-fetch-persistence/research.md</code> R4</td><td><code>asyncio.Queue(maxsize=500)</code>, one transaction per row.</td><td>Batches of up to 20 items or 8 MB since 039; since 051 the writer counts items itself and gone signals are never capped.</td></tr>
+      <tr><td><code>specs/045-local-data-reads/research.md</code> R1, R6</td><td>Breaker opens on 3 timeouts in a row; tombstones are a "gone" status in <code>raw_reports</code>.</td><td>The rule from <code>specs/052-turn-and-startup-hardening/research.md</code>: a 60 s window, 3+ timeouts from 2+ workspaces making up half the probes. Tombstones are in memory.</td></tr>
+      <tr><td><code>specs/051-raw-store-hardening/research.md</code> R1</td><td>Concurrent index builds run only on Postgres.</td><td>Migrations 0020 and 0021 have no dialect check; SQLite ignores the option.</td></tr>
+      <tr><td><code>.env.example</code></td><td>Declares <code>BLIZZARD_CLIENT_ID</code>/<code>SECRET</code>; says one-shot calls use Gemini "until feature 035"; lists only <code>localhost</code> and <code>127.0.0.1</code> as local.</td><td>Nothing reads the Blizzard keys (the sources are public); 035 has shipped; the startup check also accepts <code>::1</code>. It omits <code>WCL_STORE_READS_ENABLED</code>, <code>RAW_STORE_REVERIFY_DAYS</code> and <code>RAW_STORE_PROBE_TIMEOUT_MS</code>.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="layer" id="unused">
+  <h2>Unused or half-wired</h2>
+  <ul>
+    <li>The Python <code>plotly</code> package is declared in <code>pyproject.toml</code> (justified in <code>specs/005-guild-context-artifacts/plan.md</code>), but nothing imports it: <code>chart_spec_to_plotly</code> in <code>services/charts.py</code> builds the dict by hand.</li>
+    <li><code>remark-gfm</code> is declared in <code>frontend/package.json</code> but never imported; Streamdown brings GFM itself.</li>
+    <li>The <code>tool_progress</code> frame is declared in <code>backend/app/schemas.py</code> and <code>wsClient.ts</code> but never sent.</li>
+    <li><code>create_chart</code> and <code>get_coaching_brief</code> have no label or spell, though <code>frontend/src/lib/spells.ts</code> says every tool must be mapped.</li>
+    <li><code>POST /api/conversations</code> exists but the frontend never calls it; <code>GET /api/admin/guide-reports</code> and <code>GET /api/admin/cache-stats</code> have no screen.</li>
+    <li><code>backend/app/db/timestamps.py</code> was meant to hold the shared UTC rule (sc-216), but only <code>services/profile_proposals.py</code> uses it; private copies remain in eight modules (guide, raw fetches, knowledge base, sessions, invitations, password reset, admin users).</li>
+    <li><code>users.email</code> is <code>String(320)</code> in the model; only migration 0002 makes it <code>citext</code>.</li>
+    <li><code>backend/Dockerfile</code> installs uv with an unpinned <code>pip install uv</code>; the dependencies themselves are locked by <code>uv.lock</code>.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Collected 2026-11-04 while re-checking every page against the code. Sources:</p>
+  <ul>
+    <li><code>todo.md</code></li>
+    <li>the specs and documents named in the tables</li>
+    <li>the code paths named in the tables</li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

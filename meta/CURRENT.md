@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-02 end of session c88ddb6f (sprint merged and pushed; session ended by the owner)
+Updated: 2026-11-04 (architecture docs rebuilt; new close-out step)
 
 ## Topic
 
@@ -24,6 +24,10 @@ The agent-team redesign: persistence and autonomy. Full record in
   (Maren 0.134 M/pt, Shortcut 20%); P11 worked live (0 FAIL, found the soft kickoff miss).
 - The owner's `.env` SECRET_KEY is a placeholder: fine on localhost, but the app now refuses
   to start with it off localhost (sc-356). Tell the owner before any shared deploy.
+
+- 2026-11-04: architecture docs rebuilt as index + 13 pages, checked at `1df8f6f`; close-out
+  step added (PO wrap-up 5, team-launch gate 4, preference 24, `.claude/team/archdocs.py`).
+  First real use: next sprint's wrap-up.
 
 ## Open with the owner
 

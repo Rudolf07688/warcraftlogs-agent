@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
+<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<title>Models &amp; providers · WCL Agent architecture</title>
+<link rel="stylesheet" href="../assets/arch.css">
+<script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<div class="shell">
+<nav class="sidenav" aria-label="Architecture pages"></nav>
+<main class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Architecture · Agent</p>
+  <h1>Models &amp; providers</h1>
+  <p class="lede">Every model call in the app goes through one provider layer that knows which provider is active: Vertex AI (Gemini, plus Claude from Model Garden) or the Anthropic API (Claude only). The selectable chat models are discovered live at startup, and rate limits are absorbed by one shared retry loop that can move a busy chat turn to a second model of the same class. How the agent uses its model is on <a href="agent.html">Agent runtime &amp; tools</a>.</p>
+  <div class="toolbar">
+    <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
+    <span class="muted verified"></span>
+  </div>
+  <nav class="onpage" aria-label="On this page">
+    <a href="#providers">Providers</a>
+    <a href="#roles">Model roles</a>
+    <a href="#calls">Where models are called</a>
+    <a href="#discovery">Live discovery</a>
+    <a href="#ratelimits">429 handling</a>
+    <a href="#fallback">Same-class fallback</a>
+    <a href="#thinking">Thinking &amp; provider differences</a>
+    <a href="#usage">Usage logging</a>
+  </nav>
+</header>
+
+<!-- ============================================================ PROVIDERS -->
+<section class="layer" id="providers">
+  <h2>Providers</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">google-adk&gt;=2.0.0 (lock 2.10.0)</span>
+    <span class="chip">google-genai 2.25.0 (via ADK)</span>
+    <span class="chip">anthropic[vertex]&gt;=1.11.0 (lock 1.11.0)</span>
+    <span class="chip">google-auth (ADC)</span>
+  </div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>One switch.</b> <code>WCL_LLM_PROVIDER</code> is <code>vertex</code> (the default; unknown values fall back to it with a warning) or <code>anthropic</code>. <code>wcl_agent/llm/provider.py</code> reads it once per process, so a change needs a restart. It is the only module that reads the switch or <code>ANTHROPIC_API_KEY</code> and the only one that builds model clients (<code>genai_client()</code>, <code>anthropic_client()</code>, <code>async_anthropic_client()</code>, <code>adk_client_kwargs()</code>).</li>
+    <li><b><code>vertex</code></b>: Gemini through ADK's <code>Gemini</code> class and google-genai, on Vertex AI with Google application default credentials when <code>GOOGLE_GENAI_USE_VERTEXAI</code> is true (otherwise a plain API-key client, the AI Studio setup, with no catalog). Claude through Model Garden with <code>AnthropicVertex</code> / <code>AsyncAnthropicVertex</code>.</li>
+    <li><b><code>anthropic</code></b>: Claude through the Anthropic API (<code>Anthropic</code> / <code>AsyncAnthropic</code>) with <code>ANTHROPIC_API_KEY</code>, held as a pydantic <code>SecretStr</code> and passed straight into the client. Gemini is not served: a Gemini id set for a role is ignored with one warning and the provider default is used. A missing key is logged once at boot (<code>credentials_error()</code>), the greeting is not primed, and discovery serves the fallback list.</li>
+    <li><b>Where Vertex calls run.</b> <code>wcl_agent/llm/vertex.py</code> → <code>model_location()</code> reads <code>WCL_MODEL_LOCATION</code> (default <code>global</code>). Every Vertex model client uses it, so <code>GOOGLE_CLOUD_LOCATION</code> can stay regional for everything else. <code>vertex.py</code> also owns the project id and the Model Garden catalog listing.</li>
+    <li><b>Model ids.</b> Dated Claude ids are <code>name@YYYYMMDD</code> on Vertex and <code>name-YYYYMMDD</code> on the Anthropic API; <code>to_provider_id()</code> is the one place ids are rewritten. Any id containing <code>claude</code> is a Claude id (<code>is_anthropic_model()</code>). A chat whose stored model is not served (for example after a switch) continues on the default (<code>resolve_chat_model()</code> in <code>backend/app/model_state.py</code>).</li>
+    <li><b>Embeddings</b> for the knowledge base (<code>KB_EMBED_MODEL</code>, default <code>gemini-embedding-001</code>, 768 dimensions) always run on the google-genai client, whichever provider serves chat. See <a href="knowledge-base.html">Knowledge base</a>.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 430" role="img" aria-labelledby="m1t m1d">
+      <title id="m1t">Provider layer</title>
+      <desc id="m1d">Call sites on the left ask provider.py for a model and a client; Gemini ids go to Vertex AI, Claude ids go to Vertex Model Garden under vertex or the Anthropic API under anthropic.</desc>
+      <defs><marker id="mo-ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+      <rect class="node" x="20" y="30" width="250" height="70" rx="10"/>
+      <text x="145" y="58" text-anchor="middle" class="t" style="font-size:13px">Chat agent (ADK Runner)</text>
+      <text x="145" y="80" text-anchor="middle" class="sub" style="font-size:11.5px">RetryingGemini · RetryingClaude</text>
+      <rect class="node" x="20" y="120" width="250" height="70" rx="10"/>
+      <text x="145" y="148" text-anchor="middle" class="t" style="font-size:13px">web_search sub-agent</text>
+      <text x="145" y="170" text-anchor="middle" class="sub" style="font-size:11.5px">Gemini only, same model id</text>
+      <rect class="node" x="20" y="210" width="250" height="70" rx="10"/>
+      <text x="145" y="238" text-anchor="middle" class="t" style="font-size:13px">generation.py one-shot calls</text>
+      <text x="145" y="260" text-anchor="middle" class="sub" style="font-size:11.5px">suggestions · titles · reports · guides</text>
+      <rect class="node" x="20" y="300" width="250" height="70" rx="10"/>
+      <text x="145" y="328" text-anchor="middle" class="t" style="font-size:13px">Discovery probes · embeddings</text>
+      <text x="145" y="350" text-anchor="middle" class="sub" style="font-size:11.5px">startup · knowledge base</text>
+
+      <rect class="node core" style="fill:var(--accent-soft)" x="360" y="60" width="240" height="290" rx="12"/>
+      <text x="480" y="90" text-anchor="middle" class="t" style="font-size:14px">provider.py</text>
+      <text x="374" y="122" class="sub" style="font-size:11.5px">WCL_LLM_PROVIDER</text>
+      <text x="374" y="140" class="sub" style="font-size:11.5px">  = vertex | anthropic</text>
+      <text x="374" y="168" class="sub" style="font-size:11.5px">role_model(): role → model id</text>
+      <text x="374" y="196" class="sub" style="font-size:11.5px">to_provider_id(): id forms</text>
+      <text x="374" y="224" class="sub" style="font-size:11.5px">genai_client()</text>
+      <text x="374" y="242" class="sub" style="font-size:11.5px">anthropic_client() (sync, async)</text>
+      <text x="374" y="276" class="sub" style="font-size:11.5px">vertex.py: WCL_MODEL_LOCATION</text>
+      <text x="374" y="294" class="sub" style="font-size:11.5px">  (default global), project,</text>
+      <text x="374" y="312" class="sub" style="font-size:11.5px">  Model Garden catalog</text>
+
+      <rect class="node ext" x="740" y="40" width="240" height="80" rx="10"/>
+      <text x="860" y="68" text-anchor="middle" class="t" style="font-size:13px">Vertex AI · Gemini</text>
+      <text x="860" y="88" text-anchor="middle" class="sub" style="font-size:11.5px">ADC, location global</text>
+      <text x="860" y="106" text-anchor="middle" class="sub" style="font-size:11.5px">(or an AI Studio key)</text>
+      <rect class="node ext" x="740" y="160" width="240" height="80" rx="10"/>
+      <text x="860" y="190" text-anchor="middle" class="t" style="font-size:13px">Vertex Model Garden</text>
+      <text x="860" y="210" text-anchor="middle" class="sub" style="font-size:11.5px">Claude · AnthropicVertex</text>
+      <rect class="node ext" x="740" y="280" width="240" height="80" rx="10"/>
+      <text x="860" y="310" text-anchor="middle" class="t" style="font-size:13px">Anthropic API</text>
+      <text x="860" y="330" text-anchor="middle" class="sub" style="font-size:11.5px">Claude · ANTHROPIC_API_KEY</text>
+
+      <path class="flow" d="M270,65 H356" marker-end="url(#mo-ah1)"/>
+      <path class="flow" d="M270,155 H356" marker-end="url(#mo-ah1)"/>
+      <path class="flow" d="M270,245 H356" marker-end="url(#mo-ah1)"/>
+      <path class="flow" d="M270,335 H356" marker-end="url(#mo-ah1)"/>
+      <path class="flow" d="M600,80 H736" marker-end="url(#mo-ah1)"/>
+      <text x="668" y="72" text-anchor="middle" class="sub" style="font-size:11.5px">Gemini ids</text>
+      <path class="flow" d="M600,200 H736" marker-end="url(#mo-ah1)"/>
+      <text x="668" y="192" text-anchor="middle" class="sub" style="font-size:11.5px">Claude · vertex</text>
+      <path class="flow" d="M600,320 H736" marker-end="url(#mo-ah1)"/>
+      <text x="668" y="312" text-anchor="middle" class="sub" style="font-size:11.5px">Claude · anthropic</text>
+      <text x="20" y="404" class="sub" style="font-size:11.5px">Under anthropic only Claude ids are served. Embeddings use the genai client under either provider.</text>
+    </svg>
+    <figcaption>The provider layer. Call sites never compare the provider themselves; they ask for a role's model or a client.</figcaption>
+  </figure>
+
+  <h3>Why</h3>
+  <p class="why">Config only, one line plus a restart: every model setting already needed a restart (runners are cached per model, discovery runs at startup), and the provider layer keeps a runtime toggle or both-providers-live mode cheap later. <b>Alternatives:</b> an admin-only runtime toggle; both providers live with each chat choosing.<cite>sprints/2026-10-31/decisions.md D1</cite></p>
+  <p class="why">One module owns the provider decision and every client, so call sites stay provider-free. <b>Alternative:</b> keep the builders in <code>vertex.py</code> (a module named "vertex" building Anthropic API clients misleads).<cite>specs/032-llm-provider-switch/research.md R4</cite></p>
+  <p class="why">Vertex with ADC: no API key in the repo, and the same code path works locally and on Cloud Run with an attached service account.<cite>specs/001-streaming-chat-frontend/research.md §9</cite></p>
+  <p class="why">Model calls at <code>global</code>: tested live on 2026-10-18, <code>europe-west1</code> serves only Gemini 2.5 and no current Claude; <code>global</code> serves all of them.<cite>documentation/live_model_probe.md (Regions); wcl_agent/llm/vertex.py docstring</cite></p>
+</section>
+
+<!-- ============================================================ ROLES -->
+<section class="layer" id="roles">
+  <h2>Model roles</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">pydantic-settings&gt;=2.4.0</span>
+    <span class="chip">ModelRole (StrEnum)</span>
+  </div>
+  <h3>What it does, and where it lives</h3>
+  <p>Each fixed use of a model is a role (<code>ModelRole</code> in <code>provider.py</code>) with a default per provider and an environment override. <code>role_model()</code> resolves it: the explicit value if the active provider serves it, otherwise the provider's default. <code>backend/app/config.py</code> fills its fields through it, so switching providers takes one <code>.env</code> line.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Role</th><th>Env override</th><th>Default on <code>vertex</code></th><th>Default on <code>anthropic</code></th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td>chat</td><td><code>WCL_DEFAULT_MODEL</code></td><td><code>gemini-3.6-flash</code></td><td><code>claude-sonnet-5-5</code></td><td>the picker's default when served; the CLI agent</td></tr>
+      <tr><td>report</td><td><code>WCL_REPORT_MODEL</code></td><td><code>gemini-3.6-flash</code></td><td><code>claude-sonnet-5-5</code></td><td>findings synthesis for PDF reports (<a href="pdf-reports.html">PDF reports</a>)</td></tr>
+      <tr><td>guide</td><td><code>WCL_GUIDE_MODEL</code></td><td><code>gemini-3.7-flash</code></td><td><code>claude-sonnet-5-5</code></td><td>guide research, authoring, revision; guild summaries</td></tr>
+      <tr><td>guide_review</td><td><code>WCL_GUIDE_REVIEW_MODEL</code></td><td><code>gemini-3.1-pro-preview</code></td><td><code>claude-opus-5-5</code></td><td>guide review (must differ from the author; a warning at boot if not)</td></tr>
+      <tr><td>fast</td><td><code>WCL_SUGGEST_MODEL</code></td><td><code>gemini-3.6-flash</code></td><td><code>claude-haiku-5-5</code></td><td>follow-up suggestions, chat titles</td></tr>
+      <tr><td>greeting</td><td><code>WCL_GREETING_MODEL</code></td><td><code>gemini-3.5-flash-lite</code></td><td><code>claude-haiku-5-5</code></td><td>the new-chat greeting</td></tr>
+    </tbody>
+  </table></div>
+  <p>At boot, after discovery, a warning names any fixed-role model (guide, guide review, report, greeting) the catalog no longer lists.</p>
+  <h3>Why</h3>
+  <p class="why">One resolution function and unchanged call sites: they keep reading <code>settings.wcl_report_model</code> and friends, and an unservable value falls back instead of failing.<cite>specs/032-llm-provider-switch/research.md R7</cite></p>
+  <p class="why">Per-provider defaults: a fast model for the light roles, a mid model for chat, reports and authoring, and a stronger, different reviewer.<cite>wcl_agent/llm/provider.py (ROLE_DEFAULTS comment, decisions D5/D9)</cite></p>
+</section>
+
+<!-- ============================================================ CALLS -->
+<section class="layer" id="calls">
+  <h2>Where models are called</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">ADK Runner</span>
+    <span class="chip">wcl_agent/llm/generation.py</span>
+  </div>
+  <h3>What it does, and where it lives</h3>
+  <p>Two paths. Turns that need tools go through the ADK agent (<code>stream_response()</code> in <code>backend/app/agent_runner.py</code>). One-shot calls go through <code>wcl_agent/llm/generation.py</code>: <code>generate_text</code>, <code>generate_json</code> (schema-constrained output), <code>generate_grounded</code> (Google Search on Gemini, the server-side web search tool on Claude, web fetch on the Anthropic API only) and <code>embed_texts</code>. It picks the client by model family, builds each client once per process, and runs every call through the shared retry loop with the SDKs' own retries off.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Call</th><th>Path · code</th><th>Model</th><th>Retries</th><th>Time limit</th></tr></thead>
+    <tbody>
+      <tr><td>Chat turn</td><td>ADK · <code>backend/app/api/ws.py</code></td><td>the picked model</td><td>settings policy; short probe, then the sibling</td><td>none (retry budget only)</td></tr>
+      <tr><td><code>web_search</code> tool</td><td>ADK sub-agent · <code>wcl_agent/agent.py</code></td><td>the turn's Gemini model</td><td>settings policy; follows the turn's switch</td><td>none</td></tr>
+      <tr><td>New-chat greeting</td><td>ADK · <code>backend/app/greeting.py</code></td><td>greeting role</td><td>none (<code>retry=False</code>)</td><td>none; cached per model per process</td></tr>
+      <tr><td>Guild summary</td><td>ADK · <code>backend/app/services/guide.py</code></td><td>guide role</td><td>settings policy</td><td>none; at most 2 at once</td></tr>
+      <tr><td>Follow-up suggestions</td><td><code>generate_text</code> · <code>backend/app/suggestions.py</code></td><td>fast role, thinking off</td><td>1 attempt</td><td>4 s</td></tr>
+      <tr><td>Chat titles</td><td><code>generate_text</code> · <code>backend/app/services/conversation_titles.py</code></td><td>fast role, thinking off</td><td>2 attempts, 8 s budget</td><td>15 s</td></tr>
+      <tr><td>Findings report synthesis</td><td><code>generate_text</code> · <code>backend/app/services/report_synthesis.py</code></td><td>report role</td><td>1 attempt</td><td>60 s</td></tr>
+      <tr><td>Guide research</td><td><code>generate_grounded</code> + <code>generate_json</code> · <code>guide_pipeline/research.py</code></td><td>guide role</td><td>settings policy</td><td>none</td></tr>
+      <tr><td>Guide authoring and revision</td><td><code>generate_json</code> · <code>guide_pipeline/authoring.py</code></td><td>guide role</td><td>settings policy; 1 retry on invalid output</td><td>none</td></tr>
+      <tr><td>Guide review</td><td><code>generate_json</code> · <code>guide_pipeline/review.py</code></td><td>guide-review role</td><td>settings policy; 1 retry on invalid output</td><td>none</td></tr>
+      <tr><td>Knowledge-base embeddings</td><td><code>embed_texts</code> · <code>backend/app/kb/embedder.py</code></td><td><code>gemini-embedding-001</code></td><td>4 attempts, 60 s budget</td><td>none</td></tr>
+      <tr><td>Discovery probes</td><td>blocking SDK calls · <code>wcl_agent/llm/models.py</code></td><td>each candidate</td><td>one 429 retry after 2 s; one transient retry</td><td>10 s per probe</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">"Settings policy" is <code>WCL_MODEL_RETRY_ATTEMPTS</code> (5), <code>_INITIAL_S</code> (2), <code>_MAX_S</code> (30) and <code>_BUDGET_S</code> (90) from <code>backend/app/config.py</code>. The guild summary and greeting run the full chat agent, tools and all. On Claude, a refusal (<code>stop_reason</code> "refusal") raises <code>ModelRefused</code> instead of returning empty text.</p>
+  <h3>Why</h3>
+  <p class="why">One provider-neutral entry point holds the SDK-specific request shapes, and it dispatches on the model family rather than the active provider, so a Claude id set for a role under <code>vertex</code> does not crash in google-genai.<cite>specs/035-provider-generation-callsites/research.md R1</cite></p>
+  <p class="why">Helper calls fail fast on a rate limit (one attempt, short timeouts) so they never compete with a player's turn.<cite>specs/011-agent-rate-limit-relief/research.md R6</cite></p>
+  <p class="why">Suggestions run on the fast model after <code>done</code>, not on the chat model, so the turn ends as soon as the answer is saved.<cite>backend/app/suggestions.py (module docstring, PERF-005)</cite></p>
+</section>
+
+<!-- ============================================================ DISCOVERY -->
+<section class="layer" id="discovery">
+  <h2>Live model discovery</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">Vertex REST v1beta1 publisher models</span>
+    <span class="chip">Anthropic Models API</span>
+    <span class="chip">redis&gt;=6 (model_catalog family)</span>
+  </div>
+  <h3>What it does, and where it lives</h3>
+  <p><code>wcl_agent/llm/models.py</code> → <code>discover_models()</code> runs once at backend startup, in a thread, as the "models" boot step (<code>_load_models()</code> in <code>backend/app/main.py</code>).</p>
+  <ul>
+    <li><b><code>catalog</code> mode</b> (<code>WCL_MODEL_DISCOVERY</code>, the default). Under <code>vertex</code> it lists both Model Garden publishers (<code>google</code>, <code>anthropic</code>) concurrently from the REST <code>v1beta1</code> catalog; under <code>anthropic</code> it lists the Anthropic Models API (an alias such as <code>claude-sonnet-5-5</code> wins over a dated twin). It keeps GA and public-preview entries, sorts them into classes with anchored patterns (Gemini <code>pro</code> / <code>flash</code> / <code>flash-lite</code>, Claude <code>haiku</code> / <code>sonnet</code> / <code>opus</code>), probes the newest <code>keep + 2</code> per class in one concurrent wave and keeps the newest <code>keep</code> that answer. Defaults: <code>WCL_GEMINI_CLASSES=pro:2,flash:2,flash-lite:2</code> (empty under <code>anthropic</code>) and <code>WCL_ANTHROPIC_CLASSES=haiku:1,sonnet:1,opus:1</code>. A 429 that persists stops a class ("no quota"); not-enabled or failed probes move on to the next version.</li>
+    <li><b>The probe</b> is a one-token call that carries one dummy function declaration, 10 s timeout, so a model that rejects tools is never offered.</li>
+    <li><b>Fallbacks.</b> A listing that fails or has no models falls back to probing the static lists (<code>WCL_GEMINI_MODELS</code>, <code>WCL_ANTHROPIC_MODELS</code>); if nothing passes, the configured <code>WCL_MODELS</code> list is served with <code>degraded=true</code>, so the picker is never empty. Without Vertex (<code>GOOGLE_GENAI_USE_VERTEXAI</code> off) catalog mode drops to static. <code>static</code> mode probes only the configured lists.</li>
+    <li><b>Shared result.</b> A real catalog result is cached for 6 h in the <code>model_catalog</code> cache family (Redis), keyed by provider, project, location and the class settings; only 10 minutes when a model was lost to a likely transient error; fallback and degraded results are not cached. A cached value holding ids of an unexpected shape is thrown away and rediscovered. The default always follows the current <code>WCL_DEFAULT_MODEL</code>: the configured id if served, else the newest Gemini flash, else the first model.</li>
+    <li><b>Serving.</b> The set lives on <code>app.state</code> and is read only through <code>backend/app/model_state.py</code> (<code>get_model_state</code>, <code>resolve_chat_model</code>, <code>fallback_model_for</code>). <code>GET /api/models</code> (<code>backend/app/api/models.py</code>, signed-in users) returns <code>{models, default, degraded, provider}</code>; the picker shows the provider label (<a href="frontend.html">Frontend</a>).</li>
+  </ul>
+  <h3>Why</h3>
+  <p class="why">The owner asked for it: "The available models must be dynamically fetched from the available gemini and anthropic models on vertex."<cite>specs/002-agent-enhancements/spec.md (Input, item 4)</cite></p>
+  <p class="why">A live catalog instead of a fixed <code>.env</code> list: every model release used to need an edit and a restart. Only the REST listing returns <code>launchStage</code>; the probe carries a function declaration because the chat agent always sends tools. <b>Alternatives:</b> genai <code>models.list</code> (no stage, Google only); regional catalogs (they differ); a plain "hello" probe (misses tool-incapable models).<cite>specs/016-live-model-discovery/research.md R1, R3</cite></p>
+  <p class="why">Caching the result in the shared cache lets restarts and other workers skip the listing and the probes.<cite>specs/016-live-model-discovery/research.md R6</cite></p>
+  <p class="why">The provider is part of the cache key, so one provider's catalog is never served under the other; an empty listing counts as a failure for Vertex too.<cite>specs/033-anthropic-discovery-label/spec.md (Clarifications Q4, Q5)</cite></p>
+</section>
+
+<!-- ============================================================ 429 -->
+<section class="layer" id="ratelimits">
+  <h2>429 handling (feature 011)</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">asyncio</span>
+    <span class="chip">ContextVar current_turn</span>
+  </div>
+  <h3>What it does, and where it lives</h3>
+  <p><code>wcl_agent/llm/model_retry.py</code>. <code>RetryingGemini</code> and <code>RetryingClaude</code> override ADK's <code>generate_content_async</code> and run one shared loop, <code>generate_with_retry()</code>; <code>generation.py</code> uses the same loop for one-shot calls. The SDKs' own retries are off (Gemini <code>HttpRetryOptions(attempts=1)</code>, Anthropic <code>max_retries=0</code>).</p>
+  <ul>
+    <li><b>What counts as "wait and retry"</b> (<code>is_rate_limited()</code>): google-genai <code>APIError</code> with HTTP 429 or 503, or status <code>RESOURCE_EXHAUSTED</code> / <code>UNAVAILABLE</code>; Anthropic <code>RateLimitError</code>, <code>OverloadedError</code>, or any status 429, 503 or 529. Anything else is raised at once.</li>
+    <li><b>Schedule</b> (<code>RetryPolicy</code>): 5 attempts, 2 s initial, ×2, at most 30 s per wait, up to 1 s jitter, 90 s total waiting per model request. A numeric <code>Retry-After</code> wins. A wait that would exceed the budget (or a deadline) ends the loop with <code>ModelRateLimited</code>.</li>
+    <li><b>Never after text.</b> Nothing is retried once a response chunk has been yielded, because a mid-stream retry would duplicate text.</li>
+    <li><b>Visible.</b> Each wait first pushes a <code>model_retry</code> record (attempt, max attempts, seconds) into the turn's queue, so the browser can show "retrying" while the producer sleeps.</li>
+    <li><b>Round cap.</b> <code>WCL_TURN_ROUND_CAP</code> (6) limits lookup rounds per turn (<a href="agent.html#runtime">Agent runtime</a>). Runners are cached per model, so policy changes take effect after a restart.</li>
+  </ul>
+  <h3>Why</h3>
+  <p class="why">Own retry loop instead of SDK retries: a native retry is invisible to the app, so nothing could show "busy, retrying" or count retries, and the two SDKs back off on different schedules with no shared budget. Overriding ADK's single model-call seam gives one loop for both providers. <b>Alternatives:</b> native SDK retries only; ADK <code>on_model_error_callback</code> (cannot re-issue a request); re-running <code>runner.run_async</code> (duplicates the user message in the session).<cite>specs/011-agent-rate-limit-relief/research.md R1</cite></p>
+</section>
+
+<!-- ============================================================ FALLBACK -->
+<section class="layer" id="fallback">
+  <h2>Fallback to a same-class model (feature 021)</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">time.monotonic</span>
+    <span class="chip">in-process rate-limit memory</span>
+  </div>
+  <h3>What it does, and where it lives</h3>
+  <p>A chat turn may switch once to its <b>sibling</b>: <code>sibling_model()</code> in <code>wcl_agent/llm/models.py</code> picks the served models of the same publisher and class, newest first; the newest falls back to the second, any other to the newest. A class with one served model has no sibling, so with the default classes every Gemini class has one and Claude classes (one model each) do not. Only the chat socket passes a sibling (<code>fallback_model_for()</code>); <code>generate_with_fallback()</code> runs the rules per model request:</p>
+  <ul>
+    <li><b>Short probe first.</b> While the turn can still switch, its own model gets 2 attempts within 10 s, not the full schedule (sc-176).</li>
+    <li><b>Switch.</b> Still rate-limited: one <code>model_fallback</code> record (<code>from_model</code>, <code>to_model</code>), then this request and every later one in the turn go to the sibling with the full policy. ADK's session already holds the turn so far, so nothing is re-run. For Gemini, the earlier parts of the turn get Google's documented <code>skip_thought_signature_validator</code> value so the sibling accepts them; only the request's copies change.</li>
+    <li><b>Memory.</b> A model whose retries ran out in a chat turn is remembered for 5 minutes (<code>RATE_LIMIT_MEMORY_S</code>); the next turn on it switches on its first request.</li>
+    <li><b>Both busy.</b> When the model and its sibling are both remembered as limited, the probe and the sibling's retries share one 10 s deadline on a monotonic clock that counts request time too (sc-268, sc-297), so the turn fails in about that long.</li>
+    <li><b>Web search follows.</b> The <code>web_search</code> sub-agent's model is built with <code>may_switch=False</code>: it follows a switch the turn already made, never makes one, gets the same short probe, and a spent probe is remembered so the root's next request switches at once (sc-184).</li>
+    <li><b>What the player sees</b> (<code>backend/app/api/ws.py</code>): "The model is rate-limited right now. Please try again in about a minute." when no switch happened, or "Both {class} models are rate-limited right now…" (for example "Both Gemini flash models") after one.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 1000 720" role="img" aria-labelledby="m2t m2d">
+      <title id="m2t">Rate-limit decision flow for a chat model request</title>
+      <desc id="m2d">A request already on the sibling, or whose model was limited moments ago, goes straight to the sibling. Otherwise it gets a short probe; if still limited and a sibling is served, the turn switches once and retries on the sibling with the full policy; otherwise the player gets a rate_limited error.</desc>
+      <defs><marker id="mo-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+
+      <rect class="node core" style="fill:var(--accent-soft)" x="290" y="16" width="300" height="50" rx="10"/>
+      <text x="440" y="37" text-anchor="middle" class="t" style="font-size:13px">Chat model request</text>
+      <text x="440" y="55" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">generate_with_fallback()</text>
+
+      <rect class="node" style="fill:var(--warn-soft);stroke:var(--warn)" x="290" y="96" width="300" height="50" rx="10"/>
+      <text x="440" y="117" text-anchor="middle" class="t" style="font-size:13px">Turn already on the sibling?</text>
+      <text x="440" y="135" text-anchor="middle" class="sub" style="font-size:11.5px">switched earlier in this turn</text>
+
+      <rect class="node" style="fill:var(--warn-soft);stroke:var(--warn)" x="290" y="176" width="300" height="56" rx="10"/>
+      <text x="440" y="198" text-anchor="middle" class="t" style="font-size:13px">Own model limited in last 5 min,</text>
+      <text x="440" y="218" text-anchor="middle" class="t" style="font-size:13px">sibling not?</text>
+
+      <rect class="node" x="290" y="262" width="300" height="70" rx="10"/>
+      <text x="440" y="284" text-anchor="middle" class="t" style="font-size:13px">Retry loop on the turn's model</text>
+      <text x="440" y="304" text-anchor="middle" class="sub" style="font-size:11.5px">2 tries in 10 s (no sibling: 5, 90 s)</text>
+      <text x="440" y="322" text-anchor="middle" class="sub" style="font-size:11.5px">each wait: model_retry frame</text>
+
+      <rect class="node" style="fill:var(--warn-soft);stroke:var(--warn)" x="290" y="362" width="300" height="56" rx="10"/>
+      <text x="440" y="384" text-anchor="middle" class="t" style="font-size:13px">Still limited: sibling served</text>
+      <text x="440" y="404" text-anchor="middle" class="t" style="font-size:13px">and not switched yet?</text>
+
+      <rect class="node core" style="fill:var(--accent-soft)" x="290" y="448" width="300" height="56" rx="10"/>
+      <text x="440" y="470" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">model_fallback {from, to}</text>
+      <text x="440" y="490" text-anchor="middle" class="sub" style="font-size:11.5px">remember the model for 5 min</text>
+
+      <rect class="node" x="290" y="534" width="300" height="56" rx="10"/>
+      <text x="440" y="556" text-anchor="middle" class="t" style="font-size:13px">Retry loop on the sibling</text>
+      <text x="440" y="576" text-anchor="middle" class="sub" style="font-size:11.5px">5 tries, 90 s; shared 10 s if both busy</text>
+
+      <rect class="node" style="fill:var(--ok-soft);stroke:var(--ok)" x="290" y="620" width="300" height="44" rx="10"/>
+      <text x="440" y="647" text-anchor="middle" class="t" style="font-size:13px">Answer continues on the sibling</text>
+
+      <rect class="node" style="fill:var(--ok-soft);stroke:var(--ok)" x="20" y="268" width="230" height="58" rx="10"/>
+      <text x="135" y="294" text-anchor="middle" class="t" style="font-size:13px">Answer streams</text>
+      <text x="135" y="313" text-anchor="middle" class="sub" style="font-size:11.5px">on the picked model</text>
+
+      <rect class="node" style="fill:var(--bad-soft);stroke:var(--bad)" x="20" y="362" width="230" height="56" rx="10"/>
+      <text x="135" y="384" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">error rate_limited</text>
+      <text x="135" y="404" text-anchor="middle" class="sub" style="font-size:11.5px">"The model is rate-limited…"</text>
+
+      <rect class="node" style="fill:var(--bad-soft);stroke:var(--bad)" x="20" y="534" width="230" height="56" rx="10"/>
+      <text x="135" y="556" text-anchor="middle" style="font-size:11.5px;font-family:var(--f-mono)">error rate_limited</text>
+      <text x="135" y="576" text-anchor="middle" class="sub" style="font-size:11.5px">"Both Gemini flash models…"</text>
+
+      <rect class="node" x="680" y="96" width="300" height="136" rx="10"/>
+      <text x="830" y="124" text-anchor="middle" class="t" style="font-size:13px">Go straight to the sibling</text>
+      <text x="830" y="150" text-anchor="middle" class="sub" style="font-size:11.5px">already switched: route this request</text>
+      <text x="830" y="170" text-anchor="middle" class="sub" style="font-size:11.5px">limited moments ago: switch now,</text>
+      <text x="830" y="188" text-anchor="middle" class="sub" style="font-size:11.5px">one model_fallback frame</text>
+      <text x="830" y="212" text-anchor="middle" class="sub" style="font-size:11.5px">Gemini: skip-signature on earlier parts</text>
+
+      <path class="flow" d="M440,66 V92" marker-end="url(#mo-ah2)"/>
+      <path class="flow" d="M590,121 H676" marker-end="url(#mo-ah2)"/><text x="633" y="113" text-anchor="middle" class="sub" style="font-size:11.5px">yes</text>
+      <path class="flow" d="M440,146 V172" marker-end="url(#mo-ah2)"/><text x="450" y="164" class="sub" style="font-size:11.5px">no</text>
+      <path class="flow" d="M590,204 H676" marker-end="url(#mo-ah2)"/><text x="633" y="196" text-anchor="middle" class="sub" style="font-size:11.5px">yes</text>
+      <path class="flow" d="M440,232 V258" marker-end="url(#mo-ah2)"/><text x="450" y="250" class="sub" style="font-size:11.5px">no</text>
+      <path class="flow" d="M290,297 H254" marker-end="url(#mo-ah2)"/><text x="272" y="289" text-anchor="middle" class="sub" style="font-size:11.5px">ok</text>
+      <path class="flow" d="M440,332 V358" marker-end="url(#mo-ah2)"/><text x="450" y="350" class="sub" style="font-size:11.5px">429</text>
+      <path class="flow" d="M290,390 H254" marker-end="url(#mo-ah2)"/><text x="272" y="382" text-anchor="middle" class="sub" style="font-size:11.5px">no</text>
+      <path class="flow" d="M440,418 V444" marker-end="url(#mo-ah2)"/><text x="450" y="436" class="sub" style="font-size:11.5px">yes</text>
+      <path class="flow" d="M440,504 V530" marker-end="url(#mo-ah2)"/>
+      <path class="flow" d="M830,232 V562 H594" marker-end="url(#mo-ah2)"/>
+      <path class="flow" d="M290,562 H254" marker-end="url(#mo-ah2)"/><text x="272" y="554" text-anchor="middle" class="sub" style="font-size:11.5px">429</text>
+      <path class="flow" d="M440,590 V616" marker-end="url(#mo-ah2)"/><text x="450" y="608" class="sub" style="font-size:11.5px">ok</text>
+      <text x="20" y="700" class="sub" style="font-size:11.5px">Any other error, or a 429 after text has streamed, is raised at once: error agent_error with a log reference.</text>
+    </svg>
+    <figcaption>Per chat model request, <code>wcl_agent/llm/model_retry.py</code>; the player-facing wording is in <code>backend/app/api/ws.py</code>. "Gemini flash" stands for the class label from <code>class_label()</code>.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>If the turn already switched, the request goes to the sibling.</li>
+    <li>If the turn's model ran out of retries in the last 5 minutes and the sibling did not, the turn switches now (one <code>model_fallback</code> frame).</li>
+    <li>Otherwise the turn's model gets the short probe (2 tries within 10 s), or the full schedule when there is no sibling.</li>
+    <li>Still limited, with a sibling and no switch yet: <code>model_fallback</code>, remember the model, retry on the sibling with the full schedule (inside the shared 10 s deadline when both were already known to be busy).</li>
+    <li>No sibling: <code>rate_limited</code> "The model is rate-limited…". Sibling limited too: <code>rate_limited</code> "Both … models are rate-limited…".</li>
+  </ol>
+
+  <h3>Why</h3>
+  <p class="why">Fallback per model request, inside the wrapper: the ADK session already holds the turn's user message, tool calls and streamed text, so switching one request re-runs nothing and never duplicates text. <b>Alternative:</b> a turn-level re-run (duplicates the user message, needs session surgery, repeats tool calls).<cite>specs/021-ratelimit-fallback/research.md R1</cite></p>
+  <p class="why">Sibling by naming rules over the served set: no new state, and it works in static mode too. <b>Alternatives:</b> storing the catalog classes on <code>app.state</code>; a configured sibling map.<cite>specs/021-ratelimit-fallback/research.md R3</cite></p>
+  <p class="why">Gemini validates function-call thought signatures within a turn, and the parts before the switch were signed by the other version, hence the documented bypass value.<cite>specs/021-ratelimit-fallback/research.md R5</cite></p>
+  <p class="why">A separate typed <code>model_fallback</code> frame instead of reusing <code>model_retry</code>, whose attempt counters mean something else.<cite>specs/021-ratelimit-fallback/research.md R6</cite></p>
+  <p class="why">The both-busy budget is a deadline on a monotonic module clock, so request time counts and tests can drive a fake clock without patching <code>time</code>.<cite>specs/052-turn-and-startup-hardening/research.md (Deadline, sc-297)</cite></p>
+</section>
+
+<!-- ============================================================ THINKING -->
+<section class="layer" id="thinking">
+  <h2>Thinking and provider differences</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">ADK BuiltInPlanner</span>
+    <span class="chip">anthropic-beta: thinking-binding-controls-2026-08-01</span>
+  </div>
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>Chat thinking.</b> The agent's <code>BuiltInPlanner</code> asks for thoughts on every model; Claude gets <code>thinking_budget=-1</code>, which ADK maps to adaptive thinking. Thought parts never reach the user.</li>
+    <li><b>Stale thinking blocks.</b> The app edits a turn's history on every request (stubbed tool results, the injected preamble, the instruction's timestamp), which invalidates replayed Claude thinking blocks. <code>RetryingClaude._build_anthropic_kwargs()</code> adds <code>block_binding.prefix_mismatch_behavior = "drop_block"</code> and the <code>thinking-binding-controls-2026-08-01</code> beta header to adaptive-thinking requests, so the API drops those blocks instead of rejecting the request.</li>
+    <li><b>One-shot calls with thinking off</b> (suggestions, titles): Gemini gets <code>thinking_budget=0</code>; Claude Haiku gets thinking disabled, Opus and Sonnet the lowest effort. <code>temperature</code> reaches Gemini only.</li>
+    <li><b>Round cap.</b> Gemini also gets function calling <code>NONE</code> once the cap is reached; Claude relies on the wrap-up instruction.</li>
+    <li><b>Web search.</b> The chat agent has web search only on Gemini; Claude chat turns are told no web search is available. Guide research searches on both: Google Search grounding (plus URL context) on Gemini, Anthropic's server-side web search on Claude, with web fetch for allowlisted domains only on the Anthropic API (Claude on Vertex gets the basic search tool and no fetch). A Claude research call that pauses is resumed up to 3 times, at most 10 searches and 5 fetches per call, and an organisation without web search enabled gets a clear error.</li>
+  </ul>
+  <h3>Why</h3>
+  <p class="why">Dropping stale blocks server-side keeps reasoning and avoids ordering and signature errors that client-side stripping causes. <b>Alternatives:</b> strip thinking blocks client-side; make history append-only (a redesign of trimming and the preamble).<cite>specs/032-llm-provider-switch/research.md R3</cite></p>
+  <p class="why">Claude needs an explicit budget, and ADK's Anthropic adapter rejected the old config, so every Claude turn failed until the planner passed <code>-1</code>.<cite>specs/032-llm-provider-switch/research.md R2</cite></p>
+</section>
+
+<!-- ============================================================ USAGE -->
+<section class="layer" id="usage">
+  <h2>Usage logging</h2>
+  <div class="chips"><span class="eyebrow">Tech</span>
+    <span class="chip">Python logging</span>
+  </div>
+  <h3>What it does, and where it lives</h3>
+  <p>There is no cost accounting or per-user usage table. What exists is one <code>turn stats</code> INFO line per chat turn from <code>stream_response()</code> (<code>backend/app/agent_runner.py</code>): model, model requests, lookup rounds, retries, seconds waited, outcome, last and largest prompt tokens, cached tokens (from the response's usage metadata), trimmed tool results, tool calls and the fallback model. Discovery logs one line per class with the models it kept and why others were skipped. One-shot calls log only failures.</p>
+  <p class="why">The turn stats line records prompt and cached tokens to measure the context trimming and the cacheable prefix.<cite>wcl_agent/llm/model_retry.py (TurnStats, PERF-004); specs/011-agent-rate-limit-relief/research.md R5</cite></p>
+</section>
+
+<footer>
+  <p>Sources checked for this page:</p>
+  <ul>
+    <li><code>wcl_agent/llm/provider.py</code></li>
+    <li><code>wcl_agent/llm/vertex.py</code></li>
+    <li><code>wcl_agent/llm/models.py</code></li>
+    <li><code>wcl_agent/llm/model_retry.py</code></li>
+    <li><code>wcl_agent/llm/generation.py</code></li>
+    <li><code>wcl_agent/agent.py</code></li>
+    <li><code>wcl_agent/cache/cache.py</code> (model_catalog TTL)</li>
+    <li><code>backend/app/model_state.py</code></li>
+    <li><code>backend/app/api/models.py</code>, <code>ws.py</code></li>
+    <li><code>backend/app/main.py</code> (<code>_load_models</code>, boot)</li>
+    <li><code>backend/app/config.py</code></li>
+    <li><code>backend/app/agent_runner.py</code></li>
+    <li><code>backend/app/greeting.py</code>, <code>suggestions.py</code></li>
+    <li><code>backend/app/services/conversation_titles.py</code>, <code>report_synthesis.py</code>, <code>guide.py</code></li>
+    <li><code>backend/app/services/guide_pipeline/llm.py</code>, <code>research.py</code></li>
+    <li><code>backend/app/kb/embedder.py</code></li>
+    <li><code>frontend/src/components/ModelSelect.tsx</code></li>
+    <li><code>pyproject.toml</code>, <code>uv.lock</code></li>
+    <li><code>specs/011</code>, <code>016</code>, <code>021</code>, <code>032</code>, <code>033</code>, <code>035</code>, <code>052</code></li>
+    <li><code>sprints/2026-10-31/decisions.md</code></li>
+  </ul>
+</footer>
+
+</main>
+</div>
+</body>
+</html>
