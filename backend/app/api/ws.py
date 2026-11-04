@@ -578,7 +578,8 @@ async def chat(ws: WebSocket) -> None:
             # Feature 032 (D4): an unserved model (say, after a provider switch) continues on
             # the default instead of failing the turn.
             turn = turn.model_copy(update={"model": resolve_chat_model(ws.app, turn.model)})
-            with chat_turn_span():  # 054: each turn is the root of its own trace
+            # 054: each turn is the root of its own trace; 057: or the browser's span's child
+            with chat_turn_span(raw.get("traceparent"), raw.get("faro_session_id")):
                 await _start_turn(
                     sock, turn, identity, fallback_model=fallback_model_for(ws.app, turn.model)
                 )
