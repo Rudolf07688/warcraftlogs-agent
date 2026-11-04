@@ -160,7 +160,8 @@ services:
     command: ["-config.file=/etc/mimir/mimir.yaml", "-target=all"]
     volumes:
       - ./observability/mimir/mimir.yaml:/etc/mimir/mimir.yaml:ro
-      - ./observability/mimir/rules:/etc/mimir/rules:ro
+      # MIMIR_RULES_DIR: the test scripts mount a copy here (rules.sh changes a price only there).
+      - ${MIMIR_RULES_DIR:-./observability/mimir/rules}:/etc/mimir/rules:ro
       - mimir-data:/data
     mem_limit: 1g
     restart: unless-stopped
