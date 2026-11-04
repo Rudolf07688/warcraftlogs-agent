@@ -54,6 +54,7 @@ as an autonomous unit that needs only a small owner input to steer it.
 | 2026-11-01 | 33 | 1256 | 40 (SM 15) | 39.0 | **1.18** | **26%** | 58% | 16% | Tier L: PO + SM (Ilse) + 3 devs (Nils new); P7 trial 4% inside QA; split fix round; ~3 h 10 min steer to wrap |
 | 2026-11-01b | 20 | 833 | 7 (no SM) | 20.5 | **1.03** | **26%** | 56% | 18% | Tier M: PO + 2 devs; first P9 trial; PO in planning (0.35 M); P7 5% + split fix round; 1 h 36 min steer to wrap |
 | 2026-11-02 | 20 | 922 | 20 (no SM) | 25.3 | **1.27** | **16%** | 68% | 16% | Tier M: PO + 3 devs, fully autonomous (no owner turn after the steer); P10/P11 first trial; devs resumed for P7 rework *and* QA fix (210–260k context/call) → build 0.86/pt; 1 h 33 min steer to PO report |
+| 2026-11-04 | 23 | 958 | 15 (no SM) | 26.9 | **1.17** | **29%** | 53% | 18% | Tier M: PO + 2 devs + Tomas on docs; first infra sprint (telemetry 1), planned with PO the same morning; security review at hand-off + QA fix round in fresh agents (0.81 vs 7.65 build for Nils); a PO-unwatched question cost 55 min; 2 h 54 min steer to PO report |
 
 **Caveats.**
 - The main-session transcripts include some non-sprint work. On 10-25 that was writing the
@@ -635,3 +636,11 @@ through respawns as the same named member, with its own small, curated memory. I
   or local-first store). New close-out step: the product owner's wrap-up step 5 runs
   `.claude/team/archdocs.py changed` → re-verify → `stamp` → `check`, and team-lead gates
   the merge question on it (`team-launch` wrap-up step 4). Owner preference 24.
+- **2026-11-04 (later):** Telemetry planned with the owner and Maren the same morning
+  (specs/telemetry_spec.md §14, epics 395–397, 27 stories), then sprint 2026-11-04
+  (Telemetry 1) ran: 23/23 pts, 1.17 M/pt, coordination 29%, 2 h 54 min. QA fixes in fresh
+  agents paid off (Nils 0.81 vs 7.65 build). A file-ownership question waited 55 min because
+  the PO's wait woke only on hand-offs → `product-owner.md` now arms it with questions too.
+  Next sprint levers: quick mode for the stack test scripts; split 12-point security-core
+  streams; measure screenshot `Read` cost (90% of the lead's new context by characters);
+  provider switch in `livecheck.py`.

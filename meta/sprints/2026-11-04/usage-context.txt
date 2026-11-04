@@ -1,0 +1,25 @@
+053 telemetry stack (Ansel) [('Bash', 73), ('mcp__shortcut__update_story', 8), ('Write', 6), ('WebFetch', 4), ('ToolSearch', 3), ('mcp__shortcut__get_story', 1)]
+QA spec conformance sweep [('Bash', 45), ('Write', 1)]
+Shortcut board sync [('Bash', 8), ('mcp__shortcut__get_story', 8), ('mcp__shortcut__search_stories', 3), ('ToolSearch', 2), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1)]
+QA fix round Nils [('Bash', 39)]
+QA fix round Ansel [('Bash', 67), ('Edit', 1), ('ToolSearch', 1), ('Monitor', 1)]
+QA bug hunt sweep [('Bash', 62), ('Write', 1)]
+QA security sweep [('Bash', 34), ('Write', 1)]
+Architecture docs close-out (Tomas) [('Bash', 41), ('Read', 9), ('Write', 1)]
+qa-security review of 054 [('Bash', 79), ('Write', 1)]
+product-owner [('Bash', 59), ('Agent', 11), ('Write', 10), ('mcp__shortcut__update_story', 9), ('mcp__shortcut__create_story', 8), ('SendMessage', 7)]
+
+new context by kind (tool-result chars, share):
+main (team-lead)                          1478076 Read 90%, other bash 3%, board 2%, shortcut 1%, git 1%
+054 backend telemetry (Nils)               334965 other bash 45%, source reads 39%, board 5%, git 4%, check/pg 3%
+QA performance sweep                       124168 source reads 40%, other bash 37%, git 22%, Write 0%
+053 telemetry stack (Ansel)                115655 other bash 56%, git 13%, WebFetch 10%, check/pg 9%, board 7%
+QA spec conformance sweep                  295097 other bash 52%, source reads 33%, git 10%, check/pg 4%, Write 0%
+Shortcut board sync                         94128 shortcut 54%, other bash 38%, git 7%, ToolSearch 1%
+QA fix round Nils                          138906 source reads 39%, other bash 28%, board 22%, git 8%, check/pg 3%
+QA fix round Ansel                         159386 other bash 75%, check/pg 12%, git 10%, board 3%, Monitor 0%
+QA bug hunt sweep                          177753 source reads 53%, other bash 34%, git 7%, check/pg 6%, Write 0%
+QA security sweep                          156172 other bash 57%, source reads 26%, git 9%, check/pg 8%, Write 0%
+Architecture docs close-out (Tomas)       2000969 Read 91%, html reports 3%, source reads 3%, other bash 2%, git 1%
+qa-security review of 054                  216845 source reads 51%, other bash 42%, git 6%, Write 0%
+product-owner                              594673 Read 69%, Agent 8%, shortcut 7%, source reads 5%, board 4%

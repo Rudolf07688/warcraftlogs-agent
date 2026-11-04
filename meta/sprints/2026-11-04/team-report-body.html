@@ -1,0 +1,111 @@
+<header>
+  <div class="eyebrow">Team report · agent team · local report</div>
+  <h1>Sprint 2026-11-04: Telemetry 1</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-04</b></span><span>Base <b class="mono">38606fd</b></span><span>Tip <b class="mono">1fa73c7</b></span><span>Steer 12:29Z → PO report 15:23Z (2 h 54 min)</span></div>
+  <p>The team's first infrastructure sprint, planned with the owner and Maren the same morning. 23 of 23 points, two tier-M streams, one security rework round and one QA fix round, in fresh agents. Cost per point was 1.17, down from 1.27. It took longer than the last two sprints: docker-heavy tests, two review rounds on security-core code, and one question nobody was watching.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">23<small> / 23 pts</small></span><span class="s">9 stories, all Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Cost per point</span><span class="v">1.17<small> M</small></span><span class="s">26.9 M weighted, 958 calls (was 1.27)</span></div>
+  <div class="kpi"><span class="eyebrow">Coordination</span><span class="v">29%</span><span class="s">build 53%, QA 18% (was 16 / 68 / 16)</span></div>
+  <div class="kpi"><span class="eyebrow">Wall clock</span><span class="v">2 h 54<small> min</small></span><span class="s">7.6 min/pt (11-02: 4.7)</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-cost" aria-controls="p-cost" aria-selected="true">Cost</button>
+  <button class="tab" role="tab" id="tab-time" aria-controls="p-time" aria-selected="false" tabindex="-1">Timeline</button>
+  <button class="tab" role="tab" id="tab-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Worked / change <span class="count">8</span></button>
+  <button class="tab" role="tab" id="tab-team" aria-controls="p-team" aria-selected="false" tabindex="-1">Team and memory</button>
+  <button class="tab" role="tab" id="tab-base" aria-controls="p-base" aria-selected="false" tabindex="-1">Earlier sprints</button>
+</div></nav>
+
+<div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
+  <h2 class="panel-title">Where the cost went</h2>
+  <p class="muted small">Weighted units: cache read 0.1×, cache write 1.25×, output 5× (as in <code>meta/team-optimisation.md</code>). From <code>usage.py</code> on this session; numbers archived in <code>meta/sprints/2026-11-04/usage.txt</code>.</p>
+  <div class="bars">
+    <div class="bar"><span>Nils, backend build + security rework</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="n">7.65</span></div>
+    <div class="bar"><span>Maren, product owner</span><span class="track"><span class="fill" style="width:53%"></span></span><span class="n">4.09</span></div>
+    <div class="bar"><span>team-lead (incl. planning + live pass)</span><span class="track"><span class="fill" style="width:45%"></span></span><span class="n">3.41</span></div>
+    <div class="bar"><span>Ansel, stack build</span><span class="track"><span class="fill" style="width:33%"></span></span><span class="n">2.55</span></div>
+    <div class="bar"><span>Ansel, QA fix round (fresh)</span><span class="track"><span class="fill" style="width:27%"></span></span><span class="n">2.04</span></div>
+    <div class="bar"><span>qa-security review of the backend</span><span class="track"><span class="fill" style="width:19%"></span></span><span class="n">1.44</span></div>
+    <div class="bar"><span>Tomas, architecture docs</span><span class="track"><span class="fill" style="width:17%"></span></span><span class="n">1.28</span></div>
+    <div class="bar"><span>QA sweep: bugs, spec, perf, security</span><span class="track"><span class="fill" style="width:44%"></span></span><span class="n">3.35</span></div>
+    <div class="bar"><span>Nils, QA fix round (fresh)</span><span class="track"><span class="fill" style="width:11%"></span></span><span class="n">0.81</span></div>
+    <div class="bar"><span>Shortcut sync</span><span class="track"><span class="fill" style="width:4%"></span></span><span class="n">0.28</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Nils is 28% of the sprint</h3><p>201 calls at an average of 262k context each (52.7 M cache reads). He was resumed for the security rework, which is right by the rule (rework needs its history), but the build itself was already long: 170 Bash calls over a 12-point security-core stream. The QA fix in a fresh agent cost 0.81 for comparable work.</p></div>
+    <div class="card"><h3>Coordination went back up</h3><p>29% against 16% last sprint. Two parts: my share includes the planning session (27 stories written by hand, the spec section) and the live pass, about 1 M of my 3.4; and Maren's 4.1 M (0.18 per point, the P10 target is 0.12). Her new context is 69% <code>Read</code>, mostly report screenshots.</p></div>
+  </div>
+  <div class="callout warn"><p><b>Screenshots are now the biggest new-context item</b> for three seats: team-lead 90%, Tomas 91%, Maren 69% of tool-result characters are <code>Read</code>, mostly PNG checks. Characters overstate image tokens, so this is a lead to measure, not a finding yet.</p></div>
+  <p class="small muted">Lines: 6,083 added. Code and config 2,250 (observability 1,409, backend telemetry 792, bin 49), tests 1,492, Spec Kit 729, sprint reports 793, architecture docs 366.</p>
+</div>
+
+<div role="tabpanel" id="p-time" aria-labelledby="tab-time" tabindex="0" hidden>
+  <h2 class="panel-title">Timeline (board, UTC)</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">12:29Z</span> Steer posted. Maren resumed with her planning context; tiers, owners and three contracts (env, content stream, ports) up at 12:32.</div>
+    <div class="tl warn"><span class="t">12:34Z</span> Nils asks for one hunk in the websocket handler (chat turns run over <code>/ws/chat</code>, not HTTP). Maren's watcher only wakes on hand-offs.</div>
+    <div class="tl warn"><span class="t">13:05Z</span> Nils raises it to a blocker. I answer for Maren at 13:29 (55 min after the question).</div>
+    <div class="tl ok"><span class="t">13:31Z</span> Ansel hands off the stack; merged 13:33.</div>
+    <div class="tl ok"><span class="t">13:36Z</span> Nils hands off the backend; qa-security review: 0 High, 3 Medium.</div>
+    <div class="tl ok"><span class="t">14:11Z</span> Rework done in one round; merged 14:17.</div>
+    <div class="tl ok"><span class="t">14:27Z</span> Live pass on the merged tip: PASS. Telemetry finds a pre-existing bug (knowledge-base semantic search always times out).</div>
+    <div class="tl ok"><span class="t">14:34Z</span> QA sweep: 0 Critical, 2 High, 10 Medium, 15 Low. Fix round in fresh agents.</div>
+    <div class="tl warn"><span class="t">14:49Z → 15:06Z</span> Nils's fix in 15 min; Ansel's in 32 min, most of it the stack scripts (24 mutations, each an Alloy restart).</div>
+    <div class="tl ok"><span class="t">15:11Z</span> Fixes merged; my re-check of the touched checks PASS at 15:15. Architecture docs merged 15:21; PO report 15:23.</div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-learn" aria-labelledby="tab-learn" tabindex="0" hidden>
+  <h2 class="panel-title">What worked, and what to change</h2>
+  <ul class="checks">
+    <li class="ok">Planning with Maren in the room again: she corrected five of my claims from the code before anything was built (three model paths, one engine shared with ADK, the log redaction gap, the board having no agent ids, no transcript tailing).</li>
+    <li class="ok">Contracts posted before launch (<code>contract:env</code>, <code>contract:content-stream</code>, <code>contract:ports</code>) let two streams that only meet in Alloy merge without a conflict.</li>
+    <li class="ok">QA fixes in fresh agents (my lesson from 11-02): Nils's fix round cost 0.81 against his 7.65 build. Telemetry also earned its keep at once: the live pass found the Loki 400 the fix round then closed, and a knowledge-base embedding timeout that has been there since the feature shipped on 11-01.</li>
+    <li class="ok">The security review at hand-off found what the developer's own 64 tests missed: chat text in exported error messages, a slow masking pattern, Host as a metric label.</li>
+    <li class="no">A question sat 55 min because the PO's wait only woke on hand-offs. Maren fixed her watcher mid-sprint; I'm putting it in <code>product-owner.md</code> so it holds for every PO launch.</li>
+    <li class="no">Infrastructure tests are slow: each stack script starts real containers, and the mutation loop restarts Alloy 24 times. Next sprint: a quick mode that runs only the scripts and mutations a change touches, with the full set once at merge.</li>
+    <li class="no">Nils's build ran long (262k context per call). For security-core streams at 12 points, split the build into two developers or brief a mid-stream hand-off, so the rework resume carries less history.</li>
+    <li class="no">My live pass ran on the Anthropic provider, so a Gemini chat title couldn't be checked live (only Gemini embeddings). <code>livecheck.py</code> should take a provider switch so one pass covers both.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-team" aria-labelledby="tab-team" tabindex="0" hidden>
+  <h2 class="panel-title">Team and memory</h2>
+  <table class="tbl">
+    <tr><th>Seat</th><th>Work</th><th class="num">Weighted M</th></tr>
+    <tr><td>Maren (po)</td><td>plan, merges, two QA triages, reports</td><td class="num">4.09</td></tr>
+    <tr><td>Ansel (dev-1)</td><td>053 stack and build layer; QA fix round</td><td class="num">4.59</td></tr>
+    <tr><td>Tomas (dev-2)</td><td>architecture docs close-out (new observability page)</td><td class="num">1.28</td></tr>
+    <tr><td>Nils (dev-3)</td><td>054 backend telemetry, security rework; QA fix round</td><td class="num">8.46</td></tr>
+  </table>
+  <div class="card"><h3>Memory changes</h3><p>Ansel, Nils and Maren updated their memories (45 lines added, 38 removed); Tomas didn't. About 5 added lines repeat what agent files or skills already say (the live-check key, report render-checks, Shortcut label ids, the owner's standing rules). Shared facts belong in those files, not in one member's memory; I haven't touched anyone's memory.</p></div>
+  <div class="card"><h3>Skill and agent-file changes (applied on main after the merge)</h3>
+    <ul class="checks">
+      <li class="ok"><code>product-owner.md</code>: the board wait includes <code>--kind question</code> (Maren's <code>skill:product-owner</code> notice).</li>
+      <li class="ok"><code>.claude/team/archdocs.py</code>: SHARED maps <code>docker-compose.yml</code> and <code>pyproject.toml</code> to the observability page too (Tomas's note).</li>
+      <li class="ok"><code>shortcut-sync.md</code>: create_story sets estimate and labels directly (done before launch).</li>
+    </ul>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-base" aria-labelledby="tab-base" tabindex="0" hidden>
+  <h2 class="panel-title">Earlier sprints</h2>
+  <table class="tbl">
+    <tr><th>Sprint</th><th class="num">Points</th><th class="num">Calls</th><th class="num">Per point</th><th class="num">Coord</th><th class="num">Build</th><th class="num">QA</th></tr>
+    <tr><td>2026-10-25</td><td class="num">23</td><td class="num">1975</td><td class="num">2.65</td><td class="num">55%</td><td class="num">35%</td><td class="num">8%</td></tr>
+    <tr><td>2026-10-26</td><td class="num">20</td><td class="num">1482</td><td class="num">2.18</td><td class="num">42%</td><td class="num">49%</td><td class="num">8%</td></tr>
+    <tr><td>2026-10-31</td><td class="num">21</td><td class="num">990</td><td class="num">1.39</td><td class="num">41%</td><td class="num">58%</td><td class="num">0%</td></tr>
+    <tr><td>2026-10-31b</td><td class="num">21</td><td class="num">757</td><td class="num">0.83</td><td class="num">29%</td><td class="num">52%</td><td class="num">18%</td></tr>
+    <tr><td>2026-10-31c</td><td class="num">19</td><td class="num">628</td><td class="num">0.92</td><td class="num">38%</td><td class="num">48%</td><td class="num">12%</td></tr>
+    <tr><td>2026-11-01</td><td class="num">33</td><td class="num">1256</td><td class="num">1.18</td><td class="num">26%</td><td class="num">58%</td><td class="num">16%</td></tr>
+    <tr><td>2026-11-01b</td><td class="num">20</td><td class="num">833</td><td class="num">1.03</td><td class="num">26%</td><td class="num">56%</td><td class="num">18%</td></tr>
+    <tr><td>2026-11-02</td><td class="num">20</td><td class="num">922</td><td class="num">1.27</td><td class="num">16%</td><td class="num">68%</td><td class="num">16%</td></tr>
+    <tr><td><b>2026-11-04</b></td><td class="num">23</td><td class="num">958</td><td class="num"><b>1.17</b></td><td class="num">29%</td><td class="num">53%</td><td class="num">18%</td></tr>
+  </table>
+</div>
+
+<footer>Written by team-lead, 2026-11-04.</footer>

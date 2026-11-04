@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-04 (telemetry plan locked, on the board)
+Updated: 2026-11-04 (sprint 2026-11-04 launched: Telemetry 1)
 
 ## Topic
 
@@ -33,6 +33,11 @@ The agent-team redesign: persistence and autonomy. Full record in
   owner. Plan locked in `specs/telemetry_spec.md` §14: 3 sprints, 23/23/20 pts, epics 395–397,
   27 stories in Backlog. Owner: board only, no sprint yet; wrapper `bin/claude-otel`; content
   capture ON in dev; persistence (volumes + Alloy file queue) before Grafana.
+- 2026-11-04 12:30Z: sprint-2026-11-04 launched (Telemetry 1, 23 pts). Branch from 38606fd,
+  worktrees sprint/dev-a/dev-b, board sprint-2026-11-04, Maren resumed with planning context.
+  gcloud ADC refreshed by the owner at launch (verified).
+- 14:27Z: 053 merged 4412117, 054 merged c212475 (1 security rework round). Live pass PASS
+  (board #43); found pre-existing KB embedding timeout via telemetry (sc-428). Waiting: QA sweep, wrap-up.
 
 ## Open with the owner
 
