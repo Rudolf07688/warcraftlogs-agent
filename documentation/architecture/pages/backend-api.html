@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
 <title>Backend API · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -35,12 +35,13 @@
 <!-- ============================================================ APP -->
 <section class="layer" id="app">
   <h2>The app</h2>
-  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fastapi&gt;=0.115.0</span><span class="chip">uvicorn[standard]&gt;=0.30.0</span><span class="chip">asyncio</span><span class="chip">google-adk&gt;=2.0.0</span></div>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">fastapi&gt;=0.115.0</span><span class="chip">uvicorn[standard]&gt;=0.30.0</span><span class="chip">asyncio</span><span class="chip">google-adk&gt;=2.0.0</span><span class="chip">opentelemetry-instrumentation-*==0.63b1</span></div>
 
   <h3>What it does, and where it lives</h3>
   <ul>
     <li><code>backend/app/main.py</code> builds <code>FastAPI(title="WCL Agent Chat API", lifespan=lifespan)</code>. Middleware, outermost first: <code>CORSMiddleware</code> (origins from <code>CORS_ORIGINS</code>, credentials allowed), then <code>ReadinessGate</code>. CORS is added last so the gate's 503s still carry CORS headers. Then the error handler and the 14 routers.</li>
-    <li>Logging is set up at import: one root handler if none exists, <code>backend.app</code> and <code>wcl_agent</code> at INFO (uvicorn only configures its own loggers), then the <code>RedactionFilter</code> on the root logger, its handlers and the uvicorn loggers (see <a href="auth-tenancy.html#audit">Auth</a>).</li>
+    <li>Logging is set up at import: one root handler if none exists, <code>backend.app</code> and <code>wcl_agent</code> at INFO (uvicorn only configures its own loggers), then the <code>RedactionFilter</code> on the root logger, its handlers and the uvicorn loggers (see <a href="auth-tenancy.html#audit">Auth</a>). When telemetry is on, an OTLP log handler is added to the root logger after that; it carries its own <code>RedactionFilter</code>.</li>
+    <li><b>Telemetry starts first.</b> The very first statement of <code>main.py</code> after the standard-library imports is <code>configure_telemetry()</code> from <code>backend/app/telemetry/</code>, before FastAPI and ADK are imported: global instrumentation (FastAPI, SQLAlchemy, Redis, httpx) must exist before the app and the engine are created. It is a no-op unless <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> is set. The package's own modules (config, content policy, redaction, providers and exporters) are described on <a href="observability.html#runtime">Observability</a>.</li>
     <li>The code is layered: routers in <code>backend/app/api/</code> → logic in <code>backend/app/services/</code> (and <code>kb/</code>, <code>agent_tools/</code>) → queries in <code>backend/app/db/repository.py</code> and <code>backend/app/repositories/</code> → ORM in <code>backend/app/db/models.py</code>. Boundary types live in <code>backend/app/schemas.py</code>.</li>
     <li>The standalone <code>wcl_agent/</code> package holds the WCL client, the Redis cache, the agent and its WCL tools, and the model/provider layer. It has no database imports; the backend plugs persistence in through hooks it sets at startup (the fetch sink, the fetch source, the brief loader). See <a href="wcl-data.html">WCL client, cache &amp; store</a>.</li>
     <li>Runtime model state (the selectable models, the default, a degraded flag) lives on <code>app.state</code> and is read through <code>backend/app/model_state.py</code>.</li>
@@ -247,7 +248,7 @@
 <footer>
   <p>Sources checked for this page:</p>
   <ul>
-    <li><code>backend/app/main.py</code>, <code>backend/app/startup.py</code>, <code>backend/app/api/*.py</code> (all 15 modules), <code>backend/app/api/errors.py</code>, <code>backend/app/model_state.py</code>, <code>backend/app/db/session.py</code></li>
+    <li><code>backend/app/main.py</code>, <code>backend/app/telemetry/__init__.py</code>, <code>backend/app/startup.py</code>, <code>backend/app/api/*.py</code> (all 15 modules), <code>backend/app/api/errors.py</code>, <code>backend/app/model_state.py</code>, <code>backend/app/db/session.py</code></li>
     <li><code>backend/app/services/background.py</code>, <code>services/recent_raids.py</code>, <code>services/kickoff_prefetch.py</code>, <code>services/guide.py</code>, <code>services/conversation_titles.py</code>, <code>services/fetch_persistence.py</code>, <code>backend/app/kb/indexer.py</code>, module docstrings of every file in <code>services/</code>, <code>repositories/</code>, <code>kb/</code>, <code>agent_tools/</code></li>
     <li><code>wcl_agent/client/wcl_client.py</code> (lanes, <code>aclose_clients</code>), <code>backend/app/config.py</code></li>
     <li><code>todo.md</code>, <code>.specify/memory/constitution.md</code>, <code>specs/013-welcome-recent-raids/research.md</code>, <code>specs/036-profile-write-hardening/research.md</code></li>

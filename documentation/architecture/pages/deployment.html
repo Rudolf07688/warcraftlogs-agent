@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
 <title>Deployment &amp; config · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -17,7 +17,7 @@
 <header class="top">
   <p class="eyebrow">Architecture · Runtime</p>
   <h1>Deployment &amp; config</h1>
-  <p class="lede">How the app runs today: four Docker Compose containers on a developer machine, configured from one root <code>.env</code>. This page covers the images, the proxying, every place configuration comes from, the checks that stop an unsafe start, the scripts and command-line tools, and how far the cloud deployment plan has got.</p>
+  <p class="lede">How the app runs today: four Docker Compose containers on a developer machine plus an always-on telemetry collector, configured from one root <code>.env</code>. This page covers the images, the proxying, every place configuration comes from, the checks that stop an unsafe start, the scripts and command-line tools, and how far the cloud deployment plan has got.</p>
   <div class="toolbar">
     <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
     <span class="muted verified"></span>
@@ -36,32 +36,34 @@
 <!-- ============================================================ COMPOSE -->
 <section class="layer" id="compose">
   <h2>Compose stack</h2>
-  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Docker Compose</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">redis:8-alpine</span><span class="chip">python:3.14-slim</span><span class="chip">node:22-slim</span><span class="chip">nginx:1.27-alpine (prod target)</span></div>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">Docker Compose</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">redis:8-alpine</span><span class="chip">python:3.14-slim</span><span class="chip">node:22-slim</span><span class="chip">nginx:1.27-alpine (prod target)</span><span class="chip">grafana/alloy:v1.21.3</span></div>
 
   <h3>What runs, and where it lives</h3>
-  <p><code>docker-compose.yml</code> defines four services and one named volume (<code>pgdata</code>). <code>docker compose up --build</code> brings up the whole stack.</p>
+  <p><code>docker-compose.yml</code> defines five services that start by default (the app's four and Alloy) and four more behind the <code>observability</code> profile, with six named volumes: <code>pgdata</code>, <code>alloy-data</code>, <code>loki-data</code>, <code>tempo-data</code>, <code>mimir-data</code> and <code>grafana-data</code>. <code>docker compose up --build</code> brings up the app and Alloy; <code>docker compose --profile observability up -d</code> adds the storage backends and Grafana.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Service</th><th>Image / build</th><th>Notes</th></tr></thead>
     <tbody>
       <tr><td><code>db</code></td><td><code>pgvector/pgvector:pg17-trixie</code></td><td>Postgres 17 with the pgvector extension, which the knowledge base needs (feature 043). Volume <code>pgdata</code>. Port bound to <code>127.0.0.1:5432</code> only. Health check <code>pg_isready</code> every 5 s. <code>POSTGRES_USER</code> is the owner role that runs migrations. The app's runtime role (<code>APP_DB_USER</code>) is created by migration <code>0004_rls</code>, not by an init script.</td></tr>
       <tr><td><code>redis</code></td><td><code>redis:8-alpine</code></td><td><code>--maxmemory 256mb --maxmemory-policy allkeys-lru</code>, <code>--save ""</code>, <code>--appendonly no</code>: a bounded cache with no persistence. Port <code>127.0.0.1:6379</code> only. Health check <code>redis-cli ping</code>.</td></tr>
-      <tr><td><code>backend</code></td><td><code>backend/Dockerfile</code> (context: repo root)</td><td>Waits for healthy <code>db</code> and <code>redis</code>. Compose overrides four variables from <code>.env</code>: <code>DATABASE_URL</code> (runtime role, host <code>db</code>), <code>DATABASE_OWNER_URL</code> (owner role), <code>GOOGLE_APPLICATION_CREDENTIALS=/gcp/adc.json</code> and <code>REDIS_URL=redis://redis:6379/0</code>. The ADC file is mounted read-only from <code>${GCP_ADC_FILE}</code>, defaulting to <code>~/.config/gcloud/application_default_credentials.json</code>. Port <code>8000</code> on all interfaces.</td></tr>
+      <tr><td><code>backend</code></td><td><code>backend/Dockerfile</code> (context: repo root)</td><td>Waits for healthy <code>db</code> and <code>redis</code>. Compose overrides four variables from <code>.env</code>: <code>DATABASE_URL</code> (runtime role, host <code>db</code>), <code>DATABASE_OWNER_URL</code> (owner role), <code>GOOGLE_APPLICATION_CREDENTIALS=/gcp/adc.json</code> and <code>REDIS_URL=redis://redis:6379/0</code>. It also sets the telemetry variables: <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318</code>, <code>OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf</code>, <code>WCL_ENVIRONMENT=dev</code> and <code>WCL_GIT_SHA</code> (default <code>unknown</code>). There is deliberately no <code>depends_on</code> on <code>alloy</code>. The ADC file is mounted read-only from <code>${GCP_ADC_FILE}</code>, defaulting to <code>~/.config/gcloud/application_default_credentials.json</code>. Port <code>8000</code> on all interfaces.</td></tr>
       <tr><td><code>frontend</code></td><td><code>frontend/Dockerfile</code>, target <code>dev</code></td><td>Vite dev server on port <code>5173</code> (all interfaces), with <code>VITE_BACKEND_URL=http://backend:8000</code>. Depends on <code>backend</code> (start order only, no health condition).</td></tr>
+      <tr><td><code>alloy</code></td><td><code>grafana/alloy:v1.21.3</code></td><td>The always-on telemetry collector (<code>restart: unless-stopped</code>, 512 MB). Config from <code>observability/alloy/</code> (or <code>${ALLOY_CONFIG_DIR}</code>), queue on volume <code>alloy-data</code>. Publishes OTLP 4317 and 4318 and its UI 12345, all on <code>127.0.0.1</code>. Runs with <code>--stability.level=public-preview</code> for the file-backed queue. See <a href="observability.html">Observability</a>.</td></tr>
+      <tr><td><code>loki</code>, <code>tempo</code>, <code>mimir</code>, <code>grafana</code></td><td><code>grafana/loki:3.7.9</code>, <code>grafana/tempo:2.10.10</code>, <code>grafana/mimir:3.2.4</code>, <code>grafana/grafana:13.2.5</code></td><td>Profile <code>observability</code> only. One named volume each (Grafana's holds no telemetry), 512 MB each except Mimir at 1 GB. Only Grafana publishes a port, <code>127.0.0.1:3000</code>. Grafana starts after the other three; admin login from <code>GRAFANA_ADMIN_PASSWORD</code>. See <a href="observability.html#backends">Observability</a>.</td></tr>
     </tbody>
   </table></div>
   <p>Migrations do not run inside any container: there is no entrypoint script. They run from the host through the <a href="#scripts">scripts</a> or <code>backend.cli.init_db</code>, which reach the database on the loopback port.</p>
 
   <figure class="diagram">
-    <svg class="dg" viewBox="0 0 1000 660" role="img" aria-labelledby="ct-title ct-desc">
+    <svg class="dg" viewBox="0 0 1000 790" role="img" aria-labelledby="ct-title ct-desc">
       <title id="ct-title">Container and deployment diagram</title>
-      <desc id="ct-desc">On the developer host, Docker Compose runs four containers: frontend, backend, db and redis. The browser reaches the frontend on port 5173, which proxies /api and /ws to the backend. The backend uses db and redis on the compose network and reads the host .env and the mounted gcloud credentials file. Host tools reach db and redis on loopback ports. The backend calls Vertex AI, the Anthropic API when that provider is selected, the Warcraft Logs API and public Blizzard pages over HTTPS.</desc>
+      <desc id="ct-desc">On the developer host, Docker Compose runs four app containers: frontend, backend, db and redis, plus the always-on alloy collector. The browser reaches the frontend on port 5173, which proxies /api and /ws to the backend. The backend uses db and redis on the compose network, sends telemetry to alloy, and reads the host .env and the mounted gcloud credentials file. Alloy forwards telemetry to the observability stack (Loki, Tempo, Mimir, Grafana), which only runs under the observability compose profile. Host tools reach db and redis on loopback ports. The backend calls Vertex AI, the Anthropic API when that provider is selected, the Warcraft Logs API and public Blizzard pages over HTTPS.</desc>
       <defs>
         <marker id="ct-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
         <marker id="ct-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
       </defs>
-      <rect class="zone" x="10" y="10" width="690" height="640" rx="14"/>
+      <rect class="zone" x="10" y="10" width="690" height="770" rx="14"/>
       <text class="zlbl" x="26" y="34">Developer host</text>
-      <rect class="zone" x="26" y="120" width="370" height="515" rx="12"/>
+      <rect class="zone" x="26" y="120" width="370" height="645" rx="12"/>
       <text class="zlbl" x="42" y="143">docker compose network</text>
       <rect class="zone" x="720" y="60" width="270" height="520" rx="14"/>
       <text class="zlbl" x="736" y="84">Internet</text>
@@ -76,19 +78,31 @@
       <text class="sub" x="211" y="367" text-anchor="middle">:8000 · FastAPI, agent, workers</text>
       <text class="sub" x="211" y="389" text-anchor="middle">one process</text>
 
-      <rect class="node store" x="42" y="470" width="165" height="145" rx="10"/>
-      <text class="t" x="124" y="500" text-anchor="middle">db</text>
-      <text class="sub" x="124" y="523" text-anchor="middle">pgvector image</text>
-      <text class="sub" x="124" y="543" text-anchor="middle">Postgres 17</text>
-      <text class="sub" x="124" y="563" text-anchor="middle">volume pgdata</text>
-      <text class="sub" x="124" y="583" text-anchor="middle">127.0.0.1:5432</text>
+      <rect class="node store" x="42" y="470" width="150" height="145" rx="10"/>
+      <text class="t" x="117" y="500" text-anchor="middle">db</text>
+      <text class="sub" x="117" y="523" text-anchor="middle">pgvector image</text>
+      <text class="sub" x="117" y="543" text-anchor="middle">Postgres 17</text>
+      <text class="sub" x="117" y="563" text-anchor="middle">volume pgdata</text>
+      <text class="sub" x="117" y="583" text-anchor="middle">127.0.0.1:5432</text>
 
-      <rect class="node store" x="215" y="470" width="165" height="145" rx="10"/>
-      <text class="t" x="297" y="500" text-anchor="middle">redis</text>
-      <text class="sub" x="297" y="523" text-anchor="middle">redis:8-alpine</text>
-      <text class="sub" x="297" y="543" text-anchor="middle">256 MB, LRU</text>
-      <text class="sub" x="297" y="563" text-anchor="middle">no persistence</text>
-      <text class="sub" x="297" y="583" text-anchor="middle">127.0.0.1:6379</text>
+      <rect class="node store" x="230" y="470" width="150" height="145" rx="10"/>
+      <text class="t" x="305" y="500" text-anchor="middle">redis</text>
+      <text class="sub" x="305" y="523" text-anchor="middle">redis:8-alpine</text>
+      <text class="sub" x="305" y="543" text-anchor="middle">256 MB, LRU</text>
+      <text class="sub" x="305" y="563" text-anchor="middle">no persistence</text>
+      <text class="sub" x="305" y="583" text-anchor="middle">127.0.0.1:6379</text>
+
+      <rect class="node store" x="42" y="655" width="338" height="90" rx="10"/>
+      <text class="t" x="211" y="684" text-anchor="middle">alloy</text>
+      <text class="sub" x="211" y="708" text-anchor="middle">OTLP collector · always on</text>
+      <text class="sub" x="211" y="730" text-anchor="middle">disk queue · volume alloy-data</text>
+
+      <rect class="zone" x="405" y="640" width="290" height="125" rx="12"/>
+      <text class="zlbl" x="421" y="662">Compose profile</text>
+      <rect class="node store" x="421" y="672" width="258" height="82" rx="10"/>
+      <text class="t" x="550" y="698" text-anchor="middle">observability</text>
+      <text class="sub" x="550" y="720" text-anchor="middle">Loki · Tempo · Mimir · Grafana</text>
+      <text class="sub" x="550" y="741" text-anchor="middle">Grafana on 127.0.0.1:3000</text>
 
       <rect class="node ext" x="415" y="160" width="270" height="80" rx="10"/>
       <text class="t" x="550" y="192" text-anchor="middle">Browser</text>
@@ -127,10 +141,13 @@
       <text class="lbl" x="398" y="153" text-anchor="middle">:5173</text>
       <path class="flow" marker-end="url(#ct-ah)" d="M211,240 V288"/>
       <text class="lbl" x="221" y="270">proxy /api, /ws</text>
-      <path class="flow" marker-end="url(#ct-ah)" d="M124,410 V468"/>
-      <text class="lbl" x="132" y="444">SQL</text>
-      <path class="flow" marker-end="url(#ct-ah)" d="M297,410 V468"/>
-      <text class="lbl" x="305" y="444">RESP</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M117,410 V468"/>
+      <text class="lbl" x="125" y="444">SQL</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M305,410 V468"/>
+      <text class="lbl" x="313" y="444">RESP</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M211,410 V653"/>
+      <text class="lbl" x="219" y="640">OTLP</text>
+      <path class="flow" marker-end="url(#ct-ah)" d="M380,700 H419"/>
       <path class="flow ret" marker-end="url(#ct-ah2)" d="M415,350 H382"/>
       <path class="flow ret" marker-end="url(#ct-ah2)" d="M415,525 H382"/>
       <path class="flow" d="M360,290 V268 H705 M705,148 V492"/>
@@ -140,7 +157,7 @@
       <path class="flow" marker-end="url(#ct-ah)" d="M705,375 H733"/>
       <path class="flow" marker-end="url(#ct-ah)" d="M705,492 H733"/>
     </svg>
-    <figcaption>The local stack as defined in <code>docker-compose.yml</code>. The frontend (5173) and backend (8000) ports are open to the LAN; Postgres and Redis bind to loopback, for host tools only. Which model service is called depends on <code>WCL_LLM_PROVIDER</code> (see <a href="models.html">Models &amp; providers</a>).</figcaption>
+    <figcaption>The local stack as defined in <code>docker-compose.yml</code>. The frontend (5173) and backend (8000) ports are open to the LAN; Postgres, Redis, Alloy and Grafana bind to loopback. The profile box stays off unless <code>--profile observability</code> is given. Claude Code reaches Alloy too, through <code>bin/claude-otel</code> (see <a href="observability.html">Observability</a>). Which model service is called depends on <code>WCL_LLM_PROVIDER</code> (see <a href="models.html">Models &amp; providers</a>).</figcaption>
   </figure>
 
   <h3>Why</h3>
@@ -149,6 +166,7 @@
   <p class="why">Redis runs without persistence and with LRU eviction. It is a disposable cache, so recreating the container just empties it.<cite>specs/014-redis-wcl-cache/research.md R11 · docker-compose.yml</cite></p>
   <p class="why">The database image is <code>pgvector/pgvector:pg17-trixie</code>: the same major version and on-disk format as <code>postgres:17</code>, so an existing <code>pgdata</code> volume starts as is. The <code>trixie</code> tag matches the glibc of <code>postgres:17</code>; the plain <code>pg17</code> tag would leave a collation-version mismatch on an existing database.<cite>docker-compose.yml (comment on db.image) · backend/migrations/versions/0019_kb_chunks.py (docstring)</cite></p>
   <p class="why">There are two database roles. The owner runs migrations, and the app connects as a runtime role without BYPASSRLS, so row-level security actually constrains it. The role is created by a migration rather than a mounted init script, because init scripts only run on a fresh volume and are fragile across platforms.<cite>specs/006-multi-tenancy/research.md R4 · docker-compose.yml (comment on db.environment) · backend/migrations/versions/0004_rls.py</cite></p>
+  <p class="why">Alloy is always on and the storage backends sit behind a profile, so the app and Claude Code can send telemetry from day one and a plain <code>docker compose up</code> stays light. Alloy queues on disk until the backends run.<cite>specs/telemetry_spec.md §14.1 (decision 8) · docker-compose.yml (comments on alloy)</cite></p>
   <p class="why">ADC is mounted read-only rather than shipping a key, so the same code path works unchanged on Cloud Run with an attached service account.<cite>specs/001-streaming-chat-frontend/research.md §6 · documentation/deployment.md (Decisions)</cite></p>
 </section>
 
@@ -196,6 +214,7 @@
       <tr><td>Cache &amp; raw store</td><td><code>REDIS_URL</code> (empty means no cache), <code>WCL_CACHE_ENABLED</code>, per-family TTLs, <code>WCL_FETCH_PERSIST_*</code>, <code>WCL_STORE_READS_ENABLED</code>, <code>RAW_STORE_REVERIFY_DAYS</code> (1), <code>RAW_STORE_PROBE_TIMEOUT_MS</code> (400)</td><td><code>wcl_agent/cache/</code>, <code>services/fetch_persistence.py</code>, <code>services/raw_fetch_reads.py</code></td></tr>
       <tr><td>Knowledge base</td><td><code>KB_INDEX_ENABLED</code>, <code>KB_EMBED_ENABLED</code>, <code>KB_EMBED_MODEL</code> (<code>gemini-embedding-001</code>), queue and batch sizes, <code>KB_EMBED_SWEEP_S</code> (600)</td><td><code>backend/app/kb/</code>; see <a href="knowledge-base.html">Knowledge base</a></td></tr>
       <tr><td>Guides</td><td><code>WCL_GUIDE_*</code> (concurrency 2, review rounds 3, per-minute caps), <code>WOW_VERSION_URL</code>, <code>WOW_NEWS_URL</code></td><td><code>services/guide.py</code>, <code>services/guide_pipeline/</code></td></tr>
+      <tr><td>Telemetry</td><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code> (unset means no telemetry; compose sets <code>http://alloy:4318</code>), <code>WCL_ENVIRONMENT</code> (<code>dev</code>, <code>ci</code> or <code>prod</code>; only <code>dev</code> exports prompt and tool content), <code>WCL_GIT_SHA</code> (else <code>git rev-parse</code>, else <code>unknown</code>). Compose-only: <code>GRAFANA_ADMIN_PASSWORD</code>, <code>GRAFANA_PORT</code> (3000), <code>ALLOY_OTLP_GRPC_PORT</code> (4317), <code>ALLOY_OTLP_HTTP_PORT</code> (4318), <code>ALLOY_UI_PORT</code> (12345), <code>ALLOY_CONFIG_DIR</code></td><td><code>backend/app/telemetry/config.py</code> (not <code>config.py</code>: it must run before ADK is imported); see <a href="observability.html#runtime">Observability</a></td></tr>
       <tr><td>Welcome page</td><td><code>RECENT_RAIDS_REFRESH_MIN_S</code> (900), <code>RECENT_RAIDS_STALE_S</code> (300), <code>RECENT_RAIDS_REFRESH_TIMEOUT_S</code> (120), display caps (6 + 6), <code>WCL_INVESTIGATE_PER_MINUTE</code> (5)</td><td><code>services/recent_raids.py</code>, <code>api/raids.py</code></td></tr>
     </tbody>
   </table></div>
@@ -238,7 +257,8 @@
   <h3>What it does, and where it lives</h3>
   <ul>
     <li><code>bin/00_init_migrate_db.sh</code>: sources <code>.env</code>, runs <code>uv sync --all-extras</code> (creating <code>.venv</code> if that fails, then syncing again), starts only <code>db</code>, then runs <code>alembic -c backend/alembic.ini upgrade head</code>. If that upgrade fails, it tries the fresh-database path: upgrade to <code>0002_auth_tenancy</code>, run <code>backend.cli.bootstrap_admin</code>, then upgrade to head.</li>
-    <li><code>bin/01_start_app.sh [--build]</code>: runs the init script, then <code>docker compose up -d</code> (passing the flag through), prints <code>docker compose ps</code> and follows the logs. Ctrl+C or exit runs <code>docker compose down</code>, so the stack stops with the script.</li>
+    <li><code>bin/01_start_app.sh [--build]</code>: runs the init script, exports <code>WCL_GIT_SHA</code> (the short commit, the backend's <code>service.version</code>, since the image has no <code>.git</code>), then <code>docker compose up -d</code> (passing the flag through), prints <code>docker compose ps</code> and follows the logs. Ctrl+C or exit runs <code>docker compose down</code>, so the stack stops with the script.</li>
+    <li><code>bin/claude-otel [claude arguments...]</code>: starts Claude Code with OpenTelemetry pointed at the local Alloy. It is not part of the app's start-up; see <a href="observability.html#build">Observability</a>.</li>
     <li><code>backend/cli/init_db.py</code> does the same migrate → founder → migrate sequence as one idempotent Python command: upgrade to <code>0002_auth_tenancy</code>, create the founder only if no active platform admin exists, then upgrade to head. Safe to run on every deploy.</li>
     <li>Alembic connects as the owner role (<code>settings.owner_database_url</code>, set in <code>backend/migrations/env.py</code>) and leaves ADK's own tables (<code>sessions</code>, <code>events</code>, <code>app_states</code>, <code>user_states</code>) out of autogenerate. The migrations are on <a href="database.html">Database &amp; migrations</a>.</li>
   </ul>
@@ -288,9 +308,10 @@
   <ul>
     <li><code>docker-compose.yml</code>, <code>backend/Dockerfile</code>, <code>frontend/Dockerfile</code>, <code>frontend/nginx.conf</code>, <code>frontend/vite.config.ts</code>, <code>frontend/package.json</code>, <code>pyproject.toml</code></li>
     <li><code>.env.example</code>, <code>backend/app/config.py</code>, <code>backend/app/main.py</code> (lifespan, <code>_boot</code>, <code>_load_models</code>), <code>wcl_agent/llm/provider.py</code>, <code>wcl_agent/client/wcl_client.py</code></li>
-    <li><code>bin/00_init_migrate_db.sh</code>, <code>bin/01_start_app.sh</code>, <code>backend/cli/init_db.py</code>, <code>backend/cli/bootstrap_admin.py</code>, <code>backend/cli/kb_backfill.py</code>, <code>backend/evals/guides/__main__.py</code>, <code>backend/evals/kb/__main__.py</code>, <code>wcl_agent/cli.py</code></li>
+    <li><code>bin/00_init_migrate_db.sh</code>, <code>bin/01_start_app.sh</code>, <code>bin/claude-otel</code>, <code>backend/cli/init_db.py</code>, <code>backend/cli/bootstrap_admin.py</code>, <code>backend/cli/kb_backfill.py</code>, <code>backend/evals/guides/__main__.py</code>, <code>backend/evals/kb/__main__.py</code>, <code>wcl_agent/cli.py</code></li>
+    <li><code>observability/grafana/entrypoint.sh</code>, <code>backend/app/telemetry/config.py</code></li>
     <li><code>backend/migrations/env.py</code>, <code>backend/migrations/versions/0004_rls.py</code>, <code>backend/migrations/versions/0019_kb_chunks.py</code></li>
-    <li><code>documentation/deployment.md</code>, <code>todo.md</code>, <code>specs/001-streaming-chat-frontend/research.md</code>, <code>specs/006-multi-tenancy/research.md</code>, <code>specs/014-redis-wcl-cache/research.md</code>, <code>specs/052-turn-and-startup-hardening/research.md</code> and <code>spec.md</code>, <code>.specify/memory/constitution.md</code></li>
+    <li><code>documentation/deployment.md</code>, <code>todo.md</code>, <code>specs/001-streaming-chat-frontend/research.md</code>, <code>specs/006-multi-tenancy/research.md</code>, <code>specs/014-redis-wcl-cache/research.md</code>, <code>specs/052-turn-and-startup-hardening/research.md</code> and <code>spec.md</code>, <code>specs/telemetry_spec.md</code>, <code>.specify/memory/constitution.md</code></li>
   </ul>
 </footer>
 

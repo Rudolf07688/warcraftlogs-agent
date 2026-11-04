@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
-<meta name="verified-at" content="commit 1df8f6f · 2026-11-04">
+<meta name="verified-at" content="commit 1dce358 · 2026-11-04">
 <title>Keeping Docs Current · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -75,6 +75,7 @@
     <tbody>
       <tr><td><a href="deployment.html">Deployment &amp; config</a></td><td>Compose file, Dockerfiles, nginx, <code>bin/</code>, <code>.env.example</code>, <code>backend/app/config.py</code>, <code>startup.py</code>, <code>backend/cli/</code>, <code>pyproject.toml</code></td></tr>
       <tr><td><a href="backend-api.html">Backend API</a></td><td>Everything in <code>backend/app/</code> that no more specific page owns: <code>main.py</code>, routers, services, background work</td></tr>
+      <tr><td><a href="observability.html">Observability</a></td><td><code>observability/</code> (Alloy, Loki, Tempo, Mimir, Grafana config and tests), <code>backend/app/telemetry/</code>, <code>bin/claude-otel</code></td></tr>
       <tr><td><a href="auth-tenancy.html">Auth &amp; multi-tenancy</a></td><td><code>backend/app/auth/</code>, <code>tenancy/</code>, the auth and admin-user routers, user/session/invitation/reset/tenant/audit repositories and services</td></tr>
       <tr><td><a href="database.html">Database &amp; migrations</a></td><td><code>backend/migrations/</code>, <code>backend/app/db/</code></td></tr>
       <tr><td><a href="wcl-data.html">WCL client, cache &amp; store</a></td><td><code>wcl_agent/client/</code>, <code>wcl_agent/cache/</code>, fetch persistence, store reads, <code>raw_fetches</code> repository, kickoff pre-fetch, stored-data tools, cache stats</td></tr>
