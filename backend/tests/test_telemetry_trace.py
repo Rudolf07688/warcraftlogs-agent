@@ -10,8 +10,10 @@ the test's objects and removed afterwards.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
+from fastapi import WebSocketDisconnect
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
@@ -159,3 +161,49 @@ def test_each_turn_starts_its_own_trace_even_inside_another_span(otel):
     turns = [s for s in capture.spans() if s.name == "chat turn"]
     assert len(turns) == 2 and all(s.parent is None for s in turns)
     assert len({s.context.trace_id for s in turns}) == 2
+
+
+class _ClientSocket:
+    """Just enough of a Starlette WebSocket for ``ws.chat``: two turns, then a disconnect."""
+
+    def __init__(self, *turns: dict) -> None:
+        self.turns = list(turns)
+        self.headers = {"origin": "http://test"}
+        self.cookies: dict[str, str] = {}
+        self.app = app
+
+    async def accept(self) -> None:
+        pass
+
+    async def receive_json(self) -> dict:
+        if not self.turns:
+            raise WebSocketDisconnect()
+        return self.turns.pop(0)
+
+    async def send_json(self, payload: dict) -> None:
+        pass
+
+
+async def test_the_chat_socket_runs_every_turn_in_its_own_trace(otel, monkeypatch):
+    capture = otel(environment="prod")
+    identity = SimpleNamespace(user_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    seen = []
+
+    async def authenticate(_cookie):
+        return identity
+
+    async def start_turn(sock, turn, ident, *, fallback_model=None):
+        seen.append(trace.get_current_span().get_span_context())
+
+    monkeypatch.setattr(ws_mod, "origin_matches", lambda _origin: True)
+    monkeypatch.setattr(ws_mod, "authenticate_session", authenticate)
+    monkeypatch.setattr(ws_mod, "resolve_chat_model", lambda _app, model: model)
+    monkeypatch.setattr(ws_mod, "fallback_model_for", lambda _app, _model: None)
+    monkeypatch.setattr(ws_mod, "_start_turn", start_turn)
+    with trace.get_tracer("t").start_as_current_span("websocket connection"):
+        await ws_mod.chat(_ClientSocket({"model": CLAUDE, "content": "one"}, {"model": CLAUDE, "content": "two"}))
+
+    turns = {s.context.span_id: s for s in capture.spans() if s.name == "chat turn"}
+    assert [ctx.span_id in turns for ctx in seen] == [True, True]
+    assert all(s.parent is None for s in turns.values())
+    assert len({s.context.trace_id for s in turns.values()}) == 2

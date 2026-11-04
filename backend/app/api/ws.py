@@ -46,6 +46,7 @@ from ..schemas import (
     SuggestionsFrame,
 )
 from ..suggestions import generate_followups
+from ..telemetry import chat_turn_span
 from ..services import conversation_titles
 from ..services import graphs as graphs_service
 from ..services import known_entities
@@ -577,9 +578,10 @@ async def chat(ws: WebSocket) -> None:
             # Feature 032 (D4): an unserved model (say, after a provider switch) continues on
             # the default instead of failing the turn.
             turn = turn.model_copy(update={"model": resolve_chat_model(ws.app, turn.model)})
-            await _start_turn(
-                sock, turn, identity, fallback_model=fallback_model_for(ws.app, turn.model)
-            )
+            with chat_turn_span():  # 054: each turn is the root of its own trace
+                await _start_turn(
+                    sock, turn, identity, fallback_model=fallback_model_for(ws.app, turn.model)
+                )
     except WebSocketDisconnect:
         return
     finally:

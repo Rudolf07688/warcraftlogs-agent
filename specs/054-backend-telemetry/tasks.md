@@ -32,7 +32,7 @@
 ## Phase 6: US4 one turn = one trace (sc-403)
 
 - [X] T012 [US4] Instrumentors (FastAPI excluded urls, SQLAlchemy global, Redis, httpx) in backend/app/telemetry/setup.py; `chat_turn_span()` in backend/app/telemetry/__init__.py
-- [ ] T013 [US4] Wrap each turn in `chat_turn_span` in backend/app/api/ws.py (pending grant `owner:backend/app/api/ws.py`)
+- [X] T013 [US4] Wrap each turn in `chat_turn_span` in backend/app/api/ws.py (granted #28, #32)
 - [X] T014 [US4] Tests in backend/tests/test_telemetry_trace.py: one turn through `_start_turn` with scripted Claude, a WCL tool over a mock transport, fake Redis and the SQLite DB → one trace id, expected parent chain; HTTP route span uses the template, /health untraced; ws.chat opens a fresh root per turn
 
 ## Phase 7: US5 one-shot GenAI spans (sc-404)
@@ -42,7 +42,7 @@
 
 ## Phase 8: Polish
 
-- [ ] T017 Full suite via check.py, GitNexus detect-changes, board contract note (event names), live-check question, hand-off
+- [X] T017 Full suite via check.py, GitNexus detect-changes, board contract note (event names), live-check question, hand-off
 
 ## Dependencies
 
