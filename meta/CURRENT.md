@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-04 (sprint 2026-11-04 launched: Telemetry 1)
+Updated: 2026-11-04 (sprint 2026-11-04 closed and merged)
 
 ## Topic
 
@@ -14,45 +14,34 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- Sprint 2026-11-02 ran fully autonomously on the owner's steer ("start and complete the
-  sprint. No further interactions from me."). 20/20 pts, 14 stories Under Review in
-  iteration 366; merged into main (557e3b6) and pushed on the owner's go, with the wrap-up commits.
-  Team report: `meta/sprints/2026-11-02/team-report.html`; sprint review in
-  `sprints/2026-11-02/`. DB backup before migration 0021: `~/dev/wcl-backups/pre-sprint-2026-11-02.dump`.
-- Readings: 1.27 M/pt (was 1.03), coordination 16% (lowest). Build cost rose because
-  builders were resumed for the QA fix (fixed in `product-owner.md`). P10 near misses
-  (Maren 0.134 M/pt, Shortcut 20%); P11 worked live (0 FAIL, found the soft kickoff miss).
-- The owner's `.env` SECRET_KEY is a placeholder: fine on localhost, but the app now refuses
-  to start with it off localhost (sc-356). Tell the owner before any shared deploy.
-
-- 2026-11-04: architecture docs rebuilt as index + 13 pages, checked at `1df8f6f`; close-out
-  step added (PO wrap-up 5, team-launch gate 4, preference 24, `.claude/team/archdocs.py`).
-  First real use: next sprint's wrap-up.
-
-- 2026-11-04 (later): telemetry/observability planned with Maren (read-only co-plan) and the
-  owner. Plan locked in `specs/telemetry_spec.md` §14: 3 sprints, 23/23/20 pts, epics 395–397,
-  27 stories in Backlog. Owner: board only, no sprint yet; wrapper `bin/claude-otel`; content
-  capture ON in dev; persistence (volumes + Alloy file queue) before Grafana.
-- 2026-11-04 12:30Z: sprint-2026-11-04 launched (Telemetry 1, 23 pts). Branch from 38606fd,
-  worktrees sprint/dev-a/dev-b, board sprint-2026-11-04, Maren resumed with planning context.
-  gcloud ADC refreshed by the owner at launch (verified).
-- 14:27Z: 053 merged 4412117, 054 merged c212475 (1 security rework round). Live pass PASS
-  (board #43); found pre-existing KB embedding timeout via telemetry (sc-428). Waiting: QA sweep, wrap-up.
+- Sprint 2026-11-04 (Telemetry 1, epic 395) closed: 23/23 pts + D13 (3 pts, sc-439) added
+  live on the owner's request. Merged into main locally (57c77ba), **not pushed**. Worktrees
+  and sprint branches removed; QA reports copied to `qa-reports/2026-11-04*`. Stories
+  Under Review; Done stays the owner's.
+- Observability stack runs from main (`docker compose -p warcraftlogs-agent --profile
+  observability up -d`), Grafana http://127.0.0.1:3000 with three dashboards: Claude Code:
+  Overview, App: API and LLM, Agent Team: Improvement.
+- Team history is now data: `uv run python .claude/team/teamstats.py` at every wrap-up
+  (team-launch step 3). 1.17 M/pt, 7.5 min/pt (55-min unwatched question), Nils 268k
+  context per call.
+- Old Mimir series still carry user/account id labels (from before the Alloy restart);
+  offered to wipe the volume, owner's call.
+- The owner's `.env` SECRET_KEY is a placeholder: fine on localhost; tell the owner before
+  any shared deploy.
 
 ## Open with the owner
 
-1. Longer-lived Google credentials (service account) for the live pass; offered to draft.
-2. Session boundaries: this sprint ran in its own fresh session with no compaction.
-3. Owner feedback after the sprint: reports were unreadable (shell CSS bug, fixed a2c0ce5)
-   and the team report gained an "Earlier sprints" tab on request. Owner: "Well done".
+1. Push main (asks every time).
+2. Longer-lived Google credentials (service account) for live passes; offered to draft.
+3. Wipe the pre-fix Mimir series? (local only)
 
 ## For the next sprint (mine)
 
-- Render-check every report (headless screenshot per tab) before sending paths.
-- Read the trial again: QA fixes in fresh agents (build per point back toward 0.6?), short
-  developer results (Maren's Agent share 32% → < 15%).
-- Candidates: "Every chat request starts at about 23k prompt tokens" (sc-367), "uploader
-  text still raw in the other tools" (sc-368), breaker identity gaps (sc-369).
+- Telemetry 2 (epic 396, 23 pts) extends the starter dashboards (sc-408, sc-413 comments).
+- Start the sprint session through `bin/claude-otel` so the team itself is observed.
+- Render-check every report; restart config-reading services before live checks.
+- Candidates: "Every chat request starts at about 23k prompt tokens" (sc-367), the chat
+  input that stays locked after a drop (sc-376).
 
 ## How to resume
 

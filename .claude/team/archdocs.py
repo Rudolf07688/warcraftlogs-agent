@@ -83,9 +83,9 @@ PAGE_PATHS = [
     ("pages/backend-api.html", ["backend/app/"]),
     ("pages/frontend.html", ["frontend/"]),
 ]
-SHARED = {"pyproject.toml": ["pages/deployment.html", "pages/backend-api.html"],
+SHARED = {"pyproject.toml": ["pages/deployment.html", "pages/backend-api.html", "pages/observability.html"],
           "frontend/package.json": ["pages/frontend.html"],
-          "docker-compose.yml": ["pages/deployment.html", "pages/database.html"]}
+          "docker-compose.yml": ["pages/deployment.html", "pages/database.html", "pages/observability.html"]}
 # Paths that never affect the architecture pages.
 IGNORE = re.compile(r"^(meta/|sprints/|specs/|qa-reports/|\.claude/|\.specify/|\.githooks/|documentation/(?!deployment\.md)|"
                     r"todo\.md|user_stories\.md|quotes\.md|tmp\.txt|CLAUDE\.md|AGENTS\.md|README\.md|LICENCE|\.gitignore|\.gitnexusignore|uv\.lock|package-lock\.json|"

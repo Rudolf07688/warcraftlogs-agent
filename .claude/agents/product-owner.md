@@ -188,8 +188,8 @@ manifests and migrations go to one developer at a time.
 **Wait on the board yourself, don't wait to be woken.** A developer's completion notice goes
 to team-lead, not to you, and an idle agent sees no board entries. So right after each
 launch (and each resume), arm a background wait with Bash `run_in_background: true`:
-`python3 .claude/team/board.py wait --kind handoff --kind blocker --author <dev-name>`
-(90-minute default timeout; exit 2 on expiry: check the developer, then re-arm). Then end
+`python3 .claude/team/board.py wait --kind handoff --kind blocker --kind question --author <dev-name>`
+(questions too: on 2026-11-04 a developer's question waited 55 minutes unseen; 90-minute default timeout; exit 2 on expiry: check the developer, then re-arm). Then end
 your turn: you are re-invoked when the entry lands, within seconds, at no token cost while
 waiting. Tested 2026-11-01. Post a `notice` that you run your own watcher, so team-lead
 stops sending wake-ups.

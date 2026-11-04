@@ -644,3 +644,12 @@ through respawns as the same named member, with its own small, curated memory. I
   Next sprint levers: quick mode for the stack test scripts; split 12-point security-core
   streams; measure screenshot `Read` cost (90% of the lead's new context by characters);
   provider switch in `livecheck.py`.
+- **2026-11-04 (wrap-up):** On the owner's request during the live walkthrough, the team's
+  history became data: `.claude/team/teamstats.py` pushes each sprint's facts (this
+  baseline table, `usage.txt`, the board export) to Mimir, and Grafana's "Agent Team:
+  Improvement" dashboard (D13, sc-439) shows them across all nine sprints. It runs at
+  every wrap-up now (team-launch step 3). First reading: minutes per point 7.5 on 11-04 vs
+  4–6 before, mostly the unwatched question; Nils's 268k context per call is the largest
+  single lever. Lesson: the live pass ran on an Alloy started before the QA fix to its
+  config, so identifier labels still reached Mimir; restart config-reading services
+  before a live check (lead memory).

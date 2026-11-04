@@ -115,7 +115,9 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
      - git, for lines of code against lines of Spec Kit documents
    - **Contents:**
      - the cost per point compared with the baseline table in `meta/team-optimisation.md`
-       (add this sprint's row there too)
+       (add this sprint's row there too), then push the sprint's facts to the
+       "Agent Team: Improvement" dashboard: `uv run python .claude/team/teamstats.py`
+       (needs Alloy up; check the new sprint shows in Grafana)
      - the coordination, build and QA shares
      - what worked and what to change next time
 4. **Architecture docs gate** (owner's rule, 2026-11-04): run from the sprint worktree,
