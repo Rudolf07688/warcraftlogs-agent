@@ -8,6 +8,12 @@ import gc
 import logging
 from contextlib import asynccontextmanager
 
+# Telemetry first (feature 054): the providers and the global instrumentation must exist
+# before FastAPI and ADK are imported. A no-op unless an OTLP endpoint is configured.
+from .telemetry import configure_telemetry, otlp_log_handler
+
+configure_telemetry()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from google.adk.sessions import DatabaseSessionService
@@ -89,6 +95,8 @@ def _install_app_logging() -> None:
 
 _install_app_logging()
 _install_log_redaction()  # after: the redaction filter attaches to the handler above too
+if (_otlp_handler := otlp_log_handler()) is not None:  # 054: carries its own RedactionFilter
+    logging.getLogger().addHandler(_otlp_handler)
 from .db.session import engine
 from .greeting import GREETING_MODEL, get_greeting
 from .kb.indexer import KbIndexer
