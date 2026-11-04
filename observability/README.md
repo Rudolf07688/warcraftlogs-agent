@@ -65,6 +65,30 @@ log body rules) → metrics: drop `session.id`, `ccr.session.id`, `prompt.id`, `
 - **Loki index labels**: `service_namespace`, `service_name`, `deployment_environment_name`,
   `app_layer`, `content`; every other attribute is structured metadata.
 
+## Team board (`.claude/team/board.py`, feature 055)
+
+Alloy tails the board's JSONL files (`$(git rev-parse --git-common-dir)/team-board/*.jsonl`,
+mounted from `TEAM_BOARD_DIR`, default `./.git/team-board`; in a worktree `./.git` is a
+file, so export `TEAM_BOARD_DIR` there) through the same chain as OTLP logs, so board text is
+redacted like everything else. One record per entry: body = text, timestamp = the entry's
+`ts`, `service_name="team-board"`, the fields (`board`, `author`, `kind`, `key`, `entry_id`,
+`supersedes`) as structured metadata, and the `TRACEPARENT` Claude Code passed to the
+posting Bash command as the record's trace and span id: the Loki "View trace" link opens the
+author's tool span (the trace id alone is the lead's turn, shared by its sub-agents). Board
+entries stay in the 30-day stream. Find a sprint's hand-offs with
+`{service_name="team-board"} | kind="handoff" | board="sprint-2026-11-04b"`.
+
+After Loki lost its data, `observability/board-backfill.sh` re-reads every board file
+(entries within Loki's 7-day reject window; older sprints are in `meta/sprints/`). Re-reading
+twice does not duplicate. Session transcripts are not tailed.
+
+## Recording rules (`mimir/rules/anonymous/`, feature 055)
+
+The Mimir ruler reads one rule file per owner from the repository (tenant `anonymous`),
+re-read every minute, evaluated every minute. Dashboards query these aliases, never raw
+metric names (spec §8.3); the list is in `specs/055-build-telemetry/contracts/aliases.md`.
+Probe: `GET mimir:9009/prometheus/api/v1/rules`.
+
 ## Persistence and the export queue
 
 Every backend and Grafana has a named volume. Each Alloy exporter has a persistent queue
@@ -89,6 +113,7 @@ its volumes at the end (`KEEP=1` keeps it).
 | `test/redaction.sh` | Seeded secrets from both layers are hashed or masked in Loki, Tempo and Mimir; banned metric labels absent; content routing. |
 | `test/mutation.sh` | Disabling any one redaction, label or routing rule makes the redaction check fail. Mutates a temporary copy of `alloy/` mounted only into the test project (`ALLOY_CONFIG_DIR`); the checkout's files are never written. |
 | `test/provisioning.sh` | Datasources load from file, are healthy and carry the trace↔logs and exemplar correlations; Grafana's anonymous Viewer, admin password (none when unset) and no plugin preinstall. |
+| `test/board.sh` | Board entries (written by `board.py`) in Loki with their traceparent and only allowlisted index labels; a seeded secret masked; an entry posted while Loki is down arrives; backfill after Loki data loss, without duplicates. |
 | `test/claude-otel.sh` | The wrapper's env, argument pass-through and the Alloy-down warning (stub `claude`, no Docker). |
 
 ## Browser telemetry (Faro, feature 057)
