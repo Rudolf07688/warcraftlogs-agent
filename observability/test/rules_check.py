@@ -137,8 +137,13 @@ def main() -> int:
     ap.add_argument("--cost-rules", required=True)
     a = ap.parse_args()
 
-    groups = wait(a.grafana, "vector(1)", 30) and get(a.grafana, "api/v1/rules").get("data", {}).get("groups", [])
-    files = {g["file"].rsplit("/", 1)[-1] for g in groups or []}
+    # The ruler reads the rule files on its first poll (every minute), so wait for them.
+    files: set[str] = set()
+    deadline = time.time() + 150
+    while time.time() < deadline and not {"build.yaml", "red.yaml", "cost.yaml"} <= files:
+        groups = get(a.grafana, "api/v1/rules").get("data", {}).get("groups", [])
+        files = {g["file"].rsplit("/", 1)[-1] for g in groups or []}
+        time.sleep(5)
     check({"build.yaml", "red.yaml", "cost.yaml"} <= files, f"rule files loaded: {sorted(files)}")
 
     start = time.time_ns() - 240 * 10**9
