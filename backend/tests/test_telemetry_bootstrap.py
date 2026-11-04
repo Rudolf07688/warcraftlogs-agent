@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 import uuid
 import subprocess
 import sys
@@ -94,6 +97,9 @@ if report["tracer_provider"] == "TracerProvider":
         span.set_attribute("gen_ai.input.messages", "x" * 100000)
         report["span_value_length"] = len(span.attributes["gen_ai.input.messages"])
     report["log_value_limit"] = os.environ.get("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT")
+    for i in range(int(os.environ.get("PROBE_BACKLOG", "0"))):  # queued for the exit-time flush
+        with tracer.start_as_current_span("backlog"):
+            logging.getLogger("backend.app.probe").warning("backlog %%d", i)
 
 report["reported_at"] = time.time()
 print("REPORT" + json.dumps(report))
@@ -197,6 +203,79 @@ def test_a_down_collector_delays_exit_by_a_few_seconds_at_most():
         {"OTEL_EXPORTER_OTLP_ENDPOINT": DEAD_COLLECTOR, "WCL_ENVIRONMENT": "prod", "PROBE_EXIT": "normal"}
     )
     assert exit_s < 7  # ~3.5 s measured; the SDK's 10 s default made it 8 s and more
+
+
+def test_a_hung_collector_with_a_backlog_delays_exit_by_the_shutdown_bound_at_most():
+    """A collector that accepts and never answers costs an export timeout per batch; the exit
+    flush of all three signals stops at SHUTDOWN_TIMEOUT_S and drops the rest (QA BUG-003)."""
+    with socket.socket() as hung:
+        hung.bind(("127.0.0.1", 0))
+        hung.listen(64)  # never accepted, never answered
+        _report, exit_s = _run_probe(
+            {
+                "OTEL_EXPORTER_OTLP_ENDPOINT": f"http://127.0.0.1:{hung.getsockname()[1]}",
+                "WCL_ENVIRONMENT": "prod",
+                "PROBE_EXIT": "normal",
+                "PROBE_BACKLOG": "3000",
+            }
+        )
+    assert exit_s < setup.SHUTDOWN_TIMEOUT_S + 2.5  # unbounded: 9-11 s measured
+
+
+class _HungProvider:
+    def __init__(self) -> None:
+        self.called = threading.Event()
+
+    def shutdown(self) -> None:
+        self.called.set()
+        threading.Event().wait()  # an export into a collector that never answers
+
+
+class _QuickProvider:
+    def __init__(self) -> None:
+        self.done = threading.Event()
+
+    def shutdown(self) -> None:
+        self.done.set()
+
+
+def test_shutdown_waits_for_all_providers_together_and_no_longer_than_the_bound():
+    hung = [_HungProvider() for _ in range(3)]
+    quick = _QuickProvider()
+    started = time.monotonic()
+    setup.shutdown([*hung, quick], timeout_s=1.0)
+    elapsed = time.monotonic() - started
+
+    assert 0.9 < elapsed < 2.5  # one shared deadline, not one per provider (3 s)
+    assert all(provider.called.is_set() for provider in hung) and quick.done.is_set()
+
+
+def test_the_exit_flush_still_delivers_to_a_collector_that_answers():
+    received: list[str] = []
+
+    class Collector(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - http.server API
+            self.rfile.read(int(self.headers["Content-Length"]))
+            received.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args) -> None:
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), Collector) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        _run_probe(
+            {
+                "OTEL_EXPORTER_OTLP_ENDPOINT": f"http://127.0.0.1:{server.server_address[1]}",
+                "WCL_ENVIRONMENT": "prod",
+                "PROBE_EXIT": "normal",
+            }
+        )
+        server.shutdown()
+    # The probe's spans and log lines wait in the queues until exit (fewer than one batch). It
+    # records no metric (its one request is /health, which isn't traced), so none are sent.
+    assert {"/v1/traces", "/v1/logs"} <= set(received)
 
 
 def test_the_suite_runs_without_a_shells_otel_settings():

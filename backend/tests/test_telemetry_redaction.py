@@ -3,6 +3,7 @@ log record, with content on, and leaves counts and ordinary text alone."""
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -11,10 +12,18 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import Event, ReadableSpan, TracerProvider
 from opentelemetry.trace import Link, SpanContext, Status, StatusCode
 from opentelemetry._logs import LogRecord
+from opentelemetry.exporter.otlp.proto.common._log_encoder import encode_logs
 
 from backend.app.auth.redaction import REDACTED
-from backend.app.telemetry import setup
-from backend.app.telemetry.redaction import MAX_VALUE_LENGTH, redact_log, redact_span, scrub_text
+from backend.app.telemetry import redaction, setup
+from backend.app.telemetry.redaction import (
+    CONTENT_RECORD_BUDGET,
+    MAX_VALUE_LENGTH,
+    TRUNCATED_FLAG,
+    redact_log,
+    redact_span,
+    scrub_text,
+)
 
 SECRET = "opaque-SECRET-054"
 _CTX = SpanContext(trace_id=1, span_id=2, is_remote=False)
@@ -190,3 +199,79 @@ def test_span_attributes_are_cut_at_the_same_length():
         span.set_attribute("gen_ai.input.messages", "x" * 100_000)
         assert len(span.attributes["gen_ai.input.messages"]) == MAX_VALUE_LENGTH
     provider.shutdown()
+
+
+# --- the dev content log record doesn't grow with the conversation (QA PERF-001) ----------
+
+LOKI_LIMIT = 65_536
+
+
+def _round(turns: int) -> ReadableLogRecord:
+    """ADK's operation-details record late in a conversation: every earlier turn with an 11 KB
+    WCL tool result, the system instructions, the tool definitions and this round's reply."""
+    fights = json.dumps([{"id": j, "name": 'Boss "x"', "dps": 1234.5} for j in range(260)])
+    messages = []
+    for i in range(turns):
+        messages += [
+            {"role": "user", "parts": [{"type": "text", "content": f"question {i}"}]},
+            {"role": "assistant", "parts": [{"type": "tool_call", "id": f"c{i}", "arguments": {"code": "a"}}]},
+            {"role": "user", "parts": [{"type": "tool_call_response", "id": f"c{i}", "response": {"result": fights}}]},
+        ]
+    messages[-3]["parts"][0]["content"] += f" token={SECRET}"
+    return _log(
+        None,
+        {
+            "gen_ai.request.model": "m",
+            "gen_ai.usage.input_tokens": 1200,
+            "gen_ai.input.messages": messages,
+            "gen_ai.output.messages": [{"role": "assistant", "parts": [{"type": "text", "content": "the reply"}]}],
+            "gen_ai.system_instructions": [{"type": "text", "content": "instructions " * 1000}],
+            "gen_ai.tool.definitions": [{"name": f"t{k}", "description": "d" * 400} for k in range(20)],
+        },
+        event_name="gen_ai.client.inference.operation.details",
+    )
+
+
+def test_a_long_conversations_content_record_fits_loki_with_the_newest_messages():
+    record = redact_log(_round(50), content_allowed=True)
+    attributes = record.log_record.attributes
+
+    assert len(encode_logs([record]).SerializeToString()) < LOKI_LIMIT
+    assert len(json.dumps(dict(attributes))) < LOKI_LIMIT
+    messages = attributes["gen_ai.input.messages"]
+    whole = _round(1).log_record.attributes["gen_ai.input.messages"][-1]
+    assert messages[-1] == {**whole, "parts": [{**whole["parts"][0], "id": "c49"}]}  # this round's tool result
+    assert messages[-3]["parts"][0]["content"].startswith("question 49")  # this round's prompt
+    assert "question 0" not in str(messages)
+    assert attributes["gen_ai.output.messages"][0]["parts"][0]["content"] == "the reply"
+    assert attributes["gen_ai.usage.input_tokens"] == 1200
+    assert attributes[TRUNCATED_FLAG] == "true" and attributes["app.content"] == "true"
+    assert SECRET not in str(attributes)  # still scrubbed after the cut
+
+
+def test_redacting_a_content_record_costs_the_same_however_long_the_conversation(monkeypatch):
+    scrubbed: list[int] = []
+    real = redaction.scrub_text
+
+    def counting(text: str, **kwargs) -> str:
+        scrubbed.append(len(text))
+        return real(text, **kwargs)
+
+    monkeypatch.setattr(redaction, "scrub_text", counting)
+    for turns in (50, 500):
+        scrubbed.clear()
+        started = time.perf_counter()
+        redact_log(_round(turns), content_allowed=True)
+        assert time.perf_counter() - started < 1.0  # ~7 ms measured; unbounded, 500 turns is seconds
+        assert sum(scrubbed) <= CONTENT_RECORD_BUDGET + 100
+
+
+def test_a_short_content_record_is_exported_whole():
+    record = _log(
+        None,
+        {"gen_ai.input.messages": [{"role": "user", "parts": [{"type": "text", "content": "hi"}]}]},
+        event_name="gen_ai.client.inference.operation.details",
+    )
+    attributes = redact_log(record, content_allowed=True).log_record.attributes
+    assert attributes["gen_ai.input.messages"] == record.log_record.attributes["gen_ai.input.messages"]
+    assert TRUNCATED_FLAG not in attributes
