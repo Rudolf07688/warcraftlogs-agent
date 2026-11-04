@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-04 (sprint 2026-11-04b merged, all Done; push pending)
+Updated: 2026-11-04 (sprint 2026-11-04b closed, merged and pushed)
 
 ## Topic
 
@@ -17,17 +17,21 @@ The agent-team redesign: persistence and autonomy. Full record in
 - Sprint 2026-11-04b (Telemetry 2, epic 396): 24/24 pts, merged into main 2c7a67f on the
   owner's "close it all out"; 9 stories + epic 396 Done, iterations 425/442 end 2026-11-04.
   Worktrees and sprint/feature branches removed, QA reports copied to qa-reports/2026-11-04b*,
-  stack recreated from main. Push to origin was blocked by the permission classifier: the
-  owner runs `git push origin main` (35 commits ahead). Team report meta/sprints/2026-11-04b/.
+  stack recreated from main. Owner pushed main (my push was blocked by the permission
+  classifier). Team report meta/sprints/2026-11-04b/.
 - Telemetry 1 stories and the 24 older Under Review stories: Done on the owner's word 2026-11-04.
 - Lessons this sprint (in lead.md): proofs on real-shaped data, render checks taller than the
   page, search Shortcut before filing, run tools from the branch that has the change.
 
+## Next session: meta first
+
+Owner, 2026-11-04: "Next time we will speak meta again first." Open the next session with a
+meta discussion (team, process, tooling) before any sprint; no sprint launch until then.
+
 ## Open with the owner
 
-1. Push main to origin (owner, after the classifier block).
-2. Longer-lived Google credentials (service account) for live passes; offered to draft.
-3. Wipe the pre-fix Mimir series? (local only)
+1. Longer-lived Google credentials (service account) for live passes; offered to draft.
+2. Wipe the pre-fix Mimir series? (local only)
 
 ## For the next sprint (mine)
 
