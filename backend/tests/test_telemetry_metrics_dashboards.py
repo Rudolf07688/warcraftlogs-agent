@@ -47,13 +47,41 @@ def recorded() -> set[str]:
     return {rule["record"] for group in rules["groups"] for rule in group["rules"]}
 
 
-def mimir_exprs(dashboard: dict) -> list[str]:
+def mimir_targets(dashboard: dict) -> list[tuple[dict, str]]:
     return [
-        target["expr"]
+        (panel, target["expr"])
         for panel in dashboard["panels"]
         for target in panel.get("targets", [])
         if target.get("datasource", panel.get("datasource", {})).get("type") == "prometheus"
     ]
+
+
+def mimir_exprs(dashboard: dict) -> list[str]:
+    return [expr for _, expr in mimir_targets(dashboard)]
+
+
+# QA fix (live check #68 d): a count over the range comes from increase() on the raw counter or
+# histogram, in a stat or table only. A rate alias sums to fractions (each event is smeared over
+# five evaluations, and the alias never sees the created-time zero sample).
+RANGE_INCREASE = re.compile(r"increase\(([A-Za-z_:][\w:]*)(?:\{[^{}]*\})?\[\$__range\]\)")
+RAW_COUNTED = {
+    "traces_spanmetrics_calls",
+    "gen_ai_invoke_agent_duration",
+    "gen_ai_execute_tool_duration",
+    "app_rag_retrieval_duration",
+    "app_cache_requests",
+}
+# Amounts, not counts: a fraction of a token is noise on hundreds of thousands.
+AMOUNT_ALIASES = {"genai:tokens:rate5m"}
+_SUM_OVER_TIME = re.compile(r"sum_over_time\(([A-Za-z_:][\w:]*)")
+
+
+def counted_raw(panel: dict, expr: str) -> tuple[set[str], str]:
+    """Raw names a stat or table counts with increase() over the range, and the expression
+    without them."""
+    if panel["type"] not in ("stat", "table"):
+        return set(), expr
+    return {m.group(1) for m in RANGE_INCREASE.finditer(expr)}, RANGE_INCREASE.sub("increase(x[1m])", expr)
 
 
 DASHBOARD_FILES = sorted(DASHBOARDS.glob("*.json"))
@@ -66,13 +94,37 @@ def test_d6_d7_d8_are_provisioned_and_d7_keeps_its_uid():
 
 @pytest.mark.parametrize("path", DASHBOARD_FILES, ids=lambda p: p.name)
 def test_every_mimir_query_reads_aliases_only(path):
-    exprs = mimir_exprs(json.loads(path.read_text()))
-    assert exprs
+    targets = mimir_targets(json.loads(path.read_text()))
+    assert targets
     allowed = recorded() | CONTRACT_ALIASES
-    for expr in exprs:
-        names = metric_names(expr)
+    for panel, expr in targets:
+        raw, rest = counted_raw(panel, expr)
+        assert raw <= RAW_COUNTED, (expr, raw - RAW_COUNTED)
+        names = (metric_names(rest) - {"x"}) | raw
         assert names, expr
-        assert names <= allowed, (expr, names - allowed)
+        assert names - raw <= allowed, (expr, names - raw - allowed)
+
+
+@pytest.mark.parametrize("path", DASHBOARD_FILES, ids=lambda p: p.name)
+def test_counts_over_the_range_are_whole_increases_of_the_raw_series(path):
+    for panel, expr in mimir_targets(json.loads(path.read_text())):
+        assert set(_SUM_OVER_TIME.findall(expr)) <= AMOUNT_ALIASES, (panel["title"], expr)
+        if counted_raw(panel, expr)[0]:
+            assert expr.startswith("round("), (panel["title"], expr)
+            assert panel["fieldConfig"]["defaults"].get("decimals") == 0, panel["title"]
+
+
+@pytest.mark.parametrize("path", DASHBOARD_FILES, ids=lambda p: p.name)
+def test_ratios_are_fractions_on_a_fixed_axis(path):
+    """Live check #68 c: an all-zero ratio auto-scaled its percent axis to 0..10000 %."""
+    for panel, expr in mimir_targets(json.loads(path.read_text())):
+        defaults = panel["fieldConfig"]["defaults"]
+        assert defaults.get("unit") != "percent", panel["title"]  # ratios are 0..1, percentunit
+        if defaults.get("unit") != "percentunit":
+            continue
+        assert "100" not in expr, (panel["title"], expr)
+        if panel["type"] == "timeseries":
+            assert (defaults.get("min"), defaults.get("max")) == (0, 1), panel["title"]
 
 
 def test_the_name_scan_sees_raw_series():

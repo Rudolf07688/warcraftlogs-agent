@@ -299,7 +299,7 @@ async def _run_turn(
     gives no answer text after its last tool result, with no call left pending, ends with
     :data:`EMPTY_ANSWER_MESSAGE` as its last token and the outcome ``empty``.
     """
-    started = time.monotonic()
+    turn_started = time.monotonic()
     runner = _get_runner(model)
     await _ensure_session(session_id, user_id)
 
@@ -406,7 +406,7 @@ async def _run_turn(
             if getattr(event, "partial", False):
                 if not timed and text.strip():
                     timed = True
-                    _record_ttft(model, stats, getattr(event, "author", ""), started)
+                    _record_ttft(model, stats, getattr(event, "author", ""), turn_started)
                 if text_sent and not streamed:
                     text = PARAGRAPH + text
                 streamed = text_sent = True
@@ -418,7 +418,7 @@ async def _run_turn(
     # If the last round's text only arrived in the final (non-partial) event, emit it once.
     if not streamed and final_text.strip():
         if not timed:
-            _record_ttft(model, stats, final_author, started)
+            _record_ttft(model, stats, final_author, turn_started)
         yield {"type": "token", "text": PARAGRAPH + final_text if text_sent else final_text}
         answered = True
     if not answered and not pending_args and user_id != USER_ID:

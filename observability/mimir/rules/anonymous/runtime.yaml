@@ -1,8 +1,11 @@
 # Runtime-layer recording rules (feature 056, spec §8.3): the D6–D8 dashboards query these
 # aliases, never the raw OTel series, so a semantic-convention rename touches only this file.
 # Owner: 056 (contract:recording-rules). Histograms are native (exponential OTLP histograms);
-# Mimir keeps OTLP names without unit or _total suffixes. Evaluated every minute, so a total
-# over a range is sum_over_time(<rate5m alias>[range]) * 60.
+# Mimir keeps OTLP names without unit or _total suffixes. Evaluated every minute, so an amount
+# over a range is sum_over_time(<rate5m alias>[range]) * 60 (tokens). A count over a range
+# (turns, calls, searches, lookups) is round(increase(<raw counter or histogram>[range])) in its
+# stat or table: a rate alias smears each event over five evaluations and loses the created-time
+# zero sample, so its sums come out fractional.
 groups:
   - name: runtime
     interval: 1m
