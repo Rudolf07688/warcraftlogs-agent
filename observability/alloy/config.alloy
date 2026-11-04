@@ -157,7 +157,11 @@ otelcol.processor.transform "redact" {
   output {
     metrics = [otelcol.processor.transform.metric_labels.input]
     logs    = [otelcol.processor.transform.classify.input]
-    traces  = [otelcol.processor.batch.default.input]
+    traces  = [
+      otelcol.processor.batch.default.input,
+      otelcol.connector.spanmetrics.default.input,
+      otelcol.connector.servicegraph.default.input,
+    ]
   }
 }
 
@@ -185,6 +189,81 @@ otelcol.processor.transform "metric_labels" {
 
   output {
     metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+// RED from traces (feature 055, sc-409, spec §4.2 step 6): every redacted span, before any
+// sampling, so the numbers stay exact. The metrics go through metric_labels like all others,
+// so the banned identifiers can never become labels here either. Dimensions are bounded
+// enums only: never url.full, db.query.text, session.id or any id (board contract:session-id).
+// http.status_code is the old-semconv name the FastAPI instrumentation (0.63b1) still sets.
+// Series: traces_spanmetrics_calls and traces_spanmetrics_duration_bucket (Mimir adds no unit suffixes; seconds)
+// (with exemplars: a latency point links to its trace), labels service_name, span_name,
+// span_kind, status_code plus the dimensions. Dashboards query the aliases in
+// mimir/rules/anonymous/red.yaml.
+otelcol.connector.spanmetrics "default" {
+  namespace = "traces.spanmetrics"
+
+  dimension {
+    name = "http.route"
+  }
+
+  dimension {
+    name = "http.response.status_code"
+  }
+
+  dimension {
+    name = "http.status_code"
+  }
+
+  dimension {
+    name = "gen_ai.operation.name"
+  }
+
+  dimension {
+    name = "gen_ai.agent.name"
+  }
+
+  dimension {
+    name = "gen_ai.tool.name"
+  }
+
+  dimension {
+    name = "gen_ai.request.model"
+  }
+
+  dimension {
+    name = "db.system.name"
+  }
+
+  dimension {
+    name = "db.operation.name"
+  }
+
+  histogram {
+    unit = "s"
+
+    explicit {
+      buckets = ["5ms", "10ms", "25ms", "50ms", "100ms", "250ms", "500ms", "1s", "2.5s", "5s", "10s", "30s", "60s", "120s"]
+    }
+  }
+
+  exemplars {
+    enabled = true
+  }
+
+  output {
+    metrics = [otelcol.processor.transform.metric_labels.input]
+  }
+}
+
+// Service graph: request counts and latency per client -> server edge (traces_service_graph_*),
+// from client/server span pairs in the same trace.
+otelcol.connector.servicegraph "default" {
+  dimensions = ["http.route"]
+
+  output {
+    metrics = [otelcol.processor.transform.metric_labels.input]
   }
 }
 
