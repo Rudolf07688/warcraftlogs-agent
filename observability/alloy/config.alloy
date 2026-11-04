@@ -80,12 +80,14 @@ otelcol.processor.transform "stamp" {
   }
 }
 
-// Spec §4.2 step 3, both layers, every signal: hash the known secret keys and mask bearer
-// tokens, JWTs, sk-*/AIza* keys and Postgres DSN passwords in every string attribute
-// (resource, span, span event, log record, datapoint) and in log bodies. Claude Code's
-// tool.output content arrives as a span event, so the spanevent context matters.
-// Not covered: values nested in slices or nested maps (the app-side filter of 054 is the
-// first line of defense; this is the last).
+// Spec §4.2 step 3, both layers, every signal: hash the known secret keys and mask PEM
+// private keys, JWTs, bearer/Basic credentials, sk-*/AIza*/ya29./GitHub tokens, URL
+// passwords (scheme://user:pw@) and the values of NAME=value / NAME: value / "name": "value"
+// pairs whose name holds a secret word, in every string attribute (resource, span, span
+// event, log record, datapoint) and in log bodies. Claude Code's tool.output content arrives
+// as a span event, so the spanevent context matters. For the build layer Alloy is the only
+// redaction step (the app-side filter of 054 covers only the runtime layer).
+// Not covered: values nested in slices or nested maps.
 otelcol.processor.transform "redact" {
   error_mode = "ignore"
 
@@ -115,19 +117,30 @@ otelcol.processor.transform "redact" {
   }
 
   // The same masks for the log body, as a string or as a map (structured GenAI events).
+  // Keep these in step with redact.ottl (same patterns, same order).
   log_statements {
     context    = "log"
     statements = [
+      `replace_pattern(body, "-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----|[\\s\\S]*)", "<pem:redacted>") where IsString(body)`,
       `replace_pattern(body, "eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]+", "<jwt:redacted>") where IsString(body)`,
       `replace_pattern(body, "(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+", "${1}<redacted>") where IsString(body)`,
+      `replace_pattern(body, "(Basic\\s+)[A-Za-z0-9+/]{8,}=*", "${1}<redacted>") where IsString(body)`,
       `replace_pattern(body, "sk-[A-Za-z0-9_-]{16,}", "sk-<redacted>") where IsString(body)`,
       `replace_pattern(body, "AIza[0-9A-Za-z_-]{30,}", "AIza<redacted>") where IsString(body)`,
-      `replace_pattern(body, "(postgres(?:ql)?(?:\\+[a-z0-9]+)?://[^:/@\\s]+:)[^@\\s]+@", "${1}<redacted>@") where IsString(body)`,
+      `replace_pattern(body, "ya29\\.[A-Za-z0-9._-]+", "ya29.<redacted>") where IsString(body)`,
+      `replace_pattern(body, "(gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}", "${1}<redacted>") where IsString(body)`,
+      `replace_pattern(body, "([A-Za-z][A-Za-z0-9+.-]*://[^:/@\\s]*:)[^@\\s]+@", "${1}<redacted>@") where IsString(body)`,
+      `replace_pattern(body, "(?i)([A-Za-z0-9_.-]*(?:secret|passw(?:or)?d|token|key|credential|dsn|auth|cookie|session)[A-Za-z0-9_.-]*(?:\\\\?[\"'])?\\s*[:=]\\s*)(?:(\\\\?\")[^\"\\\\]*|(')[^']*|[^\\s\"',;&\\\\]+)", "${1}${2}${3}<redacted>") where IsString(body)`,
+      `replace_all_patterns(body, "value", "-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----|[\\s\\S]*)", "<pem:redacted>") where IsMap(body)`,
       `replace_all_patterns(body, "value", "eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]+", "<jwt:redacted>") where IsMap(body)`,
       `replace_all_patterns(body, "value", "(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+", "${1}<redacted>") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "(Basic\\s+)[A-Za-z0-9+/]{8,}=*", "${1}<redacted>") where IsMap(body)`,
       `replace_all_patterns(body, "value", "sk-[A-Za-z0-9_-]{16,}", "sk-<redacted>") where IsMap(body)`,
       `replace_all_patterns(body, "value", "AIza[0-9A-Za-z_-]{30,}", "AIza<redacted>") where IsMap(body)`,
-      `replace_all_patterns(body, "value", "(postgres(?:ql)?(?:\\+[a-z0-9]+)?://[^:/@\\s]+:)[^@\\s]+@", "${1}<redacted>@") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "ya29\\.[A-Za-z0-9._-]+", "ya29.<redacted>") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "(gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}", "${1}<redacted>") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "([A-Za-z][A-Za-z0-9+.-]*://[^:/@\\s]*:)[^@\\s]+@", "${1}<redacted>@") where IsMap(body)`,
+      `replace_all_patterns(body, "value", "(?i)([A-Za-z0-9_.-]*(?:secret|passw(?:or)?d|token|key|credential|dsn|auth|cookie|session)[A-Za-z0-9_.-]*(?:\\\\?[\"'])?\\s*[:=]\\s*)(?:(\\\\?\")[^\"\\\\]*|(')[^']*|[^\\s\"',;&\\\\]+)", "${1}${2}${3}<redacted>") where IsMap(body)`,
     ]
   }
 
@@ -148,8 +161,10 @@ otelcol.processor.transform "redact" {
   }
 }
 
-// Spec §4.2 step 4: per-session and per-user identifiers never become metric labels. They
-// stay on spans and logs. Removed from the resource too, or Mimir's target_info would carry
+// Spec §4.2 step 4 and §9.3: per-session, per-user and per-account identifiers never become
+// metric labels (Claude Code 2.1 sends user.id, organization.id, user.account_uuid,
+// user.account_id, user.email, user.groups and ccr.session.id on its metrics). They stay on
+// spans and logs. Removed from the resource too, or Mimir's target_info would carry
 // them.
 otelcol.processor.transform "metric_labels" {
   error_mode = "ignore"
@@ -157,14 +172,14 @@ otelcol.processor.transform "metric_labels" {
   metric_statements {
     context    = "resource"
     statements = [
-      `delete_matching_keys(attributes, "^(session\\.id|prompt\\.id|user\\.account_uuid|user\\.email|client_request_id)$")`,
+      `delete_matching_keys(attributes, "^(session\\.id|ccr\\.session\\.id|prompt\\.id|user\\.id|user\\.account_uuid|user\\.account_id|user\\.email|user\\.groups|organization\\.id|client_request_id)$")`,
     ]
   }
 
   metric_statements {
     context    = "datapoint"
     statements = [
-      `delete_matching_keys(attributes, "^(session\\.id|prompt\\.id|user\\.account_uuid|user\\.email|client_request_id)$")`,
+      `delete_matching_keys(attributes, "^(session\\.id|ccr\\.session\\.id|prompt\\.id|user\\.id|user\\.account_uuid|user\\.account_id|user\\.email|user\\.groups|organization\\.id|client_request_id)$")`,
     ]
   }
 
@@ -174,9 +189,20 @@ otelcol.processor.transform "metric_labels" {
 }
 
 // Content stream (board contract:content-stream): a log record is content when it carries
-// app.content="true", is a GenAI event (event name gen_ai.*), or is a Claude Code event that
-// holds prompt, response or tool content. The condition is written once (classify); the two
-// filters split on its result, so every record goes to exactly one branch. Content records
+// app.content="true", is a GenAI event (event name gen_ai.*), or comes from the build layer
+// (service.name claude-code or app.layer build) and is not one of Claude Code's known
+// content-free events. The build rule fails closed: an event a new Claude Code version adds,
+// or one without an event.name, is content. The flag starts at "true" and is cleared only by
+// a statement that ran, so a statement error also keeps a record in the content stream.
+// The allowlist, checked against the events Claude Code 2.1.318 emits: api_request,
+// api_refusal, subagent_completed, skill_activated, hook_registered, mcp_server_connection,
+// plugin_loaded, plugin_installed, permission_mode_changed, retention_sweep, internal_error,
+// at_mention, auth (names, counts, durations, status codes). Left out on purpose because
+// they carry free text: api_error, api_retries_exhausted and compaction (error text),
+// hook_execution_* (hook commands), system_prompt, tool, user_prompt, assistant_response,
+// tool_result, tool_decision, safety_event, feedback_survey, managed_settings_resolved.
+// The condition is written once (classify); the two filters split on its result, so every
+// record goes to exactly one branch. Content records
 // get the resource attribute content="true", a Loki index label with its own 7-day
 // retention_stream; the rest lose any incoming "content" attribute so the label stays bounded.
 otelcol.processor.transform "classify" {
@@ -185,8 +211,8 @@ otelcol.processor.transform "classify" {
   log_statements {
     context    = "log"
     statements = [
-      `set(attributes["alloy.content_stream"], "false")`,
-      `set(attributes["alloy.content_stream"], "true") where attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or (resource.attributes["service.name"] == "claude-code" and IsMatch(attributes["event.name"], "^(user_prompt|assistant_response|tool_result|tool_decision|api_request_body|api_response_body)$"))`,
+      `set(attributes["alloy.content_stream"], "true")`,
+      `set(attributes["alloy.content_stream"], "false") where not (attributes["app.content"] == "true" or IsMatch(event_name, "^gen_ai\\.") or IsMatch(attributes["event.name"], "^gen_ai\\.") or ((resource.attributes["service.name"] == "claude-code" or resource.attributes["app.layer"] == "build") and not IsMatch(attributes["event.name"], "^(api_request|api_refusal|subagent_completed|skill_activated|hook_registered|mcp_server_connection|plugin_loaded|plugin_installed|permission_mode_changed|retention_sweep|internal_error|at_mention|auth)$")))`,
     ]
   }
 
