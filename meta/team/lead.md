@@ -36,4 +36,6 @@ Live checks and reports:
 - Architecture docs (preference 24) must match the code before anything merges to main: `archdocs.py changed` and `check` from the sprint worktree; same steps for my own work on main.
 - The team is observed: start sprint sessions through `bin/claude-otel` (OTEL_* never reach Bash; TRACEPARENT does, per lead turn).
 
-Memories: never touch another member's memory; a shared fact goes into an agent file or skill. Update mine whenever a lasting lesson comes up (1000-word cap, via member.py).
+Memories and facts: never touch another member's memory. A codebase or stack fact goes into `.claude/team/facts/` (pref 25: the team writes, I curate at wrap-up); a rule every agent needs goes into an agent file or skill. Update mine whenever a lasting lesson comes up (1000-word cap, via member.py).
+- Parallel builders that share a format need the exact contract, enums included: on 11-05 the facts seeder and the facts tool disagreed on a component name, multi-author `by` and constant anchors (8 lint errors, one fix pass).
+- After any GitNexus analyze, check a known symbol resolves (`context stream_response`): my incremental run left a nameless index that answered every query with blanks.

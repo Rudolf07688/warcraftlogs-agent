@@ -209,6 +209,20 @@ across 37 files.
   iterations, workflows, epics, labels, Shortlist and meta notes on the board (stories or
   Shortcut docs). Done stays the owner's acceptance signal. Owner preference 20.
 
+- **D20. A shared team knowledge layer; team agents write facts directly.** Owner,
+  2026-11-05, in the Telemetry 3 retro, asked whether telemetry was hard because of
+  telemetry or because of the codebase's size, and proposed "something almost like gitnexus
+  ... that works for the team". Measured (P13): developers spent 26–42% of their tool calls
+  running and checking the live stack and 16–24% finding their way around the code, and much
+  of the stack work was rediscovering runtime behaviour no code graph holds. Built:
+  facts anchored to GitNexus symbols, files and components (`.claude/team/facts/`,
+  `.claude/team/facts.py`), surfaced by footprint at the brief and at every commit, and
+  stale when their anchor changes. Any team agent adds or corrects a fact directly;
+  team-lead curates at wrap-up. Plain files in git rather than a vector store (owner agreed):
+  facts branch and merge with the code they describe, need no credentials, and an embedding
+  index stays a possible derived cache. Personal memories keep their 500-word cap for
+  style, process and teammates. Owner preference 25.
+
 ## Proposals under discussion
 
 ### P1. Complexity tiers (the product owner chooses, per D2)
@@ -480,6 +494,27 @@ Levers, by expected saving per sprint:
     count); team-launch wrap-up reads it.
   - Lever 3 (split fix rounds above ~5 items) stays a measurement, not a rule.
 
+### P13. Team knowledge layer (owner go 2026-11-05; built, trial next sprint)
+
+- **Question (owner):** was the telemetry epic hard because telemetry is hard, or because
+  the codebase is big? Dev tool calls in sprint 2026-11-05 (builds and fix rounds):
+  stack and runtime 26–42%, code navigation 16–24%, tests 11–27%, GitNexus 2–7%. Mostly
+  telemetry, and much of the stack share was rediscovery (Mimir naming found by Ansel and
+  Nils separately). Members' memories sit at 93–99% of the 500-word cap and evict 15–20
+  lines a sprint; about two thirds of developer lines are codebase facts.
+- **Built:** `facts.py` (for / diff / brief / add / stale / verify / retire / lint / stats),
+  a non-blocking pre-commit print of the facts for the staged diff, a seed of facts copied
+  from the memories and board exports, `member.py lint` flagging memory lines that repeat a
+  fact. Also `jobwait.py` (warm waits for developers' long background jobs, the P12 next
+  step) and two small changes: a retro line in every hand-off, cost per stream at planning.
+- **Found on the way:** the main checkout's GitNexus index was silently broken after my
+  post-merge `analyze --index-only` (empty names and paths, "not found" for existing
+  symbols; a crash WAL). `analyze --index-only --force --no-parse-cache` fixed it; facts.py
+  health-checks the index and falls back to files and components.
+- **Measure at the next wrap-up:** stack and navigation calls per point; facts added,
+  corrected, stale; near-duplicates refused (rediscoveries); the team's own verdict in the
+  full-team retro (owner joins).
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -729,3 +764,6 @@ through respawns as the same named member, with its own small, curated memory. I
   and the live pass). Screenshots are not the cost (my 11-04b guess was wrong). Three
   levers proposed; owner to decide.
 - **2026-11-05 (sprint, Telemetry 3):** 26 + 2 pts, 41.8 M, 1.61/pt (1.49 on 28). P12 lever 1 removed the PO's cold wakes (2.05 → 0.06), but her cost per point held at 0.25 under a larger scope. The sprint's cold weight of 1.92 now sits with the developers (long background stack scripts). Lever 2 (docs once) cost 2.65, down from 2.8. Build per point nearly doubled (0.41 → 0.75), mostly 058. Next: split infra streams with a security core into two briefs; count warm-tick calls in usage.py; `board.py wait --kind question` needs `--key`. Live pass in parallel with the sweep worked; my re-check first read stale Alloy and Mimir (config-reading services not restarted), so the restart goes into team-launch.
+- **2026-11-05 (retro, Telemetry 3):** Owner ended the telemetry epic and asked whether a
+  graph-like tool for the team would help (D20, P13). Built the team knowledge layer with
+  three sub-agents the same evening; owner will bring the full team to the next retro.

@@ -50,6 +50,11 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    - any iteration instructions
    - the board name
    - the owner's standing rules: never push, never Done, local HTML reports
+   - **cost per stream** from the last two sprints, for sizing: for each `Dev …` and
+     `Fix round …` row of `meta/sprints/<date>/usage.txt`, weighted M = cacheRd × 0.1 +
+     cacheWr × 1.25 + out × 5 (per million), divided by the stream's points from the board
+     export. One line per stream (2026-11-05: data stores with a security core 0.99/pt,
+     runtime profiles 0.46/pt)
   - live-check requests go on the board as kind `question`, key `live-check:<feature>`
     (there is no `livecheck` kind)
 6. **Tell the owner in two or three lines** what's running. Mention that the plan report
@@ -126,16 +131,20 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
        share should drop with `--warm`)
      - the board export, for entries by kind and author, and for decisions overridden
      - git, for lines of code against lines of Spec Kit documents
+     - `python3 .claude/team/facts.py stats --since <sprint base> --json`: facts added and
+       by whom, stale, anchor gone (P13: the knowledge layer's first trials)
+     - the `Retro:` lines in the PO's final report
    - **Contents:**
      - the cost per point compared with the baseline table in `meta/team-optimisation.md`
        (add this sprint's row there too), then push the sprint's facts to the
        "Agent Team: Improvement" dashboard: `uv run python .claude/team/teamstats.py`
        (needs Alloy up; check the new sprint shows in Grafana)
      - the coordination, build and QA shares
-     - what worked and what to change next time
+     - what worked and what to change next time, next to the team's own `Retro:` lines
 4. **Architecture docs gate** (owner's rule, 2026-11-04): run from the sprint worktree,
    `python3 .claude/team/archdocs.py changed` must report nothing left to re-check, and
-   `archdocs.py check` must be clean. The product owner does this in its wrap-up, in one
+   `archdocs.py check` must be clean, and so must `facts.py stale` and `facts.py lint`
+   (same pass, `product-owner.md` close-out step 5). The product owner does this in its wrap-up, in one
    pass after every fix round is merged (P12); if it's
    missing, send the product owner back before you ask the merge question. In single-pass
    mode, the lead does the step from `documentation/architecture/pages/maintaining.html`.
@@ -151,13 +160,24 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    the sprint worktree's `qa-reports/` into the main checkout. It is gitignored, so
    `git worktree remove` deletes it silently (2026-11-02: lost, then rebuilt from the
    transcripts). Only then remove the worktrees and run
-   `node .gitnexus/run.cjs analyze --index-only`.
+   `node .gitnexus/run.cjs analyze --index-only`. Then check that the index is sound:
+   `node .gitnexus/run.cjs context stream_response --repo .` must return `"status": "found"`.
+   On 2026-11-05 an incremental run left a nameless index (every name and path empty, a
+   crash WAL); `analyze --index-only --force --no-parse-cache` rebuilt it.
 6. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,
    apply the sprint's `skill:<name>` board notices and any lesson of your own that every agent
    doing that task should know. Rewrite or cut rather than append. In tool-generated skills
    (`speckit-*`, `gitnexus-*`), put changes in a marked "Local learnings" section. List the
    skill changes in the team report and commit them with the memories.
-7. **Memory:**
+7. **Team facts** (owner preference 25: the team writes them, I curate). On main after the
+   merge: read the facts added this sprint (`facts.py stats --since <base>`), retire or merge
+   any that are wrong, vague or repeat documentation without being a gotcha, and run
+   `facts.py lint`. Don't touch members' memories; `member.py lint` tells each member which
+   of their lines a fact now covers.
+8. **Retro.** The owner may bring the full team (first asked for 2026-11-05). Then relaunch
+   each member by seat with the sprint's numbers, the team report and their own `Retro:`
+   line, read-only, and relay their views side by side with mine.
+9. **Memory:**
    - Update the sprint status memory note.
    - Update your lead memory (`member.py remember --seat lead -`) whenever a lasting lesson
      about how you lead comes up, not only at wrap-up. It's capped at 1000 words, so cut

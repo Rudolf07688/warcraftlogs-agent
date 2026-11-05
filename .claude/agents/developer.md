@@ -41,18 +41,35 @@ Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, 
 - **Your teammates:** `member.py roster` lists them by name. Refer to each other by name on
   the board.
 
+**Team facts (shared, owner preference 25).** Facts about this codebase, its tooling and the
+running stack go into `.claude/team/facts/`, not into your memory. They are shared by
+everyone and come up by footprint: in your brief, from `facts.py for`, and at every commit.
+- **Add one** when you learn something the next person touching that code would otherwise
+  rediscover: `facts.py add --id <slug> --anchor <a> [--anchor ...] --by "<seat> <Name>"
+  "<at most 80 words>"`. Anchors: `sym:<path>::<name>` (function, class, `Class.method`,
+  module constant), `file:<path>` or a directory ending in `/`, `comp:<name>` for runtime
+  behaviour (alloy, compose, gitnexus, grafana, loki, mimir, postgres, pyroscope, redis,
+  team, telemetry, tempo). Use the most specific true anchor.
+  `add` refuses a near-duplicate and shows the existing fact: edit that one instead.
+- **Fix one** that is wrong or partly wrong: edit its file, then `facts.py verify <id>` after
+  your commit. A fact marked STALE has had its anchor change: re-check it if you rely on it.
+- Commit fact files with the change they describe, inside or outside your footprint.
+- Never put secrets, task status or anything specific to one sprint in a fact.
+
 **Updating your memory: keep it light.**
 - **How often:** at most once per run, at the end, before your hand-off or final report.
   Often the right choice is no change at all.
-- **What earns a place:** only what will help the team in future sprints:
-  - lasting lessons about this codebase or its tooling
+- **What earns a place:** only what will help *you* in future sprints:
+  - how you work best, and process lessons
   - how a teammate works best
   - what the owner cares about
+
+  Lessons about the codebase, its tooling or the stack are team facts (above), not memory.
 - **What doesn't:** task status, or anything already in the code, specs, board,
   `CLAUDE.md` or `meta/`.
 - **Shared before personal:** before saving, run `member.py lint --seat <seat>`: it lists
-  your lines that repeat your agent file or a skill, or that a team tool (`check.py`,
-  `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
+  your lines that repeat your agent file, a skill or a team fact, or that a team tool
+  (`check.py`, `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
   it, post a `skill:<name>` notice on the board instead of keeping it to yourself.
 - **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
   memory. The hard cap is 500 words. When you're near it, cut the least useful line before
@@ -116,6 +133,15 @@ python3 .claude/team/board.py log --since <id>   # the raw history
   - `mutate.py FILE --old "..." --new "..." --test T`: proves a test bites; restores the file
     byte for byte, even on a kill. A collection error is reported as not a real bite.
   - `guards.py [WORD]`: the architecture guard tests ("only X may name Y").
+  - `facts.py for <files|path::symbol|comp:name>`: the **team facts** anchored to that code
+    and its call-graph neighbours (see "Team facts" above). The pre-commit hook prints the
+    facts for your staged diff by itself; read them before you finish the commit.
+  - `jobwait.py` for any job that may run longer than about 4 minutes (stack scripts, full
+    suites): `jobwait.py start <name> -- bash observability/test/<script>.sh`, then
+    `jobwait.py wait <name> --warm --grep 'RESULT|FAIL|PASS'` with `run_in_background`. On
+    exit 3 (warm tick) re-run the identical wait in the background and end your turn, nothing
+    else; on exit 2 re-arm without `--warm`. A plain background job wakes you cold after a
+    long run: on 2026-11-05 developers carried most of the sprint's cold-cache cost that way.
 - **Shell facts (learned the hard way):**
   - Agent shells may carry the app's env vars: `check.py` clears them. If you must call
     pytest directly, use `env -i HOME=$HOME PATH=$PATH uv run --extra test pytest -q`.
@@ -157,9 +183,10 @@ python3 .claude/team/board.py log --since <id>   # the raw history
     clean, so re-run it.
   - In a worktree, `impact --repo warcraftlogs-agent` can resolve to another checkout's
     index: index your worktree and pass its absolute path as `--repo`. If a fresh index
-    says "not found" for a symbol you can see, it may have stored nameless Python functions
-    (seen 2026-11-01b): query another worktree's index of the same code, or re-index after
-    your first edit, before you fall back to grep.
+    says "not found" for a symbol you can see, it may have stored nameless symbols (seen
+    2026-11-01b and 2026-11-05): rebuild with `analyze --index-only --force --no-parse-cache`,
+    which fixed it on 2026-11-05, before you fall back to grep. `facts.py` warns when it
+    sees this.
   - Known noise, so you don't re-learn it: CRITICAL from `detect-changes` is often a name
     collision (`__init__`, `_run`, `id`, `query_key`, `Settings`) or a markdown heading in a
     new file; `detect-changes` ignores untracked new files (run `impact` on the edited
@@ -179,6 +206,8 @@ python3 .claude/team/board.py log --since <id>   # the raw history
 - Move your brief's stories to **In Progress** on Shortcut (Standard workflow).
 - Create the feature branch `NNN-short-name` from the base ref.
 - Post your first `notice`. (Your identity check comes first, as described above.)
+- Read the "Known facts" section of your brief. Before you edit a file it does not cover, run
+  `facts.py for <file>`.
 
 **Tier S: plan, then implement.**
 - Write a short plan: files, steps, tests and risks. Put it in the hand-off, and post it as
@@ -207,13 +236,17 @@ python3 .claude/team/board.py log --since <id>   # the raw history
   receipt means the tree was dirty or red: a "green" that was only said, not read, cost a
   rework round three times.
 - **Board:** move your stories to **Under Review**, then post a `handoff` entry.
-- **Memory:** update it now if something lasting came out of this run (see above).
+- **Facts and memory:** add or fix team facts for what you learned about the code or stack,
+  then update your memory only if something personal and lasting came out of this run.
 - **Return:**
   - the branch, the base and the head commit
   - the files changed, the test counts (before and after), and the risks with their
     mitigations
   - the decisions you made, and the steps for the owner's live checks
   - for each acceptance criterion, the test or check that proves it
+  - the facts you added or fixed (ids)
+  - one retro line: `Retro: keep <one thing>; change <one thing>`, about how the team or
+    its tools worked for you this run (team-lead collects these for the team retro)
 
   Keep it to about 25 lines: one line per acceptance criterion, no prose tables, and
   don't restate what your board `handoff` already says. The product owner reads it in full

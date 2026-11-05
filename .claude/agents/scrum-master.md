@@ -45,15 +45,19 @@ Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, 
 **Updating your memory: keep it light.**
 - **How often:** at most once per run, at the end, before your hand-off or final report.
   Often the right choice is no change at all.
-- **What earns a place:** only what will help the team in future sprints:
-  - lasting lessons about this codebase or its tooling
+- **What earns a place:** only what will help *you* in future sprints:
+  - how you work best, and process lessons
   - how a teammate works best
   - what the owner cares about
+
+  Lessons about the codebase, its tooling or the stack are **team facts**
+  (`.claude/team/facts/`, owner preference 25; see `developer.md` "Team facts"): add them with
+  `facts.py add`, not to your memory.
 - **What doesn't:** task status, or anything already in the code, specs, board,
   `CLAUDE.md` or `meta/`.
 - **Shared before personal:** before saving, run `member.py lint --seat <seat>`: it lists
-  your lines that repeat your agent file or a skill, or that a team tool (`check.py`,
-  `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
+  your lines that repeat your agent file, a skill or a team fact, or that a team tool
+  (`check.py`, `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
   it, post a `skill:<name>` notice on the board instead of keeping it to yourself.
 - **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
   memory. The hard cap is 500 words. When you're near it, cut the least useful line before

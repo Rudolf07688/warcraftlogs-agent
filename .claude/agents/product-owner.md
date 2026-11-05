@@ -46,15 +46,19 @@ Your **seat** is in your launch brief: `po`, `sm` or `dev-<n>`. **First action, 
 **Updating your memory: keep it light.**
 - **How often:** at most once per run, at the end, before your hand-off or final report.
   Often the right choice is no change at all.
-- **What earns a place:** only what will help the team in future sprints:
-  - lasting lessons about this codebase or its tooling
+- **What earns a place:** only what will help *you* in future sprints:
+  - how you work best, and process lessons
   - how a teammate works best
   - what the owner cares about
+
+  Lessons about the codebase, its tooling or the stack are **team facts**
+  (`.claude/team/facts/`, owner preference 25; see `developer.md` "Team facts"): add them with
+  `facts.py add`, not to your memory.
 - **What doesn't:** task status, or anything already in the code, specs, board,
   `CLAUDE.md` or `meta/`.
 - **Shared before personal:** before saving, run `member.py lint --seat <seat>`: it lists
-  your lines that repeat your agent file or a skill, or that a team tool (`check.py`,
-  `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
+  your lines that repeat your agent file, a skill or a team fact, or that a team tool
+  (`check.py`, `pg.py`, `mutate.py`, `guards.py`, `board.py wait`) now does for you. Cut those. If you think every agent should know
   it, post a `skill:<name>` notice on the board instead of keeping it to yourself.
 - **How:** `member.py remember --seat <seat> - <<'EOF' … EOF` **replaces** the whole
   memory. The hard cap is 500 words. When you're near it, cut the least useful line before
@@ -111,6 +115,12 @@ Your board decisions replace `decisions.md`; key them `decision:<topic>`.
    - **Dependent work stays together:** if B can't start until A merges, give A and B to
      the same developer.
    - **Split only independent streams,** and only when their file footprints are disjoint.
+   - **Size by cost, not only points.** Your brief from team-lead carries the cost per point of
+     recent streams (`meta/sprints/*/usage.txt`). Infrastructure work costs more per point,
+     because checking it on the running stack isn't in the points: on 2026-11-05 the 10-point
+     data-store stream with a security core cost 9.9 M to build, a quarter of the sprint's
+     41.8. A stream above about 6 points that mixes infrastructure with a security core
+     becomes two briefs.
    - **Numbering:** features continue from the highest `specs/NNN-*`. You assign Alembic
      revisions (the next number, with `down_revision` taken from `backend/migrations/versions/`).
 4. **Pick a tier per feature**, and post it on the board as `decision` with key
@@ -178,6 +188,9 @@ work. Open a new seat only when every existing one is busy.
 - any migration revision you assigned
 - the seat, and the other developer's name if two run in parallel
 - whether the feature is **security-core** (see the security review below)
+- **Known facts for this footprint:** paste the output of
+  `python3 .claude/team/facts.py brief <footprint paths>` (team facts anchored to that code
+  and its graph neighbours). Leave the section out if it prints nothing.
 
 Before launch, post `owner:<glob>` keys: **one per stream** that covers its footprint
 (for example `owner:backend/app/services/kb/**`), not one per file. Every entry reaches every
@@ -302,13 +315,18 @@ M, and the scrum master owns them in tier L.
    - One fresh tier-S developer may do it when several pages moved. A sprint that changed no
      mapped code only needs `stamp`.
    - Name the pages you changed in the sprint review.
+   - **Team facts, same pass:** `python3 .claude/team/facts.py stale` lists the facts whose
+     anchor moved this sprint. Re-check each against the code: `facts.py verify <id>` if it
+     still holds, edit then verify if partly, `facts.py retire <id> --why "..."` if not. Then
+     `facts.py lint` must be clean. Commit on the sprint branch.
 6. **Sprint review:** write `<sprint-dir>/sprint-report.html` with `report.py build`, like the plan.
    Use tabs for the work groups, and include delivered against planned, each story's state,
    the QA triage, deferred tickets, decisions, risks and the owner's live-check list.
    Commit it.
 7. **Memory:** update your own memory, if anything lasting came out of the sprint.
 8. **Final report:** send team-lead one message: the branch and tip, the points delivered,
-   the report paths, and anything the owner must decide (such as merging to `main`).
+   the report paths, and anything the owner must decide (such as merging to `main`). Add the
+   `Retro:` lines from the developers' hand-offs verbatim, plus your own, for the team retro.
 
 ## Owner's rules
 

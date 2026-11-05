@@ -5,43 +5,52 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-05 (sprint 2026-11-05 merged to main 6b1a465, unpushed)
+Updated: 2026-11-05 evening (retro done, knowledge layer built; main unpushed)
 
 ## Topic
 
 The agent-team redesign: persistence and autonomy. Full record in
-`meta/team-optimisation.md` (decisions D1–D19, proposals P1–P12, baseline, change log).
+`meta/team-optimisation.md` (decisions D1–D20, proposals P1–P13, baseline, change log).
 
 ## Where we are
 
-- Sprint 2026-11-05 (Telemetry 3) merged to main 6b1a465 (owner yes, not pushed); 26+2 pts,
-  stories Under Review; team report meta/sprints/2026-11-05/team-report.html (1.61/pt; P12:
-  PO cold 2.05 -> 0.06, sprint cold 1.92). Owner set the build-spend alert to 200 USD/day.
-  Worktrees/branches removed; stack runs from main. Next P12 step: devs' cold wakes, warm-tick
-  count in usage.py, `board.py wait --kind question --key`.
+- Telemetry 3 merged to main 6b1a465. **Owner ended the telemetry epic** in the retro.
+  Stories Under Review (Done is the owner's). Main is unpushed: 6b1a465, b9cf9a3, 6ecc3a6
+  and the agent-file commit after it.
+- Retro → **P13 / D20, owner go: team knowledge layer, built and committed.**
+  `.claude/team/facts.py` plus 66 facts in `.claude/team/facts/`, anchored to symbols, files
+  and components. They surface in briefs (`facts.py brief`), on demand (`for`) and at every
+  commit (pre-commit hook). `stale`/`verify` run at close-out. Agents write facts directly
+  (owner preference 25); I curate. Also `jobwait.py` (warm waits on developers' long jobs),
+  cost per stream in the PO's sizing, and a `Retro:` line in every hand-off. All of it is
+  wired into developer/PO/SM.md and team-launch.
+- GitNexus on main was rebuilt with `--force --no-parse-cache` after an incremental run left
+  a nameless index. team-launch now checks a known symbol after each analyze.
 
-## Meta session 2026-11-05 (done)
+## REMIND THE OWNER
 
-- Measured where Telemetry 2's extra cost went: P12 in team-optimisation.md. Build got
-  cheaper per point; the extra is fix rounds, docs pass run twice, PO cold-cache wakes, lead.
-- Owner go: built lever 1 (`board.py wait --since N --warm`, 25-min window; probe showed the
-  cache stays warm, 2 calls per tick; saving ≈ 0.7/sprint) and lever 2 (docs pass once,
-  after every fix round). `usage.py --cold` measures it at the next wrap-up. Lever 3 (split
-  big fix rounds) stays a measurement.
-- Next sprint, first trial: arm PO/SM waits with `--since N --warm`; check at wrap-up: cold
-  weight < 1.5 (`usage.py --cold`), PO cost per point (0.26 on 11-04b), docs ≤ 1.8.
+- **The next retro has the full team** (owner, 2026-11-05): raise it when the next sprint's
+  PO report lands. team-launch wrap-up step 8 says how.
+
+## Next sprint (first trial of P13)
+
+- Steer: none parked yet. My proposal, to confirm with the owner: back to the app.
+  Semantic search always down (sc-428; lead: the 3 s embed budget), D8 misses cancelled
+  embeddings (sc-503), service-graph average (sc-504), dashboard ratio guards (sc-508, 1 pt),
+  and as candidates: 23k prompt tokens per chat (sc-367), chat input locked after a drop
+  (sc-376).
+- Check at wrap-up: facts added, refused as duplicates, stale (`facts.py stats --since
+  <base>`); developers' cold weight (`usage.py --cold`, target < 1.5); stack and navigation
+  calls per point (scratch nav.py idea → fold into usage.py if it proves useful).
+- Members' memories still hold lines that facts now cover; `member.py lint` shows each
+  member theirs (23 lines). They trim them themselves.
 
 ## Open with the owner
 
-1. Longer-lived Google credentials (service account) for live passes; offered to draft.
-2. Wipe the pre-fix Mimir series? (local only)
-
-## For the next sprint (mine)
-
-- Telemetry 3 (epic 397, ~20 pts) plus follow-ups sc-462/463; qa-deferred sc-458..461, sc-471.
-- Gemini Flash list price changes 2027-01-01 (pricing.yaml commit that day).
-- Candidates: "Every chat request starts at about 23k prompt tokens" (sc-367), chat input locked
-  after a drop (sc-376), semantic search always down (sc-428).
+1. Push main?
+2. Longer-lived Google credentials (service account) for live passes; offered to draft.
+3. Wipe the pre-fix Mimir series? (local only)
+4. Gemini Flash list price changes 2027-01-01 (pricing.yaml commit that day).
 
 ## How to resume
 
