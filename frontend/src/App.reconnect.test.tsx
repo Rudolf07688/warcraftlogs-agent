@@ -196,10 +196,17 @@ describe("App: a dropped socket ends the turn locally (sc-376)", () => {
     await status(true);
     frame({ type: "token", text: " late" });
     frame({ type: "done", message_id: "m1" });
-    frame({ type: "error", code: "x", message: "late error" });
     expect(sendDisabled()).toBe(false);
     expect(text("messages")).toBe("user:hi|agent:Half an answer");
     expect(text("error")).toBe(NOTE);
+  });
+
+  it("an error frame while idle shows its text and leaves the messages alone", async () => {
+    await click("open-B");
+    frame({ type: "error", code: "unauthorized", message: "Session expired" });
+    expect(text("error")).toBe("Session expired");
+    expect(text("messages")).toBe("agent:b-msg");
+    expect(sendDisabled()).toBe(false);
   });
 
   it("(5) a tool in progress stops casting, and a pending proposal is not lost", async () => {
@@ -261,5 +268,90 @@ describe("App: a dropped socket ends the turn locally (sc-376)", () => {
     await status(false);
     expect(text("messages")).toBe("user:hi");
     expect(text("error")).toBe(NOTE);
+  });
+
+  // Mid-turn the player opens chat B; the turn keeps streaming in A.
+  async function switchedToBMidTurn() {
+    await streamingInA();
+    await click("open-B");
+    expect(text("messages")).toBe("agent:b-msg");
+  }
+
+  it("a drop after switching chat mid-turn leaves the other chat untouched", async () => {
+    await switchedToBMidTurn();
+    await status(false);
+    await status(true);
+    expect(text("messages")).toBe("agent:b-msg");
+    expect(sendDisabled()).toBe(false);
+  });
+
+  it("a finished answer after switching chat mid-turn is not appended to the other chat", async () => {
+    await switchedToBMidTurn();
+    frame({ type: "done", message_id: "m1" });
+    expect(text("messages")).toBe("agent:b-msg");
+    expect(sendDisabled()).toBe(false);
+    // Reopened, chat A shows the answer from the backend.
+    h.details.A = detail("A", [
+      { role: "user", content: "hi" },
+      { role: "agent", content: "Half an answer" },
+    ]);
+    await click("open-A");
+    expect(text("messages")).toBe("user:hi|agent:Half an answer");
+  });
+
+  it("a drop kept after a failed reload is not replayed after a newer turn", async () => {
+    await streamingInA();
+    await status(false);
+    h.getConversation = async () => {
+      throw new Error("backend down");
+    };
+    await status(true); // the reload fails: the drop is kept for a retry
+    h.getConversation = null;
+    await click("send"); // a newer turn
+    frame({ type: "meta", conversation_id: "A", seq: 3 });
+    frame({ type: "error", code: "rate_limited", message: "slow down" }); // nothing saved
+    h.details.A = detail("A", [
+      { role: "user", content: "hi" },
+      { role: "user", content: "hi" },
+    ]);
+    await status(false);
+    await status(true);
+    expect(text("messages")).toBe("user:hi|agent:Half an answer|user:hi");
+  });
+
+  it("a drop kept after a failed reload is not replayed after the chat is reopened", async () => {
+    await streamingInA();
+    await status(false);
+    h.getConversation = async () => {
+      throw new Error("backend down");
+    };
+    await status(true);
+    h.getConversation = null;
+    savedQuestion();
+    await click("open-B");
+    await click("open-A");
+    await status(false);
+    await status(true);
+    expect(text("messages")).toBe("user:hi");
+  });
+
+  it("a reload that fails after a newer turn began does not keep the drop", async () => {
+    await streamingInA();
+    await status(false);
+    let fail: (e: unknown) => void = () => {};
+    h.getConversation = () => new Promise((_, reject) => (fail = reject));
+    await status(true);
+    await click("send"); // a newer turn while the reload is still in flight
+    frame({ type: "meta", conversation_id: "A", seq: 3 });
+    frame({ type: "error", code: "rate_limited", message: "slow down" });
+    await act(async () => fail(new Error("backend down")));
+    h.getConversation = null;
+    h.details.A = detail("A", [
+      { role: "user", content: "hi" },
+      { role: "user", content: "hi" },
+    ]);
+    await status(false);
+    await status(true);
+    expect(text("messages")).toBe("user:hi|agent:Half an answer|user:hi");
   });
 });
