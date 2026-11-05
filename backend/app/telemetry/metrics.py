@@ -94,7 +94,7 @@ def record_conversation_depth(agent: str, turns: int) -> None:
     _turns_per_conversation.record(turns, {"gen_ai.agent.name": agent})
 
 
-def record_embedding(model: str, task: str, texts: int, seconds: float, error: Exception | None = None) -> None:
+def record_embedding(model: str, task: str, texts: int, seconds: float, error: BaseException | None = None) -> None:
     """One embedding request: ``task`` is ``document`` (indexing) or ``query`` (search). A failed
     one carries ``error.type``, its exception's class name (live check #78: D8 shows an outage)."""
     labels = {"gen_ai.request.model": model, "app.embedding.task": task}
