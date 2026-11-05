@@ -284,6 +284,26 @@ otelcol.connector.spanmetrics "default" {
   }
 
   output {
+    metrics = [otelcol.processor.transform.spanmetrics_version.input]
+  }
+}
+
+// An aggregate keeps the resource of its first span, so after a restart with a new version it
+// went on exporting the old service.version on its target_info, beside the app's own, for as
+// long as spans kept coming (live check #75). The running version is the app's own resource's
+// alone: these two are no promoted labels, so no spanmetrics series changes.
+otelcol.processor.transform "spanmetrics_version" {
+  error_mode = "ignore"
+
+  metric_statements {
+    context    = "resource"
+    statements = [
+      `delete_key(attributes, "service.version")`,
+      `delete_key(attributes, "vcs.ref.head.revision")`,
+    ]
+  }
+
+  output {
     metrics = [otelcol.processor.transform.metric_labels.input]
   }
 }

@@ -82,6 +82,10 @@ report = {
 }
 if report["tracer_provider"] == "TracerProvider":
     report["resource"] = dict(tp.resource.attributes)
+    report["resources"] = [
+        dict(provider.attributes)
+        for provider in (tp.resource, _logs.get_logger_provider().resource, metrics.get_meter_provider()._sdk_config.resource)
+    ]
     batch = tp._active_span_processor._span_processors[0]._batch_processor
     report["span_exporter"] = [type(batch._exporter).__name__, type(batch._exporter._inner).__module__]
 
@@ -173,12 +177,14 @@ def test_with_an_endpoint_everything_is_in_place_before_adk_loads():
         "app.layer": "runtime",
         "deployment.environment.name": "dev",
     }.items() <= report["resource"].items()
+    # One process, one version: every provider exports the same resource (live check #75).
+    assert report["resources"] == [report["resource"]] * 3
     assert report["span_exporter"] == [
         "RedactingSpanExporter",
         "opentelemetry.exporter.otlp.proto.http.trace_exporter",
     ]
     assert report["app_class"] == "_InstrumentedFastAPI"
-    assert report["engine_listeners"] >= 1  # the app's one engine, created after the bootstrap
+    assert report["engine_listeners"] == 1  # the app's one engine, one tracer (sc-474)
     assert report["redis"] and report["httpx"] and report["sqlalchemy"]
     assert report["root_handlers"] == ["StreamHandler", "LoggingHandler"]  # stdout stays
     assert "RedactionFilter" in report["otlp_handler_filters"]

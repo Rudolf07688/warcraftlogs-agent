@@ -577,6 +577,25 @@ async def test_each_embedding_request_records_latency_and_batch_size(metric_read
     assert_clean(points.all_labels())
 
 
+async def test_a_failed_embedding_request_is_recorded_with_its_error_type(metric_reader, monkeypatch):
+    """Live check #78: with every query embedding timing out, D8 must show the failures."""
+    from backend.app.kb import embedder as kb_embedder
+    from backend.tests.test_kb_embed import FakeGenai
+    from wcl_agent.llm import generation
+    from wcl_agent.llm.model_retry import RetryPolicy
+
+    monkeypatch.setattr(kb_embedder, "_POLICY", RetryPolicy(attempts=1, initial_s=0, jitter_s=0))
+    monkeypatch.setattr(generation, "_genai_client", lambda: FakeGenai(fail=[TimeoutError()]))
+    with pytest.raises(TimeoutError):
+        await kb_embedder.VertexEmbedder("gemini-embedding-001").embed([QUERY], task="RETRIEVAL_QUERY")
+
+    points = metric_reader()
+    failed = {"gen_ai.request.model": "gemini-embedding-001", "app.embedding.task": "query", "error.type": "TimeoutError"}
+    assert points.labels("app.embedding.duration") == [failed]
+    assert points.labels("app.embedding.batch_size") == [failed]
+    assert_clean(points.all_labels())
+
+
 class _StreamedWithReason:
     """Gemini-style streaming: the last partial chunk and the aggregated final event both
     carry the finish reason."""

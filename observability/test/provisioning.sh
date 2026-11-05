@@ -100,12 +100,13 @@ span() { # SERVICE SPAN_ID PARENT KIND NAME
 # for these series by name, one edge per client/server pair. Same queries here.
 graph_edges() {
   mimir_has 'sum by (client, server) (rate(traces_service_graph_request_total{client="claude-code", server="api"}[15m]))' \
-    && mimir_has 'histogram_quantile(0.5, sum by (le, client, server) (rate(traces_service_graph_request_server_seconds_bucket{client="claude-code", server="api"}[15m])))'
+    && mimir_has 'histogram_quantile(0.5, sum by (le, client, server) (rate(traces_service_graph_request_server_seconds_bucket{client="claude-code", server="api"}[15m])))' \
+    && mimir_has 'sum by (client, server) (rate(traces_service_graph_request_server_seconds_sum{client="claude-code", server="api"}[15m]))'
 }
 send_pair() { post_otlp traces "{\"resourceSpans\":[$(span claude-code "$client" "" 3 "GET /api/health"),$(span api "$(hex 8)" "$client" 2 "GET /api/health")]}"; }
 send_pair
 poll 180 graph_edges \
-  && pass "D6 service graph: the service map's queries return the claude-code -> api edge with its latency" \
+  && pass "D6 service graph: the service map's queries return the claude-code -> api edge with its latency and the node's response time" \
   || fail "service graph queries returned no edge"
 
 # Span profile: a CPU-bound function under a root span, through the real bootstrap.
