@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-05 evening (retro done, knowledge layer built; main unpushed)
+Updated: 2026-11-05 evening (retro done, knowledge layer built; main pushed 7aadd21)
 
 ## Topic
 
@@ -15,8 +15,7 @@ The agent-team redesign: persistence and autonomy. Full record in
 ## Where we are
 
 - Telemetry 3 merged to main 6b1a465. **Owner ended the telemetry epic** in the retro.
-  Stories Under Review (Done is the owner's). Main is unpushed: 6b1a465, b9cf9a3, 6ecc3a6
-  and the agent-file commit after it.
+  Stories Under Review (Done is the owner's). Main pushed by the owner's word (7aadd21).
 - Retro → **P13 / D20, owner go: team knowledge layer, built and committed.**
   `.claude/team/facts.py` plus 66 facts in `.claude/team/facts/`, anchored to symbols, files
   and components. They surface in briefs (`facts.py brief`), on demand (`for`) and at every
@@ -47,10 +46,12 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Open with the owner
 
-1. Push main?
-2. Longer-lived Google credentials (service account) for live passes; offered to draft.
-3. Wipe the pre-fix Mimir series? (local only)
-4. Gemini Flash list price changes 2027-01-01 (pricing.yaml commit that day).
+1. Wipe the pre-fix Mimir series? (local only)
+2. Gemini Flash list price changes 2027-01-01 (pricing.yaml commit that day).
+
+Set aside (owner, 2026-11-05): long-lived Google credentials. The owner signs in when
+needed (ADC lasts about 24 h); keep the pre-flight token check and ask for
+`! gcloud auth application-default login` when it fails.
 
 ## How to resume
 
