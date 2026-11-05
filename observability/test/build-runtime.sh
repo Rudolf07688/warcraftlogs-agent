@@ -77,7 +77,9 @@ def tick(version, slow):
     spans = []
     for i in range(6):
         dur = int((1.5 if slow else 0.05) * 1e9 * random.uniform(0.9, 1.1))
-        error = slow and i < 2
+        # One error in A's first batch creates the error series up front: a counter's first
+        # sample is not counted by rate(), so B's errors would otherwise start late.
+        error = (slow and i < 2) or (not slow and turns == 0 and i == 0)
         spans.append({"traceId": secrets.token_hex(16), "spanId": secrets.token_hex(8), "name": "GET /api/conversations",
                       "kind": 2, "startTimeUnixNano": str(now - dur), "endTimeUnixNano": str(now),
                       "attributes": a({"http.route": "/api/conversations", "http.request.method": "GET"}),
@@ -93,12 +95,13 @@ def tick(version, slow):
     post("metrics", {"resourceMetrics": [{"resource": res(version), "scopeMetrics": [{"scope": {"name": "d12-test"}, "metrics": [hist, up]}]}]})
 
 t0 = time.time()
-for version, slow in ((A, False), (B, True)):
-    end = time.time() + phase_s
+# A runs a minute longer: the stack's first spanmetrics flush and rate windows eat into it.
+for version, slow, secs in ((A, False, phase_s + 60), (B, True, phase_s)):
+    end = time.time() + secs
     while time.time() < end:
         tick(version, slow)
         time.sleep(10)
-    print(f"INFO  version {version} ran {phase_s} s ({'slow, failing' if slow else 'fast, clean'})")
+    print(f"INFO  version {version} ran {secs} s ({'slow, failing' if slow else 'fast, clean'})")
 time.sleep(150)  # spanmetrics flush plus two ruler evaluations
 rng = f"{int(time.time() - t0) + 60}s"
 
