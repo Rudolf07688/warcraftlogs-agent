@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MessageList } from "./MessageList";
 import { getConversation } from "../api/restClient";
+import { streamStore } from "../lib/streamStore";
 
 // jsdom can't run Plotly's WebGL/canvas code; the chart container is what is under test.
 vi.mock("plotly.js-dist-min", () => ({ default: {} }));
@@ -59,5 +60,34 @@ describe("MessageList: reopened chat", () => {
       />,
     );
     await waitFor(() => expect(screen.getAllByRole("img", { name: "Chart: DPS" })).toHaveLength(1));
+  });
+});
+
+// Feature 060 (sc-416): client-side TTFT fires once the first token is on screen.
+const firstToken = vi.hoisted(() => vi.fn());
+vi.mock("../telemetry/chatEvents", () => ({ firstTokenRendered: firstToken }));
+
+describe("MessageList: the streaming answer", () => {
+  it("reports the first rendered token once, not while only thinking", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const props = {
+      messages: [{ role: "user" as const, content: "q" }],
+      streaming: true,
+      status: "Thinking…",
+      error: null,
+      streamCards: [],
+      selectedBosses: [],
+      onSelectBosses: () => {},
+      onPickSuggestion: () => {},
+      onDownloadMessage: () => {},
+      looseProposals: [],
+      onFollowUp: () => {},
+    };
+    render(<MessageList {...props} />);
+    expect(firstToken).not.toHaveBeenCalled();
+    act(() => streamStore.set("Hel"));
+    act(() => streamStore.set("Hello"));
+    expect(firstToken).toHaveBeenCalledTimes(1);
+    act(() => streamStore.set(""));
   });
 });

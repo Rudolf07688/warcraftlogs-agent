@@ -8,6 +8,7 @@ import { EncounterPicker } from "./EncounterPicker";
 import { PlotlyArtifact } from "./PlotlyArtifact";
 import { ProposalCard } from "./ProposalCard";
 import { useStreamText } from "../lib/streamStore";
+import { firstTokenRendered } from "../telemetry/chatEvents";
 
 interface Props {
   messages: Message[];
@@ -69,6 +70,11 @@ function Spellbook({ cards, instant }: { cards: SpellCardState[]; instant?: bool
 // stream, so a token re-renders this message alone, not the list or the app.
 function LiveMessage({ status, streamCards }: { status: string; streamCards: SpellCardState[] }) {
   const streamingText = useStreamText();
+  const hasText = streamingText !== "";
+  // Feature 060: client-side TTFT, after the first token was committed to the screen.
+  useEffect(() => {
+    if (hasText) firstTokenRendered();
+  }, [hasText]);
   return (
     <div className="message agent arcane-border">
       <div className="message-role">Barnaby</div>

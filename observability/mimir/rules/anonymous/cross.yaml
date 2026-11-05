@@ -1,0 +1,73 @@
+# Cross-layer aliases for D12, Build vs Runtime (feature 060, sc-422, spec §1 goal 4 and §8.2).
+# The api's version is a resource attribute (service.version, the git short SHA), so it lives on
+# target_info, not on the RED or cost series; these rules attach the running version, and the
+# seat that authored it (build_commit_info, pushed by observability/build-runtime/commits.py),
+# to runtime p95 latency, error ratio and LLM cost per request.
+#
+# The version running at a moment is the one whose target_info was sampled last (the app
+# exports every minute; an old version's sample stays visible for the 5-minute lookback). A
+# rate window spans 5 minutes, so a new version's first minutes still include the old one's
+# requests. commit = the first 7 characters of service.version, as on the board.
+groups:
+  - name: cross
+    interval: 1m
+    rules:
+      - record: cross:running_version:info
+        expr: |
+          label_replace(
+            label_replace(
+              topk by (job) (1, max by (job, service_version) (timestamp(target_info{job="wcl-agent/api"}))) * 0 + 1,
+              "service_name", "$1", "job", "wcl-agent/(.+)"
+            ),
+            "commit", "$1", "service_version", "(.{1,7}).*"
+          )
+      # One seat per commit (the latest push wins), from the last 30 days of board entries.
+      - record: cross:commit_seat:info
+        expr: |
+          topk by (commit) (1, max by (commit, seat, feature) (last_over_time(build_commit_info[30d])))
+      # The running version with its seat; a version no board entry names is "unattributed".
+      - record: cross:running_commit:info
+        expr: |
+          (
+            max by (service_name, service_version, commit) (cross:running_version:info)
+            * on (commit) group_left (seat, feature) cross:commit_seat:info
+          )
+          or on (commit)
+          label_replace(max by (service_name, service_version, commit) (cross:running_version:info),
+            "seat", "unattributed", "", "")
+
+      # Runtime signals, one series each (service_name="api"). p95 as in red.yaml, over all
+      # routes but the chat socket and the streaming guide generation. With no requests in the
+      # window there is no ratio (not NaN or infinity, which would poison every range mean).
+      - record: cross:http_latency:p95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service_name, le) (
+              rate(traces_spanmetrics_duration_bucket{service_name="api", span_kind="SPAN_KIND_SERVER", http_route!="", http_route!="/ws/chat", http_route!~".*/generate"}[5m])
+            )
+          ) >= 0
+      - record: cross:http_error_ratio:5m
+        expr: |
+          (
+            sum by (service_name) (app:http_requests:rate5m{service_name="api", status_code="STATUS_CODE_ERROR"})
+            or sum by (service_name) (app:http_requests:rate5m{service_name="api"}) * 0
+          )
+          / (sum by (service_name) (app:http_requests:rate5m{service_name="api"}) > 0)
+      # LLM spend (genai:cost_usd:rate5m, cost.yaml) per api request, chat turns included.
+      - record: cross:llm_cost_per_request:5m
+        expr: |
+          label_replace(
+            (sum(genai:cost_usd:rate5m) or vector(0)) / (sum(app:http_requests:rate5m{service_name="api"}) > 0),
+            "service_name", "api", "", ""
+          )
+
+      # The same, labelled with the running commit and its seat.
+      - record: cross:http_latency:p95_by_commit
+        expr: |
+          cross:http_latency:p95 * on (service_name) group_left (service_version, commit, seat, feature) cross:running_commit:info
+      - record: cross:http_error_ratio:5m_by_commit
+        expr: |
+          cross:http_error_ratio:5m * on (service_name) group_left (service_version, commit, seat, feature) cross:running_commit:info
+      - record: cross:llm_cost_per_request:5m_by_commit
+        expr: |
+          cross:llm_cost_per_request:5m * on (service_name) group_left (service_version, commit, seat, feature) cross:running_commit:info

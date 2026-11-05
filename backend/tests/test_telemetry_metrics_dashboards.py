@@ -84,7 +84,7 @@ def counted_raw(panel: dict, expr: str) -> tuple[set[str], str]:
     return {m.group(1) for m in RANGE_INCREASE.finditer(expr)}, RANGE_INCREASE.sub("increase(x[1m])", expr)
 
 
-DASHBOARD_FILES = sorted(DASHBOARDS.glob("*.json"))
+DASHBOARD_FILES = sorted(p for p in DASHBOARDS.glob("*.json") if p.name != "frontend.json")  # D5 is 060's, Loki-only, tested in test_telemetry_cross_dashboards.py
 
 
 def test_d6_d7_d8_are_provisioned_and_d7_keeps_its_uid():

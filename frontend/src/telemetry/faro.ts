@@ -1,5 +1,5 @@
 import type { withFaroRouterInstrumentation } from "@grafana/faro-react";
-import { registerFaro, setTelemetryUser } from "./context";
+import { registerFaro, setRoute, setTelemetryUser } from "./context";
 import { scrubItem } from "./scrub";
 
 // Feature 057 (sc-414): Grafana Faro in the browser, off unless VITE_FARO_URL is set.
@@ -43,6 +43,7 @@ export async function identifyUser(userId: string | null): Promise<void> {
 }
 
 type DataRouter = Parameters<typeof withFaroRouterInstrumentation>[0];
+type DataRouterLocation = DataRouter["state"]["location"];
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -81,7 +82,15 @@ export async function initTelemetry(router: DataRouter, env: Env = import.meta.e
       }),
     ],
   });
+  // Feature 060: the route template is Faro's view (`view_name` on every signal), so D5 can
+  // group vitals, errors and events by route without raw paths.
+  const routeOf = (location: DataRouterLocation) => {
+    const matches = routerDom.matchRoutes(router.routes, location);
+    return matches?.[matches.length - 1]?.route.path ?? "unmatched";
+  };
+  setRoute(routeOf(router.state.location));
   registerFaro(faro);
+  router.subscribe((state) => setRoute(routeOf(state.location)));
   react.withFaroRouterInstrumentation(router);
   return true;
 }
