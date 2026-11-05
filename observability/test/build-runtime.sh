@@ -2,7 +2,9 @@
 # sc-422: a synthetic regression commit shows up on D12 (Build vs Runtime) against its authoring
 # seat. Two api versions run one after the other (A fast and clean, B slow, failing and costlier
 # per request) as real OTLP spans and metrics through Alloy; a synthetic team board names A in
-# Nils's hand-off and B in Tomas's hand-off plus Maren's merge; commits.py pushes the board facts.
+# Nils's hand-off and B in Tomas's hand-off plus Maren's merge (keyed merge:999); commits.py
+# pushes the board facts. A second Resource ("unknown" version) runs beside each version, as in
+# the live pass, and must never show as the running version.
 # Then D12's own table, timeseries and annotation queries must show B against tomas (dev-2)
 # with positive deltas and its build cost, and A against nils (dev-3).
 #   observability/test/build-runtime.sh        (KEEP=1 leaves the stack up; PHASE_S=240 per version)
@@ -23,7 +25,7 @@ NOW="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 cat > "$meta/sprints/synthetic/board.jsonl" <<JSON
 {"id": 1, "ts": "$NOW", "author": "nils", "kind": "handoff", "text": "998 done", "key": "status:998", "refs": ["$A"]}
 {"id": 2, "ts": "$NOW", "author": "tomas", "kind": "handoff", "text": "999 done", "key": "status:999", "refs": ["${B}0"]}
-{"id": 3, "ts": "$NOW", "author": "maren", "kind": "merge", "text": "999 merged", "key": "status:999", "refs": ["$B"]}
+{"id": 3, "ts": "$NOW", "author": "maren", "kind": "merge", "text": "999 merged", "key": "merge:999", "refs": ["$B"]}
 JSON
 # 999's usage: (out 100000 * 5 + cacheRd 10000000 * 0.1 + cacheWr 400000 * 1.25) / 1e6 = 2 M units, $8.
 cat > "$meta/sprints/synthetic/usage.txt" <<'TXT'
@@ -93,6 +95,9 @@ def tick(version, slow):
          "attributes": a({"gen_ai.request.model": "gemini-3.6-flash", "gen_ai.token.type": "input", "gen_ai.agent.name": "wcl_agent"})}]}}
     up = {"name": "d12_test_up", "gauge": {"dataPoints": [{"timeUnixNano": str(now), "asDouble": 1}]}}
     post("metrics", {"resourceMetrics": [{"resource": res(version), "scopeMetrics": [{"scope": {"name": "d12-test"}, "metrics": [hist, up]}]}]})
+    # The stray second Resource of the live pass (#75): same job, version "unknown", sampled after
+    # the real one, so a "latest target_info wins" rule would show it instead of the running version.
+    post("metrics", {"resourceMetrics": [{"resource": res("unknown"), "scopeMetrics": [{"scope": {"name": "d12-test"}, "metrics": [up]}]}]})
 
 t0 = time.time()
 # A runs a minute longer: the stack's first spanmetrics flush and rate windows eat into it.
@@ -125,6 +130,10 @@ check(b.get("A", 0) > 0.2 and a_.get("A", 0) < 0, f"table: Δ p95 positive for B
 check(b.get("B", 0) > 0 and a_.get("B", 1) < 0, f"table: Δ error ratio positive for B ({b.get('B')}), negative for A ({a_.get('B')})")
 check(b.get("C", 0) > 0 and a_.get("C", 1) < 0, f"table: Δ LLM cost / request positive for B ({b.get('C')}), negative for A ({a_.get('C')})")
 check(b.get("D") == 8.0 and "D" not in a_, f"table: build cost $8.00 for B, none for A (B {b.get('D')}, A {a_.get('D')})")
+
+now = int(time.time())
+vers = {s["metric"].get("service_version") for s in (mimir("api/v1/query_range", query="cross:running_version:info", start=str(now - int(rng[:-1])), end=str(now), step="60").get("data") or {}).get("result") or []}
+check(vers == {A, B}, f"cross:running_version:info never shows the stray 'unknown' version ({sorted(vers)})")
 
 ann = d["annotations"]["list"][0]["expr"]
 now = int(time.time())

@@ -294,8 +294,13 @@ carries `view_name`. The app (`frontend/src/telemetry/`):
   composer): a panel that throws shows a plain "Something went wrong" with Retry, never the
   error text (it can carry model or WCL text); the other panels keep working; the error goes
   to Faro as `React ErrorBoundary <type>` with the component stack, `context_route` and
-  `context_boundary`. The boundary reports through the registered Faro instance, so Faro stays
-  out of the main bundle; with Faro off it only shows the fallback.
+  `context_boundary`. A panel boundary starts clean when the conversation changes (its reset
+  key is the conversation id). The boundary reports through the registered Faro instance, so
+  Faro stays out of the main bundle; with Faro off it only shows the fallback. A route render
+  error (App outside its panels, profile, admin, login) never reaches the shell boundary: the
+  data router catches it first, so the route tree (`frontend/src/routes.tsx`) has a root
+  `errorElement` that reports with `boundary=shell` and shows the same plain fallback (a
+  retry reloads the page), instead of React Router's default page with the message and stack.
 - **Chat events**, once per turn: `agent_message_sent`, `agent_first_token_rendered`
   (`ttft_ms`, after the first token is on screen), `agent_response_completed` (`duration_ms`),
   `stream_aborted` (`reason` `connection_lost`, or `closed` when the app closed the socket,
@@ -306,10 +311,15 @@ carries `view_name`. The app (`frontend/src/telemetry/`):
 `wcl-d12-build-runtime`): annotations for each api version while it ran, p95 latency, error
 ratio and LLM cost per request by commit, and a table commit → seat → estimated build cost →
 runtime deltas. Its aliases are in `mimir/rules/anonymous/cross.yaml`: the running version
-comes from `target_info{job="wcl-agent/api"}` (`service.version` is not a promoted label), the
-seat from `build_commit_info`, which `build-runtime/commits.py` pushes from the team boards,
-the roster and `usage.txt` (run it at wrap-up next to `teamstats.py`; `--dry-run` prints the
-table). The attribution rule, the cost estimate and the delta definition are stated on the
+comes from `target_info{job="wcl-agent/api"}` (`service.version` is not a promoted label; a
+version other than `unknown` wins over a stray `unknown` series, so one process = one version
+on the dashboard), the seat from `build_commit_info`, which `build-runtime/commits.py` pushes
+from the team boards, the roster and `usage.txt` (run it at wrap-up next to `teamstats.py`;
+`--dry-run` prints the table). A board entry names its commit as a ref or, with none, as
+`head <sha>` (or the first SHA) in its text; hand-offs are keyed `status:<feature>`, merges
+`status:<feature>` or `merge:<feature>`. If a commit was pushed with two seats (a roster edit
+between pushes), `commits.py` gives each series a fixed tie-break value, so the same one wins
+on every evaluation. The attribution rule, the cost estimate and the delta definition are stated on the
 dashboard and in `commits.py`'s docstring. A version no board entry names is *unattributed*.
 
 **Redaction end to end** (`test/redaction_e2e.py`): fresh secrets of each shape in `SHAPES`
@@ -320,8 +330,8 @@ event, a log record through the OTLP log handler, an allowlisted metric attribut
 resource), and the Faro receiver (log, exception, event, measurement context, a span). Then
 everything Loki, Tempo and Mimir hold for the run is read back (log lines with structured
 metadata, whole traces, every series' labels including `target_info`); any raw value fails
-the run. A new shape or path is one row (the Postgres slow-query log from 058 goes in
-`PATHS`). The app-side redactor never sees resource attributes; Alloy masks them.
+the run. A new shape or path is one row. The Postgres log (058) is not a row: `test/datastores.sh`
+seeds a secret through it and proves it masked. The app-side redactor never sees resource attributes; Alloy masks them.
 
 | Script | Proves |
 |---|---|

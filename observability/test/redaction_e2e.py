@@ -129,8 +129,8 @@ def send_faro(c: Checker, run: dict, faro: str) -> dict:
     return {"service": "web", "trace_id": trace_id, "metric": None}
 
 
-# name -> (sender, the Loki line count it must leave). Ansel's Postgres slow-query log (058)
-# goes here as one more row once it is in the stack.
+# name -> (sender, the Loki line count it must leave). The Postgres log (058) is not a row:
+# observability/test/datastores.sh seeds a secret through it and proves it masked.
 PATHS: dict[str, tuple[Callable[..., dict], int]] = {
     "build": (send_build, 3),
     "backend": (send_backend, len(SHAPES)),

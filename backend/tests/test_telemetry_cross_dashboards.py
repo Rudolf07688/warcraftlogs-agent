@@ -265,6 +265,27 @@ def test_this_sprints_board_attributes_every_hand_off_and_merge_commit():
     }
 
 
+def test_the_running_version_prefers_a_known_version_over_unknown():
+    expr = " ".join(cross_recorded()["cross:running_version:info"].split())
+    # Two selectors, because timestamp() of an `or` result is the evaluation time, not a sample time.
+    assert 'timestamp(target_info{job="wcl-agent/api", service_version!="unknown"}) or on (job) timestamp(target_info{job="wcl-agent/api"})' in expr
+
+
+def test_two_seats_for_one_commit_get_different_stable_values_so_topk_has_no_tie():
+    commits = load_commits()
+    ts = commits.datetime.fromisoformat("2026-11-05T12:00:00+00:00")
+    a = commits.Commit("abc1234", "nils (dev-3)", "059", "s", ts)
+    b = commits.Commit("abc1234", "nils (dev-4)", "059", "s", ts)
+
+    def values(cs):
+        metric = commits.payload(cs)["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]
+        return [p["asDouble"] for p in metric["gauge"]["dataPoints"]]
+
+    first, second = values([a, b])
+    assert 1 <= first < 2 and 1 <= second < 2 and first != second
+    assert values([a, b]) == [first, second]  # the same on every push: pushing again is safe
+
+
 def test_a_hand_off_without_refs_takes_the_head_not_the_base_or_a_word():
     commits = load_commits()
     roster = {"nils": "nils (dev-3)"}

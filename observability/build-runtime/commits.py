@@ -4,7 +4,7 @@
 Which seat authored a commit, and what building it cost, as Mimir gauges next to the runtime
 metrics, so D12 can put commit, seat, build cost and runtime deltas in one table:
 
-  build_commit_info{commit, seat, feature, sprint}      = 1
+  build_commit_info{commit, seat, feature, sprint}      = 1 + a fixed tie-break in [0, 1)
   build_commit_cost_usd{commit, seat, feature, sprint}  = estimated USD (only when known)
 
 timestamped at the board entry that names the commit. Sources, all already on disk:
@@ -28,7 +28,9 @@ the board. With no usage file yet (mid-sprint) the cost is left out, never zero.
   python3 observability/build-runtime/commits.py --dry-run    # print the table only
   python3 observability/build-runtime/commits.py --meta DIR --board-dir DIR --endpoint URL
 
-Pushing again is safe (same timestamp, same value). Standard library only.
+The tie-break (a checksum of the labels) only decides which series cross:commit_seat:info keeps
+when one commit was pushed with two seats; it is the same on every push, so pushing again is
+safe (same timestamp, same value). Standard library only.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ import re
 import subprocess
 import sys
 import urllib.request
+import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -155,8 +158,11 @@ def payload(commits: list[Commit]) -> dict:
     def labels(c: Commit) -> dict:
         return {"commit": c.commit, "seat": c.seat, "feature": c.feature, "sprint": c.sprint}
 
-    metrics = [teamstats.gauge("build.commit.info", "A board hand-off or merge names this commit (1)", "",
-                               [(c.ts, 1.0, labels(c)) for c in commits])]
+    def tie_break(c: Commit) -> float:
+        return 1 + zlib.crc32("|".join(labels(c).values()).encode()) / 2**32
+
+    metrics = [teamstats.gauge("build.commit.info", "A board hand-off or merge names this commit (1 + a fixed tie-break)", "",
+                               [(c.ts, tie_break(c), labels(c)) for c in commits])]
     costed = [(c.ts, c.cost_usd, labels(c)) for c in commits if c.cost_usd is not None]
     if costed:
         metrics.append(teamstats.gauge(
