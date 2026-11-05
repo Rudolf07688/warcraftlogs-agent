@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1cedb4e · 2026-11-05">
+<meta name="verified-at" content="commit 8b43895 · 2026-11-05">
 <title>Knowledge base · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -195,8 +195,8 @@
   <h3>What it does, and where it lives</h3>
   <ul>
     <li><code>backend/app/kb/embedder.py</code>: <code>Embedder</code> is the seam. The indexer embeds chunks with task <code>RETRIEVAL_DOCUMENT</code>; search embeds queries with <code>RETRIEVAL_QUERY</code>.</li>
-    <li><code>VertexEmbedder</code> calls <code>wcl_agent.llm.generation.embed_texts</code> (the provider layer is the only code that calls model clients) with <code>output_dimensionality=768</code> and <code>auto_truncate=True</code>, under the shared rate-limit loop with its own policy (4 attempts, 2 s initial, 20 s max, 60 s budget). It sends <code>kb_embed_request_batch</code> texts per request (default 1), checks the count and the 768 dimensions, and L2-normalises every vector. Each provider request is timed and recorded, a failed one too with its exception's class name, as <code>app.embedding.duration</code> and <code>app.embedding.batch_size</code> (by model and by task: <code>document</code> when indexing, <code>query</code> when searching), through <code>record_embedding()</code> in <code>backend/app/telemetry/metrics.py</code>; the retries inside a request count as one. A query embedding that the search's own 3 s budget (<code>EMBED_TIMEOUT_S</code>) cancels is not recorded, because the cancel is not an <code>Exception</code>.</li>
-    <li>The client is <code>provider.genai_client()</code>: Vertex AI when the GCP config is set, else the Gemini API key. It is the same whichever provider serves chat, so embeddings keep working while chat runs on Anthropic.</li>
+    <li><code>VertexEmbedder</code> calls <code>wcl_agent.llm.generation.embed_texts</code> (the provider layer is the only code that calls model clients) with <code>output_dimensionality=768</code> and <code>auto_truncate=True</code>, under the shared rate-limit loop with its own policy (4 attempts, 2 s initial, 20 s max, 60 s budget). It sends <code>kb_embed_request_batch</code> texts per request (default 1), checks the count and the 768 dimensions, and L2-normalises every vector. The indexer's document requests go out one after another. Query requests go out together: <code>embed()</code> runs one request per batch of texts in an <code>asyncio.TaskGroup</code>, so one failure cancels its siblings and the first error is re-raised as it is, and a process-wide semaphore (<code>QUERY_CONCURRENCY</code>, 5, one per running event loop) bounds the requests in flight across all searches. Rate-limit retry waits of a query end inside <code>QUERY_DEADLINE_S</code> (3 s, the same as the search's own budget), so a quota problem surfaces as <code>ModelRateLimited</code> at once instead of as a cancelled request. Each provider request is timed and recorded, a failed one too with its exception's class name, as <code>app.embedding.duration</code> and <code>app.embedding.batch_size</code> (by model and by task: <code>document</code> when indexing, <code>query</code> when searching), through <code>record_embedding()</code> in <code>backend/app/telemetry/metrics.py</code>; the retries inside a request count as one. A query request cancelled by the search's own 3 s budget (<code>EMBED_TIMEOUT_S</code>) or by a failed sibling is recorded too, with <code>error.type</code> <code>CancelledError</code> (<code>record_embedding()</code> takes any <code>BaseException</code>); a document request cancelled by the indexer's shutdown is not recorded, because that is not a failure.</li>
+    <li>The client is <code>provider.genai_client(location)</code>: Vertex AI when the GCP config is set, else the Gemini API key. It is the same whichever provider serves chat, so embeddings keep working while chat runs on Anthropic. Embeddings use their own regional endpoint, <code>KB_EMBED_LOCATION</code> (default <code>europe-west1</code>; empty falls back to <code>WCL_MODEL_LOCATION</code>), with one client per location cached for the process (<code>_located_genai_client</code> in <code>wcl_agent/llm/generation.py</code>). The <code>global</code> endpoint answered <code>gemini-embedding-001</code> about 12 s late on every new connection, far past the search's 3 s budget.</li>
     <li><code>get_embedder()</code> returns the test-injected embedder, else <code>None</code> when <code>kb_embed_enabled</code> is off or no genai client can be built, else the process's embedder. The availability check is cached for the life of the process. With no embedder, chunks are still written and stay keyword-searchable.</li>
     <li><code>KB_DIMENSIONS = 768</code> lives in <code>backend/app/db/models.py</code>; each row records its <code>embed_model</code>, so a model change is a re-embed, not a schema change.</li>
   </ul>
@@ -262,7 +262,7 @@
   <figure class="diagram">
     <svg class="dg" viewBox="0 0 960 620" role="img" aria-labelledby="kbr-title kbr-desc">
       <title id="kbr-title">Sequence: a search_knowledge call</title>
-      <desc id="kbr-desc">The agent model calls search_knowledge with queries and filters. The tool takes the workspace from the chat turn, resolves names through the name resolver, and passes a request of canonical values to kb search. Search embeds all queries in one call with a 3 second timeout, falling back to keyword only. It runs one SQL statement per query in parallel against Postgres, fuses the candidates by reciprocal rank fusion, relaxes soft filters and repeats while it has fewer than k hits, then caps the result. The tool returns the payload with each hit's text in data blocks.</desc>
+      <desc id="kbr-desc">The agent model calls search_knowledge with queries and filters. The tool takes the workspace from the chat turn, resolves names through the name resolver, and passes a request of canonical values to kb search. Search embeds all queries together with a 3 second timeout, falling back to keyword only. It runs one SQL statement per query in parallel against Postgres, fuses the candidates by reciprocal rank fusion, relaxes soft filters and repeats while it has fewer than k hits, then caps the result. The tool returns the payload with each hit's text in data blocks.</desc>
       <defs>
         <marker id="kbr-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
         <marker id="kbr-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
@@ -298,7 +298,7 @@
     <li>It validates the arguments and resolves class, spec, difficulty, encounter and character through <code>services/name_resolver.py</code> (encounter and character in a tenant-scoped session).</li>
     <li>It gets canonical values back, or a <code>ResolutionError</code> whose text (with close matches) goes back to the model as a tool error.</li>
     <li>It hands <code>kb/search.search</code> a <code>SearchRequest</code> of canonical values only.</li>
-    <li>Search embeds all queries in one call (<code>RETRIEVAL_QUERY</code>, 3 s timeout).</li>
+    <li>Search embeds all queries together (<code>RETRIEVAL_QUERY</code>, concurrent requests, 3 s timeout for the lot).</li>
     <li>On failure or no embedder, it continues on keywords only (<code>mode: keyword_only</code>, with a note).</li>
     <li>Each query runs as one <code>UNION ALL</code> statement (vector and keyword branch per kind), all queries concurrently, each in its own tenant-scoped session.</li>
     <li>Each statement returns at most 40 candidates per leg.</li>
@@ -450,6 +450,7 @@
       <tr><td><code>KB_INDEX_ENABLED</code></td><td><code>true</code></td><td>Start the background indexer in the app lifespan. Off: no new chunks; search still runs on what exists.</td></tr>
       <tr><td><code>KB_EMBED_ENABLED</code></td><td><code>true</code></td><td>Off: no document or query embeddings; chunks stay keyword-only and search reports <code>keyword_only</code>.</td></tr>
       <tr><td><code>KB_EMBED_MODEL</code></td><td><code>gemini-embedding-001</code></td><td>Embedding model (always 768 dimensions).</td></tr>
+      <tr><td><code>KB_EMBED_LOCATION</code></td><td><code>europe-west1</code></td><td>Vertex location the embeddings run at. Empty: <code>WCL_MODEL_LOCATION</code>.</td></tr>
       <tr><td><code>KB_INDEX_QUEUE_MAX</code></td><td><code>1000</code></td><td>Queued jobs before new ones are dropped.</td></tr>
       <tr><td><code>KB_EMBED_BATCH</code></td><td><code>32</code></td><td>Rows read and embedded per round.</td></tr>
       <tr><td><code>KB_EMBED_REQUEST_BATCH</code></td><td><code>1</code></td><td>Texts per embedding request.</td></tr>
