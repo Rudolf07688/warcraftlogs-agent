@@ -8,36 +8,38 @@
 
 ## Memory
 
-I'm Maren, product owner. Sprints: 2026-10-31b (21 pts), 10-31c (19), 11-01 (knowledge base, 33, tier L with Ilse), 11-01b (20), 11-02 (20), 11-04 (telemetry 1, 23), 11-04b (telemetry 2, 24), 11-05 (telemetry 3, 26, three tier-M streams, one security rework + one fix round).
+I'm Maren, product owner. Sprints: 10-31b (21 pts), 10-31c (19), 11-01 (33, tier L with Ilse), 11-01b (20), 11-02 (20), 11-04 (23), 11-04b (24), 11-05 (26), 11-05b (back to the app, 10: four tier-S streams in parallel, one fix round, zero conflicts).
 
 Codebase and tooling:
-- qa-reports/ is gitignored; reports live only in the sprint worktree (P7 in <date>/, end sweep in <date>-sweep/).
-- check.py receipts only exist for committed clean trees. A branch rebased on the current tip merges as REUSE; otherwise I run it.
-- Shortcut: create_story takes estimate and label_ids. Labels: ui 90, infra 96, backend 94, data 95, security 98, performance 92, qa-deferred 170.
-- shortcut-sync puts the sprint iteration on unrelated Shortlist stories; check and revert.
+- Labels: ai 89, ui 90, performance 92, backend 94, data 95, infra 96, security 98, qa-deferred 170.
+- check.py receipts only exist for committed clean trees. A branch rebased on the current tip merges as REUSE; otherwise I commit the merge and run it.
+- `npm run build` dirties frontend/tsconfig.tsbuildinfo; restore it after.
 - Never draft files in a worktree another agent commits in; use my scratchpad.
 - In tier L, developer spawns go through team-lead as SPAWN-REQUEST.
-- Render checks: headless chrome with a window taller than the page, or charts render blank.
+- Render checks: headless chrome, window taller than the page. Report tables over 3-4 columns overflow at 390px: fold detail into the first cell.
+- A board key keeps only its latest entry: restate the full owner list when granting an extra file.
 
 Teammates:
-- Ansel (dev-1): careful, strong on Alloy/Mimir/Loki config; finds root causes outside his footprint and asks for the grant; slow.
+- Ansel (dev-1): careful, strong on Alloy/Mimir/Grafana; reads upstream code for root causes; slow.
 - Tomas (dev-2): fast, honest; good at docs close-out at sonnet high. Brief him edge cases first.
-- Nils (dev-3): thorough, mutation-checks every fix; good at SQL, the agent loop, metrics; finds root causes.
+- Nils (dev-3): measures before fixing, mutation-checks every fix; good at SQL, the agent loop, metrics.
+- Vera (dev-4, since 11-05b): measure-first, posts a numbers table, stops honestly short of a target when the rest is spec'd.
 - Ilse (sm): fixes cross-feature contracts up front and runs independent P7 reviews.
 
 Lessons:
-- Read the code while writing briefs: split shared files by hunk, post `contract:*` keys before launch. Zero conflicts in 11-04b and 11-05.
+- Read the code while writing briefs: split shared files by hunk, post `contract:*` keys before launch.
+- Developers make no live or credentialed calls; live checks go to team-lead as `live-check:*` questions.
+- Small steers stay small: 10 pts beat padding with unrelated backlog.
 - Check the transport before accepting an AC (chat is a WebSocket).
-- Proof scripts on fresh synthetic stacks miss real-data failures: seed old/odd data and assert values. Live passes still find what scripts pass (5 FAILs in 11-05).
+- Proof scripts on fresh synthetic stacks miss real-data failures: seed odd data and assert values.
 - Dashboard tests check query shape (precedence, increase vs rate, window = step, units, grouping), not only aliases.
-- Hold the fix round until the live pass is in, so its FAILs join the one round.
-- Fix-round root causes often sit in another stream's file: grant the one hunk fast, name who keeps the rest.
-- "GET-only" Docker socket proxies still allow file export and env reads; prefer no Docker access.
+- Fix-round root causes often sit in another stream's file: grant the one hunk fast.
+- Prefer no Docker socket access; "GET-only" proxies still export files and env.
 - Standard env names (OTEL_*) leak across streams via child processes.
 - QA fix round: fresh agents on the same seats, tier S briefs naming each finding, split by author.
 - Security over external data: trust what the server decided, never what the client sent.
-- A Low that is a regression from this sprint's own code goes into the rework.
+- A Low that regresses from this sprint's own code goes into the rework; a pre-existing race made easier to reach becomes a ticket.
 - Group deferred QA findings by root cause; merge duplicates into the oldest.
-- A live re-check FAIL on a non-AC addition after the one round becomes a ticket, not a second round.
+- A live PASS with little margin becomes a headroom ticket, not a second round.
 
-Owner cares about: no scope creep, local HTML reports, never push, never Done, at most one rework round, ticket dedupe, plain ticket names (pref 23), architecture docs current before merging to main.
+Owner cares about: no scope creep, local HTML reports, never push, never Done, at most one rework round, ticket dedupe, plain ticket names, architecture docs current before merging to main.

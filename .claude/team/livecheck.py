@@ -65,6 +65,8 @@ async def main():
     for name in sys.argv[1:]:
         slot, key = name.split(":")
         prompt = PROMPTS.get(key)
+        if key.startswith("idle"):  # idle15: wait N s between turns (fresh-connection checks)
+            await asyncio.sleep(int(key[4:] or 15)); print(f"idle {key[4:] or 15} s"); continue
         if key == "kickoff":  # the welcome-page recent-raid click: investigate, then send its kickoff prompt
             _, rr = await get("/api/recent-raids", cookie)
             raids = rr.get("raids", [])
@@ -143,6 +145,8 @@ def facts(code):
 
 
 PROMPTS = {
+    # sprint 2026-11-05b: semantic search (061), smaller fixed prompt (064)
+    "cds": "In report BKNtypgnhrxXvj84, on the last boss kill, how well did the raid use their defensive cooldowns, except the shaman? Two lines.",
     # sprint 2026-11-02: report fights + kickoff (050), raw store (051), turn hardening (052)
     "killdiff": "In report BKNtypgnhrxXvj84, which raid boss was killed, and on what difficulty? One line.",
     # sprint 2026-11-01b: big-report turns (046/048), clean-up (047/049). "kickoff" is built in above.
@@ -171,6 +175,8 @@ EXPECT = {
     "chart5": LAST_KILL,
     "related": {"all": [r"\w"], "none": [r"kith.?ix"], "why": "answers about Ula'tek, not Kith'ix"},
     "recall": {"all": [r"PURPLE-OTTER-42"], "why": "recalls the codeword"},
+    "cds": {"all": [r"\d+\s*(of|/)\s*~?\d+"], "none": [r"\bmissed\b"],
+            "why": "'N of ~M opportunities' wording, never 'missed' (046/064)"},
 }
 
 if __name__ == "__main__":

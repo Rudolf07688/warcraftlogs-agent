@@ -31,9 +31,9 @@ The agent-team redesign: persistence and autonomy. Full record in
 - **The next retro has the full team** (owner, 2026-11-05): raise it when the next sprint's
   PO report lands. team-launch wrap-up step 8 says how.
 
-## Next sprint (first trial of P13)
+## Sprint 2026-11-05b (running, first trial of P13)
 
-- Steer: none parked yet. My proposal, to confirm with the owner: back to the app.
+- Launched 17:48Z, board sprint-2026-11-05b, branch from 0678ea7. Owner confirmed my proposal: back to the app.
   Semantic search always down (sc-428; lead: the 3 s embed budget), D8 misses cancelled
   embeddings (sc-503), service-graph average (sc-504), dashboard ratio guards (sc-508, 1 pt),
   and as candidates: 23k prompt tokens per chat (sc-367), chat input locked after a drop

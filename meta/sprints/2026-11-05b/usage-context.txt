@@ -1,0 +1,40 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                             79    33826     8636872     124265      1
+QA security sprint diff                      40    23592     2558726      93709      0
+064 prompt fixed-cost budget                 79    71769    11795485     197427      0
+061-fix QA findings                          35    22791     3044072      92355      0
+061 KB embedding timeout                     68    48990     8025499     152050      0
+063-fix QA findings                          22    13826     1553284      89751      0
+product-owner                               131    77424    20669968     251114      0
+062 dashboard ratios and service graph       79    48186     9967147     147355      0
+Architecture docs and facts pass             44    21660     5168733     166285      0
+063 chat input after drop                    29    21109     2501770     112550      0
+QA bug hunt sprint diff                      45    35708     2991303     118547      0
+Shortcut board sync                          10     4303      741476      95504      0
+TOTAL {'calls': 661, 'out': 423184, 'cr': 77654335, 'cc': 1640912, 'inp': 1446, 'sends': 1}
+main (team-lead) [('Bash', 52), ('Monitor', 3), ('ToolSearch', 2), ('Read', 2), ('Skill', 1), ('ListAgents', 1)]
+QA security sprint diff [('Bash', 40), ('Write', 1)]
+064 prompt fixed-cost budget [('Bash', 73), ('Read', 3), ('mcp__shortcut__update_story', 2), ('Edit', 2), ('ToolSearch', 1), ('Write', 1)]
+061-fix QA findings [('Bash', 33), ('ToolSearch', 1)]
+061 KB embedding timeout [('Bash', 63), ('mcp__shortcut__update_story', 6), ('ToolSearch', 1), ('Write', 1)]
+063-fix QA findings [('Bash', 21), ('bash', 1)]
+product-owner [('Bash', 89), ('Agent', 10), ('mcp__shortcut__search_stories', 9), ('mcp__shortcut__get_story', 8), ('mcp__shortcut__update_story', 7), ('mcp__shortcut__create_story', 7)]
+062 dashboard ratios and service graph [('Bash', 75), ('mcp__shortcut__update_story', 4), ('ToolSearch', 2), ('Edit', 1), ('TaskStop', 1)]
+Architecture docs and facts pass [('Bash', 43), ('Read', 2)]
+063 chat input after drop [('Bash', 26), ('mcp__shortcut__update_story', 2), ('Read', 1), ('ToolSearch', 1)]
+QA bug hunt sprint diff [('Bash', 45), ('Write', 1)]
+Shortcut board sync [('mcp__shortcut__search_stories', 7), ('Bash', 4), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__search_epics', 1)]
+
+new context by kind (tool-result chars, share):
+main (team-lead)                           700067 Read 89%, other bash 5%, check/pg 3%, git 2%, board 1%
+QA security sprint diff                    154457 git 59%, source reads 39%, check/pg 2%, other bash 1%, Write 0%
+064 prompt fixed-cost budget               231616 Read 34%, source reads 32%, other bash 21%, git 6%, board 3%
+061-fix QA findings                         78263 source reads 46%, git 24%, other bash 15%, check/pg 11%, board 4%
+061 KB embedding timeout                   145072 source reads 49%, other bash 40%, board 6%, check/pg 2%, shortcut 2%
+063-fix QA findings                         60435 other bash 58%, board 20%, git 18%, check/pg 3%, bash 0%
+product-owner                             1173546 Read 86%, shortcut 4%, board 3%, source reads 3%, other bash 2%
+062 dashboard ratios and service graph     143696 other bash 39%, git 17%, source reads 17%, check/pg 15%, board 11%
+Architecture docs and facts pass           718939 Read 67%, html reports 21%, git 4%, source reads 3%, other bash 3%
+063 chat input after drop                   88611 source reads 36%, Read 34%, other bash 13%, git 10%, board 5%
+QA bug hunt sprint diff                    177150 source reads 69%, git 22%, other bash 9%, Write 0%
+Shortcut board sync                        127957 shortcut 74%, other bash 21%, git 5%, ToolSearch 0%

@@ -610,7 +610,10 @@ def anchor_state(a, sha, to):
     if a.kind == "comp":
         if a.name not in COMPONENTS:
             return "gone", f"no component {a.name!r} in COMPONENTS"
-        moved = [p for p in changed_files(sha, to) if any(comp_covers(q, p) for q in COMPONENTS[a.name])]
+        # Fact files are data, not the component's code: editing a fact must not stale every
+        # comp:team fact (2026-11-05b retro, Tomas).
+        moved = [p for p in changed_files(sha, to) if not p.startswith(".claude/team/facts/")
+                 and any(comp_covers(q, p) for q in COMPONENTS[a.name])]
     else:
         files = tree_files(to)
         if a.kind == "file" and a.path.endswith("/"):
