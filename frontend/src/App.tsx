@@ -39,6 +39,10 @@ import type {
 import { clampSidebarWidth, getSidebarWidth, setSidebarWidth } from "./uiPrefs";
 import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 
+const CONNECTION_LOST = "Connection lost, the answer may be incomplete.";
+// Frames that only make sense while a turn is streaming here.
+const TURN_FRAMES = new Set<Frame["type"]>(["token", "tool_start", "tool_end", "done", "error"]);
+
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
   const [modelsDegraded, setModelsDegraded] = useState(false);
@@ -85,6 +89,9 @@ export default function App() {
   const greetingReqId = useRef(0); // invalidates a late greeting if a turn/chat starts first
   // Mirrors `streaming` synchronously, so the stable callbacks below can read it.
   const streamingRef = useRef(false);
+  // sc-376: set when the socket drops mid-answer, until the reconnect has reloaded that chat.
+  const dropRef = useRef<{ conversationId: string; partial: string } | null>(null);
+  const turnSeqRef = useRef(0); // counts sent turns, so a late reload can tell a newer one began
 
   const setStreaming = useCallback((value: boolean) => {
     streamingRef.current = value;
@@ -116,6 +123,8 @@ export default function App() {
       // sc-243: is the chat the current turn belongs to still the open one?
       const turnIsOpen = () =>
         turnConvRef.current !== null && turnConvRef.current === activeIdRef.current;
+      // sc-376: a frame of a turn that was already ended locally (socket drop) is stale.
+      if (TURN_FRAMES.has(f.type) && !streamingRef.current) return;
       switch (f.type) {
         case "meta":
           turnConvRef.current = f.conversation_id;
@@ -291,6 +300,69 @@ export default function App() {
     [refreshConversations, refreshRaids, setCards, setStreaming],
   );
 
+  // sc-376: the saved (partial) answer replaces the local copy after a drop. Only if the chat
+  // is still open and no newer turn began meanwhile; a failed reload keeps the local copy and
+  // is retried on the next open.
+  const reloadAfterDrop = useCallback(async (drop: { conversationId: string; partial: string }) => {
+    const seq = turnSeqRef.current;
+    try {
+      const detail = await getConversation(drop.conversationId);
+      if (
+        activeIdRef.current !== drop.conversationId ||
+        turnSeqRef.current !== seq ||
+        streamingRef.current
+      ) {
+        return;
+      }
+      const loaded: Message[] = detail.messages.map((m) => ({ ...m }));
+      // The backend saved nothing of the cut-off answer (a restart loses it): keep our copy.
+      if (drop.partial && loaded[loaded.length - 1]?.role !== "agent") {
+        loaded.push({ role: "agent", content: drop.partial });
+      }
+      setMessages(loaded);
+      setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
+    } catch {
+      dropRef.current ??= drop;
+    }
+  }, []);
+
+  // The socket's connection changes. A drop while a turn streams ends that turn here: the
+  // new socket has no turn running, so no done/error frame will ever arrive (sc-376).
+  const handleStatus = useCallback(
+    (up: boolean) => {
+      setConnected(up);
+      if (up) {
+        const drop = dropRef.current;
+        dropRef.current = null;
+        if (drop && drop.conversationId === activeIdRef.current) void reloadAfterDrop(drop);
+        return;
+      }
+      if (!streamingRef.current) return;
+      const partial = streamRef.current;
+      const conversationId = turnConvRef.current;
+      if (conversationId !== null && conversationId === activeIdRef.current) {
+        const orphans = pendingProposalsRef.current;
+        if (orphans.length) {
+          setLooseProposals((l) => [...l, ...orphans.filter((o) => !l.some((x) => x.id === o.id))]);
+        }
+        dropRef.current = { conversationId, partial };
+      }
+      if (partial) setMessages((m) => [...m, { role: "agent", content: partial }]);
+      setError(CONNECTION_LOST);
+      setStreaming(false);
+      streamStore.set("");
+      setStatus(THINKING_DEFAULT);
+      streamRef.current = "";
+      groundedRef.current = false;
+      fallbackRef.current = undefined;
+      setCards([]);
+      pendingEncountersRef.current = [];
+      pendingArtifactsRef.current = [];
+      pendingProposalsRef.current = [];
+    },
+    [reloadAfterDrop, setCards, setStreaming],
+  );
+
   // Keep a ref of the selected model so imperative sends never read a stale value.
   useEffect(() => {
     modelRef.current = model;
@@ -338,11 +410,11 @@ export default function App() {
     void refreshConversations();
     void refreshRaids();
 
-    const socket = new ChatSocket(handleFrame, setConnected);
+    const socket = new ChatSocket(handleFrame, handleStatus);
     socketRef.current = socket;
     socket.connect();
     return () => socket.close();
-  }, [handleFrame, refreshConversations, refreshRaids]);
+  }, [handleFrame, handleStatus, refreshConversations, refreshRaids]);
 
   // PERF-010: the handlers below are stable (useCallback + refs), so the memoized
   // Sidebar, Composer and MessageList don't re-render when App does.
@@ -425,6 +497,7 @@ export default function App() {
       const convId =
         opts && "conversationId" in opts ? opts.conversationId ?? null : activeIdRef.current;
       turnConvRef.current = convId;
+      turnSeqRef.current++;
       setError(null);
       setMessages((m) => [...m, { role: "user", content: text }]);
       streamRef.current = "";
