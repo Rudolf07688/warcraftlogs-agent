@@ -154,6 +154,15 @@ groups:
         expr: >-
           sum by (state) (db_client_connections_usage{service_namespace="wcl-agent", service_name="api"})
 
+      # --- Service graph (D6, feature 059) -------------------------------------------------
+      # Grafana's Tempo service map reads its latency from
+      # traces_service_graph_request_server_seconds_bucket by that fixed name; Mimir keeps the
+      # OTLP name without the unit suffix. This copy, under the name Grafana asks for, gives the
+      # graph's edges their latency (the request counts are read as they are). The one rule
+      # without a level:metric:operation name, so `mimirtool rules check` flags it: deliberate.
+      - record: traces_service_graph_request_server_seconds_bucket
+        expr: traces_service_graph_request_server_bucket
+
       # --- API latency (D6, feature 059) ---------------------------------------------------
       # p50 and p99 beside red.yaml's p95 (055's file): same series, same exclusions.
       - record: app:http_latency:p50

@@ -15,7 +15,7 @@ import re
 import threading
 import time
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Protocol
 
 from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -224,9 +224,35 @@ def instrument() -> None:
     HTTPXClientInstrumentor().instrument()
 
 
-def shutdown(
-    providers: Sequence[TracerProvider | LoggerProvider | MeterProvider], timeout_s: float = SHUTDOWN_TIMEOUT_S
-) -> None:
+class _Stoppable(Protocol):
+    def shutdown(self) -> Any: ...
+
+
+def add_span_profiles(tracer_provider: TracerProvider, config: TelemetryConfig) -> _Stoppable | None:
+    """Start the CPU profiler and link its samples to root spans (feature 059, spec §6.7).
+
+    Only with ``config.profiles_address``; then the profiler is returned for the exit flush.
+    Samples go straight to Pyroscope, tagged like the other signals' resource.
+    """
+    if not config.profiles_address:
+        return None
+    import pyroscope  # loaded only when profiling is on
+    from pyroscope.otel import PyroscopeSpanProcessor
+
+    pyroscope.configure(
+        application_name=SERVICE_NAME,
+        server_address=config.profiles_address,
+        tags={
+            "service_namespace": SERVICE_NAMESPACE,
+            "deployment_environment_name": config.environment,
+            "service_version": config.version,
+        },
+    )
+    tracer_provider.add_span_processor(PyroscopeSpanProcessor())
+    return pyroscope
+
+
+def shutdown(providers: Sequence[_Stoppable], timeout_s: float = SHUTDOWN_TIMEOUT_S) -> None:
     """Shut the providers down in parallel, waiting ``timeout_s`` at most for all of them.
 
     Each provider's own shutdown drains its whole queue, one export timeout per batch, so with
@@ -247,13 +273,15 @@ def shutdown(
 def install(config: TelemetryConfig) -> None:
     """Set the global providers (before ADK is imported) and instrument the libraries.
 
-    The SDK's own exit hooks are off: one hook flushes all three within ``SHUTDOWN_TIMEOUT_S``.
+    The SDK's own exit hooks are off: one hook flushes all three (and the profiler, when on)
+    within ``SHUTDOWN_TIMEOUT_S``.
     """
     res = resource(config)
     tracer_provider = TracerProvider(resource=res, span_limits=SPAN_LIMITS, shutdown_on_exit=False)
     tracer_provider.add_span_processor(
         span_processor(OTLPSpanExporter(timeout=EXPORT_TIMEOUT_S), content_allowed=config.content_allowed)
     )
+    profiler = add_span_profiles(tracer_provider, config)
     # Log records take their limits from the environment only.
     os.environ.setdefault("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", str(MAX_VALUE_LENGTH))
     logger_provider = LoggerProvider(resource=res, shutdown_on_exit=False)
@@ -264,5 +292,8 @@ def install(config: TelemetryConfig) -> None:
     _logs.set_logger_provider(logger_provider)
     meters = meter_provider(res, PeriodicExportingMetricReader(metric_exporter()), shutdown_on_exit=False)
     metrics.set_meter_provider(meters)
-    atexit.register(shutdown, (tracer_provider, logger_provider, meters))
+    stoppable: list[_Stoppable] = [tracer_provider, logger_provider, meters]
+    if profiler is not None:
+        stoppable.append(profiler)
+    atexit.register(shutdown, stoppable)
     instrument()

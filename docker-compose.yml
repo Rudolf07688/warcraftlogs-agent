@@ -74,6 +74,9 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       WCL_ENVIRONMENT: dev
       WCL_GIT_SHA: ${WCL_GIT_SHA:-unknown}
+      # Span profiles (feature 059): CPU profiles of root spans pushed to Pyroscope. Like
+      # Alloy it may be down (observability profile off): the profiles are dropped then.
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
     volumes:
       # Defaults to the Linux/macOS gcloud location. On Windows set GCP_ADC_FILE in .env,
       # e.g. C:/Users/<you>/AppData/Roaming/gcloud/application_default_credentials.json
@@ -196,6 +199,29 @@ services:
     mem_limit: 512m
     restart: unless-stopped
 
+  # Span profiles (feature 059, spec §6.7): single binary on local disk (everything under
+  # /data), 7 days like the traces they link to. Grafana's Tempo "Profiles for this span"
+  # opens them. Port on loopback only, for a backend run on the host.
+  pyroscope:
+    image: grafana/pyroscope:2.4.3
+    profiles: [observability]
+    command:
+      - -config.file=/etc/pyroscope/config.yaml
+      - -retention-period=168h
+      - -architecture.storage=v2  # new install: no v1 data to read
+      - -self-profiling.disable-push=true
+      - -usage-stats.enabled=false
+      # One instance: no rolling-update waits before it reports ready.
+      - -metastore.min-ready-duration=0
+      - -ingester.min-ready-duration=0
+      - -segment-writer.min-ready-duration=0
+    volumes:
+      - pyroscope-data:/data
+    ports:
+      - "127.0.0.1:${PYROSCOPE_PORT:-4040}:4040"
+    mem_limit: 512m
+    restart: unless-stopped
+
 volumes:
   pgdata:
   alloy-data:
@@ -203,3 +229,4 @@ volumes:
   tempo-data:
   mimir-data:
   grafana-data:
+  pyroscope-data:

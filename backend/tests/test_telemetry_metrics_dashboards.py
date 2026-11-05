@@ -195,6 +195,9 @@ def test_d6_has_the_service_graph_from_tempo():
     assert [t["queryType"] for t in graph["targets"]] == ["serviceMap"]
     tempo = next(d for d in yaml.safe_load(DATASOURCES.read_text())["datasources"] if d["uid"] == "tempo")
     assert tempo["jsonData"]["serviceMap"] == {"datasourceUid": "mimir"}
+    # The service map asks for its latency under the Tempo name, with the unit suffix.
+    rules = {r["record"]: r["expr"] for g in yaml.safe_load(RULES.read_text())["groups"] for r in g["rules"]}
+    assert rules["traces_service_graph_request_server_seconds_bucket"] == "traces_service_graph_request_server_bucket"
 
 
 # sc-471: a panel that shows one bar per interval, or totals in its legend, must read windows

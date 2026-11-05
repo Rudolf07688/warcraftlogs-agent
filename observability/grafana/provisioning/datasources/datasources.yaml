@@ -73,7 +73,24 @@ datasources:
       # traces_service_graph_* to Mimir; the service map and D6's node graph read them there.
       serviceMap:
         datasourceUid: mimir
+      # Span -> profile (feature 059): a root span carries pyroscope.profile.id, and its CPU
+      # samples carry the same id as span_id (pyroscope-otel), so the flame graph is that span's.
+      tracesToProfiles:
+        datasourceUid: pyroscope
+        profileTypeId: "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+        customQuery: false
+        tags:
+          - key: service.name
+            value: service_name
       nodeGraph:
         enabled: true
       search:
         hide: false
+
+  # Span profiles (feature 059, spec §6.7).
+  - name: Pyroscope
+    uid: pyroscope
+    type: grafana-pyroscope-datasource
+    access: proxy
+    url: http://pyroscope:4040
+    editable: false
