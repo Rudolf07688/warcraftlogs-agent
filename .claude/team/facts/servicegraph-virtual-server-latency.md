@@ -2,7 +2,7 @@
 id: servicegraph-virtual-server-latency
 anchors: [file:observability/mimir/rules/anonymous/runtime.yaml, comp:alloy]
 by: dev-1 Ansel
-verified: 0678ea7 2026-11-05
+verified: 32010a6 2026-11-05
 ---
 Alloy's servicegraph connector records server latency 0 for a virtual_node edge with a real
 client (api -> redis: no server spans), so Grafana's node average (server_seconds_sum /

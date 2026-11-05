@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
-<meta name="verified-at" content="commit 1cedb4e · 2026-11-05">
+<meta name="verified-at" content="commit 8b43895 · 2026-11-05">
 <title>Open Points · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -53,7 +53,6 @@
   <div class="tablewrap"><table>
     <thead><tr><th>Where</th><th>What</th></tr></thead>
     <tbody>
-      <tr><td><code>frontend/src/App.tsx</code></td><td><b>Probable bug:</b> if the socket drops mid-turn, nothing clears the streaming state, so the composer stays locked until the page is reloaded.</td></tr>
       <tr><td><code>backend/app/api/recent_raids.py</code></td><td><code>POST /api/recent-raids/mplus/{code}/{fight}/investigate</code> has no per-user investigate limit; the raid endpoint <code>POST /api/raids/{code}/investigate</code> has one (sc-352).</td></tr>
       <tr><td><code>bin/00_init_migrate_db.sh</code></td><td>Any failed <code>alembic upgrade head</code> falls into the bootstrap path, which stops with an error when the <code>BOOTSTRAP_ADMIN_EMAIL</code> user already exists. <code>backend/cli/init_db.py</code> checks for an admin first and doesn't have this problem.</td></tr>
       <tr><td>In-process state</td><td>All five rate limiters, the kickoff pre-fetch cooldown (<code>services/kickoff_prefetch.py</code>), spawn de-duplication (<code>services/background.py</code>), raw-store tombstones and indexer stats live in memory, although Redis exists. This blocks running more than one uvicorn worker; the backend image runs a single process.</td></tr>
