@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-05 (sprint 2026-11-05 Telemetry 3 wrapped; merge question with the owner)
+Updated: 2026-11-05 (sprint 2026-11-05 merged to main 6b1a465, unpushed)
 
 ## Topic
 
@@ -14,10 +14,11 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- Sprint 2026-11-05 (Telemetry 3) wrapped: 26+2 pts on sprint-2026-11-05 tip 9a5eabf, docs gate
-  clean, live pass + re-check done; team report meta/sprints/2026-11-05/team-report.html
-  (1.61/pt, P12: PO cold 2.05 -> 0.06, sprint cold 1.92). Waiting on the owner's merge answer;
-  after merge: team-launch skill live-pass env + restart step, Mimir naming fact to developer.md.
+- Sprint 2026-11-05 (Telemetry 3) merged to main 6b1a465 (owner yes, not pushed); 26+2 pts,
+  stories Under Review; team report meta/sprints/2026-11-05/team-report.html (1.61/pt; P12:
+  PO cold 2.05 -> 0.06, sprint cold 1.92). Owner set the build-spend alert to 200 USD/day.
+  Worktrees/branches removed; stack runs from main. Next P12 step: devs' cold wakes, warm-tick
+  count in usage.py, `board.py wait --kind question --key`.
 
 ## Meta session 2026-11-05 (done)
 

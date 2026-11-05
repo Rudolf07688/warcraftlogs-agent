@@ -114,6 +114,11 @@ re-read every minute, evaluated every minute. Dashboards query these aliases, ne
 metric names (spec §8.3); the list is in `specs/055-build-telemetry/contracts/aliases.md`.
 Probe: `GET mimir:9009/prometheus/api/v1/rules`.
 
+Metric names over OTLP: Mimir keeps the OTel name with dots turned into underscores and adds
+no unit or `_total` suffix (`app.llm.finish_reasons` → `app_llm_finish_reasons`); histograms
+are native (no `_bucket`/`_count` series unless a rule copies them). Scraped exporters keep
+their own Prometheus names (`pg_stat_statements_calls_total`).
+
 - `build.yaml`: `cc:*` from Claude Code's metrics (D1, D2). `cc:cache_hit_ratio` is
   cacheRead / (input + cacheRead + cacheCreation); output tokens are not input. Counts of
   discrete events in D1 (sessions started, lines of code, commits, pull requests, active time)
