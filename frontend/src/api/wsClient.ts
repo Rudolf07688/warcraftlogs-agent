@@ -1,3 +1,4 @@
+import { startTurnEvents, type TurnEvents } from "../telemetry/chatEvents";
 import { startChatSend, type ChatSend, type ChatTraceFields } from "../telemetry/context";
 import type { Encounter, ProfileProposal } from "../types";
 
@@ -53,6 +54,7 @@ export class ChatSocket {
   private readonly url: string;
   private shouldReconnect = true;
   private chatSend: ChatSend | null = null; // the open "chat send" span of the turn in flight
+  private turn: TurnEvents | null = null; // feature 060: this socket's turn in flight, for its events
 
   constructor(
     private readonly onFrame: (f: Frame) => void,
@@ -68,6 +70,8 @@ export class ChatSocket {
     this.ws.onclose = (e) => {
       this.onStatus(false);
       this.endChatSend(true); // a turn cut off by the close never sees its done frame
+      this.turn?.aborted(this.shouldReconnect ? "connection_lost" : "closed");
+      this.turn = null;
       // 1008 = policy violation: the handshake was rejected (no/expired session or bad
       // origin). Don't hammer the server reconnecting — the app should send the user to
       // /login (feature 006). A full reload will route through RequireAuth.
@@ -80,8 +84,15 @@ export class ChatSocket {
     };
     this.ws.onmessage = (e) => {
       const frame = JSON.parse(e.data) as Frame;
-      if (frame.type === "done") this.endChatSend(false);
-      else if (frame.type === "error") this.endChatSend(true);
+      if (frame.type === "done") {
+        this.endChatSend(false);
+        this.turn?.completed();
+        this.turn = null;
+      } else if (frame.type === "error") {
+        this.endChatSend(true);
+        this.turn?.failed();
+        this.turn = null;
+      }
       this.onFrame(frame);
     };
   }
@@ -95,6 +106,8 @@ export class ChatSocket {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.endChatSend(false); // a new send supersedes a span whose turn never reported back
       this.chatSend = startChatSend();
+      this.turn?.failed(); // superseded without an answer: no completion to report
+      this.turn = startTurnEvents(turn.model);
       const frame: ChatFrame = { ...turn, ...this.chatSend?.fields };
       this.ws.send(JSON.stringify(frame));
       return true;

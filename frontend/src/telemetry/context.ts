@@ -4,20 +4,55 @@ import type { Faro } from "@grafana/faro-react";
 // packages (type-only import above), so the chat socket and the REST client stay light and
 // every function is a no-op until `registerFaro` ran, i.e. whenever Faro is off.
 
-type FaroApi = { api: Pick<Faro["api"], "getOTEL" | "getSession" | "setUser" | "resetUser"> };
+type FaroApi = {
+  api: Pick<
+    Faro["api"],
+    "getOTEL" | "getSession" | "setUser" | "resetUser" | "pushError" | "pushEvent" | "setView"
+  >;
+};
 
 let faro: FaroApi | null = null;
 let userHash: string | null = null;
+let route = "unknown";
 
 export function registerFaro(instance: FaroApi): void {
   faro = instance;
   applyUser();
+  faro.api.setView({ name: route });
 }
 
-/** Test seam: forget the instance and the user. */
+/** Test seam: forget the instance, the user and the route. */
 export function resetFaroForTests(): void {
   faro = null;
   userHash = null;
+  route = "unknown";
+}
+
+/**
+ * Feature 060: the matched route template (`/app/*`, never a raw path), as Faro's view, so
+ * every signal the browser sends (vitals, errors, events) carries it as `view_name`.
+ */
+export function setRoute(template: string): void {
+  if (template === route) return;
+  route = template;
+  faro?.api.setView({ name: route });
+}
+
+export function currentRoute(): string {
+  return route;
+}
+
+/**
+ * Report a caught error with bounded context (feature 060). No-op while Faro is off. The
+ * error's message goes to Alloy, whose redaction applies; it is never shown to the user.
+ */
+export function reportError(error: Error, context: Record<string, string>): void {
+  faro?.api.pushError(error, { context: { ...context, route } });
+}
+
+/** A custom event (spec §7.1); attribute values are bounded enums and numbers only. */
+export function pushTelemetryEvent(name: string, attributes: Record<string, string>): void {
+  faro?.api.pushEvent(name, attributes);
 }
 
 function applyUser(): void {

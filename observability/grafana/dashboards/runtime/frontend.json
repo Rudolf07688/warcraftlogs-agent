@@ -1,0 +1,779 @@
+{
+  "uid": "wcl-d5-frontend",
+  "title": "App: Frontend",
+  "description": "D5 (feature 060): Web Vitals, browser errors and chat moments from Faro, queried from Loki directly (no ruler). Route = the React Router template Faro reports as its view.",
+  "tags": [
+    "wcl-agent",
+    "runtime"
+  ],
+  "editable": true,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "1m",
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "wcl-agent"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Sessions",
+      "description": "Faro sessions started in the range (session_start events; the session id itself is masked).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"web\"} |= \"session_start\" | logfmt | kind=\"event\" | event_name=\"session_start\" [$__range]))",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Turns sent",
+      "description": "Chat messages sent in the range (agent_message_sent).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"web\"} |= \"agent_message_sent\" | logfmt | kind=\"event\" | event_name=\"agent_message_sent\" [$__range]))",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "JS errors",
+      "description": "Browser exceptions in the range, error boundaries included.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"web\"} |= \"kind=exception\" | logfmt | kind=\"exception\" [$__range]))",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Client TTFT p95",
+      "description": "Send to first token on screen, p95 over the range (agent_first_token_rendered).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service_name=\"web\"} |= \"agent_first_token_rendered\" | logfmt | kind=\"event\" | event_name=\"agent_first_token_rendered\" | unwrap event_data_ttft_ms | __error__=\"\" [$__range]) by ()",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "0",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Stream aborts",
+      "description": "Turns whose connection closed mid-stream in the range (stream_aborted).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"web\"} |= \"stream_aborted\" | logfmt | kind=\"event\" | event_name=\"stream_aborted\" [$__range]))",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 5
+    },
+    {
+      "type": "stat",
+      "title": "Completed turns",
+      "description": "Answers that finished in the range (agent_response_completed).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"web\"} |= \"agent_response_completed\" | logfmt | kind=\"event\" | event_name=\"agent_response_completed\" [$__range]))",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "id": 6
+    },
+    {
+      "type": "row",
+      "title": "Web Vitals by route",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 7
+    },
+    {
+      "type": "table",
+      "title": "Web Vitals p75 by route",
+      "description": "p75 over the range per route template (Faro view). LCP, INP, FCP and TTFB in ms; CLS unitless.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {service_name=\"web\"} |= \"kind=measurement\" | logfmt | type=\"web-vitals\" | value_lcp!=\"\" | unwrap value_lcp | __error__=\"\" [$__range]) by (view_name)",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {service_name=\"web\"} |= \"kind=measurement\" | logfmt | type=\"web-vitals\" | value_inp!=\"\" | unwrap value_inp | __error__=\"\" [$__range]) by (view_name)",
+          "refId": "B",
+          "queryType": "instant",
+          "legendFormat": "__auto",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {service_name=\"web\"} |= \"kind=measurement\" | logfmt | type=\"web-vitals\" | value_cls!=\"\" | unwrap value_cls | __error__=\"\" [$__range]) by (view_name)",
+          "refId": "C",
+          "queryType": "instant",
+          "legendFormat": "__auto",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {service_name=\"web\"} |= \"kind=measurement\" | logfmt | type=\"web-vitals\" | value_fcp!=\"\" | unwrap value_fcp | __error__=\"\" [$__range]) by (view_name)",
+          "refId": "D",
+          "queryType": "instant",
+          "legendFormat": "__auto",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {service_name=\"web\"} |= \"kind=measurement\" | logfmt | type=\"web-vitals\" | value_ttfb!=\"\" | unwrap value_ttfb | __error__=\"\" [$__range]) by (view_name)",
+          "refId": "E",
+          "queryType": "instant",
+          "legendFormat": "__auto",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(LCP|INP|FCP|TTFB) p75$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CLS p75"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      },
+      "id": 8,
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "view_name": "Route",
+              "Value #A": "LCP p75",
+              "Value #B": "INP p75",
+              "Value #C": "CLS p75",
+              "Value #D": "FCP p75",
+              "Value #E": "TTFB p75"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "LCP and INP p75 by route",
+      "description": "p75 per step; the window equals the step ($__auto).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {service_name=\"web\"} |= \"kind=measurement\" | logfmt | type=\"web-vitals\" | value_lcp!=\"\" | unwrap value_lcp | __error__=\"\" [$__auto]) by (view_name)",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": "LCP {{view_name}}"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {service_name=\"web\"} |= \"kind=measurement\" | logfmt | type=\"web-vitals\" | value_inp!=\"\" | unwrap value_inp | __error__=\"\" [$__auto]) by (view_name)",
+          "refId": "B",
+          "queryType": "range",
+          "legendFormat": "INP {{view_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 9
+    },
+    {
+      "type": "row",
+      "title": "Errors",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "JS errors / min by route",
+      "description": "Browser exceptions per minute over the last 5 minutes, by route template.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (view_name) (rate({service_name=\"web\"} |= \"kind=exception\" | logfmt | kind=\"exception\" [5m])) * 60",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": "{{view_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 11
+    },
+    {
+      "type": "table",
+      "title": "Top errors",
+      "description": "Most frequent browser exceptions in the range with their route and error boundary. The message has passed Alloy's redaction.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "topk(10, sum by (type, value, view_name, context_boundary) (count_over_time({service_name=\"web\"} |= \"kind=exception\" | logfmt | kind=\"exception\" [$__range])))",
+          "refId": "A",
+          "queryType": "instant",
+          "legendFormat": "__auto",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "id": 12,
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "type": "Type",
+              "value": "Message",
+              "view_name": "Route",
+              "context_boundary": "Boundary",
+              "Value": "Count"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Count",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Chat",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "Client TTFT",
+      "description": "Send to first token on screen (agent_first_token_rendered), per step; the window equals the step ($__auto).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.5, {service_name=\"web\"} |= \"agent_first_token_rendered\" | logfmt | kind=\"event\" | event_name=\"agent_first_token_rendered\" | unwrap event_data_ttft_ms | __error__=\"\" [$__auto]) by (event_data_model)",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": "p50 {{event_data_model}}"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service_name=\"web\"} |= \"agent_first_token_rendered\" | logfmt | kind=\"event\" | event_name=\"agent_first_token_rendered\" | unwrap event_data_ttft_ms | __error__=\"\" [$__auto]) by (event_data_model)",
+          "refId": "B",
+          "queryType": "range",
+          "legendFormat": "p95 {{event_data_model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 14
+    },
+    {
+      "type": "timeseries",
+      "title": "Stream aborts per interval",
+      "description": "stream_aborted per bar by reason: connection_lost (the socket dropped) or closed (the app closed it, e.g. leaving the chat). The window equals the step ($__auto), so bars and the legend total count each abort once.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (event_data_reason) (count_over_time({service_name=\"web\"} |= \"stream_aborted\" | logfmt | kind=\"event\" | event_name=\"stream_aborted\" [$__auto]))",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": "{{event_data_reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        }
+      },
+      "id": 15
+    }
+  ]
+}

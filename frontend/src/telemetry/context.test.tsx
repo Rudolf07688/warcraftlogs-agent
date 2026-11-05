@@ -19,6 +19,9 @@ function fakeFaro(opts: { sampled?: boolean; otel?: boolean; session?: string | 
     getSession: vi.fn(() => (session ? { id: session } : undefined)),
     setUser: vi.fn(),
     resetUser: vi.fn(),
+    setView: vi.fn(),
+    pushEvent: vi.fn(),
+    pushError: vi.fn(),
   };
   return { span, api, faro: { api } as never };
 }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
+<meta name="verified-at" content="commit 1cedb4e · 2026-11-05">
 <title>Frontend · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -47,10 +47,11 @@
   <div class="tablewrap"><table>
     <thead><tr><th>Path (<code>frontend/src/</code>)</th><th>Holds</th></tr></thead>
     <tbody>
-      <tr><td><code>main.tsx</code></td><td>entry: <code>BackendBootGate</code> → <code>AuthProvider</code> → router; starts browser telemetry (<code>initTelemetry</code>) before the first render</td></tr>
-      <tr><td><code>App.tsx</code></td><td>the chat shell: conversation state, the frame handler, sends, PDF downloads</td></tr>
+      <tr><td><code>main.tsx</code></td><td>entry: <code>BackendBootGate</code> → <code>AuthProvider</code> → the app-shell error boundary → router; starts browser telemetry (<code>initTelemetry</code>) before the first render</td></tr>
+      <tr><td><code>routes.tsx</code></td><td>the route tree (<code>appRoutes</code>): public auth pages, the guarded chat, profile and admin pages, every page but the chat as a lazy chunk; a root route owns the <code>errorElement</code></td></tr>
+      <tr><td><code>App.tsx</code></td><td>the chat shell: conversation state, the frame handler, sends, PDF downloads; the sidebar, message list and composer each sit in their own error boundary</td></tr>
       <tr><td><code>api/</code></td><td><code>wsClient.ts</code> (<code>ChatSocket</code>, the <code>Frame</code> union) and <code>restClient.ts</code> (every REST call, CSRF, <code>ApiError</code>)</td></tr>
-      <tr><td><code>telemetry/</code></td><td>Grafana Faro setup (<code>faro.ts</code>), what the rest of the app may ask of it (<code>context.ts</code>) and the URL scrubber (<code>scrub.ts</code>); see <a href="#telemetry">Browser telemetry</a></td></tr>
+      <tr><td><code>telemetry/</code></td><td>Grafana Faro setup (<code>faro.ts</code>), what the rest of the app may ask of it (<code>context.ts</code>), the URL scrubber (<code>scrub.ts</code>), the error boundary (<code>ErrorBoundary.tsx</code>) and the chat events (<code>chatEvents.ts</code>); see <a href="#telemetry">Browser telemetry</a></td></tr>
       <tr><td><code>auth/</code></td><td><code>AuthProvider</code>, <code>useAuth</code>, the <code>RequireAuth</code> route guard</td></tr>
       <tr><td><code>pages/</code></td><td>the routed screens other than the chat (profile, admin, sign-in flows)</td></tr>
       <tr><td><code>components/</code></td><td>chat components (message list, spell cards, charts, sidebar, welcome page, proposal card); <code>profile/</code> tabs and dialogs</td></tr>
@@ -170,7 +171,7 @@
 <section class="layer" id="routes">
   <h2>Routes and screens</h2>
   <h3>What it does, and where it lives</h3>
-  <p><code>createBrowserRouter</code> in <code>frontend/src/main.tsx</code>. <code>RequireAuth</code> is a UX guard only: it sends a signed-out visitor to <code>/login</code> and a non-admin away from admin routes; the server enforces every rule again.</p>
+  <p>The route tree is <code>appRoutes</code> in <code>frontend/src/routes.tsx</code>; <code>createBrowserRouter</code> in <code>frontend/src/main.tsx</code> builds the router from it. <code>RequireAuth</code> is a UX guard only: it sends a signed-out visitor to <code>/login</code> and a non-admin away from admin routes; the server enforces every rule again.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Path</th><th>Screen</th><th>Guard</th><th>Loaded</th></tr></thead>
     <tbody>
@@ -291,14 +292,18 @@
   <h3>What it does, and where it lives</h3>
   <ul>
     <li><b>Off unless configured.</b> <code>initTelemetry()</code> in <code>telemetry/faro.ts</code> does nothing, and loads none of the Faro packages (they are dynamic imports), unless <code>VITE_FARO_URL</code> is set. Compose sets it for the dev server to <code>http://localhost:12347/collect</code>, the Faro receiver in Alloy; an empty value switches it off. The other settings are <code>VITE_FARO_API_KEY</code>, <code>VITE_FARO_APP_VERSION</code> and <code>VITE_FARO_ENVIRONMENT</code>.</li>
-    <li><b>What it reports.</b> Web Vitals, uncaught errors, route changes (through the router instrumentation) and browser traces for page loads and fetch and XHR calls; the app is named <code>web</code> in namespace <code>wcl-agent</code>. Console output is not captured.</li>
+    <li><b>What it reports.</b> Web Vitals, uncaught errors, route changes (through the router instrumentation), chat events and browser traces for page loads and fetch and XHR calls; the app is named <code>web</code> in namespace <code>wcl-agent</code>. Console output is not captured.</li>
+    <li><b>Route as the view.</b> <code>faro.ts</code> maps the router's location to the matched route template (<code>/app/*</code>, <code>unmatched</code> when none) and sets it as Faro's view through <code>setRoute()</code> in <code>context.ts</code>, on start and on every navigation, so each signal carries it as <code>view_name</code> and never a raw path.</li>
+    <li><b>Error boundaries.</b> <code>TelemetryBoundary</code> (<code>telemetry/ErrorBoundary.tsx</code>) wraps the whole router (name <code>shell</code>) and, in <code>App.tsx</code>, the sidebar, the message list and the composer. A panel that throws shows <code>PanelFallback</code>, a plain "Something went wrong in this part of the page" with Retry and never the error text (it can carry model or WCL text); the other panels keep working. The panel boundaries reset when the conversation changes (their reset key is the conversation id). The report is an error named <code>React ErrorBoundary &lt;type&gt;</code> whose stack is the component stack, with the boundary's name and the route as context, pushed through <code>reportError()</code> in <code>context.ts</code>, which is a no-op while Faro is off. React Router's data router catches a route render error before the shell boundary around it can, and would show its own page with the message and stack, so the root route in <code>routes.tsx</code> has an <code>errorElement</code> (<code>RouteErrorFallback</code>) that reports as the shell and shows the same fallback; its retry reloads the page.</li>
+    <li><b>Chat events.</b> <code>ChatSocket</code> starts a <code>TurnEvents</code> object (<code>chatEvents.ts</code>) per sent turn, and each event fires at most once: <code>agent_message_sent</code> at the send, <code>agent_first_token_rendered</code> (<code>ttft_ms</code>) when <code>LiveMessage</code> in <code>MessageList.tsx</code> has put the first text on screen, <code>agent_response_completed</code> (<code>duration_ms</code>) on the <code>done</code> frame and <code>stream_aborted</code> (<code>reason</code>: <code>connection_lost</code>, or <code>closed</code> when the app closed the socket) when the connection closes mid-turn. An <code>error</code> frame ends the turn without either of the last two. Attributes are the model and whole milliseconds, never message text or ids, through <code>pushTelemetryEvent()</code>. There is no feedback event: the app has no feedback feature.</li>
     <li><b>Click to database.</b> Tracing adds a W3C <code>traceparent</code> to same-origin REST calls only, and <code>restClient.ts</code> adds <code>x-faro-session-id</code>. On the chat socket, a send opens a "chat send" span in <code>ChatSocket</code> and puts its <code>traceparent</code> and the session id into the message, because a browser WebSocket cannot set headers; the backend's "chat turn" span becomes its child (<a href="streaming.html#socket">Stream protocol</a>, <a href="observability.html#runtime">Observability</a>). A session that Faro did not sample sends no <code>traceparent</code>.</li>
     <li><b>Privacy.</b> The signed-in user is reported as a salted SHA-256 prefix of the account id (<code>identifyUser</code> in <code>AuthProvider</code>), never the email. A <code>beforeSend</code> hook (<code>scrub.ts</code>) cuts the query and fragment off every URL in every item, so an invite or password-reset <code>#token=</code> never leaves the browser.</li>
     <li><b>Where it goes.</b> To Alloy's <code>faro.receiver</code>, which stamps and redacts what it gets like any other signal (<a href="observability.html#alloy">Alloy</a>).</li>
   </ul>
 
   <h3>Why</h3>
-  <p class="why">The Faro key ships in the bundle and is not a secret, so the receiver's CORS list, size cap and rate limit are the protection, and the browser's payload is never trusted to name its own service.<cite>observability/alloy/config.alloy (comment above faro.receiver)</cite></p>
+  <p class="why">Each chat panel has its own boundary and the route tree has its own <code>errorElement</code>, because a data router handles route render errors itself and a boundary outside it never sees them; without them one broken panel would blank the chat or show a stack trace.<cite>frontend/src/telemetry/ErrorBoundary.tsx (RouteErrorFallback comment) · frontend/src/routes.tsx</cite></p>
+    <p class="why">The Faro key ships in the bundle and is not a secret, so the receiver's CORS list, size cap and rate limit are the protection, and the browser's payload is never trusted to name its own service.<cite>observability/alloy/config.alloy (comment above faro.receiver)</cite></p>
 </section>
 
 <section class="layer" id="why">
@@ -324,9 +329,9 @@
     <li><code>frontend/package.json</code>, <code>frontend/components.json</code></li>
     <li><code>frontend/vite.config.ts</code>, <code>frontend/vitest.config.ts</code></li>
     <li><code>frontend/Dockerfile</code>, <code>frontend/nginx.conf</code>, <code>frontend/index.html</code></li>
-    <li><code>frontend/src/main.tsx</code>, <code>App.tsx</code></li>
+    <li><code>frontend/src/main.tsx</code>, <code>routes.tsx</code>, <code>App.tsx</code></li>
     <li><code>frontend/src/api/restClient.ts</code>, <code>wsClient.ts</code></li>
-    <li><code>frontend/src/telemetry/</code> (<code>faro.ts</code>, <code>context.ts</code>, <code>scrub.ts</code>)</li>
+    <li><code>frontend/src/telemetry/</code> (<code>faro.ts</code>, <code>context.ts</code>, <code>scrub.ts</code>, <code>ErrorBoundary.tsx</code>, <code>chatEvents.ts</code>), <code>frontend/src/routes.tsx</code></li>
     <li><code>frontend/src/auth/</code></li>
     <li><code>frontend/src/components/StreamMarkdown.tsx</code>, <code>MessageList.tsx</code>, <code>PlotlyArtifact.tsx</code>, <code>SpellCard.tsx</code>, <code>Ambient.tsx</code>, <code>AmbientParticles.tsx</code>, <code>BackendBootGate.tsx</code>, <code>WelcomePanel.tsx</code>, <code>Sidebar.tsx</code>, <code>ProposalCard.tsx</code>, <code>ModelSelect.tsx</code>, <code>Composer.tsx</code></li>
     <li><code>frontend/src/components/ui/</code>, <code>components/profile/</code></li>

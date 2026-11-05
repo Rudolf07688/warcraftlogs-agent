@@ -10,7 +10,48 @@ services:
     # The trixie tag matches postgres:17's Debian 13 glibc (2.41); the plain pg17 tag is
     # bookworm (2.36) and would leave a collation-version mismatch on an existing database.
     image: pgvector/pgvector:pg17-trixie
-    env_file: .env
+    # Optional (feature 058): the test stacks start db without a .env; the variables below come
+    # from the shell or .env either way.
+    env_file:
+      - path: .env
+        required: false
+    # Telemetry (feature 058, spec §7.2): statement statistics, and slow statements (over 250 ms),
+    # lock waits and autovacuum runs. Postgres writes its log to files on the pglog volume (one
+    # per hour of the day, overwritten a day later), which Alloy tails read-only: Alloy needs no
+    # Docker access. `docker compose logs db` shows only the start-up lines from now on; the log
+    # itself is in Loki (masked) or in the volume. Bind parameter values are never logged
+    # (log_parameter_max_length=0); Alloy masks the literals left in the text. The prefix is what
+    # Alloy parses: time, pid, query id (pg_stat_statements' queryid), SQLSTATE. Utility
+    # statements are not tracked: their text is not normalized (an ALTER ROLE ... PASSWORD would
+    # be kept verbatim). Nothing here changes the data volume.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track_utility=off
+      - -c
+      - log_min_duration_statement=250ms
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_autovacuum_min_duration=0
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - "log_line_prefix=%m [%p] q=%Q %e "
+      - -c
+      - logging_collector=on
+      - -c
+      - log_directory=/var/log/postgresql
+      - -c
+      - log_filename=postgresql-%H.log
+      - -c
+      - log_rotation_age=60
+      - -c
+      - log_rotation_size=0
+      - -c
+      - log_truncate_on_rotation=on
     environment:
       # POSTGRES_USER is the owner/superuser — it owns the tables and runs Alembic
       # migrations. The non-privileged RUNTIME role (APP_DB_USER) that the app connects
@@ -21,10 +62,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # The image's /var/log/postgresql (root:postgres 1775), copied into the new volume.
+      - pglog:/var/log/postgresql
     # Loopback only (QA SEC-001): local tools (alembic, psql, `uv run` dev) reach it on
     # localhost; the backend container uses the compose network, never the host port.
     ports:
-      - "127.0.0.1:5432:5432"
+      # DB_PORT / REDIS_PORT: the test stacks (observability/test) move them off the app's ports.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -47,7 +91,7 @@ services:
       - "no"
     # Loopback only (QA SEC-001): this Redis has no auth, so it must not face the LAN.
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -74,6 +118,10 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       WCL_ENVIRONMENT: dev
       WCL_GIT_SHA: ${WCL_GIT_SHA:-unknown}
+      # Span profiles (feature 059): CPU profiles of server root spans pushed to Pyroscope.
+      # Off unless WCL_PROFILES is set (in .env or the shell), for runs with the observability
+      # profile up: otherwise the profiler would sample and upload to a missing host for nothing.
+      PYROSCOPE_SERVER_ADDRESS: ${WCL_PROFILES:+http://pyroscope:4040}
     volumes:
       # Defaults to the Linux/macOS gcloud location. On Windows set GCP_ADC_FILE in .env,
       # e.g. C:/Users/<you>/AppData/Roaming/gcloud/application_default_credentials.json
@@ -125,12 +173,54 @@ services:
       # The team board (feature 055): board.py keeps it in the git common dir. In a worktree
       # ./.git is a file, so set TEAM_BOARD_DIR to "$(git rev-parse --git-common-dir)/team-board".
       - ${TEAM_BOARD_DIR:-./.git/team-board}:/var/lib/team-board:ro
+      # The Postgres exporter's custom queries and Postgres's log files (feature 058).
+      - ./observability/postgres:/etc/alloy-postgres:ro
+      - pglog:/var/log/postgresql:ro
+    environment:
+      # Feature 058: the Postgres exporter logs in as the monitoring role (migration 0022, member
+      # of pg_monitor only), never as the owner. Alloy shows the value as a secret; set
+      # PG_MONITOR_PASSWORD in .env (letters and digits: it goes into a URL).
+      WCL_PG_MONITOR_DSN: postgresql://${PG_MONITOR_USER:-wcl_monitor}:${PG_MONITOR_PASSWORD:-}@db:5432/${POSTGRES_DB:-}?sslmode=disable
+      # Container metrics are kept for this compose project only (the test stacks share the
+      # Docker daemon with the app's).
+      WCL_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
+    networks: [default, cadvisor]
     ports:
       - "127.0.0.1:${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
       - "127.0.0.1:${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
       - "127.0.0.1:${ALLOY_UI_PORT:-12345}:12345"
       - "127.0.0.1:${ALLOY_FARO_PORT:-12347}:12347" # Faro receiver (feature 057)
     mem_limit: 512m
+    restart: unless-stopped
+
+  # Container CPU and memory per compose service (feature 058, D11), scraped by Alloy over the
+  # internal cadvisor network (no host port). A service of its own, not Alloy's built-in
+  # exporter: with Docker's containerd image store cAdvisor needs the containerd socket (and the
+  # Docker socket for names and compose labels), and both stay out of the collector that takes
+  # browser input. Residual risk: either socket is root-equivalent on the host whatever the mount
+  # flag (":ro" does not restrict API calls), so a cAdvisor compromise is a host compromise. It
+  # takes no input but Alloy's scrapes, runs with no capabilities, no new privileges and a
+  # read-only root filesystem, from an image pinned by digest, and only with the observability
+  # profile. Linux Docker hosts only (Docker Desktop hides the host's cgroups).
+  cadvisor:
+    image: ghcr.io/google/cadvisor@sha256:80e55785e1fa6bcf2b2f372eec4859608f1fe9646bb087f05c7916118b541552 # 0.54.1
+    profiles: [observability]
+    command:
+      - --docker_only=true
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --enable_metrics=cpu,memory
+      - --housekeeping_interval=30s
+    volumes:
+      - /sys:/sys:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    networks: [cadvisor]
+    mem_limit: 256m
     restart: unless-stopped
 
   # --- observability profile: storage backends and Grafana (feature 053) ---
@@ -196,6 +286,34 @@ services:
     mem_limit: 512m
     restart: unless-stopped
 
+  # Span profiles (feature 059, spec §6.7): single binary on local disk (everything under
+  # /data), 7 days like the traces they link to. Grafana's Tempo "Profiles for this span"
+  # opens them. Port on loopback only, for a backend run on the host.
+  pyroscope:
+    image: grafana/pyroscope:2.4.3
+    profiles: [observability]
+    command:
+      - -config.file=/etc/pyroscope/config.yaml
+      - -retention-period=168h
+      - -architecture.storage=v2  # new install: no v1 data to read
+      - -self-profiling.disable-push=true
+      - -usage-stats.enabled=false
+      # One instance: no rolling-update waits before it reports ready.
+      - -metastore.min-ready-duration=0
+      - -ingester.min-ready-duration=0
+      - -segment-writer.min-ready-duration=0
+    volumes:
+      - pyroscope-data:/data
+    ports:
+      - "127.0.0.1:${PYROSCOPE_PORT:-4040}:4040"
+    mem_limit: 512m
+    restart: unless-stopped
+
+networks:
+  # Internal only (feature 058): Alloy scrapes cAdvisor here.
+  cadvisor:
+    internal: true
+
 volumes:
   pgdata:
   alloy-data:
@@ -203,3 +321,6 @@ volumes:
   tempo-data:
   mimir-data:
   grafana-data:
+  pyroscope-data:
+  # Postgres's log files (feature 058), read-only in Alloy.
+  pglog:

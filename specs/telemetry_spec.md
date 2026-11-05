@@ -277,6 +277,8 @@ That "bonus" row is where the two layers physically join. Section 6.6 makes the 
 
 > **As built (2026-11-04, feature 056):** only `app.cache.requests` (labels `app.cache.name`, `app.cache.result` of hit, miss or error), the four `app.rag.*` metrics (labels `app.rag.index`, and `app.rag.strategy` on the duration) and `app.llm.stream.ttft` (labels `gen_ai.request.model`, `gen_ai.agent.name`) exist; the label keys are namespaced because the metric view keeps an allowlist of attribute names. The other rows are not built.
 
+> **As built (2026-11-05, feature 059; the code wins):** three more rows are built, with these labels (all on `setup.METRIC_ATTRIBUTES`): `app.embedding.duration` and `app.embedding.batch_size` (`gen_ai.request.model`, `app.embedding.task` of `document` or `query`, and `error.type` on a failed request; one point per provider request, retries inside it counted once; a query embedding cancelled by the search's own 3 s budget is not recorded, because the cancel is not an `Exception`), `app.agent.turns_per_conversation` (`gen_ai.agent.name`; recorded at the end of each chat turn from a turn count kept in the ADK session state) and, not in the table above, `app.llm.finish_reasons` (`gen_ai.request.model`, `app.llm.finish_reason`, a fixed set of names with the rest as `other`). Guardrail, feedback and business metrics are still not built.
+
 ### 6.5 LLM cost model (runtime)
 
 ADK and the GenAI conventions emit tokens, not dollars. Cost is computed in Mimir, not in the app:
@@ -301,6 +303,8 @@ The same table can price Claude Code tokens. This gives you a second, independen
 | API → background tasks / queues | Explicit context capture and re-attach. `asyncio.create_task` keeps contextvars, but thread pools and external queues don't. |
 | Build layer → API | A test or dev server started by a Claude Code Bash tool inherits `TRACEPARENT`. A startup hook in the API's dev mode reads the env var and uses it as the parent of startup and test spans. |
 
+> **As built (2026-11-05, feature 058):** sqlcommenter is on whenever telemetry is on, with the `traceparent` only (`db_driver`, `db_framework`, `tracestate` and `baggage` are off; a client could send the last two). It costs one extra prepare per statement, about 0.5 ms. SQLAlchemy has one tracer per async engine (feature 059): the instrumentor used to wrap the engine twice.
+
 **Sampling:** backend samplers are parent-based. If Faro samples a session out, backend traces for it are dropped too ([Faro tracing](https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/frontend-observability/instrument/tracing-instrumentation/)). In prod, set Faro sampling to 100% and let Alloy tail sampling decide, or set `omitTraceContextForUnsampledSessions`.
 
 ### 6.7 Profiling
@@ -308,6 +312,8 @@ The same table can price Claude Code tokens. This gives you a second, independen
 - Pyroscope Python SDK with `pyroscope-otel` `PyroscopeSpanProcessor`. This links CPU profiles to spans ([Pyroscope docs](https://grafana.com/docs/pyroscope/latest/configure-client/trace-span-profiles/python-span-profiles/)).
 - Expect CPU-only span profiles. Very short spans may not get samples.
 - Main use cases: JSON serialization of large ADK events, embedding pre- and post-processing, and blocking calls hiding in the event loop.
+
+> **As built (2026-11-05, feature 059; the code wins):** span profiles are opt-in and use our own span processor. Compose sets `PYROSCOPE_SERVER_ADDRESS` (to `http://pyroscope:4040`) only when `WCL_PROFILES` is set, and the backend profiles only when telemetry is on and that address is set; the samples go straight to Pyroscope, not through Alloy. `pyroscope-io==1.4.0` has a cp314 wheel, so the sprint-3 "no wheel" outcome did not happen. `setup.SpanProfiles` replaces `pyroscope-otel`'s `PyroscopeSpanProcessor` (still pinned, not used), which tagged every root span including background work, tagged the trace id (a new label value per request) and removed tags by the span's final name. Ours acts on server root spans only (a request, a chat turn), sets `pyroscope.profile.id` on the span and tags the samples with `span_id` and `span_name` (a route template, a bare method for an unknown path, or a fixed name; never an id), and removes exactly what it added. Pyroscope runs as the `pyroscope` service of the observability profile (2.4.3, v2 storage, 7 days, `127.0.0.1:${PYROSCOPE_PORT:-4040}`); Tempo's `tracesToProfiles` opens the flame graph from a span, and `serviceMap` reads the service-graph metrics from Mimir (§8.1). Samples are tagged per OS thread, so requests running at once on the event loop share samples. The use cases above are not measured.
 
 ## 7. Frontend, data stores and quality signals
 
@@ -326,6 +332,8 @@ The same table can price Claude Code tokens. This gives you a second, independen
 | Sourcemaps | Upload or serve them privately. Restrict `download_from_origins` to your own origin ([faro.receiver](https://grafana.com/docs/alloy/latest/reference/components/faro/faro.receiver/)). |
 | Metrics from Faro | Faro data lands in Loki. A Loki ruler recording rule derives `faro:web_vitals:p75` and `faro:js_errors:rate5m` into Mimir. |
 
+> **As built (2026-11-05, features 059 and 060; the code wins):** React Router's data router catches a route render error before any boundary outside it, so there is a `TelemetryBoundary` around the router (`shell`), one around the sidebar, the message list and the composer (reset when the conversation changes), and a root `errorElement` on the route tree; each shows a plain fallback with Retry, never the error text, and reports `React ErrorBoundary <type>` with the component stack, the route and the boundary name. This is our own boundary component, not Faro's `ErrorBoundary`, so the Faro packages stay out of the main bundle. The route template is Faro's view (`view_name`). Built custom events: `agent_message_sent`, `agent_first_token_rendered` (`ttft_ms`), `agent_response_completed` (`duration_ms`) and `stream_aborted` (`reason` of `connection_lost` or `closed`); `agent_feedback` is not sent (no feedback feature, §7.5). No React component profiler. No Loki-ruler metrics: D5 reads Faro's log lines in Loki directly. Faro's `session_id` in a log line is masked by Alloy's redaction.
+
 ### 7.2 Postgres + pgvector
 
 | Layer | Spec |
@@ -337,6 +345,8 @@ The same table can price Claude Code tokens. This gives you a second, independen
 | Logs | `log_min_duration_statement=250ms`, `log_lock_waits=on`, `log_autovacuum_min_duration=0`, JSON log format, collected through Docker logs into Loki |
 | Correlation | sqlcommenter `traceparent` in the slow-query log, and a Loki derived field to Tempo |
 
+> **As built (2026-11-05, feature 058; the code wins):** extension `pg_stat_statements` only (`auto_explain` is not built); migration `0022_pg_stat_statements` creates it, and the db service preloads it with `pg_stat_statements.track_utility=off`, because utility statements are not normalized (an `ALTER ROLE ... PASSWORD` would be kept verbatim). The exporter logs in as a monitoring role (`PG_MONITOR_USER`, default `wcl_monitor`; member of `pg_monitor` with CONNECT only), created by that migration only when `PG_MONITOR_PASSWORD` is set (16 or more letters and digits, no default); unset means no role and `pg_up 0`. `include_query = false` in every environment, statements are listed by `queryid`, limit 100. Custom queries (`observability/postgres/queries.yaml`): vector index size per index and live rows per table with a vector column; growth rate, scan ratios and `maintenance_work_mem` headroom are not built. Pool metrics come from the SQLAlchemy instrumentation. **Logs:** not JSON and not through Docker logs. Postgres writes text files (`logging_collector`, `postgresql-<hour>.log`, overwritten a day later) to the `pglog` volume with the prefix `%m [%p] q=%Q %e `; slow statements over 250 ms, lock waits and autovacuum runs, `log_parameter_max_length=0` so bind values are never logged. Alloy tails the files from a read-only mount and has no Docker access at all (a Docker socket there would be root-equivalent on the host, next to browser input). It joins multi-line records, takes the last `traceparent` as the record's trace id and masks quoted strings, dollar-quoted bodies, numbers and DETAIL/CONTEXT/HINT values before the shared redaction. `docker compose logs db` shows only the start-up lines. The slow-query log links to traces through the sqlcommenter `traceparent` (§6.6) and the existing Loki derived field.
+
 ### 7.3 Redis
 
 | Layer | Spec |
@@ -345,9 +355,13 @@ The same table can price Claude Code tokens. This gives you a second, independen
 | App | `app.cache.requests` (hit, miss, stale) per logical cache, plus a TTL distribution for the semantic cache |
 | Dashboards | Start from a community redis_exporter dashboard ([Grafana dashboards](https://grafana.com/grafana/dashboards/763-redis-dashboard-for-prometheus-redis-exporter-1-x/)), then add the app-level hit ratio next to Redis's own |
 
+> **As built (2026-11-05, feature 058; the code wins):** `prometheus.exporter.redis` with INFO-based series only and no key checks (key names carry account ids). The semantic-cache TTL distribution is not built, and `app.cache.requests` has `hit`, `miss` and `error` (§6.4), not `stale`. D10 puts the app's hit ratio beside Redis's own.
+
 ### 7.4 Infrastructure
 
 cAdvisor container metrics, host metrics, Docker logs, and Alloy, Loki, Tempo, Mimir and Pyroscope self-metrics (meta-monitoring dashboard).
+
+> **As built (2026-11-05, feature 058; the code wins):** cAdvisor runs as its own service of the observability profile (0.54.1, pinned by digest, CPU and memory only, Docker containers only), on an internal `cadvisor` network that only Alloy shares; no capabilities, `no-new-privileges`, read-only root filesystem. It needs the Docker and containerd sockets, which are root-equivalent on the host whatever the mount flag, so a compromised cAdvisor is a compromised host: that residual risk is accepted and stated in `docker-compose.yml`. Alloy keeps only this compose project's containers (`WCL_COMPOSE_PROJECT`; unset keeps none) and the host's root cgroup as `compose_service="host"`, labelled by compose service alone. No separate host metrics and no Docker logs. Self-metrics: Alloy, Loki, Tempo and Mimir are scraped; Pyroscope's is not. All of it is remote-written to Mimir under the exporters' own names through one allowlist of series names, with the 50,000 active-series budget as the cap (`meta:active_series:budget`).
 
 ### 7.5 Agent quality signals (reserved)
 
@@ -388,6 +402,8 @@ cAdvisor container metrics, host metrics, Docker logs, and Alloy, Loki, Tempo, M
 | D12 | Build ⇄ Runtime | cross | Annotations for each commit from Claude Code (`vcs.ref.head.revision`) overlaid on runtime p95 latency, error rate and LLM cost per request, keyed by `service.version`. Table: commit → authoring agent role → build cost → runtime deltas. |
 | D13 | Agent Team: Improvement | build | Per sprint: cost per point, cost shares (coordination, build, QA), minutes per point, blocking questions and their longest wait, rework rounds, blockers; per agent: context per call and weighted cost by role. Fed at each wrap-up by `.claude/team/teamstats.py` (baseline table, `usage.txt`, board export); sprint ends as annotations on the build dashboards. Added 2026-11-04 on the owner's request. |
 
+> **As built (2026-11-05, features 058 to 060; the code wins):** dashboards are provisioned in four Grafana folders: `build`, `runtime`, `infra` and `cross`. D1, D2 and D13 are in `build` (D3 and D4 are not built). `runtime`: D5 "App: Frontend" (`wcl-d5-frontend`), D6 "App: API RED" (`wcl-api-red`, with the service graph as a node graph and each node's average response time), D7 "App: Agents and LLM" (`wcl-app-api-llm`; finish reasons and conversation depth added; no feedback ratio) and D8 "App: Knowledge base and cache" (`wcl-rag`; embedding latency, batch size and requests by outcome added; the pgvector index size is on D9). `infra`: D9 "Data: Postgres" (`wcl-d9-postgres`), D10 "Data: Redis" (`wcl-d10-redis`) and D11 "Infra: Containers and telemetry pipeline" (`wcl-d11-infra`); these are not in the runtime layer, and D11 has no separate host dashboard. `cross`: D12 "Build vs Runtime" (`wcl-d12-build-runtime`). D12 is keyed by `service.version`, which is not a promoted label, so the running version comes from `target_info{job="wcl-agent/api"}` (preferring a known version over `unknown` or none); its annotations mark each API version while it ran, not each commit. The commit-to-seat table comes from `build_commit_info` and `build_commit_cost_usd` gauges that `observability/build-runtime/commits.py` pushes from the team boards, the roster and each sprint's `usage.txt`: a commit belongs to the seat of the latest hand-off on the same feature, and a version no board entry names is "unattributed". Build cost is left out, never zero, until a usage file exists.
+
 ### 8.3 Recording rules (stable aliases)
 
 Dashboards query aliases, not raw OTel names, so semconv churn is absorbed in one file:
@@ -403,6 +419,8 @@ Dashboards query aliases, not raw OTel names, so semconv churn is absorbed in on
 >
 > Dashboards never query raw names; panels that need an exact count over a range may use `increase()` on the raw counter (see `specs/055-build-telemetry/contracts/aliases.md` and `specs/056-runtime-metrics/data-model.md`).
 
+> **As built (2026-11-05, features 058 to 060; the code wins):** new rule files `datastores.yaml` (`pg:*`, `redis:*`, `infra:*`, `meta:*`, `alert:build_spend_usd_per_day:threshold`) and `cross.yaml` (`cross:*`, D12), and in `runtime.yaml` `genai:finish_reasons:rate5m`, `genai:turns_per_conversation:p50` and `:p95`, `app:http_latency:p50` and `:p99`, `rag:embedding_requests:rate5m`, `rag:embedding_latency:p95`, `rag:embedding_batch_size:avg5m`, and two copies of the service-graph request histogram under the names Grafana's service map asks for (`traces_service_graph_request_server_seconds_bucket` and `_sum`; the only rules not named `level:metric:operation`). Statements are aliased by `queryid` as totals since the last statistics reset, because a statement's series appears with its first execution already counted, which a rate never sees.
+
 ### 8.4 Alerts (Grafana-managed)
 
 | Alert | Condition (initial) |
@@ -417,6 +435,8 @@ Dashboards query aliases, not raw OTel names, so semconv churn is absorbed in on
 | Postgres | Connections above 80% of max, replication or long-transaction alerts, deadlocks |
 | Redis | Evictions above 0 sustained, memory above 85% |
 | Telemetry pipeline | Alloy exporter failures, dropped spans/logs, Loki or Mimir ingest rejects |
+
+> **As built (2026-11-05, feature 058; the code wins):** only two of these exist, as Grafana-managed rules in folder "WCL alerts", provisioned from `observability/grafana/provisioning/alerting/rules.yaml` (edits in the UI are not saved) with no contact point; the state shows in Grafana's alert list. *Telemetry pipeline failures or drops*: Alloy export or enqueue failures or receiver refusals for any signal in the last 2 minutes (`meta:exporter_failures:increase2m`). *Build spend per day above threshold*: Claude Code's estimate over 24 hours against `alert:build_spend_usd_per_day:threshold`, a recording rule (200 USD, the owner's choice on 2026-11-05) in `datastores.yaml`, so changing the number is a rules edit. The other rows are not built.
 
 ## 9. Naming, labels and cardinality budget
 

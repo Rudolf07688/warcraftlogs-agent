@@ -473,3 +473,149 @@ async def test_time_to_first_token_runs_from_the_turn_start_across_a_tool_round(
     [point] = metric_reader()["app.llm.stream.ttft"]
     assert point.count == 1
     assert point.sum == pytest.approx(1.7)
+
+
+# --- sc-462 (feature 059): finish reasons, conversation depth, embeddings -----------------
+
+TENANT = "tenant-059"  # a workspace run: chat turns, not the greeting's local user
+
+
+async def test_chat_turns_count_finish_reasons_and_record_the_conversation_depth(metric_reader, monkeypatch, use_provider):
+    use_provider("anthropic", key=SENTINEL_KEY)
+    scripted_agent(
+        monkeypatch,
+        ScriptedApi(
+            tool_call_with("report_title", {"code": "a1B2c3"}),
+            text_answer("It was Raid Night."),
+            text_answer("Yes, the same night."),
+        ),
+        report_title,
+    )
+
+    for question in (QUERY, "and the second?"):
+        [r async for r in agent_runner.stream_response(CLAUDE, SESSION, question, user_id=TENANT)]
+
+    points = metric_reader()
+    [reasons] = points["app.llm.finish_reasons"]  # tool_use and end_turn are both STOP
+    assert dict(reasons.attributes) == {"gen_ai.request.model": CLAUDE, "app.llm.finish_reason": "stop"}
+    assert reasons.value == 3  # one per model response, never per streamed chunk
+    [depth] = points["app.agent.turns_per_conversation"]
+    assert (depth.count, depth.sum, depth.min, depth.max) == (2, 3, 1, 2)  # turn 1, then turn 2
+    assert set(depth.attributes) == {"gen_ai.agent.name"} and depth.attributes["gen_ai.agent.name"]
+    session = await agent_runner._session_service.get_session(
+        app_name=agent_runner.APP_NAME, user_id=TENANT, session_id=SESSION
+    )
+    assert session.state[agent_runner.TURNS_KEY] == 2
+    assert_clean(points.all_labels())
+
+
+async def test_the_greeting_and_guide_runs_record_no_conversation_depth(metric_reader, monkeypatch, use_provider):
+    use_provider("anthropic", key=SENTINEL_KEY)
+    scripted_agent(monkeypatch, ScriptedApi(text_answer("Welcome back.")), report_title)
+
+    [r async for r in agent_runner.stream_response(CLAUDE, SESSION, QUERY)]
+
+    points = metric_reader()
+    assert points["app.agent.turns_per_conversation"] == []
+    assert points.labels("app.llm.finish_reasons") == [{"gen_ai.request.model": CLAUDE, "app.llm.finish_reason": "stop"}]
+    session = await agent_runner._session_service.get_session(
+        app_name=agent_runner.APP_NAME, user_id=agent_runner.USER_ID, session_id=SESSION
+    )
+    assert agent_runner.TURNS_KEY not in session.state
+
+
+@pytest.mark.parametrize(
+    ("state", "turns"),
+    [({}, 0), ({"app_turns": 4}, 4), ({"app_turns": "4"}, 0), ({"app_turns": True}, 0), ({"app_turns": -1}, 0)],
+)
+async def test_the_turn_count_comes_from_the_session_state(monkeypatch, state, turns):
+    class _Service:
+        async def get_session(self, **kwargs):
+            return SimpleNamespace(state=state)
+
+    monkeypatch.setattr(agent_runner, "_get_session_service", lambda: _Service())
+    assert await agent_runner._ensure_session("s1", TENANT) == turns
+
+
+def test_finish_reasons_are_a_fixed_set(metric_reader):
+    from google.genai import types
+
+    from backend.app.telemetry import metrics as app_metrics
+
+    for reason in (
+        types.FinishReason.MAX_TOKENS,
+        types.FinishReason("SOMETHING_NEW_FROM_THE_API"),  # google-genai makes up a member
+        "free text from a provider",
+        None,
+        types.FinishReason.FINISH_REASON_UNSPECIFIED,
+        42,
+    ):
+        app_metrics.record_finish_reason(CLAUDE, reason)
+
+    counted = {p.attributes["app.llm.finish_reason"]: p.value for p in metric_reader()["app.llm.finish_reasons"]}
+    assert counted == {"max_tokens": 1, "other": 2}
+    assert set(counted) <= app_metrics.FINISH_REASONS
+
+
+async def test_each_embedding_request_records_latency_and_batch_size(metric_reader, monkeypatch):
+    from backend.app.kb.embedder import VertexEmbedder
+    from backend.tests.test_kb_embed import FakeGenai
+    from wcl_agent.llm import generation
+
+    monkeypatch.setattr(generation, "_genai_client", lambda: FakeGenai())
+    await VertexEmbedder("gemini-embedding-001", request_batch=2).embed([QUERY, "b", "c"], task="RETRIEVAL_QUERY")
+    await VertexEmbedder("gemini-embedding-001", request_batch=2).embed(["d"], task="RETRIEVAL_DOCUMENT")
+
+    points = metric_reader()
+    sizes = {p.attributes["app.embedding.task"]: (p.count, p.sum) for p in points["app.embedding.batch_size"]}
+    assert sizes == {"query": (2, 3), "document": (1, 1)}  # requests of 2 + 1 texts, then 1
+    durations = {p.attributes["app.embedding.task"]: p.count for p in points["app.embedding.duration"]}
+    assert durations == {"query": 2, "document": 1}
+    assert {"gen_ai.request.model": "gemini-embedding-001", "app.embedding.task": "query"} in points.labels(
+        "app.embedding.duration"
+    )
+    assert_clean(points.all_labels())
+
+
+async def test_a_failed_embedding_request_is_recorded_with_its_error_type(metric_reader, monkeypatch):
+    """Live check #78: with every query embedding timing out, D8 must show the failures."""
+    from backend.app.kb import embedder as kb_embedder
+    from backend.tests.test_kb_embed import FakeGenai
+    from wcl_agent.llm import generation
+    from wcl_agent.llm.model_retry import RetryPolicy
+
+    monkeypatch.setattr(kb_embedder, "_POLICY", RetryPolicy(attempts=1, initial_s=0, jitter_s=0))
+    monkeypatch.setattr(generation, "_genai_client", lambda: FakeGenai(fail=[TimeoutError()]))
+    with pytest.raises(TimeoutError):
+        await kb_embedder.VertexEmbedder("gemini-embedding-001").embed([QUERY], task="RETRIEVAL_QUERY")
+
+    points = metric_reader()
+    failed = {"gen_ai.request.model": "gemini-embedding-001", "app.embedding.task": "query", "error.type": "TimeoutError"}
+    assert points.labels("app.embedding.duration") == [failed]
+    assert points.labels("app.embedding.batch_size") == [failed]
+    assert_clean(points.all_labels())
+
+
+class _StreamedWithReason:
+    """Gemini-style streaming: the last partial chunk and the aggregated final event both
+    carry the finish reason."""
+
+    async def run_async(self, **kwargs):
+        from google.genai import types
+
+        for partial in (True, True, False):
+            event = _event(_part(text="Raid Night."), partial=partial)
+            event.finish_reason = types.FinishReason.STOP
+            yield event
+
+
+async def test_a_streamed_response_counts_its_finish_reason_once(metric_reader, monkeypatch):
+    async def no_session(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(agent_runner, "_ensure_session", no_session)
+    monkeypatch.setattr(agent_runner, "_get_runner", lambda model: _StreamedWithReason())
+    [r async for r in agent_runner._run_turn(CLAUDE, SESSION, QUERY, user_id=TENANT)]
+
+    [point] = metric_reader()["app.llm.finish_reasons"]
+    assert point.value == 1

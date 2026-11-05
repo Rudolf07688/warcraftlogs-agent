@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against. Written by `.claude/team/archdocs.py stamp`; nav.js shows it. -->
-<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
+<meta name="verified-at" content="commit 1cedb4e · 2026-11-05">
 <title>WCL Agent Architecture</title>
 <link rel="stylesheet" href="assets/arch.css">
 <script src="assets/nav.js" defer></script>
@@ -32,11 +32,11 @@
 
 <section class="layer" id="overview">
   <h2>Whole-system overview</h2>
-  <p>One browser tab talks to one FastAPI process. Chat turns run over a WebSocket; everything else is REST under <code>/api</code>. The agent and all background work (fetch writer, knowledge-base indexer, guide pipeline, recent raids, kickoff pre-fetch) run inside the backend process; there is no separate worker service. Docker Compose runs four app containers: <code>frontend</code>, <code>backend</code>, <code>db</code> and <code>redis</code>. A fifth, <code>alloy</code>, is the always-on telemetry collector (it also takes the browser's Faro reports and tails the agent team's board); an optional <code>observability</code> profile adds Loki, Tempo, Mimir and Grafana.</p>
+  <p>One browser tab talks to one FastAPI process. Chat turns run over a WebSocket; everything else is REST under <code>/api</code>. The agent and all background work (fetch writer, knowledge-base indexer, guide pipeline, recent raids, kickoff pre-fetch) run inside the backend process; there is no separate worker service. Docker Compose runs four app containers: <code>frontend</code>, <code>backend</code>, <code>db</code> and <code>redis</code>. A fifth, <code>alloy</code>, is the always-on telemetry collector (it also takes the browser's Faro reports, tails the agent team's board and Postgres's slow-statement log, and scrapes Postgres, Redis and the containers); an optional <code>observability</code> profile adds Loki, Tempo, Mimir, Grafana, Pyroscope (CPU profiles of requests) and cAdvisor.</p>
   <figure class="diagram">
     <svg class="dg" viewBox="0 0 980 620" role="img" aria-labelledby="ov-title ov-desc">
       <title id="ov-title">System overview</title>
-      <desc id="ov-desc">The browser loads the React frontend, which proxies /api and /ws to the FastAPI backend. The backend runs the Barnaby agent on Google ADK, which calls one model provider: Vertex AI (Gemini, and Claude through Model Garden) or the Anthropic API (Claude). The agent's tools call back into backend code, which reads Warcraft Logs data from Redis first, then from the raw store in PostgreSQL, and only then from the Warcraft Logs API. The backend also embeds text with Gemini embeddings for the knowledge base in PostgreSQL with pgvector, and the guide pipeline reads Blizzard's live build and hotfix news. The backend also sends traces, logs and metrics to the Alloy collector, and the browser sends its own telemetry to it, which forwards everything to an optional observability stack of Loki, Tempo, Mimir and Grafana.</desc>
+      <desc id="ov-desc">The browser loads the React frontend, which proxies /api and /ws to the FastAPI backend. The backend runs the Barnaby agent on Google ADK, which calls one model provider: Vertex AI (Gemini, and Claude through Model Garden) or the Anthropic API (Claude). The agent's tools call back into backend code, which reads Warcraft Logs data from Redis first, then from the raw store in PostgreSQL, and only then from the Warcraft Logs API. The backend also embeds text with Gemini embeddings for the knowledge base in PostgreSQL with pgvector, and the guide pipeline reads Blizzard's live build and hotfix news. The backend also sends traces, logs and metrics to the Alloy collector, and the browser sends its own telemetry to it, which forwards everything to an optional observability stack of Loki, Tempo, Mimir and Grafana. Alloy also scrapes the database and cache, and the backend can push CPU profiles to Pyroscope in the same stack.</desc>
       <defs>
         <marker id="ov-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
       </defs>
@@ -71,10 +71,11 @@
       <text class="sub" x="315" y="98" text-anchor="middle">OTLP · Faro · team board</text>
       <text class="sub" x="315" y="117" text-anchor="middle">always on · disk queue</text>
 
-      <rect class="node store" x="220" y="158" width="190" height="84" rx="10"/>
-      <text class="t" x="315" y="184" text-anchor="middle">Observability stack</text>
-      <text class="sub" x="315" y="206" text-anchor="middle">Loki · Tempo · Mimir</text>
-      <text class="sub" x="315" y="227" text-anchor="middle">Grafana · profile only</text>
+      <rect class="node store" x="220" y="158" width="190" height="92" rx="10"/>
+      <text class="t" x="315" y="182" text-anchor="middle">Observability stack</text>
+      <text class="sub" x="315" y="202" text-anchor="middle">Loki · Tempo · Mimir</text>
+      <text class="sub" x="315" y="220" text-anchor="middle">Grafana · Pyroscope</text>
+      <text class="sub" x="315" y="238" text-anchor="middle">profile only</text>
 
       <rect class="node store" x="220" y="470" width="200" height="110" rx="10"/>
       <text class="t" x="320" y="500" text-anchor="middle">PostgreSQL 17</text>
@@ -131,7 +132,7 @@
       <path class="flow" marker-end="url(#ov-ah)" d="M470,390 V430 H320 V468"/>
       <text class="lbl" x="395" y="422" text-anchor="middle">2 store · SQL</text>
     </svg>
-    <figcaption>A Warcraft Logs lookup reads Redis first (1), then the raw store in Postgres, filtered by what the workspace may see and how fresh the data is (2), and only then the API (3). Every network answer is written back to Postgres by the fetch writer, and changed rows are chunked and embedded by the knowledge-base indexer. Embeddings stay on Google even when chat runs on the Anthropic API. The guide pipeline reads Blizzard's public build and news pages. The browser also loads Google Fonts. The backend sends its traces, logs and metrics to Alloy, which redacts them and queues them on disk until the optional observability stack runs; the Claude Code sessions that build the app feed the same collector (<a href="pages/observability.html">Observability</a>).</figcaption>
+    <figcaption>A Warcraft Logs lookup reads Redis first (1), then the raw store in Postgres, filtered by what the workspace may see and how fresh the data is (2), and only then the API (3). Every network answer is written back to Postgres by the fetch writer, and changed rows are chunked and embedded by the knowledge-base indexer. Embeddings stay on Google even when chat runs on the Anthropic API. The guide pipeline reads Blizzard's public build and news pages. The browser also loads Google Fonts. The backend sends its traces, logs and metrics to Alloy, which redacts them and queues them on disk until the optional observability stack runs (Alloy also scrapes Postgres and Redis and tails Postgres's log); the Claude Code sessions that build the app feed the same collector (<a href="pages/observability.html">Observability</a>).</figcaption>
   </figure>
 </section>
 
@@ -156,12 +157,12 @@
     <a class="card" href="pages/deployment.html"><b>Deployment &amp; config</b><span>Four Compose services, a two-target frontend image, the root <code>.env</code> read into pydantic-settings, startup refusals for unsafe secrets, scripts and CLIs. Cloud deployment is planned, not built.</span><span>Docker Compose · uv · pydantic-settings · nginx</span></a>
     <a class="card" href="pages/backend-api.html"><b>Backend API</b><span>One async FastAPI process with 14 routers, a background boot behind a readiness gate, and in-process background tasks sharing the WCL lanes.</span><span>FastAPI · uvicorn · asyncio · Python 3.14</span></a>
     <a class="card" href="pages/auth-tenancy.html"><b>Auth &amp; multi-tenancy</b><span>Invite-only login, Argon2id passwords, opaque <code>__Host-</code> cookie sessions, CSRF, in-process rate limits, and Postgres row-level security keyed on the workspace.</span><span>pwdlib · Postgres RLS · contextvars</span></a>
-    <a class="card" href="pages/observability.html"><b>Observability</b><span>OpenTelemetry from the backend, the browser (Faro), Claude Code and the team board into an always-on Alloy collector that redacts secrets, keeps prompt content in a 7-day stream and queues on disk; Loki, Tempo, Mimir (with recording rules and LLM cost) and Grafana dashboards run in an optional profile.</span><span>OpenTelemetry · Grafana Alloy · Loki · Tempo · Mimir · Grafana</span></a>
+    <a class="card" href="pages/observability.html"><b>Observability</b><span>OpenTelemetry from the backend, the browser (Faro), Claude Code and the team board into an always-on Alloy collector that redacts secrets, keeps prompt content in a 7-day stream and queues on disk; it also scrapes Postgres, Redis and the containers and tails Postgres's slow-statement log; Loki, Tempo, Mimir (with recording rules and LLM cost), Grafana dashboards and alerts, and Pyroscope profiles run in an optional profile.</span><span>OpenTelemetry · Grafana Alloy · Loki · Tempo · Mimir · Grafana · Pyroscope</span></a>
   </div>
 
   <p class="eyebrow" style="margin-top:8px">Data</p>
   <div class="cards">
-    <a class="card" href="pages/database.html"><b>Database &amp; migrations</b><span>One PostgreSQL 17 database with pgvector, async SQLAlchemy over asyncpg, 21 Alembic migrations and 29 tables, 17 of them under row-level security.</span><span>pgvector/pgvector:pg17 · SQLAlchemy · asyncpg · Alembic</span></a>
+    <a class="card" href="pages/database.html"><b>Database &amp; migrations</b><span>One PostgreSQL 17 database with pgvector, async SQLAlchemy over asyncpg, 22 Alembic migrations and 29 tables, 17 of them under row-level security.</span><span>pgvector/pgvector:pg17 · SQLAlchemy · asyncpg · Alembic</span></a>
     <a class="card" href="pages/wcl-data.html"><b>WCL client, cache &amp; store</b><span>Every Warcraft Logs lookup goes Redis, then the Postgres raw store, then the API, through one client with lanes, single-flight and retries; every network answer is written back.</span><span>httpx · redis.asyncio · JSONB</span></a>
     <a class="card" href="pages/knowledge-base.html"><b>Knowledge base</b><span>Stored WCL responses, published guides and finished chats become chunks, embedded in pgvector, behind the <code>search_knowledge</code> tool.</span><span>pgvector · Postgres full-text · gemini-embedding-001</span></a>
   </div>

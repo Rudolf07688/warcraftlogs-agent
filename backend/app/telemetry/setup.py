@@ -10,17 +10,19 @@ from __future__ import annotations
 
 import atexit
 import functools
+import inspect
 import os
 import re
 import threading
 import time
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Protocol
 
 from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation import fastapi as fastapi_instrumentation
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
@@ -44,9 +46,9 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.metrics.view import ExponentialBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanLimits, TracerProvider
+from opentelemetry.sdk.trace import ReadableSpan, Span, SpanLimits, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
-from opentelemetry.trace import Span
+from opentelemetry.trace import SpanKind
 from starlette.routing import compile_path
 
 from .config import TelemetryConfig
@@ -103,6 +105,8 @@ METRIC_ATTRIBUTES = frozenset(
         "app.cache.result",  # hit, miss, error
         "app.rag.index",  # wcl, guide, chat, all
         "app.rag.strategy",  # hybrid, keyword_only, vector, keyword
+        "app.llm.finish_reason",  # metrics.FINISH_REASONS (feature 059)
+        "app.embedding.task",  # document, query
     }
 )
 
@@ -165,27 +169,37 @@ def _route_templates(app: Any) -> tuple[tuple[re.Pattern[str], str], ...]:
     return tuple((compile_path(path)[0], path) for path in templates)
 
 
-def name_span_by_route(span: Span, scope: dict[str, Any]) -> None:
-    """``server_request_hook``: name the server span by its route template.
+_instrumentation_route_details = fastapi_instrumentation._get_route_details
 
-    FastAPI includes routers lazily now, and the instrumentation's route lookup can't see
-    inside them, so it would fall back to the raw path (ids and all). The OpenAPI paths are
-    the templates.
+
+def _route_details(scope: dict[str, Any]) -> str | None:
+    """The route template a server span starts with, as its ``http.route`` and in its name.
+
+    FastAPI includes routers lazily now, and the instrumentation's own lookup can't see inside
+    them: on a full match it fell back to the raw path (ids and client text, QA SEC-001), on a
+    partial one (a CORS preflight, a POST to a GET-only route) it crashed and the 405 became a
+    500 (sc-461). The OpenAPI paths are the templates; a request no template matches has no
+    route, and its span is named by its method. So the name is final when the span starts,
+    which is when the span profiles tag it (``SpanProfiles``).
     """
-    if scope.get("type") != "http" or not span.is_recording():
-        return
+    if scope.get("type") != "http":
+        try:
+            return _instrumentation_route_details(scope)
+        except AttributeError:
+            return None
     path = scope.get("path", "")
     for regex, template in _route_templates(scope["app"]):
         if regex.match(path):
-            span.set_attribute("http.route", template)
-            span.update_name(f"{scope.get('method', 'HTTP')} {template}")
-            return
+            return template
+    return None
 
+
+# Looked up as a module global on every request, so replacing it covers every instrumented app.
+fastapi_instrumentation._get_route_details = _route_details
 
 FASTAPI_OPTIONS: dict[str, Any] = {
     "excluded_urls": EXCLUDED_URLS,
     "exclude_spans": ["receive", "send"],
-    "server_request_hook": name_span_by_route,
 }
 
 
@@ -197,14 +211,86 @@ def instrument() -> None:
     FastAPIInstrumentor().instrument(**FASTAPI_OPTIONS)
     # Its declared range stops below SQLAlchemy 2.1 (we run 2.1.x); the engine events it uses
     # are unchanged, and the in-memory trace test proves the SQL spans.
-    SQLAlchemyInstrumentor().instrument(skip_dep_check=True)
+    # sqlcommenter (feature 058): each statement carries its span's W3C traceparent, so
+    # Postgres's slow-query log links to the trace. Only the traceparent: no driver/framework
+    # versions, and no tracestate or baggage, which a client sends and the propagator would copy
+    # into every statement. It costs one prepare per statement (~0.5 ms, board scope:058:commenter).
+    SQLAlchemyInstrumentor().instrument(
+        skip_dep_check=True,
+        enable_commenter=True,
+        commenter_options={"db_driver": False, "db_framework": False, "tracestate": False, "baggage": False},
+    )
+    # One tracer per engine (sc-474, QA PERF-001). The instrumentor wraps create_async_engine
+    # and also the create_engine it calls, so an async engine got two: two spans per statement
+    # (one never ended, a root outside a request), two traceparents, pool events counted twice.
+    # Its inner call goes to the plain create_engine; sync engines keep their one wrap. Imported
+    # here, after the patch: whichever came first, the async module binds the plain one.
+    from sqlalchemy.engine import create as sqlalchemy_create
+    from sqlalchemy.ext.asyncio import engine as sqlalchemy_async_engine
+
+    sqlalchemy_async_engine._create_engine = inspect.unwrap(sqlalchemy_create.create_engine)
     RedisInstrumentor().instrument()
     HTTPXClientInstrumentor().instrument()
 
 
-def shutdown(
-    providers: Sequence[TracerProvider | LoggerProvider | MeterProvider], timeout_s: float = SHUTDOWN_TIMEOUT_S
-) -> None:
+class _Stoppable(Protocol):
+    def shutdown(self) -> Any: ...
+
+
+class SpanProfiles(SpanProcessor):
+    """Links each server root span (a request, a chat turn) to its CPU samples (feature 059).
+
+    In place of pyroscope-otel's processor, which tagged every root span, the SQL, Redis and
+    httpx calls of background work too (QA PERF-001), took the name before the route was known
+    and removed the tags by a renamed one, so they piled up (QA SEC-001, SEC-002), and tagged
+    the trace id, a new label value per request (QA PERF-003). Here: ``span_id``, which
+    Pyroscope keeps per sample, and ``span_name``, a route template, a method or a fixed name
+    (``_route_details``); at the end exactly the tags added at the start are removed.
+    """
+
+    def __init__(self, profiler: Any) -> None:
+        self._profiler = profiler
+        self._tags: dict[int, tuple[tuple[str, str], ...]] = {}
+
+    def on_start(self, span: Span, parent_context: Any = None) -> None:
+        if span.kind is not SpanKind.SERVER or (span.parent is not None and not span.parent.is_remote):
+            return
+        profile_id = format(span.context.span_id, "016x")
+        span.set_attribute("pyroscope.profile.id", profile_id)
+        tags = (("span_id", profile_id), ("span_name", span.name))
+        self._tags[span.context.span_id] = tags
+        for key, value in tags:
+            self._profiler.add_thread_tag(key, value)
+
+    def on_end(self, span: ReadableSpan) -> None:
+        for key, value in self._tags.pop(span.context.span_id, ()):
+            self._profiler.remove_thread_tag(key, value)
+
+
+def add_span_profiles(tracer_provider: TracerProvider, config: TelemetryConfig) -> _Stoppable | None:
+    """Start the CPU profiler and link its samples to server root spans (feature 059, spec §6.7).
+
+    Only with ``config.profiles_address``; then the profiler is returned for the exit flush.
+    Samples go straight to Pyroscope, tagged like the other signals' resource.
+    """
+    if not config.profiles_address:
+        return None
+    import pyroscope  # loaded only when profiling is on
+
+    pyroscope.configure(
+        application_name=SERVICE_NAME,
+        server_address=config.profiles_address,
+        tags={
+            "service_namespace": SERVICE_NAMESPACE,
+            "deployment_environment_name": config.environment,
+            "service_version": config.version,
+        },
+    )
+    tracer_provider.add_span_processor(SpanProfiles(pyroscope))
+    return pyroscope
+
+
+def shutdown(providers: Sequence[_Stoppable], timeout_s: float = SHUTDOWN_TIMEOUT_S) -> None:
     """Shut the providers down in parallel, waiting ``timeout_s`` at most for all of them.
 
     Each provider's own shutdown drains its whole queue, one export timeout per batch, so with
@@ -225,13 +311,15 @@ def shutdown(
 def install(config: TelemetryConfig) -> None:
     """Set the global providers (before ADK is imported) and instrument the libraries.
 
-    The SDK's own exit hooks are off: one hook flushes all three within ``SHUTDOWN_TIMEOUT_S``.
+    The SDK's own exit hooks are off: one hook flushes all three (and the profiler, when on)
+    within ``SHUTDOWN_TIMEOUT_S``.
     """
     res = resource(config)
     tracer_provider = TracerProvider(resource=res, span_limits=SPAN_LIMITS, shutdown_on_exit=False)
     tracer_provider.add_span_processor(
         span_processor(OTLPSpanExporter(timeout=EXPORT_TIMEOUT_S), content_allowed=config.content_allowed)
     )
+    profiler = add_span_profiles(tracer_provider, config)
     # Log records take their limits from the environment only.
     os.environ.setdefault("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", str(MAX_VALUE_LENGTH))
     logger_provider = LoggerProvider(resource=res, shutdown_on_exit=False)
@@ -242,5 +330,8 @@ def install(config: TelemetryConfig) -> None:
     _logs.set_logger_provider(logger_provider)
     meters = meter_provider(res, PeriodicExportingMetricReader(metric_exporter()), shutdown_on_exit=False)
     metrics.set_meter_provider(meters)
-    atexit.register(shutdown, (tracer_provider, logger_provider, meters))
+    stoppable: list[_Stoppable] = [tracer_provider, logger_provider, meters]
+    if profiler is not None:
+        stoppable.append(profiler)
+    atexit.register(shutdown, stoppable)
     instrument()

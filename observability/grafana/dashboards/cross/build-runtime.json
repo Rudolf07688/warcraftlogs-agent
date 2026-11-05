@@ -1,0 +1,375 @@
+{
+  "uid": "wcl-d12-build-runtime",
+  "title": "Build vs Runtime",
+  "description": "D12 (feature 060): which commit and seat moved the runtime numbers. Annotations mark each api version (service.version) while it ran.",
+  "tags": [
+    "wcl-agent",
+    "cross"
+  ],
+  "editable": true,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "1m",
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Running commit",
+        "enable": true,
+        "iconColor": "rgba(255, 152, 48, 0.9)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "expr": "max by (commit, seat, service_version) (cross:running_commit:info)",
+        "step": "60s",
+        "titleFormat": "{{commit}} ({{seat}})",
+        "textFormat": "service.version {{service_version}}",
+        "tagKeys": "commit,seat",
+        "useValueForTime": false
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "wcl-agent"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "title": "How to read this",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 7
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Attribution.** A commit belongs to the seat of the latest hand-off on the same feature\n(key `status:<feature>` or `merge:<feature>`) at or before the hand-off or merge entry that names it; a merge with no\nhand-off on its feature belongs to its author. The running version is the api's `service.version`\n(the git short SHA, first 7 characters); a version no board entry names shows as\n*unattributed*. Board facts reach Mimir through `observability/build-runtime/commits.py`\n(run it at wrap-up, or any time).\n\n**Build cost** is an estimate: the sprint's usage rows for that feature and seat (`usage.txt`,\nwritten at wrap-up), priced at the team's default model's list price, booked on the feature's\nlast commit. Empty until the usage file exists, never zero.\n\n**Runtime deltas** compare a commit with the selected range as a whole: its mean while it ran,\nminus the mean of all versions over the same range. Positive = slower, more errors or more\nexpensive than the range's average. A new version's first 5 minutes still include the old\nversion's requests (5-minute rate windows)."
+      },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency by commit",
+      "description": "api p95 over all routes but the chat socket and streaming generation, labelled with the commit running (cross:http_latency:p95_by_commit).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (commit, seat) (cross:http_latency:p95_by_commit)",
+          "refId": "A",
+          "legendFormat": "{{commit}} {{seat}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Error ratio by commit",
+      "description": "Share of api requests whose span status is error (cross:http_error_ratio:5m_by_commit).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 7,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (commit, seat) (cross:http_error_ratio:5m_by_commit)",
+          "refId": "A",
+          "legendFormat": "{{commit}} {{seat}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM cost per request by commit",
+      "description": "Runtime LLM spend (genai:cost_usd:rate5m) per api request, chat turns included (cross:llm_cost_per_request:5m_by_commit).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 7,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (commit, seat) (cross:llm_cost_per_request:5m_by_commit)",
+          "refId": "A",
+          "legendFormat": "{{commit}} {{seat}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 4
+    },
+    {
+      "type": "table",
+      "title": "Commit → seat → build cost → runtime deltas",
+      "description": "One row per commit that ran in the range. Deltas: the commit's mean minus the range's mean over all versions (see How to read this).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (commit, seat, feature) (avg_over_time(cross:http_latency:p95_by_commit[$__range])) - scalar(avg_over_time(cross:http_latency:p95[$__range]))",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (commit, seat, feature) (avg_over_time(cross:http_error_ratio:5m_by_commit[$__range])) - scalar(avg_over_time(cross:http_error_ratio:5m[$__range]))",
+          "refId": "B",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (commit, seat, feature) (avg_over_time(cross:llm_cost_per_request:5m_by_commit[$__range])) - scalar(avg_over_time(cross:llm_cost_per_request:5m[$__range]))",
+          "refId": "C",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (commit, seat, feature) (last_over_time(build_commit_cost_usd[30d])) and on (commit) max by (commit) (last_over_time(cross:running_commit:info[$__range]))",
+          "refId": "D",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Build cost (est.)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "noValue",
+                "value": "-"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Δ p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Δ error ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Δ LLM cost / request"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      },
+      "id": 5,
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "commit": 0,
+              "seat": 1,
+              "feature": 2,
+              "Value #D": 3,
+              "Value #A": 4,
+              "Value #B": 5,
+              "Value #C": 6
+            },
+            "renameByName": {
+              "commit": "Commit",
+              "seat": "Seat",
+              "feature": "Feature",
+              "Value #D": "Build cost (est.)",
+              "Value #A": "Δ p95",
+              "Value #B": "Δ error ratio",
+              "Value #C": "Δ LLM cost / request"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Δ p95",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

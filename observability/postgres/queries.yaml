@@ -1,0 +1,42 @@
+# Custom queries for Alloy's Postgres exporter (feature 058, sc-417, spec §7.2): the knowledge
+# base's vector indexes and embedding tables. Metric name = <query name>_<column>; the exporter
+# runs them as the monitoring role (pg_monitor: statistics views and relation sizes, no table
+# reads). Labels are table and index names only.
+
+# pg_vector_index_size_bytes{table, index}: every HNSW and IVFFlat index.
+pg_vector_index:
+  query: |
+    SELECT t.relname AS table, i.relname AS index, pg_relation_size(i.oid) AS size_bytes
+    FROM pg_index x
+    JOIN pg_class i ON i.oid = x.indexrelid
+    JOIN pg_class t ON t.oid = x.indrelid
+    JOIN pg_am a ON a.oid = i.relam
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE a.amname IN ('hnsw', 'ivfflat') AND n.nspname = 'public'
+  metrics:
+    - table:
+        usage: LABEL
+        description: Table the index belongs to
+    - index:
+        usage: LABEL
+        description: Vector index
+    - size_bytes:
+        usage: GAUGE
+        description: Size of the vector index in bytes
+
+# pg_vector_table_rows{table}: live rows (statistics estimate) of every table with a vector column.
+pg_vector_table:
+  query: |
+    SELECT s.relname AS table, s.n_live_tup AS rows
+    FROM pg_stat_user_tables s
+    WHERE s.schemaname = 'public' AND EXISTS (
+      SELECT 1 FROM pg_attribute a JOIN pg_type ty ON ty.oid = a.atttypid
+      WHERE a.attrelid = s.relid AND ty.typname = 'vector' AND NOT a.attisdropped
+    )
+  metrics:
+    - table:
+        usage: LABEL
+        description: Table with a vector column
+    - rows:
+        usage: GAUGE
+        description: Live rows (n_live_tup)

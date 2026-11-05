@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   initializeFaro: vi.fn(),
   withFaroRouterInstrumentation: vi.fn(),
   setUser: vi.fn(),
+  setView: vi.fn(),
 }));
 
 vi.mock("@grafana/faro-react", () => ({
@@ -25,7 +26,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const router = { state: {}, routes: [], subscribe: () => () => {} } as never;
+const router = {
+  state: { location: { pathname: "/app/x", search: "", hash: "", state: null, key: "k" } },
+  routes: [{ path: "/login" }, { path: "/app/*" }],
+  subscribe: vi.fn(() => () => {}),
+} as never;
 
 describe("readFaroConfig", () => {
   it.each([{}, { VITE_FARO_URL: "" }, { VITE_FARO_URL: "   " }])("is off for %j", (env) => {
@@ -52,7 +57,7 @@ describe("initTelemetry", () => {
   });
 
   it("starts Faro with the endpoint and wraps the router when configured", async () => {
-    h.initializeFaro.mockReturnValue({ api: { getSession: () => ({ id: "s1" }), setUser: h.setUser, resetUser: vi.fn() } });
+    h.initializeFaro.mockReturnValue({ api: { getSession: () => ({ id: "s1" }), setUser: h.setUser, resetUser: vi.fn(), setView: h.setView } });
     const env = { VITE_FARO_URL: "http://localhost:12347/collect", VITE_FARO_API_KEY: "k" };
 
     expect(await initTelemetry(router, env)).toBe(true);
@@ -76,12 +81,28 @@ describe("the user hash", () => {
 
   it("goes to Faro on sign-in and is cleared on sign-out", async () => {
     const resetUser = vi.fn();
-    h.initializeFaro.mockReturnValue({ api: { getSession: () => undefined, setUser: h.setUser, resetUser } });
+    h.initializeFaro.mockReturnValue({ api: { getSession: () => undefined, setUser: h.setUser, resetUser, setView: h.setView } });
     await initTelemetry(router, { VITE_FARO_URL: "http://x/collect" });
 
     await identifyUser("user-1");
     expect(h.setUser).toHaveBeenLastCalledWith({ id: await hashUserId("user-1") });
     await identifyUser(null);
     expect(resetUser).toHaveBeenCalled();
+  });
+});
+
+// Feature 060 (sc-416): the route template is Faro's view, so every signal carries it.
+describe("the route as Faro's view", () => {
+  it("is the matched route template at start and after each navigation, never the raw path", async () => {
+    h.initializeFaro.mockReturnValue({
+      api: { getSession: () => undefined, setUser: h.setUser, resetUser: vi.fn(), setView: h.setView },
+    });
+    await initTelemetry(router, { VITE_FARO_URL: "http://x/collect" });
+    expect(h.setView).toHaveBeenLastCalledWith({ name: "/app/*" });
+    const onChange = (router as unknown as { subscribe: ReturnType<typeof vi.fn> }).subscribe.mock.calls[0][0];
+    onChange({ location: { pathname: "/login", search: "?token=abc", hash: "", state: null, key: "k2" } });
+    expect(h.setView).toHaveBeenLastCalledWith({ name: "/login" });
+    onChange({ location: { pathname: "/nowhere/123", search: "", hash: "", state: null, key: "k3" } });
+    expect(h.setView).toHaveBeenLastCalledWith({ name: "unmatched" });
   });
 });

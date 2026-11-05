@@ -1,0 +1,133 @@
+# Data-store, infra and meta recording rules (feature 058, spec §8.3): D9 (Postgres), D10 (Redis),
+# D11 (infra and meta) and the alerts query these aliases, never the exporters' series, so an
+# exporter rename touches only this file. Owner: 058. The series come from Alloy's scrapes
+# (prometheus remote write, the exporters' own names: board scope:058:metrics-path), jobs
+# postgres, redis, cadvisor, alloy, loki, tempo, mimir. Evaluated every minute. A total over a
+# range is sum_over_time(<rate5m alias>[range]) * 60.
+groups:
+  - name: datastores
+    interval: 1m
+    rules:
+      # --- Postgres (D9) --------------------------------------------------------------------
+      - record: pg:up
+        expr: max(pg_up{job="postgres"})
+      - record: pg:connections:count
+        expr: sum by (state) (pg_stat_activity_count{job="postgres"})
+      - record: pg:connections:max
+        expr: max(pg_settings_max_connections{job="postgres"})
+      - record: pg:transactions:rate5m
+        expr: >-
+          label_replace(sum(rate(pg_stat_database_xact_commit{job="postgres"}[5m])), "outcome", "commit", "", "")
+          or label_replace(sum(rate(pg_stat_database_xact_rollback{job="postgres"}[5m])), "outcome", "rollback", "", "")
+      - record: pg:cache_hit_ratio:5m
+        expr: >-
+          sum(rate(pg_stat_database_blks_hit{job="postgres"}[5m]))
+          / (sum(rate(pg_stat_database_blks_hit{job="postgres"}[5m])) + sum(rate(pg_stat_database_blks_read{job="postgres"}[5m])))
+      - record: pg:deadlocks:rate5m
+        expr: sum(rate(pg_stat_database_deadlocks{job="postgres"}[5m]))
+      # Statements by queryid (pg_stat_statements; the text is never a label, spec §9.3). The
+      # totals are since the statistics were last reset, as pg_stat_statements reports them: a
+      # statement's series appears with its first execution already counted, which a rate never
+      # sees, so "top by total time" reads the totals.
+      - record: pg:statement_seconds:total
+        expr: sum by (queryid) (pg_stat_statements_seconds_total{job="postgres"})
+      - record: pg:statement_calls:total
+        expr: sum by (queryid) (pg_stat_statements_calls_total{job="postgres"})
+      - record: pg:statement_seconds:rate5m
+        expr: sum by (queryid) (rate(pg_stat_statements_seconds_total{job="postgres"}[5m]))
+      - record: pg:statement_calls:rate5m
+        expr: sum by (queryid) (rate(pg_stat_statements_calls_total{job="postgres"}[5m]))
+      - record: pg:locks:count
+        expr: sum by (mode) (pg_locks_count{job="postgres"})
+      - record: pg:longest_transaction:seconds
+        expr: max(pg_long_running_transactions_oldest_timestamp_seconds{job="postgres"})
+      - record: pg:dead_tuples:count
+        expr: sum by (relname) (pg_stat_user_tables_n_dead_tup{job="postgres"})
+      - record: pg:autovacuum_runs:rate5m
+        expr: sum by (relname) (rate(pg_stat_user_tables_autovacuum_count{job="postgres"}[5m]))
+      - record: pg:wal:bytes
+        expr: max(pg_wal_size_bytes{job="postgres"})
+      - record: pg:database:bytes
+        expr: sum by (datname) (pg_database_size_bytes{job="postgres"})
+      # Knowledge base (pgvector custom queries, observability/postgres/queries.yaml).
+      - record: pg:vector_index:bytes
+        expr: sum by (table, index) (pg_vector_index_size_bytes{job="postgres"})
+      - record: pg:vector_table:rows
+        expr: sum by (table) (pg_vector_table_rows{job="postgres"})
+
+      # --- Redis (D10) ----------------------------------------------------------------------
+      - record: redis:up
+        expr: max(redis_up{job="redis"})
+      - record: redis:memory:used_bytes
+        expr: max(redis_memory_used_bytes{job="redis"})
+      - record: redis:memory:max_bytes
+        expr: max(redis_memory_max_bytes{job="redis"})
+      - record: redis:evictions:rate5m
+        expr: sum(rate(redis_evicted_keys_total{job="redis"}[5m]))
+      - record: redis:commands:rate5m
+        expr: sum(rate(redis_commands_processed_total{job="redis"}[5m]))
+      # Keyspace hits / (hits + misses): Redis's own view, next to the app's cache:hit_ratio.
+      - record: redis:hit_ratio:5m
+        expr: >-
+          sum(rate(redis_keyspace_hits_total{job="redis"}[5m]))
+          / (sum(rate(redis_keyspace_hits_total{job="redis"}[5m])) + sum(rate(redis_keyspace_misses_total{job="redis"}[5m])))
+      - record: redis:clients:connected
+        expr: max(redis_connected_clients{job="redis"})
+      # Mean seconds per call, per command (the exporter's cmd label: a bounded command name).
+      - record: redis:command_latency:avg5m
+        expr: >-
+          sum by (cmd) (rate(redis_commands_duration_seconds_total{job="redis"}[5m]))
+          / sum by (cmd) (rate(redis_commands_total{job="redis"}[5m]))
+      - record: redis:slowlog:length
+        expr: max(redis_slowlog_length{job="redis"})
+
+      # --- Infra (D11): cAdvisor, this compose project only -----------------------------------
+      - record: infra:container_cpu:rate5m
+        expr: sum by (compose_service) (rate(container_cpu_usage_seconds_total{job="cadvisor"}[5m]))
+      - record: infra:container_memory:bytes
+        expr: sum by (compose_service) (container_memory_working_set_bytes{job="cadvisor"})
+      - record: infra:scrape_up
+        expr: max by (job) (up{job=~"postgres|redis|cadvisor|alloy|loki|tempo|mimir"})
+
+      # --- Meta (D11, alerts): the telemetry pipeline itself ---------------------------------
+      # Alloy's export failures (after retries), enqueue failures (queue full) and receiver
+      # refusals (memory limiter) in the last two minutes, by signal; 0 when there are none. Not
+      # increase(): Alloy creates these counters at the first failure, and increase() never sees
+      # a series' first value. A difference of sums counts a new series in full (a reset after
+      # an Alloy restart comes out negative and never fires).
+      - record: meta:exporter_failures:increase2m
+        expr: >-
+          label_replace((sum({job="alloy", __name__=~"otelcol_exporter_(send|enqueue)_failed_spans_total|otelcol_receiver_refused_spans_total"}) - (sum({job="alloy", __name__=~"otelcol_exporter_(send|enqueue)_failed_spans_total|otelcol_receiver_refused_spans_total"} offset 2m) or vector(0))) or vector(0), "signal", "spans", "", "")
+          or label_replace((sum({job="alloy", __name__=~"otelcol_exporter_(send|enqueue)_failed_log_records_total|otelcol_receiver_refused_log_records_total"}) - (sum({job="alloy", __name__=~"otelcol_exporter_(send|enqueue)_failed_log_records_total|otelcol_receiver_refused_log_records_total"} offset 2m) or vector(0))) or vector(0), "signal", "logs", "", "")
+          or label_replace((sum({job="alloy", __name__=~"otelcol_exporter_(send|enqueue)_failed_metric_points_total|otelcol_receiver_refused_metric_points_total"}) - (sum({job="alloy", __name__=~"otelcol_exporter_(send|enqueue)_failed_metric_points_total|otelcol_receiver_refused_metric_points_total"} offset 2m) or vector(0))) or vector(0), "signal", "metrics", "", "")
+      - record: meta:export_queue:ratio
+        expr: >-
+          max by (exporter) (
+            label_replace(otelcol_exporter_queue_size{job="alloy"}, "exporter", "$1", "component_id", "otelcol\\.exporter\\.[a-z]+\\.(.*)")
+            / label_replace(otelcol_exporter_queue_capacity{job="alloy"}, "exporter", "$1", "component_id", "otelcol\\.exporter\\.[a-z]+\\.(.*)"))
+      - record: meta:remote_write_failed:rate5m
+        expr: sum(rate(prometheus_remote_storage_samples_failed_total{job="alloy"}[5m]))
+      # Lines, spans and samples each backend accepts per second; what it discards.
+      - record: meta:ingest:rate5m
+        expr: >-
+          label_replace(sum(rate(loki_distributor_lines_received_total{job="loki"}[5m])), "backend", "loki", "", "")
+          or label_replace(sum(rate(tempo_distributor_spans_received_total{job="tempo"}[5m])), "backend", "tempo", "", "")
+          or label_replace(sum(rate(cortex_distributor_received_samples_total{job="mimir"}[5m])), "backend", "mimir", "", "")
+      - record: meta:discarded:rate5m
+        expr: >-
+          label_replace(sum(rate(loki_discarded_samples_total{job="loki"}[5m])), "backend", "loki", "", "")
+          or label_replace(sum(rate(tempo_discarded_spans_total{job="tempo"}[5m])), "backend", "tempo", "", "")
+          or label_replace(sum(rate(cortex_discarded_samples_total{job="mimir"}[5m])), "backend", "mimir", "", "")
+      # Cardinality (spec §9): Mimir's in-memory series against the 50k budget.
+      - record: meta:active_series:count
+        expr: sum(cortex_ingester_active_series{job="mimir"})
+      - record: meta:active_series:budget
+        expr: vector(50000)
+
+  # --- Alert thresholds (sc-424): change the number here; Grafana's rule compares against it.
+  - name: alert_thresholds
+    interval: 1m
+    rules:
+      # Estimated Claude Code spend per day (USD) above which "Build spend per day" fires.
+      - record: alert:build_spend_usd_per_day:threshold
+        expr: vector(200)

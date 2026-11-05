@@ -230,3 +230,192 @@ switch Faro off), with `VITE_FARO_API_KEY`, `VITE_FARO_APP_VERSION` (`WCL_GIT_SH
 | Script | Proves |
 |---|---|
 | `test/faro.sh` | The app origin with the key is accepted; a wrong or missing key is refused; the preflight from another origin gets no CORS grant; a burst is rate limited; an oversized body is refused; no source map is fetched; a payload posing as the API / build layer lands as web / runtime / dev; Web Vitals and a log arrive in Loki with a seeded secret masked, and a browser span arrives in Tempo with its `session.id`. Needs `ALLOY_FARO_PORT` (default 24347). |
+
+## Profiles and runtime dashboards (059)
+
+**Span profiles** (spec §6.7, sc-421). The `pyroscope` service (observability profile,
+`grafana/pyroscope:2.4.3`, volume `pyroscope-data`, 7-day retention, `127.0.0.1:${PYROSCOPE_PORT:-4040}`)
+receives CPU profiles straight from the API: no Alloy hop. The backend profiles only when
+telemetry is on and `PYROSCOPE_SERVER_ADDRESS` is set. Compose sets it to
+`http://pyroscope:4040` only when `WCL_PROFILES` is set (any value, in `.env` or the shell), so
+profiling is off unless you opt in for a run with the observability profile:
+`WCL_PROFILES=1 docker compose --profile observability up -d`. The test suite sets neither, so
+no profiler starts there. `setup.SpanProfiles` gives every *server root* span (a request, a
+chat turn) the attribute `pyroscope.profile.id` and tags the CPU samples taken meanwhile with
+the same `span_id` and its `span_name`; Tempo's `tracesToProfiles` turns that into **Profiles
+for this span** on the span in Grafana. Only bounded values become profile labels: the name
+is the route template from the start of the span (`/api/conversations/{conv_id}`, never the
+path with its id), a bare method for an unknown path, or a fixed name like `chat turn`; no
+trace id. The tags removed at the end are exactly the ones added at the start. Background
+work (SQL, Redis or HTTP calls outside a request) is not tagged. Limits: samples are tagged
+per OS thread, and every asyncio request shares the event-loop thread, so two requests
+running at once share their samples; spans shorter than a few sampling intervals (100 Hz) may
+show an empty flame graph.
+
+**Service graph** (sc-462). Tempo's `serviceMap` reads Alloy's `traces_service_graph_*` from
+Mimir; D6 (App: API RED) shows it as a node graph. That panel is the one that queries raw
+names: Grafana's service map asks for those series by their fixed names. It wants the edge
+latency as `traces_service_graph_request_server_seconds_bucket` and each node's average
+response time from `traces_service_graph_request_server_seconds_sum`, so `runtime.yaml`
+records copies of `traces_service_graph_request_server_bucket` and `_sum` under those names
+(Mimir adds no unit suffix). Pyroscope runs the v2 storage only (`-architecture.storage=v2`: a new install has
+no v1 data, and in the default dual mode its reads looked for v1 data and found none).
+
+**New app metrics** (all labels on `setup.METRIC_ATTRIBUTES`):
+
+| Metric | Labels | Recorded |
+|---|---|---|
+| `app.llm.finish_reasons` | `gen_ai.request.model`, `app.llm.finish_reason` (google-genai's reason names, anything else `other`) | each non-partial model response |
+| `app.agent.turns_per_conversation` | `gen_ai.agent.name` | the end of each chat turn: the turns so far, from `app_turns` in the ADK session state (older conversations count from their first turn after 059) |
+| `app.embedding.duration`, `app.embedding.batch_size` | `gen_ai.request.model`, `app.embedding.task` (`document`, `query`), `error.type` on a failed request (its exception class, e.g. `TimeoutError`) | each provider embedding request, failed ones too |
+
+Aliases (`runtime.yaml`): `app:http_latency:p50` and `:p99` (beside red.yaml's p95, same
+exclusions), `genai:finish_reasons:rate5m`, `genai:turns_per_conversation:p50`/`:p95`,
+`rag:embedding_latency:p95`, `rag:embedding_batch_size:avg5m`, `rag:embedding_requests:rate5m`
+(by `error_type`, `none` for a success). D7 shows finish reasons and depth, D8 embedding
+latency, batch size and requests by outcome, so an embedding outage shows as failures. Feedback ratio (§7.5) is not built: the app has
+no feedback feature. Any panel with per-interval bars or legend totals must read windows of
+`$__interval` with its `interval` set (sc-471); `test_telemetry_metrics_dashboards.py` checks it.
+
+**Board backfill window** (sc-463): accepted at what it is. Alloy drops records older than 6
+days and Loki refuses anything past 7 (`reject_old_samples`). That limit is per tenant, and
+there is one tenant, so it can't be widened for the board stream alone; widening it for
+everything would admit week-old content records that the 7-day content retention deletes
+again. Older sprints' boards are in `meta/sprints/*/board.jsonl`, and D13 is fed by
+`teamstats.py`, not Loki.
+
+`test/provisioning.sh` also proves: the Pyroscope datasource and Tempo's `serviceMap` and
+`tracesToProfiles`; the D6 service-graph query returns an edge; a CPU-bound span run through
+the real bootstrap carries its profile id and Pyroscope returns its flame graph; an 8-day-old
+board entry is dropped while a fresh one in the same file lands. Set `PYROSCOPE_PORT`
+(default 24040) with the other port overrides.
+
+## Frontend, build vs runtime and redaction e2e (060)
+
+**D5, App: Frontend** (`grafana/dashboards/runtime/frontend.json`, uid `wcl-d5-frontend`) reads
+Faro's lines in Loki directly (no Loki ruler): Web Vitals p75 by route, JS errors per minute
+and the top errors with route and boundary, client-side TTFT, stream aborts, sessions
+(`session_start` events; the session id itself is masked) and turns. The route is the React
+Router template (`/app/*`, never a raw path), which the app sets as Faro's view, so every line
+carries `view_name`. The app (`frontend/src/telemetry/`):
+
+- **Error boundaries** around the app shell and each chat panel (sidebar, message list,
+  composer): a panel that throws shows a plain "Something went wrong" with Retry, never the
+  error text (it can carry model or WCL text); the other panels keep working; the error goes
+  to Faro as `React ErrorBoundary <type>` with the component stack, `context_route` and
+  `context_boundary`. A panel boundary starts clean when the conversation changes (its reset
+  key is the conversation id). The boundary reports through the registered Faro instance, so
+  Faro stays out of the main bundle; with Faro off it only shows the fallback. A route render
+  error (App outside its panels, profile, admin, login) never reaches the shell boundary: the
+  data router catches it first, so the route tree (`frontend/src/routes.tsx`) has a root
+  `errorElement` that reports with `boundary=shell` and shows the same plain fallback (a
+  retry reloads the page), instead of React Router's default page with the message and stack.
+- **Chat events**, once per turn: `agent_message_sent`, `agent_first_token_rendered`
+  (`ttft_ms`, after the first token is on screen), `agent_response_completed` (`duration_ms`),
+  `stream_aborted` (`reason` `connection_lost`, or `closed` when the app closed the socket,
+  e.g. leaving the chat; an error frame is not an abort). Attributes: the model and whole
+  milliseconds, never text or ids. `agent_feedback` is not sent (no feedback feature, §7.5).
+
+**D12, Build vs Runtime** (`grafana/dashboards/cross/build-runtime.json`, uid
+`wcl-d12-build-runtime`): annotations for each api version while it ran, p95 latency, error
+ratio and LLM cost per request by commit, and a table commit → seat → estimated build cost →
+runtime deltas. Its aliases are in `mimir/rules/anonymous/cross.yaml`: the running version
+comes from `target_info{job="wcl-agent/api"}` (`service.version` is not a promoted label; a
+version other than `unknown` wins over a stray `unknown` series, so one process = one version
+on the dashboard), the seat from `build_commit_info`, which `build-runtime/commits.py` pushes
+from the team boards, the roster and `usage.txt` (run it at wrap-up next to `teamstats.py`;
+`--dry-run` prints the table). A board entry names its commit as a ref or, with none, as
+`head <sha>` (or the first SHA) in its text; hand-offs are keyed `status:<feature>`, merges
+`status:<feature>` or `merge:<feature>`. If a commit was pushed with two seats (a roster edit
+between pushes), `commits.py` gives each series a fixed tie-break value, so the same one wins
+on every evaluation. The attribution rule, the cost estimate and the delta definition are stated on the
+dashboard and in `commits.py`'s docstring. A version no board entry names is *unattributed*.
+
+**Redaction end to end** (`test/redaction_e2e.py`): fresh secrets of each shape in `SHAPES`
+(bearer, JWT, `sk-`, `AIza`, DSN password) go through each path in `PATHS`: the build layer
+(OTLP shaped like Claude Code's: logs with its event names, a span with a `tool.output` event,
+a metric), the backend's real telemetry bootstrap in a subprocess (span attributes, a span
+event, a log record through the OTLP log handler, an allowlisted metric attribute, the
+resource), and the Faro receiver (log, exception, event, measurement context, a span). Then
+everything Loki, Tempo and Mimir hold for the run is read back (log lines with structured
+metadata, whole traces, every series' labels including `target_info`); any raw value fails
+the run. A new shape or path is one row. The Postgres log (058) is not a row: `test/datastores.sh`
+seeds a secret through it and proves it masked. The app-side redactor never sees resource attributes; Alloy masks them.
+
+| Script | Proves |
+|---|---|
+| `test/frontend.sh` | D5 provisions; its own queries return a synthetic component error with route `/app/*` and boundary, LCP/INP/CLS p75 for the route, client TTFT, one stream abort, sessions and turns. |
+| `test/redaction-e2e.sh` | No seeded secret is stored unmasked on any path; then the check fails on each of five mutated copies of the Alloy config (JWT, bearer, `AIza`, URL password attribute masks; `sk-` body mask). `MUTATE=0` skips the mutations. |
+| `test/build-runtime.sh` | Two api versions as real spans and metrics, a synthetic board: D12's table shows the regression commit against its seat with positive p95, error and cost deltas and its build cost; the annotations and timeseries show both commits. `PHASE_S` sets each version's run time (default 240 s). |
+
+All three set `ALLOY_FARO_PORT` (default 24347) and run their own compose project like the
+other scripts.
+
+## Data stores, infra and alerts (058)
+
+Postgres, Redis, the containers and the telemetry stack itself (spec §7.2–7.4, D9–D11, §8.4).
+
+- **Metrics path**: the last section of `alloy/config.alloy` runs `prometheus.exporter.postgres`
+  (the default collectors plus `stat_statements`, `long_running_transactions`,
+  `statio_user_indexes`, `stat_activity_autovacuum`, `process_idle`, `database_wraparound`;
+  custom queries in `postgres/queries.yaml`: `pg_vector_index_size_bytes{table,index}` and
+  `pg_vector_table_rows{table}`), `prometheus.exporter.redis` (no key checks: key names carry
+  account ids), `prometheus.exporter.self`, and scrapes Loki, Tempo, Mimir and cAdvisor. All of
+  it is remote-written to Mimir under the exporters' own names (jobs `postgres`, `redis`,
+  `alloy`, `loki`, `tempo`, `mimir`, `cadvisor`), through one allowlist of series names; about
+  800 series in all. Dashboards read the aliases in `mimir/rules/anonymous/datastores.yaml`.
+- **Statement statistics**: the db service preloads `pg_stat_statements`; migration `0022`
+  creates the extension. Statement text is never a label (`include_query = false`, spec §9.3):
+  D9 lists statements by `queryid`, totals since the last statistics reset; its busy-time panel
+  is execution seconds per second (`s/s`, not a per-call latency). The text is in the
+  slow-statement log (same id, `pg_query_id`) or `SELECT query FROM pg_stat_statements WHERE
+  queryid = ...`. Utility statements are not tracked (their text keeps literals such as passwords).
+- **Monitoring role**: the exporter logs in as `PG_MONITOR_USER` (default `wcl_monitor`), a member
+  of `pg_monitor` with CONNECT only. Migration 0022 creates it only when `PG_MONITOR_PASSWORD` is
+  set (16 or more letters and digits; there is no default). Unset: no role, the exporter reports
+  `pg_up 0`, nothing else changes. An existing role of that name is used only if it is
+  monitor-only itself (not superuser, CREATEROLE, CREATEDB or BYPASSRLS, no other memberships,
+  owns nothing), and never the owner or the runtime role: anything else stops the migration. To add it later, set the password and run
+  `alembic downgrade 0021_raw_fetch_own_summary && alembic upgrade head` (or create the role by
+  hand: `CREATE ROLE wcl_monitor LOGIN PASSWORD '...'; GRANT pg_monitor TO wcl_monitor;`). Alloy
+  gets the DSN from compose (`WCL_PG_MONITOR_DSN`) and shows it as a secret.
+- **Slow statements to traces**: with telemetry on, the backend's SQLAlchemy instrumentation
+  appends `/*traceparent='00-...'*/` to every statement (sqlcommenter, about 0.5 ms per statement:
+  one prepare each, measured in `specs/058-datastore-telemetry/research.md`). Postgres logs
+  statements over 250 ms, lock waits and autovacuum runs with the prefix `%m [%p] q=%Q %e ` and
+  never logs bind values (`log_parameter_max_length=0`). It writes them to files on the `pglog`
+  volume (`postgresql-<hour>.log`, each overwritten a day later), so `docker compose logs db`
+  shows only the start-up lines. Alloy tails the files from the volume mounted read-only (it has
+  no Docker access), joins multi-line messages, takes the last traceparent as the record's trace
+  and span id and masks: quoted strings, dollar-quoted bodies and numbers everywhere except
+  autovacuum, lock-wait, checkpoint and start/stop messages (they keep their counters); in
+  records without SQL also double-quoted values; a DETAIL, CONTEXT or HINT only in a known shape
+  (any other is withheld whole), with the row of `Failing row contains (...)` and a key detail's
+  values (`Key (...)=(...)`, to the record's last `)`) masked whole. Then the records go through
+  the same memory limiter, stamp, redaction, log window and classification as OTLP logs. In Loki they
+  are `service_name=postgres` with `pg_duration_ms`, `pg_query_id`, `pg_severity`, `pg_sqlstate`,
+  `pg_pid` and `trace_id` as structured metadata; the existing `trace_id` derived field opens the
+  trace.
+- **Docker access**: none in Alloy (it parses browser payloads): the Postgres log comes from
+  the `pglog` volume.
+- **cAdvisor** (observability profile): its own service, not Alloy's built-in exporter. With
+  Docker's containerd image store it needs the containerd socket and the Docker socket to name
+  containers. **Residual risk:** either socket is root-equivalent on the host whatever the mount
+  flag (`:ro` does not restrict API calls), so a compromised cAdvisor is a compromised host.
+  Mitigations: the image is pinned by digest; it runs with no capabilities, `no-new-privileges`
+  and a read-only root filesystem; it publishes no port and sits on the internal `cadvisor`
+  network that only Alloy shares; it takes no input but Alloy's scrapes; and it only runs with
+  the observability profile (leave it stopped if that trade is not worth D11's container panels:
+  `docker compose --profile observability stop cadvisor`). CPU and memory only, labelled
+  `compose_service` (`host` = the whole machine); Alloy keeps only its own compose project's
+  containers (`WCL_COMPOSE_PROJECT`; unset keeps none). Linux Docker hosts only.
+- **Alerts** (`grafana/provisioning/alerting/rules.yaml`, folder "WCL alerts"): *Telemetry
+  pipeline failures or drops* (Alloy export or enqueue failures, or receiver refusals, in the last
+  2 minutes) and *Build spend per day above threshold* (Claude Code's estimate over 24 hours
+  against `alert:build_spend_usd_per_day:threshold` in `datastores.yaml`: change the number
+  there, Mimir reloads it within a minute). No contact point: the state shows in Grafana.
+
+| Script | Proves |
+|---|---|
+| `test/datastores.sh` | On a seeded stack (db migrated with the monitoring role, 200 embedded knowledge-base chunks, three traced slow statements issued through the backend's instrumentation, a lock wait, autovacuum, a long transaction, unique-key (one value with a `)`), NOT NULL and CHECK errors, 7 Redis hits and 3 misses): the exporter logs in as the monitoring role only; the top statement by total time is the slow one; the vector index size equals `pg_relation_size`; rows = 200; Redis hit ratio = 0.7; each slow line in Loki carries the request's trace id and its SQL span id, and that trace is in Tempo; the seeded string, number, bound value, e-mails and row values are absent from every Postgres record and the row and key details read `(?)`; lock wait and autovacuum logged; no DSN, password, key name or literal in any label value or in Alloy's logs and UI; container metrics for this project and the `host` line (both required); D9–D11 provision and every query is valid; the added series stay under 5k; two Claude Code sessions' cost in one export arrive summed into one series (Alloy's `metric_labels` drops the session and prompt ids, then sums the streams: otherwise Mimir keeps one and silently discards the rest as `sample_duplicate_timestamp`, board #76) and Mimir discards no sample during the run. Needs `DB_PORT` and `REDIS_PORT` (default 24432, 24379). |
+| `test/alerts.sh` | Both alert rules provision and start Normal; build spend fires on synthetic cost above a lowered threshold (in a mounted copy of the rules) and is Normal again once it is raised; the pipeline rule fires when Loki refuses a log batch for good and is Normal again after the window. About 8 minutes. |

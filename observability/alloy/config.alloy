@@ -194,6 +194,17 @@ otelcol.processor.transform "metric_labels" {
     ]
   }
 
+  // One Claude Code process exports a cumulative stream per session and prompt. Without those
+  // ids the streams of one export share their labels and timestamp: Mimir would keep the first
+  // and silently discard the rest (sample_duplicate_timestamp, board #76), so they are summed
+  // into the process total here.
+  metric_statements {
+    context    = "metric"
+    statements = [
+      `aggregate_on_attributes("sum") where resource.attributes["service.name"] == "claude-code"`,
+    ]
+  }
+
   output {
     metrics = [otelcol.processor.batch.default.input]
   }
@@ -281,6 +292,26 @@ otelcol.connector.spanmetrics "default" {
 
   exemplars {
     enabled = true
+  }
+
+  output {
+    metrics = [otelcol.processor.transform.spanmetrics_version.input]
+  }
+}
+
+// An aggregate keeps the resource of its first span, so after a restart with a new version it
+// went on exporting the old service.version on its target_info, beside the app's own, for as
+// long as spans kept coming (live check #75). The running version is the app's own resource's
+// alone: these two are no promoted labels, so no spanmetrics series changes.
+otelcol.processor.transform "spanmetrics_version" {
+  error_mode = "ignore"
+
+  metric_statements {
+    context    = "resource"
+    statements = [
+      `delete_key(attributes, "service.version")`,
+      `delete_key(attributes, "vcs.ref.head.revision")`,
+    ]
   }
 
   output {
@@ -736,5 +767,282 @@ otelcol.processor.transform "faro" {
   output {
     logs   = [otelcol.processor.memory_limiter.default.input]
     traces = [otelcol.processor.memory_limiter.default.input]
+  }
+}
+
+// --- Data stores and infra (feature 058) ---
+//
+// Metrics: the Postgres and Redis exporters, cAdvisor and the stack's own metrics are scraped
+// and remote-written to Mimir (board scope:058:metrics-path): the exporters' own series names,
+// not the OTLP path. Every scrape keeps only the series D9-D11 and the alerts read (spec §9:
+// 50k active series). Labels never carry SQL text, Redis key names, DSNs or container ids.
+// Samples wait in the remote-write WAL (alloy-data volume) while Mimir is down.
+//
+// Logs: Postgres's slow statements, lock waits and autovacuum runs (docker-compose.yml, db
+// command) are tailed from its log files on the pglog volume (mounted read-only; Alloy has no
+// Docker access at all), parsed, masked here and then sent through the same chain as OTLP logs
+// (memory limiter, stamp, redact, log window, classify): never straight to Loki.
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir:9009/api/v1/push"
+  }
+}
+
+// Postgres (spec §7.2): the default collectors plus the six non-default ones. Logs in as the
+// monitoring role (migration 0022: pg_monitor only). Statement text is never a label
+// (include_query = false, spec §9.3): D9 lists statements by queryid, and the slow-query log
+// carries the same id. The DSN comes from compose and is a secret here (hidden in the UI).
+prometheus.exporter.postgres "db" {
+  data_source_names          = [sys.env("WCL_PG_MONITOR_DSN")]
+  custom_queries_config_path = "/etc/alloy-postgres/queries.yaml"
+  enabled_collectors         = [
+    "database", "locks", "replication", "replication_slot", "roles", "stat_bgwriter",
+    "stat_database", "stat_progress_vacuum", "stat_user_tables", "statio_user_tables", "wal",
+    "stat_statements", "long_running_transactions", "statio_user_indexes",
+    "stat_activity_autovacuum", "process_idle", "database_wraparound",
+  ]
+
+  stat_statements {
+    include_query = false
+    limit         = 100
+  }
+}
+
+// Redis (spec §7.3): INFO-based series only. No key checks: key names carry account ids.
+prometheus.exporter.redis "cache" {
+  redis_addr = "redis:6379"
+}
+
+prometheus.exporter.self "alloy" { }
+
+prometheus.scrape "datastores" {
+  targets = array.concat(
+    prometheus.exporter.postgres.db.targets,
+    prometheus.exporter.redis.cache.targets,
+  )
+  scrape_interval = "30s"
+  forward_to      = [prometheus.relabel.datastores.receiver]
+}
+
+prometheus.scrape "stack" {
+  targets = array.concat(
+    prometheus.exporter.self.alloy.targets,
+    [
+      {"__address__" = "loki:3100", "job" = "loki"},
+      {"__address__" = "tempo:3200", "job" = "tempo"},
+      {"__address__" = "mimir:9009", "job" = "mimir"},
+      {"__address__" = "cadvisor:8080", "job" = "cadvisor"},
+    ],
+  )
+  scrape_interval = "30s"
+  forward_to      = [prometheus.relabel.datastores.receiver]
+}
+
+// Jobs and instances get fixed names (the exporters' instance would be derived from the DSN).
+// Only the allowlisted series are kept. cAdvisor reports every container on the Docker host:
+// only this compose project's containers and the host's root cgroup stay, labelled by compose
+// service alone (no container id, name or image).
+prometheus.relabel "datastores" {
+  forward_to = [prometheus.remote_write.mimir.receiver]
+
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/(postgres|redis)"
+    target_label  = "job"
+  }
+
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/self"
+    replacement   = "alloy"
+    target_label  = "job"
+  }
+
+  rule {
+    source_labels = ["job"]
+    target_label  = "instance"
+  }
+
+  rule {
+    source_labels = ["__name__"]
+    action        = "keep"
+    regex         = string.join([
+      "up",
+      "pg_up|pg_settings_max_connections|pg_stat_activity_count|pg_stat_activity_max_tx_duration",
+      "pg_stat_database_(xact_commit|xact_rollback|blks_hit|blks_read|deadlocks)",
+      "pg_stat_statements_(seconds|calls|rows)_total|pg_locks_count",
+      "pg_long_running_transactions(_oldest_timestamp_seconds)?|pg_stat_activity_autovacuum_.*",
+      "pg_stat_user_tables_(n_dead_tup|n_live_tup|autovacuum_count|autoanalyze_count)",
+      "pg_statio_user_indexes_idx_blks_(hit|read)_total|pg_wal_size_bytes|pg_database_size_bytes",
+      "pg_database_wraparound_age_datfrozenxid_seconds|pg_vector_.*",
+      "redis_up|redis_memory_(used|max)_bytes|redis_evicted_keys_total|redis_keyspace_(hits|misses)_total",
+      "redis_connected_clients|redis_blocked_clients|redis_commands_processed_total",
+      "redis_commands_total|redis_commands_duration_seconds_total|redis_slowlog_length|redis_db_keys",
+      "otelcol_exporter_(sent|send_failed|enqueue_failed)_(spans|log_records|metric_points)_total",
+      "otelcol_exporter_queue_(size|capacity)|otelcol_receiver_(accepted|refused)_(spans|log_records|metric_points)_total",
+      "loki_process_dropped_lines_total|prometheus_remote_storage_samples_(total|failed_total|dropped_total)",
+      "alloy_resources_process_resident_memory_bytes",
+      "loki_distributor_(lines|bytes)_received_total|loki_discarded_samples_total",
+      "tempo_distributor_spans_received_total|tempo_discarded_spans_total",
+      "cortex_distributor_received_samples_total|cortex_discarded_samples_total|cortex_ingester_active_series",
+      "container_cpu_usage_seconds_total|container_memory_working_set_bytes",
+    ], "|")
+  }
+
+  // Fail closed: with WCL_COMPOSE_PROJECT unset the keep below would match every non-compose
+  // container (empty project label), so those go first: every cgroup without a project label
+  // except the host's root cgroup ("/", D11's host line).
+  rule {
+    source_labels = ["job", "container_label_com_docker_compose_project", "id"]
+    action        = "drop"
+    regex         = "cadvisor;;([^/].*|/.+)"
+  }
+
+  rule {
+    source_labels = ["job", "container_label_com_docker_compose_project", "id"]
+    action        = "keep"
+    regex         = "(postgres|redis|alloy|loki|tempo|mimir);.*|cadvisor;" + sys.env("WCL_COMPOSE_PROJECT") + ";.+|cadvisor;;/?"
+  }
+
+  rule {
+    source_labels = ["container_label_com_docker_compose_service"]
+    regex         = "(.+)"
+    target_label  = "compose_service"
+  }
+
+  rule {
+    source_labels = ["job", "id"]
+    regex         = "cadvisor;/"
+    replacement   = "host"
+    target_label  = "compose_service"
+  }
+
+  rule {
+    action = "labeldrop"
+    regex  = "id|name|image|container_label_.*"
+  }
+}
+
+// Postgres log (sc-419): this project's db writes postgresql-<hour>.log files to the pglog
+// volume and overwrites each a day later (log_truncate_on_rotation); the tail notices the
+// truncation and reads the file again from its start. Positions live on alloy-data.
+local.file_match "postgres" {
+  path_targets = [{"__path__" = "/var/log/postgresql/postgresql-*.log"}]
+  sync_period  = "10s"
+}
+
+loki.source.file "postgres" {
+  targets       = local.file_match.postgres.targets
+  forward_to    = [loki.process.postgres.receiver]
+  tail_from_end = false
+}
+
+// One record per Postgres message: a multi-line statement or autovacuum report is joined on the
+// prefix (log_line_prefix '%m [%p] q=%Q %e '). The prefix fields become attributes (Loki keeps
+// them as structured metadata); the body is the message. The trace id is the LAST traceparent in
+// the record: the SQLAlchemy instrumentation appends two and only the last span is exported
+// (board backlog:sqlalchemy-double-tracer).
+loki.process "postgres" {
+  stage.multiline {
+    firstline     = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\S+ \\[\\d+\\] "
+    max_wait_time = "3s"
+    max_lines     = 1000
+  }
+
+  stage.regex {
+    expression = "^(?P<pg_time>\\S+ \\S+ \\S+) \\[(?P<pg_pid>\\d+)\\] q=(?P<pg_query_id>-?\\d+) (?P<pg_sqlstate>[0-9A-Z]{5}) (?P<pg_severity>[A-Z0-9]+):\\s+(?:duration: (?P<pg_duration_ms>[0-9.]+) ms\\s+)?(?P<pg_message>(?s:.*))$"
+  }
+
+  stage.regex {
+    source     = "pg_message"
+    expression = "(?s:.*)traceparent='00-(?P<trace_id>[0-9a-f]{32})-(?P<span_id>[0-9a-f]{16})-[0-9a-f]{2}'"
+  }
+
+  stage.timestamp {
+    source = "pg_time"
+    format = "2006-01-02 15:04:05.000 MST"
+  }
+
+  stage.labels {
+    values = {
+      pg_pid         = "",
+      pg_query_id    = "",
+      pg_sqlstate    = "",
+      pg_severity    = "",
+      pg_duration_ms = "",
+      trace_id       = "",
+      span_id        = "",
+    }
+  }
+
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  stage.output {
+    source = "pg_message"
+  }
+
+  forward_to = [otelcol.receiver.loki.postgres.receiver]
+}
+
+otelcol.receiver.loki "postgres" {
+  output {
+    logs = [otelcol.processor.transform.postgres.input]
+  }
+}
+
+// The resource is set here (a statement's text is partly user input). Masks, before the shared
+// redaction (kinds: sql, ops, detail, other):
+// - a DETAIL, CONTEXT or HINT is kept only in a known shape (key and row details, lock waits and
+//   deadlocks, parameters); any other is withheld whole. In "Failing row contains (...)" the row
+//   is masked whole, and in a key detail everything from the first "=(" to the record's last ")",
+//   so a ")" inside a value can't end the mask early;
+// - quoted strings, dollar-quoted bodies (to the end of the record: RE2 has no backreferences)
+//   and numeric literals in every record except known operational messages (autovacuum and
+//   analyze reports, lock waits, checkpoints, start and stop: object names and counters only);
+// - in records that carry no SQL also double-quoted values.
+// Bind parameters are never logged (log_parameter_max_length=0), and a "parameters:" detail
+// that appears anyway is masked like any other. backend/tests/test_telemetry_datastores.py runs
+// these masks on sample records; observability/test/datastores.sh on real ones.
+otelcol.processor.transform "postgres" {
+  error_mode = "ignore"
+
+  log_statements {
+    context    = "resource"
+    statements = [
+      `set(attributes["service.name"], "postgres")`,
+      `set(attributes["service.namespace"], "wcl-agent")`,
+      `set(attributes["app.layer"], "runtime")`,
+      `set(attributes["deployment.environment.name"], "dev")`,
+    ]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [
+      // A regex group that matched nothing arrives as an empty attribute.
+      `delete_key(attributes, "pg_duration_ms") where attributes["pg_duration_ms"] == ""`,
+      `set(trace_id.string, attributes["trace_id"]) where IsMatch(attributes["trace_id"], "^[0-9a-f]{32}$")`,
+      `set(span_id.string, attributes["span_id"]) where IsMatch(attributes["span_id"], "^[0-9a-f]{16}$")`,
+      `delete_matching_keys(attributes, "^(trace_id|span_id|loki\\.attribute\\.labels)$")`,
+      `set(attributes["alloy.pg_kind"], "other")`,
+      `set(attributes["alloy.pg_kind"], "sql") where attributes["pg_duration_ms"] != nil or attributes["pg_severity"] == "STATEMENT" or attributes["pg_severity"] == "QUERY" or IsMatch(body, "^(statement|execute|parse|bind)[^:]*: ")`,
+      `set(attributes["alloy.pg_kind"], "ops") where attributes["alloy.pg_kind"] == "other" and attributes["pg_severity"] == "LOG" and IsMatch(body, "^(automatic (vacuum|analyze) of table |process \\d+ (still waiting for|acquired) |checkpoint (starting|complete)|database system |redo |starting PostgreSQL|listening on |received \\w+ shutdown request|aborting any active transactions|background worker |shutting down|all server processes terminated)")`,
+      `set(attributes["alloy.pg_kind"], "detail") where attributes["alloy.pg_kind"] == "other" and IsMatch(attributes["pg_severity"], "^(DETAIL|CONTEXT|HINT)$")`,
+      `set(body, "<detail withheld>") where attributes["alloy.pg_kind"] == "detail" and not IsMatch(body, "^(Key \\(|Failing row contains |Process holding the lock|Process \\d+ waits for |Process \\d+: |parameters: )")`,
+      `replace_pattern(body, "(?s)^(Failing row contains ).*$", "${1}(?)") where attributes["alloy.pg_kind"] == "detail"`,
+      `replace_pattern(body, "(?s)=\\(.*\\)", "=(?)") where attributes["alloy.pg_kind"] == "detail" or attributes["alloy.pg_kind"] == "other"`,
+      `replace_pattern(body, "'(?:[^'\\\\]|''|\\\\[\\s\\S])*(?:'|$)", "'?'") where attributes["alloy.pg_kind"] != "ops"`,
+      `replace_pattern(body, "\\$[A-Za-z_]*\\$[\\s\\S]*$", "<dollar-quoted:masked>") where attributes["alloy.pg_kind"] != "ops"`,
+      `replace_pattern(body, "(^|[^\\w$.])-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?", "${1}?") where attributes["alloy.pg_kind"] != "ops"`,
+      `replace_pattern(body, "\"[^\"]*\"", "\"?\"") where attributes["alloy.pg_kind"] == "detail" or attributes["alloy.pg_kind"] == "other"`,
+      `delete_key(attributes, "alloy.pg_kind")`,
+    ]
+  }
+
+  output {
+    logs = [otelcol.processor.memory_limiter.default.input]
   }
 }

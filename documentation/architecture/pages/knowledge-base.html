@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
+<meta name="verified-at" content="commit 1cedb4e · 2026-11-05">
 <title>Knowledge base · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -195,7 +195,7 @@
   <h3>What it does, and where it lives</h3>
   <ul>
     <li><code>backend/app/kb/embedder.py</code>: <code>Embedder</code> is the seam. The indexer embeds chunks with task <code>RETRIEVAL_DOCUMENT</code>; search embeds queries with <code>RETRIEVAL_QUERY</code>.</li>
-    <li><code>VertexEmbedder</code> calls <code>wcl_agent.llm.generation.embed_texts</code> (the provider layer is the only code that calls model clients) with <code>output_dimensionality=768</code> and <code>auto_truncate=True</code>, under the shared rate-limit loop with its own policy (4 attempts, 2 s initial, 20 s max, 60 s budget). It sends <code>kb_embed_request_batch</code> texts per request (default 1), checks the count and the 768 dimensions, and L2-normalises every vector.</li>
+    <li><code>VertexEmbedder</code> calls <code>wcl_agent.llm.generation.embed_texts</code> (the provider layer is the only code that calls model clients) with <code>output_dimensionality=768</code> and <code>auto_truncate=True</code>, under the shared rate-limit loop with its own policy (4 attempts, 2 s initial, 20 s max, 60 s budget). It sends <code>kb_embed_request_batch</code> texts per request (default 1), checks the count and the 768 dimensions, and L2-normalises every vector. Each provider request is timed and recorded, a failed one too with its exception's class name, as <code>app.embedding.duration</code> and <code>app.embedding.batch_size</code> (by model and by task: <code>document</code> when indexing, <code>query</code> when searching), through <code>record_embedding()</code> in <code>backend/app/telemetry/metrics.py</code>; the retries inside a request count as one. A query embedding that the search's own 3 s budget (<code>EMBED_TIMEOUT_S</code>) cancels is not recorded, because the cancel is not an <code>Exception</code>.</li>
     <li>The client is <code>provider.genai_client()</code>: Vertex AI when the GCP config is set, else the Gemini API key. It is the same whichever provider serves chat, so embeddings keep working while chat runs on Anthropic.</li>
     <li><code>get_embedder()</code> returns the test-injected embedder, else <code>None</code> when <code>kb_embed_enabled</code> is off or no genai client can be built, else the process's embedder. The availability check is cached for the life of the process. With no embedder, chunks are still written and stay keyword-searchable.</li>
     <li><code>KB_DIMENSIONS = 768</code> lives in <code>backend/app/db/models.py</code>; each row records its <code>embed_model</code>, so a model change is a re-embed, not a schema change.</li>
@@ -470,7 +470,7 @@
     <li>WCL chunks are only searchable while their fetch passes the 039 check within <code>raw_store_reverify_days</code>; chunks of a report not re-checked recently don't show up until it is.</li>
     <li>Stored rows keep no query text, so the backfill can't chunk plain damage, healing or cast tables (it can't tell which they are).</li>
     <li><code>region</code>, <code>realm</code> and <code>zone_id</code>/<code>guild</code> exist on <code>kb_chunks</code>, but the WCL chunker never fills <code>region</code> or <code>realm</code>, and search has no zone, guild or kill filter.</li>
-    <li>Indexer counters live only in memory and logs; there is no hit/miss metric for knowledge search beyond the per-search log line.</li>
+    <li>Indexer counters live only in memory and logs; the search and embedding metrics (see Search and Embedder above) cover requests, not the indexer's own backlog.</li>
   </ul>
 </section>
 
