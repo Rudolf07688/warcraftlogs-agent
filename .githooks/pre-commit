@@ -2,6 +2,16 @@
 # Completes the pre-merge-commit gate: git skips pre-merge-commit when a merge stops (conflicts,
 # or after that hook refused) and is finished with `git commit`, but runs this hook then.
 # Only acts while a merge is in progress; ordinary commits pass straight through.
+#
+# Ordinary commits (no merge in progress) also show the team facts anchored to the staged
+# footprint (.claude/team/facts.py diff --staged --hook): advisory only, at most 12 lines on
+# stderr, silent when nothing matches, and it never blocks the commit. FACTS_HOOK=0 turns it off.
 root=$(git rev-parse --show-toplevel) || exit 1
-[ -f "$(git rev-parse --git-path MERGE_HEAD)" ] || exit 0
+if [ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then
+    if [ "${FACTS_HOOK:-1}" != 0 ] && [ -f "$root/.claude/team/facts.py" ]; then
+        t=; command -v timeout >/dev/null 2>&1 && t="timeout 8"
+        $t python3 "$root/.claude/team/facts.py" diff --staged --hook </dev/null 2>/dev/null | head -n 12 >&2
+    fi
+    exit 0
+fi
 exec python3 "$root/.claude/team/archdocs.py" gate --branches main

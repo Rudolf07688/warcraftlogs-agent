@@ -12,7 +12,8 @@ every worktree reads and writes the same copy. team-lead commits them at wrap-up
   member.py remember --seat SEAT [-|PATH]         REPLACE your memory (max 500 words; lead 1000)
   member.py roster                               everyone on the team, one line each
   member.py lint --seat SEAT | --all             read-only: memory lines that repeat the shared
-                                                 files or that a team tool now covers
+                                                 files or a team fact (.claude/team/facts/), or
+                                                 that a team tool now covers
 """
 import argparse
 import os
@@ -171,6 +172,27 @@ def shared_paragraphs():
     return paras
 
 
+FACTS_REL = ".claude/team/facts"
+
+
+def fact_paragraphs():
+    """Team fact bodies (.claude/team/facts/<id>.md, see facts.py) as (file, line, words)."""
+    root = os.path.dirname(os.path.dirname(team_dir()))
+    fdir = os.path.join(root, FACTS_REL)
+    paras = []
+    for name in sorted(os.listdir(fdir)) if os.path.isdir(fdir) else []:
+        if not name.endswith(".md") or name == "README.md":
+            continue
+        try:
+            text = open(os.path.join(fdir, name)).read()
+        except OSError:
+            continue
+        head, sep, body = text[4:].partition("\n---\n") if text.startswith("---\n") else ("", "", "")
+        if sep and body.strip():
+            paras.append((f"{FACTS_REL}/{name}", head.count("\n") + 4, content_words(body)))
+    return paras
+
+
 def lint_seat(seat, paras):
     fields, memory = parse(seat_file(seat))
     names = [r["name"] for r in roster_rows()]
@@ -185,6 +207,9 @@ def lint_seat(seat, paras):
         tools = [] if about_people.search(item) else [tool for pat, tool in TOOL_HINTS if re.search(pat, item, re.I)]
         if best[0] >= 0.6 or tools:
             where = f"repeats {best[1]}:{best[2]} ({best[0]:.0%} of its words)" if best[0] >= 0.6 else ""
+            if where and best[1].startswith(FACTS_REL + "/"):
+                where = (f"repeats team fact {os.path.basename(best[1])[:-3]} ({best[0]:.0%} of its words); "
+                         "facts surface by footprint, so the line can go")
             now = f"now a tool: {', '.join(tools)}" if tools else ""
             hits.append(f"  - {item[:110]}{'...' if len(item) > 110 else ''}\n      {'; '.join(x for x in (where, now) if x)}")
     print(f"{fields['name']} ({seat}, {words(memory)}/{cap(seat)} words): "
@@ -194,7 +219,7 @@ def lint_seat(seat, paras):
 
 
 def cmd_lint(a):
-    paras = shared_paragraphs()
+    paras = shared_paragraphs() + fact_paragraphs()
     seats = [r["seat"] for r in roster_rows()] if a.all else [a.seat]
     for seat in seats:
         lint_seat(seat, paras)
