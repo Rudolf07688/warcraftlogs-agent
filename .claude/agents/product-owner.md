@@ -188,11 +188,22 @@ manifests and migrations go to one developer at a time.
 **Wait on the board yourself, don't wait to be woken.** A developer's completion notice goes
 to team-lead, not to you, and an idle agent sees no board entries. So right after each
 launch (and each resume), arm a background wait with Bash `run_in_background: true`:
-`python3 .claude/team/board.py wait --kind handoff --kind blocker --kind question --author <dev-name>`
-(questions too: on 2026-11-04 a developer's question waited 55 minutes unseen; 90-minute default timeout; exit 2 on expiry: check the developer, then re-arm). Then end
-your turn: you are re-invoked when the entry lands, within seconds, at no token cost while
-waiting. Tested 2026-11-01. Post a `notice` that you run your own watcher, so team-lead
-stops sending wake-ups.
+`python3 .claude/team/board.py wait --kind handoff --kind blocker --kind question --author <dev-name> --since <N> --warm`
+(`<N>`: the latest board id, e.g. from your launch `post`; questions too: on 2026-11-04 a developer's question waited 55 minutes unseen). Then end
+your turn: you are re-invoked when the entry lands, within seconds. Tested 2026-11-01. Post a
+`notice` that you run your own watcher, so team-lead stops sending wake-ups.
+
+**Keep your cache warm while you wait (P12, 2026-11-05).** As a sub-agent you have a 5-minute
+prompt cache. A wake after a longer idle rewrites your whole context: on 2026-11-04b that
+happened 7 times and cost 2.05 of your 6.16. `--warm` wakes you every 4.5 minutes instead
+(exit 3, "warm tick"), at about a tenth of the price:
+- On a warm tick (exit 3), do nothing else: re-run the identical command in the
+  background and end your turn. Don't read its output, the board or any status; write no
+  text. That keeps a tick to two calls.
+- Keep exactly one warm wait armed whenever you end a turn to wait, including while your
+  own background agents run (QA sweeps, fix rounds, docs): their notices still wake you.
+- Exit 2 ("warm window over", 25 minutes after the `--since` entry with no match) means
+  more ticks would cost more than one cold wake: check the developer, then re-arm without `--warm`. Exit 0 is a real entry.
 
 **Developer statuses:**
 - **Hand-off:** a board `handoff` (your wait fires) plus the sub-agent's result: branch,
@@ -278,8 +289,10 @@ M, and the scrum master owns them in tier L.
 4. **Board sync:** run `/shortcut-sync` (the `shortcut-sync` sub-agent type) and a final
    change detection on the sprint branch.
 5. **Architecture docs** (owner's rule, 2026-11-04: they always show the current state).
-   After the QA fixes are merged, bring `documentation/architecture/` up to the sprint tip,
-   following `documentation/architecture/pages/maintaining.html`:
+   After **every** QA fix round is merged, bring `documentation/architecture/` up to the
+   sprint tip in **one pass**, following `documentation/architecture/pages/maintaining.html`.
+   Don't start it in parallel with the fixes to save time: on 2026-11-04b that meant a first
+   pass plus a delta pass, 2.8 against about 1.8 for one (P12).
    - `python3 .claude/team/archdocs.py changed` lists the pages whose code moved since their
      stamp, plus any unmapped paths.
    - Re-verify those sections against the code, not the specs. Add new components, remove

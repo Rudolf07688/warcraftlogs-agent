@@ -20,7 +20,7 @@ Running the team:
 - Before calling something a stall, check timestamps, commits and running containers. The merger wakes itself (board.py wait); my wake-up is a fallback. Don't chase crossed messages; nudge once, self-contained.
 - Check my briefs against the tools before launch (no `livecheck` board kind). Rule changes mid-sprint reach running agents only through the board.
 - Resume agents for work that needs their history; start fresh for a new task (QA fixes): 210–260k vs 123k context per call.
-- Measure before choosing a lever (`usage.py --context`), then write the proposal.
+- Measure before choosing a lever (`usage.py --context`, `--cold`), then write the proposal. Weigh a tool result by the cache write it causes, not its characters: base64 made screenshots look like 90% of context, yet they cost little (P12). Sub-agents cache for 5 minutes, the main session for an hour: idle waits are the hidden tax.
 - A security rework can break liveness; say so in the end-sweep brief when lanes, locks or ordering change.
 - Name tickets for the owner: a plain name, the id in brackets at most. Search Shortcut before filing: my sc-455 duplicated sc-428 (11-04b).
 - Count on the board, not from memory. Look at a file right before writing it, never a bare `>`; list ignored files before deleting a worktree (qa-reports/ is gitignored).

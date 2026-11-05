@@ -91,9 +91,11 @@ python3 .claude/team/board.py log --since <id>   # the raw history
   `subagent_type: developer`, no `name`), passing its brief and its seat. Seats follow the
   product owner's rules in §3.
 - **Wait on the board yourself:** after each launch or resume, arm
-  `python3 .claude/team/board.py wait --kind handoff --kind blocker --author <dev-name>` with
+  `python3 .claude/team/board.py wait --kind handoff --kind blocker --author <dev-name> --since <N> --warm` with
   `run_in_background: true` and end your turn; you're re-invoked when it fires
-  (`product-owner.md` §3). Gate returns and blockers reach you without team-lead.
+  (`product-owner.md` §3). Gate returns and blockers reach you without team-lead. On a
+  "warm tick" (exit 3) only re-run the identical command and end your turn: it keeps your
+  5-minute prompt cache warm (P12).
 - **Messaging teammates** are only for live co-design: more than about 3 genuine two-way
   exchanges during a run that can't be written as board entries. Send team-lead
   `SPAWN-REQUEST name/model/effort/brief` only for that case.

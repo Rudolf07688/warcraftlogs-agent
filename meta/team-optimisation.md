@@ -412,7 +412,7 @@ last boss kill" (sc-365) surfaced only because two turns disagreed.
 - The chart prompt now asks the agent to name the boss, so it can be checked.
 - Measure: wrong answers caught by the run rather than by eye.
 
-### P12. Where Telemetry 2's extra cost went (measured 2026-11-05)
+### P12. Where Telemetry 2's extra cost went (measured 2026-11-05; levers 1–2 built, owner go, trial next sprint)
 
 Owner asked to measure before choosing a lever. Telemetry 2 (11-04b) cost 31.2 for 24 pts;
 at 11-01b's 1.03/pt it would have cost 24.7. Against 11-01b (20.5), by bucket:
@@ -444,7 +444,7 @@ Readings:
   stream; Nils's took 96 calls.
 
 Levers, by expected saving per sprint:
-1. **Keep the PO's cache warm** (≈ 1.5). While she waits longer than 5 minutes, she
+1. **Keep the PO's cache warm** (≈ 1.5 first estimate; ≈ 0.7 after the probe, see below). While she waits longer than 5 minutes, she
    waits in slices of ≤ 4.5 min (`board.py wait --timeout 270`, re-armed on timeout). A
    warm wake at ~200k costs ≈ 0.02 against ≈ 0.3 for a cold one. First check whether
    sub-agents can get the 1-hour cache the main session already has; that would be the
@@ -455,8 +455,29 @@ Levers, by expected saving per sprint:
    two fresh agents, as 11-01 did.
 - Measure next sprint: cold-call weight (target < 1.5), the PO's cost per point (0.26 on
   11-04b), docs close-out (≤ 1.8), fix-round cost per item.
-- Tool: `carry.py` and `rewrites.py` in the 2026-11-05 session scratchpad; move them into
-  `usage.py --cold` if the levers are adopted.
+- **Built (owner: "let's get those implemented so we can see if it helps"):**
+  - The 1-hour cache, checked first: the transcripts confirm the main session writes 1-hour
+    cache and every sub-agent 5-minute. Switching all sub-agents to one hour is not worth it
+    even where possible: a 1-hour write costs 2× base against 1.25×, so developers would pay
+    about as much more as the PO saves. The targeted warm wait wins.
+  - `board.py wait --since N --warm`: times out after 270 s with exit 3; the re-arm is the
+    identical command (`--since` is required, so nothing is missed). After `--warm-for`
+    minutes (default 25) it exits 2. Tests in `backend/tests/test_team_board.py`.
+  - Probe (haiku sub-agent, 2026-11-05): a tick re-invokes the agent and the cache stays
+    warm (after a 4.5 min gap: 43.5k read, 578 written). The first version cost 3 calls per
+    tick because the agent read the output file to find the printed re-arm command; with the
+    identical-command re-arm a tick is 2 calls. Break-even: a cold wake rewrites C at 1.25×,
+    a tick reads C twice at 0.1×, so about 6 ticks (≈ 25 min) equal one cold wake; hence the
+    25-minute window. Replayed on Maren's 11-04b gaps (5–32 min) that saves about 0.7, not
+    the 1.5 first estimated (that assumed 1 call per tick). A `Monitor`-driven heartbeat could
+    make a tick 1 call; untested.
+  - `product-owner.md` §3 and `scrum-master.md`: arm waits with `--warm`; on a tick only
+    re-arm and end the turn; keep one warm wait armed while their own background agents run.
+  - `product-owner.md` close-out step 5 and team-launch: the architecture docs pass runs
+    once, after every fix round is merged.
+  - `usage.py --cold`: cold-cache calls per agent (11-04b reads 3.22, matching the manual
+    count); team-launch wrap-up reads it.
+  - Lever 3 (split fix rounds above ~5 items) stays a measurement, not a rule.
 
 ## What changed in the agent setup (2026-10-31)
 

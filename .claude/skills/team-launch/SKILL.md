@@ -72,9 +72,10 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
 - **Name tickets for the owner (preference 23):** a short plain name, id in brackets at most,
   never a bare `sc-NNN`.
 - **The merger wakes itself.** The product owner and scrum master arm
-  `board.py wait --kind handoff --author <dev>` in the background after each launch (tested
-  2026-11-01: a sub-agent's own background job re-invokes it within seconds). Expect their
-  `notice` saying so. Send a one-line wake-up (board number, branch, head, agent id) only
+  `board.py wait --kind handoff --author <dev> --since <N> --warm` in the background after each launch
+  (tested 2026-11-01: a sub-agent's own background job re-invokes it within seconds).
+  `--warm` re-invokes them every 4.5 minutes to keep their 5-minute prompt cache warm (P12);
+  those ticks are expected, not activity to relay. Expect their `notice` saying so. Send a one-line wake-up (board number, branch, head, agent id) only
   as a fallback: a `handoff` that no `merge` or reply follows within about 15 minutes. Check
   the timestamps first. You'll also see their interim "waiting on background work"
   notices: ignore them.
@@ -111,6 +112,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
      - `python3 .claude/team/usage.py ~/.claude/projects/-home-rudolf-dev-warcraftlogs-agent/<this session id>`
        for tokens, calls and messages per agent; add `--context` to see where each agent's
        new context came from (P10: the product owner's Shortcut and report share)
+       and `--cold` for the cold-cache wakes (P12: target < 1.5 for the sprint; the PO's
+       share should drop with `--warm`)
      - the board export, for entries by kind and author, and for decisions overridden
      - git, for lines of code against lines of Spec Kit documents
    - **Contents:**
@@ -122,7 +125,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
      - what worked and what to change next time
 4. **Architecture docs gate** (owner's rule, 2026-11-04): run from the sprint worktree,
    `python3 .claude/team/archdocs.py changed` must report nothing left to re-check, and
-   `archdocs.py check` must be clean. The product owner does this in its wrap-up; if it's
+   `archdocs.py check` must be clean. The product owner does this in its wrap-up, in one
+   pass after every fix round is merged (P12); if it's
    missing, send the product owner back before you ask the merge question. In single-pass
    mode, the lead does the step from `documentation/architecture/pages/maintaining.html`.
    The `.githooks/pre-merge-commit` hook refuses the `--no-ff` merge into `main` otherwise;

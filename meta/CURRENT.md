@@ -10,30 +10,22 @@ Updated: 2026-11-05 (meta session open: cost of Telemetry 2 measured, P12)
 ## Topic
 
 The agent-team redesign: persistence and autonomy. Full record in
-`meta/team-optimisation.md` (decisions D1–D19, proposals P1–P11, baseline, change log).
+`meta/team-optimisation.md` (decisions D1–D19, proposals P1–P12, baseline, change log).
 
 ## Where we are
 
-- Sprint 2026-11-04b (Telemetry 2, epic 396): 24/24 pts, merged into main 2c7a67f on the
-  owner's "close it all out"; 9 stories + epic 396 Done, iterations 425/442 end 2026-11-04.
-  Worktrees and sprint/feature branches removed, QA reports copied to qa-reports/2026-11-04b*,
-  stack recreated from main. Owner pushed main (my push was blocked by the permission
-  classifier). Team report meta/sprints/2026-11-04b/.
-- Telemetry 1 stories and the 24 older Under Review stories: Done on the owner's word 2026-11-04.
-- Lessons this sprint (in lead.md): proofs on real-shaped data, render checks taller than the
-  page, search Shortcut before filing, run tools from the branch that has the change.
+- Telemetry 2 (sprint 2026-11-04b) merged, pushed and Done; team report
+  meta/sprints/2026-11-04b/. The meta-first talk the owner asked for is under way (below).
 
 ## This session (2026-11-05, meta first as agreed)
 
 - Measured where Telemetry 2's extra cost went: P12 in team-optimisation.md. Build got
-  cheaper per point; extra is fix rounds, docs pass run twice, PO cold-cache wakes, lead.
-- Proposed levers: keep the PO's cache warm (or 1-hour cache for sub-agents), docs
-  close-out once after the fixes, split big fix rounds. Waiting for the owner's call.
-
-## Agreed 2026-11-04: meta first
-
-Owner, 2026-11-04: "Next time we will speak meta again first." Open the next session with a
-meta discussion (team, process, tooling) before any sprint; no sprint launch until then.
+  cheaper per point; the extra is fix rounds, docs pass run twice, PO cold-cache wakes, lead.
+- Owner go: built lever 1 (`board.py wait --since N --warm`, 25-min window; probe showed the
+  cache stays warm, 2 calls per tick; saving ≈ 0.7/sprint) and lever 2 (docs pass once,
+  after every fix round). `usage.py --cold` measures it at the next wrap-up. Lever 3 (split
+  big fix rounds) stays a measurement.
+- Next sprint check: cold weight < 1.5, PO cost per point (0.26 on 11-04b), docs ≤ 1.8.
 
 ## Open with the owner
 

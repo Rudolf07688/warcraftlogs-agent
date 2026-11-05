@@ -4,6 +4,8 @@ Usage: python3 .claude/team/usage.py ~/.claude/projects/<project>/<session-id> [
 --since counts only entries at or after that UTC time (one session can span several sprints).
 --context prints, per agent, where its new context came from: tool-result characters by kind
 (shortcut, Agent results, board, source reads, html reports, check/pg, git, other bash). P10.
+--cold prints, per agent, the cold-cache calls: a cache write above 20k tokens and above 40% of
+the context, i.e. a wake after the sub-agent's 5-minute cache expired. P12 (target < 1.5 per sprint).
 Reads <session-id>.jsonl (main session) and <session-id>/subagents/*.jsonl.
 """
 import json,sys,glob,os,collections
@@ -18,7 +20,7 @@ def kind(name, cmd):
     return 'other bash'
 def stats(path):
     inp=cc=cr=out=calls=0; sends=0; sendchars=0; tools=collections.Counter(); seen=set()
-    ids={}; ctx=collections.Counter()
+    ids={}; ctx=collections.Counter(); cold=[0,0]
     for line in open(path):
         try: d=json.loads(line)
         except: continue
@@ -30,6 +32,8 @@ def stats(path):
             if mid and mid not in seen and u:
                 seen.add(mid); calls+=1
                 inp+=u.get('input_tokens',0); cc+=u.get('cache_creation_input_tokens',0); cr+=u.get('cache_read_input_tokens',0); out+=u.get('output_tokens',0)
+                w=u.get('cache_creation_input_tokens',0); r=u.get('cache_read_input_tokens',0)
+                if w>20000 and w>0.4*(w+r): cold[0]+=1; cold[1]+=w
             for c in m.get('content') or []:
                 if isinstance(c,dict) and c.get('type')=='tool_use':
                     tools[c['name']]+=1
@@ -40,7 +44,7 @@ def stats(path):
             for c in m['content']:
                 if isinstance(c,dict) and c.get('type')=='tool_result':
                     ctx[ids.get(c.get('tool_use_id'),'?')]+=len(json.dumps(c.get('content')))
-    return dict(calls=calls,inp=inp,cc=cc,cr=cr,out=out,sends=sends,sendchars=sendchars,tools=tools,ctx=ctx)
+    return dict(calls=calls,inp=inp,cc=cc,cr=cr,out=out,cold=cold,sends=sends,sendchars=sendchars,tools=tools,ctx=ctx)
 sess=sys.argv[1].rstrip('/').removesuffix('.jsonl')
 rows=[]
 main=stats(sess+'.jsonl'); rows.append(('main (team-lead)',main))
@@ -62,3 +66,11 @@ if '--context' in sys.argv:
     for n,s in rows:
         tot=sum(s['ctx'].values()) or 1
         print(f"{str(n)[:40]:40} {tot:8} " + ', '.join(f"{k} {100*v/tot:.0f}%" for k,v in s['ctx'].most_common(5)))
+if '--cold' in sys.argv:
+    print('\ncold-cache calls (weighted at 1.25x the rewrite):')
+    tot=0
+    for n,s in rows:
+        if s['cold'][0]:
+            w=s['cold'][1]*1.25/1e6; tot+=w
+            print(f"{str(n)[:40]:40} {s['cold'][0]:3} calls {w:6.2f}")
+    print(f"{'TOTAL cold weight':40} {tot:16.2f}")

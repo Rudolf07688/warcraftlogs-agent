@@ -8,9 +8,13 @@ ones. Storage lives in the git common dir, so every worktree of the repo sees on
   board.py read --as NAME          unread entries from others, then marks them read
   board.py current [--key PREFIX]  effective state: latest entry per key + open items
   board.py log [--since N] [--last N] [--key PREFIX]
-  board.py wait [--kind K] [--author A] [--key P] [--text P] [--since N] [--timeout S]
+  board.py wait [--kind K] [--author A] [--key P] [--text P] [--since N] [--timeout S] [--warm]
                                    block until a match, print it (run_in_background: you
                                    are re-invoked when it exits; costs no tokens meanwhile)
+                                   --warm (needs --since): wake every 270 s (exit 3) so a
+                                   sub-agent's 5-minute prompt cache stays warm; on exit 3 re-run
+                                   the identical command. After --warm-for minutes (default 25)
+                                   it exits 2.
   board.py init NAME | close [--export PATH] | status
   board.py hook                    PostToolUse hook: injects unread entries as context
 
@@ -27,6 +31,8 @@ from datetime import datetime, timezone
 
 KINDS = ("decision", "change", "notice", "question", "answer", "handoff", "merge", "blocker")
 HOOK_MAX_ENTRIES = 15
+WARM_TICK = 270          # seconds; under the 5-minute sub-agent prompt cache
+WARM_FOR_DEFAULT = 25.0  # minutes; ~6 ticks of 2 calls at 0.1x cost about one 1.25x rewrite
 HOOK_MAX_CHARS = 3500
 # W3C trace context, version 00, non-zero ids. Claude Code passes TRACEPARENT to every Bash
 # command it runs: the trace id is the lead session's current turn (shared by the sub-agents
@@ -179,21 +185,43 @@ def matches(e, a):
 
 def cmd_wait(a, r):
     """Block until a matching entry appears, print it, exit 0 (timeout: exit 2). Run it with
-    run_in_background: the agent is re-invoked when it exits, at no token cost while waiting."""
+    run_in_background: the agent is re-invoked when it exits, at no token cost while waiting.
+
+    --warm (P12, 2026-11-05): sub-agents keep a 5-minute prompt cache, so a wake after a longer
+    idle rewrites the whole context (~0.3 weighted at 200k) where a warm wake costs ~0.02. With
+    --warm the wait gives up after WARM_TICK seconds with exit 3. It requires an explicit --since,
+    so the re-arm is the identical command (no output to read: a tick costs two model calls) and
+    nothing is missed. The warm window is measured from the --since entry's timestamp; past
+    --warm-for minutes a cold wake is cheaper than more ticks, so it exits 2 instead."""
     import time
     name = require_board(r)
     entries = load(r, name)
+    if a.warm and a.since is None:
+        sys.exit(f"team-board: --warm needs --since N so a re-arm is the identical command; "
+                 f"the latest entry is #{entries[-1]['id'] if entries else 0}")
     since = a.since if a.since is not None else (entries[-1]["id"] if entries else 0)
-    deadline = time.monotonic() + a.timeout
+    timeout = min(a.timeout, WARM_TICK) if a.warm else a.timeout
+    deadline = time.monotonic() + timeout
     while True:
         hits = [e for e in load(r, name) if e["id"] > since and matches(e, a)]
         if hits:
             print("\n".join(fmt(e) for e in hits))
             return
         if time.monotonic() >= deadline:
-            print(f"team-board: no match after {a.timeout}s (since #{since}); re-arm or check the agent")
-            sys.exit(2)
+            break
         time.sleep(a.interval)
+    if not a.warm:
+        print(f"team-board: no match after {timeout}s (since #{since}); re-arm or check the agent")
+        sys.exit(2)
+    start = next((e["ts"] for e in load(r, name) if e["id"] == since), None)
+    waited = (datetime.now(timezone.utc) - datetime.fromisoformat(start)).total_seconds() / 60 if start else 0.0
+    if waited >= a.warm_for:
+        print(f"team-board: no match for {waited:.0f} min (since #{since}); warm window over. "
+              "Check the agent, then re-arm without --warm.")
+        sys.exit(2)
+    print(f"team-board: warm tick ({waited:.0f} min, since #{since}). Re-run the identical "
+          "command in the background and end your turn; nothing else.")
+    sys.exit(3)
 
 
 def cmd_init(a, r):
@@ -302,6 +330,10 @@ def main():
     q.add_argument("--since", type=int, help="entry id to wait after (default: the latest now)")
     q.add_argument("--timeout", type=int, default=5400, help="seconds (default 5400 = 90 min)")
     q.add_argument("--interval", type=float, default=3.0)
+    q.add_argument("--warm", action="store_true",
+                   help=f"wake every {WARM_TICK}s (exit 3) to keep the prompt cache warm; re-arm")
+    q.add_argument("--warm-for", type=float, default=WARM_FOR_DEFAULT,
+                   help="minutes since the --since entry after which warm ticks stop (exit 2)")
     q = s.add_parser("init")
     q.add_argument("name")
     q = s.add_parser("close")
