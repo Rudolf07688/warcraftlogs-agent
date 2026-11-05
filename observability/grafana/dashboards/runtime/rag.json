@@ -772,7 +772,7 @@
     {
       "type": "timeseries",
       "title": "Embedding latency p95",
-      "description": "One provider embedding request, retries included: document = background indexing, query = a search.",
+      "description": "One provider embedding request, retries included, failed ones too: document = background indexing, query = a search.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -882,6 +882,63 @@
         }
       },
       "id": 17
+    },
+    {
+      "type": "timeseries",
+      "title": "Embedding requests / min by outcome",
+      "description": "none = the provider answered; otherwise the error type of a failed request (a timeout: TimeoutError). Query failures fall back to keyword search.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (app_embedding_task, error_type) (rag:embedding_requests:rate5m) * 60",
+          "legendFormat": "{{app_embedding_task}} {{error_type}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 18
     }
   ]
 }

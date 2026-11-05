@@ -12,8 +12,8 @@
 - Q: Widen the board backfill window or accept Loki's 7 days? → A: Accept. Loki's `reject_old_samples` is a per-tenant limit (one tenant here), so it cannot be widened for the board stream alone: widening it would also admit week-old content records that the 7-day content retention then deletes. Older sprints live in `meta/sprints/*/board.jsonl`, and D13 is fed by `teamstats.py`, not Loki. The Alloy filter stays at 6 days (a day of headroom). Documented in `board-backfill.sh` and the README.
 - Q: Finish reasons from a spanmetrics dimension on ADK's span or an app counter? → A: App counter `app.llm.finish_reasons` (`gen_ai.request.model`, `app.llm.finish_reason`), counted on each non-partial model response in the agent runner. The span attribute is an array (spanmetrics would stringify combinations) and google-genai creates enum members for unknown values; the app maps to a fixed set, else `other`.
 - Q: Where does conversation depth come from? → A: A turn counter in the ADK session state (`app_turns`, session-scoped key), read by the existing existence check and advanced with the turn's user message (`state_delta`). Chat turns only (workspace runs, not the greeting or guide jobs). Conversations started before the change count from their first later turn.
-- Q: Embedding instrument labels? → A: `gen_ai.request.model` and `app.embedding.task` (`document`, `query`), per provider request, so batch size is the texts in that request.
-- Q: How is profiling switched on? → A: `PYROSCOPE_SERVER_ADDRESS`, read by the telemetry config; profiling runs only when telemetry is on and the address is set. Compose sets it on the backend; the suite sets neither.
+- Q: Embedding instrument labels? → A: `gen_ai.request.model` and `app.embedding.task` (`document`, `query`), per provider request, so batch size is the texts in that request. Fix round (live check #78): a failed request is recorded too, with `error.type` (its exception class).
+- Q: How is profiling switched on? → A: `PYROSCOPE_SERVER_ADDRESS`, read by the telemetry config; profiling runs only when telemetry is on and the address is set. Compose sets it on the backend; the suite sets neither. Fix round (QA PERF-004): compose sets it only when `WCL_PROFILES` is set, so profiling is opt-in.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -90,7 +90,7 @@ that span.
 - **Finish-reason counter**: per model response; labels model and reason (enum).
 - **Conversation-depth histogram**: per chat turn; value = turns so far; label agent.
 - **Embedding latency and batch-size histograms**: per embedding request; labels model and task (document, query).
-- **Span profile**: CPU samples linked to a root span by profile id.
+- **Span profile**: CPU samples linked to a server root span by profile id. Fix round (QA PERF-001, SEC-001/002): `setup.SpanProfiles` instead of pyroscope-otel's processor; labels `span_id` and `span_name` (a route template, method or fixed name, final at span start), no trace id; the tags added are the tags removed.
 
 ## Success Criteria *(mandatory)*
 

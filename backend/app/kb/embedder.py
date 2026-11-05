@@ -61,10 +61,14 @@ class VertexEmbedder:
         for start in range(0, len(texts), self._request_batch):
             part = texts[start : start + self._request_batch]
             started = time.monotonic()
-            raw = await generation.embed_texts(
-                self.model, part, task=task, dimensions=DIMENSIONS, policy=_POLICY
-            )
-            # Feature 059: per provider request; a failed one raises past this, unrecorded.
+            try:
+                raw = await generation.embed_texts(
+                    self.model, part, task=task, dimensions=DIMENSIONS, policy=_POLICY
+                )
+            except Exception as exc:
+                # Feature 059: per provider request, a failed one too (with its error type).
+                record_embedding(self.model, _TASK_LABELS[task], len(part), time.monotonic() - started, exc)
+                raise
             record_embedding(self.model, _TASK_LABELS[task], len(part), time.monotonic() - started)
             if len(raw) != len(part):
                 raise ValueError(f"embedder returned {len(raw)} vectors for {len(part)} texts")

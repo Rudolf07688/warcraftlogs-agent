@@ -236,21 +236,29 @@ switch Faro off), with `VITE_FARO_API_KEY`, `VITE_FARO_APP_VERSION` (`WCL_GIT_SH
 **Span profiles** (spec §6.7, sc-421). The `pyroscope` service (observability profile,
 `grafana/pyroscope:2.4.3`, volume `pyroscope-data`, 7-day retention, `127.0.0.1:${PYROSCOPE_PORT:-4040}`)
 receives CPU profiles straight from the API: no Alloy hop. The backend profiles only when
-telemetry is on and `PYROSCOPE_SERVER_ADDRESS` is set (compose sets `http://pyroscope:4040`);
-the test suite sets neither, so no profiler starts there. `pyroscope-otel`'s
-`PyroscopeSpanProcessor` gives every *root* span (a request, a chat turn) the attribute
-`pyroscope.profile.id` and tags the CPU samples taken meanwhile with the same `span_id`;
-Tempo's `tracesToProfiles` turns that into **Profiles for this span** on the span in Grafana.
-Limits: samples are tagged per OS thread, and every asyncio request shares the event-loop
-thread, so two requests running at once share their samples; spans shorter than a few
-sampling intervals (100 Hz) may show an empty flame graph.
+telemetry is on and `PYROSCOPE_SERVER_ADDRESS` is set. Compose sets it to
+`http://pyroscope:4040` only when `WCL_PROFILES` is set (any value, in `.env` or the shell), so
+profiling is off unless you opt in for a run with the observability profile:
+`WCL_PROFILES=1 docker compose --profile observability up -d`. The test suite sets neither, so
+no profiler starts there. `setup.SpanProfiles` gives every *server root* span (a request, a
+chat turn) the attribute `pyroscope.profile.id` and tags the CPU samples taken meanwhile with
+the same `span_id` and its `span_name`; Tempo's `tracesToProfiles` turns that into **Profiles
+for this span** on the span in Grafana. Only bounded values become profile labels: the name
+is the route template from the start of the span (`/api/conversations/{conv_id}`, never the
+path with its id), a bare method for an unknown path, or a fixed name like `chat turn`; no
+trace id. The tags removed at the end are exactly the ones added at the start. Background
+work (SQL, Redis or HTTP calls outside a request) is not tagged. Limits: samples are tagged
+per OS thread, and every asyncio request shares the event-loop thread, so two requests
+running at once share their samples; spans shorter than a few sampling intervals (100 Hz) may
+show an empty flame graph.
 
 **Service graph** (sc-462). Tempo's `serviceMap` reads Alloy's `traces_service_graph_*` from
 Mimir; D6 (App: API RED) shows it as a node graph. That panel is the one that queries raw
 names: Grafana's service map asks for those series by their fixed names. It wants the edge
-latency as `traces_service_graph_request_server_seconds_bucket`, so `runtime.yaml` records a
-copy of `traces_service_graph_request_server_bucket` under that name (Mimir adds no unit
-suffix). Pyroscope runs the v2 storage only (`-architecture.storage=v2`: a new install has
+latency as `traces_service_graph_request_server_seconds_bucket` and each node's average
+response time from `traces_service_graph_request_server_seconds_sum`, so `runtime.yaml`
+records copies of `traces_service_graph_request_server_bucket` and `_sum` under those names
+(Mimir adds no unit suffix). Pyroscope runs the v2 storage only (`-architecture.storage=v2`: a new install has
 no v1 data, and in the default dual mode its reads looked for v1 data and found none).
 
 **New app metrics** (all labels on `setup.METRIC_ATTRIBUTES`):
@@ -259,12 +267,13 @@ no v1 data, and in the default dual mode its reads looked for v1 data and found 
 |---|---|---|
 | `app.llm.finish_reasons` | `gen_ai.request.model`, `app.llm.finish_reason` (google-genai's reason names, anything else `other`) | each non-partial model response |
 | `app.agent.turns_per_conversation` | `gen_ai.agent.name` | the end of each chat turn: the turns so far, from `app_turns` in the ADK session state (older conversations count from their first turn after 059) |
-| `app.embedding.duration`, `app.embedding.batch_size` | `gen_ai.request.model`, `app.embedding.task` (`document`, `query`) | each provider embedding request |
+| `app.embedding.duration`, `app.embedding.batch_size` | `gen_ai.request.model`, `app.embedding.task` (`document`, `query`), `error.type` on a failed request (its exception class, e.g. `TimeoutError`) | each provider embedding request, failed ones too |
 
 Aliases (`runtime.yaml`): `app:http_latency:p50` and `:p99` (beside red.yaml's p95, same
 exclusions), `genai:finish_reasons:rate5m`, `genai:turns_per_conversation:p50`/`:p95`,
-`rag:embedding_latency:p95`, `rag:embedding_batch_size:avg5m`. D7 shows finish reasons and
-depth, D8 embedding latency and batch size. Feedback ratio (§7.5) is not built: the app has
+`rag:embedding_latency:p95`, `rag:embedding_batch_size:avg5m`, `rag:embedding_requests:rate5m`
+(by `error_type`, `none` for a success). D7 shows finish reasons and depth, D8 embedding
+latency, batch size and requests by outcome, so an embedding outage shows as failures. Feedback ratio (§7.5) is not built: the app has
 no feedback feature. Any panel with per-interval bars or legend totals must read windows of
 `$__interval` with its `interval` set (sc-471); `test_telemetry_metrics_dashboards.py` checks it.
 

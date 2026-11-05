@@ -165,6 +165,7 @@ def test_the_059_aliases_are_recorded_and_on_their_dashboards():
         "genai:turns_per_conversation:p95",
         "rag:embedding_latency:p95",
         "rag:embedding_batch_size:avg5m",
+        "rag:embedding_requests:rate5m",
     } <= recorded()
     on = {
         name: " ".join(mimir_exprs(json.loads((DASHBOARDS / name).read_text())))
@@ -174,6 +175,7 @@ def test_the_059_aliases_are_recorded_and_on_their_dashboards():
     assert "genai:finish_reasons:rate5m" in on["app-api-llm.json"]
     assert "genai:turns_per_conversation:p95" in on["app-api-llm.json"]
     assert "rag:embedding_latency:p95" in on["rag.json"] and "rag:embedding_batch_size:avg5m" in on["rag.json"]
+    assert "rag:embedding_requests:rate5m" in on["rag.json"]  # failed requests show (live check #78)
 
 
 def test_the_059_rules_read_only_allowlisted_labels():
@@ -195,9 +197,11 @@ def test_d6_has_the_service_graph_from_tempo():
     assert [t["queryType"] for t in graph["targets"]] == ["serviceMap"]
     tempo = next(d for d in yaml.safe_load(DATASOURCES.read_text())["datasources"] if d["uid"] == "tempo")
     assert tempo["jsonData"]["serviceMap"] == {"datasourceUid": "mimir"}
-    # The service map asks for its latency under the Tempo name, with the unit suffix.
+    # The service map asks for its latency under the Tempo names, with the unit suffix: the
+    # buckets for the edges, the sum for each node's average response time.
     rules = {r["record"]: r["expr"] for g in yaml.safe_load(RULES.read_text())["groups"] for r in g["rules"]}
     assert rules["traces_service_graph_request_server_seconds_bucket"] == "traces_service_graph_request_server_bucket"
+    assert rules["traces_service_graph_request_server_seconds_sum"] == "traces_service_graph_request_server_sum"
 
 
 # sc-471: a panel that shows one bar per interval, or totals in its legend, must read windows

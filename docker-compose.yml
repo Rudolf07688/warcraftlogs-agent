@@ -118,9 +118,10 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       WCL_ENVIRONMENT: dev
       WCL_GIT_SHA: ${WCL_GIT_SHA:-unknown}
-      # Span profiles (feature 059): CPU profiles of root spans pushed to Pyroscope. Like
-      # Alloy it may be down (observability profile off): the profiles are dropped then.
-      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+      # Span profiles (feature 059): CPU profiles of server root spans pushed to Pyroscope.
+      # Off unless WCL_PROFILES is set (in .env or the shell), for runs with the observability
+      # profile up: otherwise the profiler would sample and upload to a missing host for nothing.
+      PYROSCOPE_SERVER_ADDRESS: ${WCL_PROFILES:+http://pyroscope:4040}
     volumes:
       # Defaults to the Linux/macOS gcloud location. On Windows set GCP_ADC_FILE in .env,
       # e.g. C:/Users/<you>/AppData/Roaming/gcloud/application_default_credentials.json

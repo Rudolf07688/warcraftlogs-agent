@@ -128,7 +128,16 @@ groups:
             0 * sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m]))))
           / sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
 
-      # Feature 059: one point per provider embedding request (document = indexing, query = search).
+      # Feature 059: one point per provider embedding request (document = indexing, query = search),
+      # failed ones included with their error_type ("none" when it succeeded, live check #78).
+      - record: rag:embedding_requests:rate5m
+        expr: >-
+          sum by (gen_ai_request_model, app_embedding_task, error_type) (
+            label_replace(
+              histogram_count(rate(app_embedding_duration{service_namespace="wcl-agent"}[5m])),
+              "error_type", "none", "error_type", ""
+            )
+          )
       - record: rag:embedding_latency:p95
         expr: >-
           histogram_quantile(0.95, sum by (gen_ai_request_model, app_embedding_task) (
@@ -156,12 +165,15 @@ groups:
 
       # --- Service graph (D6, feature 059) -------------------------------------------------
       # Grafana's Tempo service map reads its latency from
-      # traces_service_graph_request_server_seconds_bucket by that fixed name; Mimir keeps the
-      # OTLP name without the unit suffix. This copy, under the name Grafana asks for, gives the
-      # graph's edges their latency (the request counts are read as they are). The one rule
-      # without a level:metric:operation name, so `mimirtool rules check` flags it: deliberate.
+      # traces_service_graph_request_server_seconds_bucket and _seconds_sum by those fixed names;
+      # Mimir keeps the OTLP names without the unit suffix. These copies, under the names Grafana
+      # asks for, give the graph's edges their latency and its nodes their average response
+      # time (the request counts are read as they are). The only rules without a
+      # level:metric:operation name, so `mimirtool rules check` flags them: deliberate.
       - record: traces_service_graph_request_server_seconds_bucket
         expr: traces_service_graph_request_server_bucket
+      - record: traces_service_graph_request_server_seconds_sum
+        expr: traces_service_graph_request_server_sum
 
       # --- API latency (D6, feature 059) ---------------------------------------------------
       # p50 and p99 beside red.yaml's p95 (055's file): same series, same exclusions.
