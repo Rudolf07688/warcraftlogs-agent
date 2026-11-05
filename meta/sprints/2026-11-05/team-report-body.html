@@ -1,0 +1,113 @@
+<header>
+  <div class="eyebrow">Team report · agent team · local report</div>
+  <h1>Sprint 2026-11-05: Telemetry 3</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-05</b></span><span>Base <b class="mono">6437aa2</b></span><span>Tip <b class="mono">9a5eabf</b></span><span>Steer 13:25Z → PO report 16:20Z (2 h 55 min)</span></div>
+  <p>The last of the three telemetry sprints, and the first trial of the P12 cost levers. Maren scoped 26 points over three tier-M streams and the fix round pulled in a 2-point backlog bug, so 28 points landed and nothing was dropped. Cost per point rose to 1.61 on the planned 26 (1.49 on 28), against 1.30 last sprint. Most of it is one large build (058 data stores, 9.9 M including its security rework). The warm waits did what they promised for Maren: her cold-cache weight fell from 2.05 to 0.06. The developers' cold wakes kept the sprint total at 1.92, above the 1.5 target. I ran the live pass in parallel with the QA sweep, so its 5 FAILs joined the one fix round. My re-check found one more, which became a ticket.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">28<small> / 26 pts planned</small></span><span class="s">12 stories plus the double-SQL-tracer bug, all Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Cost per point</span><span class="v">1.61<small> M</small></span><span class="s">41.8 M weighted, 1530 calls (was 1.30); 1.49 on 28 pts</span></div>
+  <div class="kpi"><span class="eyebrow">Coordination</span><span class="v">22%</span><span class="s">build 67%, QA 11% (was 31 / 59 / 10)</span></div>
+  <div class="kpi"><span class="eyebrow">Cold-cache weight</span><span class="v">1.92</span><span class="s">target &lt; 1.5; PO 0.06 (was 2.05)</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-cost" aria-controls="p-cost" aria-selected="true">Cost</button>
+  <button class="tab" role="tab" id="tab-p12" aria-controls="p-p12" aria-selected="false" tabindex="-1">P12 trial</button>
+  <button class="tab" role="tab" id="tab-time" aria-controls="p-time" aria-selected="false" tabindex="-1">Timeline</button>
+  <button class="tab" role="tab" id="tab-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Worked / change</button>
+  <button class="tab" role="tab" id="tab-mem" aria-controls="p-mem" aria-selected="false" tabindex="-1">Memory and skills</button>
+  <button class="tab" role="tab" id="tab-base" aria-controls="p-base" aria-selected="false" tabindex="-1">Earlier sprints</button>
+</div></nav>
+
+<div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
+  <h2 class="panel-title">Where the cost went (weighted M units)</h2>
+  <div class="bars">
+    <div class="bar"><span>Dev 058 data stores (Ansel, incl. security rework)</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="n">9.89</span></div>
+    <div class="bar"><span>Product owner (Maren)</span><span class="track"><span class="fill" style="width:67%"></span></span><span class="n">6.62</span></div>
+    <div class="bar"><span>Dev 060 frontend + D12 + redaction (Tomas)</span><span class="track"><span class="fill" style="width:56%"></span></span><span class="n">5.53</span></div>
+    <div class="bar"><span>Dev 059 runtime + profiles (Nils)</span><span class="track"><span class="fill" style="width:42%"></span></span><span class="n">4.15</span></div>
+    <div class="bar"><span>QA sweep (4 agents)</span><span class="track"><span class="fill" style="width:39%"></span></span><span class="n">3.81</span></div>
+    <div class="bar"><span>Architecture docs pass (Tomas)</span><span class="track"><span class="fill" style="width:27%"></span></span><span class="n">2.65</span></div>
+    <div class="bar"><span>Fix round 059 (Nils)</span><span class="track"><span class="fill" style="width:26%"></span></span><span class="n">2.57</span></div>
+    <div class="bar"><span>Lead (me, incl. live pass + re-check)</span><span class="track"><span class="fill" style="width:25%"></span></span><span class="n">2.48</span></div>
+    <div class="bar"><span>Fix round 058 (Ansel)</span><span class="track"><span class="fill" style="width:20%"></span></span><span class="n">1.97</span></div>
+    <div class="bar"><span>Fix round 060 (Tomas)</span><span class="track"><span class="fill" style="width:14%"></span></span><span class="n">1.37</span></div>
+    <div class="bar"><span>qa-security on the 058 hand-off</span><span class="track"><span class="fill" style="width:6%"></span></span><span class="n">0.63</span></div>
+    <div class="bar"><span>Shortcut sync</span><span class="track"><span class="fill" style="width:1%"></span></span><span class="n">0.13</span></div>
+  </div>
+  <table class="tbl">
+    <tr><th>Bucket</th><th>M</th><th>Share</th><th>Per pt</th><th>11-04b</th></tr>
+    <tr><td>Coordination</td><td class="num">9.23</td><td class="num">22%</td><td class="num">0.36</td><td class="num">0.40</td></tr>
+    <tr><td>Build (3 devs)</td><td class="num">19.57</td><td class="num">47%</td><td class="num">0.75</td><td class="num">0.41</td></tr>
+    <tr><td>Fix rounds</td><td class="num">5.91</td><td class="num">14%</td><td class="num">0.23</td><td class="num">0.23</td></tr>
+    <tr><td>Docs pass (once)</td><td class="num">2.65</td><td class="num">6%</td><td class="num">0.10</td><td class="num">0.12</td></tr>
+    <tr><td>QA</td><td class="num">4.45</td><td class="num">11%</td><td class="num">0.17</td><td class="num">0.14</td></tr>
+  </table>
+  <p class="small muted">Code 9,271 lines added over 61 files; Spec Kit 1,304 lines (26 files); architecture docs +170/−104 over 15 pages. Board: 109 entries (37 decisions, 38 notices, 10 questions, 8 hand-offs, 6 merges), 5 superseded entries, no decision overridden.</p>
+  <div class="callout warn"><p>The build line doubled per point (0.41 → 0.75). 058 alone wrote 1.33 M of new context in 222 calls: it covered five stories over new services (exporters, cAdvisor, slow-query log), its security rework replaced the Docker proxy with a log volume, and Ansel probed cAdvisor on this host's Docker. The work was real, but it was one tier-M stream carrying 10 points of infra with a security core. Next time a stream like that is two briefs.</p></div>
+</div>
+
+<div role="tabpanel" id="p-p12" aria-labelledby="tab-p12" tabindex="0" hidden>
+  <h2 class="panel-title">P12 trial: warm waits and one docs pass</h2>
+  <ul class="checks">
+    <li class="ok">Maren's cold-cache weight fell from 2.05 (11-04b) to 0.06: one cold call all sprint. The warm ticks woke her as designed, and none of them reached me.</li>
+    <li class="no">Her cost per point did not drop (0.25, was 0.26). The ticks cost cache reads, and she did more this sprint: 14 stories created, 13 agent launches and a 31-finding triage. The saving is in, but too small to see under the larger scope. Measure ticks separately next time: usage.py could count the tick calls.</li>
+    <li class="no">The sprint cold weight is 1.92 against a target of 1.5. The developers carry it, not the PO: Dev 058 1.11 (3 cold calls), the fix rounds 0.30 and 0.23. Developers don't use warm waits. Their cold calls come from long stack scripts (rate windows of about 12 minutes) run in the background.</li>
+    <li class="ok">The docs pass ran once, after every fix round was merged: 2.65 M, one agent, and 0.10 per point against 0.12 for two passes last sprint. It's still above the ≤ 1.8 target in absolute terms, because this sprint touched 9 pages with diagrams.</li>
+    <li class="no">Maren's catch: a <code>wait --kind question</code> also wakes on the live-check posts. Narrow it with <code>--key</code> or <code>--author</code> (tool change, mine).</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-time" aria-labelledby="tab-time" tabindex="0" hidden>
+  <h2 class="panel-title">Timeline (UTC)</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">13:25Z</span> Steer posted; PO launched (no owner questions: the epic already set scope and the drop order)</div>
+    <div class="tl ok"><span class="t">13:32Z</span> Scope 26 pts, three tier-M streams, hunk contracts; three devs start the same minute</div>
+    <div class="tl ok"><span class="t">13:35Z</span> Nils fixes the 405→500 bug with telemetry on (sc-461)</div>
+    <div class="tl ok"><span class="t">14:09Z</span> 059 merged (2243 passed)</div>
+    <div class="tl warn"><span class="t">14:48Z</span> 058 security review: 2 High, 3 Medium → one rework round (Docker proxy removed)</div>
+    <div class="tl ok"><span class="t">15:06Z</span> 060 merged; 15:13Z 058 merged after the rework (2371 passed with PG)</div>
+    <div class="tl ok"><span class="t">15:13Z</span> QA sweep and my live pass start in parallel</div>
+    <div class="tl warn"><span class="t">15:27Z</span> Live pass: 5 FAILs (D12 attribution, two target_info versions, Mimir discards, D9 table, D8 failures); triage holds for them</div>
+    <div class="tl ok"><span class="t">15:28Z</span> Fix round, fresh agents split by author; Ansel finds that the discards come from Claude Code streams collapsing (build spend undercounted)</div>
+    <div class="tl ok"><span class="t">16:05Z</span> All fix rounds merged, 2314 passed</div>
+    <div class="tl warn"><span class="t">16:13Z</span> Re-check: 4 PASS, D8 FAIL again (3 s timeout cancels the call) → ticket sc-503; lead for sc-428</div>
+    <div class="tl ok"><span class="t">16:17Z</span> Docs pass done (15 pages, 0 problems); sprint review; PO final report</div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-learn" aria-labelledby="tab-learn" tabindex="0" hidden>
+  <h2 class="panel-title">What worked</h2>
+  <div class="card"><p><b>The live pass running in parallel with the sweep.</b> Maren held the triage for it, and all five FAILs went into the same fix round. That's no extra round and no idle wait.</p></div>
+  <div class="card"><p><b>Real data again found what the stack proofs missed.</b> The Mimir discards existed only with Claude Code exporting, and they hid a real undercount of build spend. The "unknown" version came from Alloy's spanmetrics holding the first span's resource. The 3 s embedding budget is probably the whole of sc-428.</p></div>
+  <div class="card"><p><b>Hunk contracts and fast grants.</b> There were zero merge conflicts across three streams. Root causes outside a developer's footprint were granted within minutes, each with an exact ask.</p></div>
+  <div class="card"><p><b>The security review at hand-off.</b> It caught a "GET-only" Docker proxy that still exported files and every container's environment. The fix removed Docker access from Alloy entirely.</p></div>
+  <h2 class="panel-title">What to change</h2>
+  <div class="card"><p><b>Split a 10-point infra stream with a security core</b> into two briefs. 058 was 24% of the sprint on its own.</p></div>
+  <div class="card"><p><b>My own slip:</b> on the re-check I first read the old Alloy and Mimir. Recreating backend and frontend doesn't restart services that read their config at start. My memory already said so. It cost one extra round of queries, not a wrong verdict, because I read the numbers before writing them down. That fact now goes into the live-pass checklist in the skill, not just my memory.</p></div>
+  <div class="card"><p><b>Running the stack from a worktree</b> needs <code>TEAM_BOARD_DIR</code> (otherwise Alloy won't start) and <code>WCL_GIT_SHA</code> (otherwise D12 reads "unknown"). This also goes into the team-launch live-pass step.</p></div>
+  <div class="card"><p><b>Tighten waits:</b> <code>board.py wait --kind question</code> should take <code>--key</code> so live-check posts don't wake the merger.</p></div>
+</div>
+
+<div role="tabpanel" id="p-mem" aria-labelledby="tab-mem" tabindex="0" hidden>
+  <h2 class="panel-title">Memory</h2>
+  <p>Four members rewrote their memories (67 lines in, 59 out). All are under the cap: Maren 493 words, Ansel 488, Tomas 466, Nils 482. About five lines repeat a shared fact or a file that already says it. Mimir's OTLP names drop the unit and <code>_total</code> suffixes (Ansel and Nils). Run detect-changes before each commit (CLAUDE.md). qa-reports/ is gitignored (team-launch). Headless render windows must be taller than the page (Maren and my lead memory). The Mimir naming fact goes into the developer agent file. I'm not editing their memories.</p>
+  <h2 class="panel-title">Skills</h2>
+  <p>No <code>skill:</code> notices this sprint. Lead changes on main after the merge: team-launch's live-pass step gets the worktree environment (TEAM_BOARD_DIR, WCL_GIT_SHA, WCL_PROFILES) and the restart of config-reading services.</p>
+</div>
+
+<div role="tabpanel" id="p-base" aria-labelledby="tab-base" tabindex="0" hidden>
+  <h2 class="panel-title">Earlier sprints</h2>
+  <table class="tbl">
+    <tr><th>Sprint</th><th>Points</th><th>Calls</th><th>M units</th><th>Per point</th><th>Coord / build / QA</th></tr>
+    <tr><td>11-01b</td><td class="num">20</td><td class="num">833</td><td class="num">20.5</td><td class="num">1.03</td><td>26 / 56 / 18</td></tr>
+    <tr><td>11-02</td><td class="num">20</td><td class="num">922</td><td class="num">25.3</td><td class="num">1.27</td><td>16 / 68 / 16</td></tr>
+    <tr><td>11-04</td><td class="num">23</td><td class="num">958</td><td class="num">26.9</td><td class="num">1.17</td><td>29 / 53 / 18</td></tr>
+    <tr><td>11-04b</td><td class="num">24</td><td class="num">1168</td><td class="num">31.2</td><td class="num">1.30</td><td>31 / 59 / 10</td></tr>
+    <tr><td><b>11-05</b></td><td class="num">26 (+2)</td><td class="num">1530</td><td class="num">41.8</td><td class="num"><b>1.61</b></td><td>22 / 67 / 11</td></tr>
+  </table>
+</div>
+
+<footer>Written by team-lead from usage.py (session b16d5bdc), the board export (meta/sprints/2026-11-05/board.jsonl) and git on sprint-2026-11-05.</footer>

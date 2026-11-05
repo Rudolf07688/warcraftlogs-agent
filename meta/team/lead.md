@@ -27,7 +27,8 @@ Running the team:
 - Crash recovery: git fsck, board and transcripts for NUL tails; resume agents by ID; rewrite meta/CURRENT.md at each milestone.
 
 Live checks and reports:
-- Live checks run on what's running: after merging config that a service reads at start (Alloy, Loki, Mimir, Grafana), recreate it before checking.
+- Live checks run on what's running: after merging config that a service reads at start (Alloy, Loki, Mimir, Grafana), restart it before checking; `up -d --build` doesn't. I slipped on the 11-05 re-check despite this line, so it's in team-launch now.
+- Run the live pass in parallel with the end sweep and have the PO hold triage for it: on 11-05 its 5 FAILs joined the one fix round at no extra round.
 - The live pass on real data is where the bugs are: on 11-04b the stack proofs passed on fresh synthetic data while the real board dir jammed Loki and ratio stats read 341749%. Keep the live pass; push teams to seed old or odd data and assert values.
 - Render checks: the headless window must be taller than the page, or Grafana leaves off-screen panels blank. My 2200 px shot raised a false "D7 empty" (11-04b).
 - Run a tool from the branch that has the change: teamstats' seat push only existed on the sprint branch.

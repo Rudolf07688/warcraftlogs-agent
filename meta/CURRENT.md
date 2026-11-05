@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-05 (meta talk done, P12 built and pushed; next session: the sprint)
+Updated: 2026-11-05 (sprint 2026-11-05 Telemetry 3 wrapped; merge question with the owner)
 
 ## Topic
 
@@ -14,9 +14,10 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- Telemetry 2 (sprint 2026-11-04b) merged, pushed and Done; team report
-  meta/sprints/2026-11-04b/. The meta-first talk is done (below); owner: "push it and prepare
-  for a clear to start the next sprint". Next session launches the sprint (team-launch).
+- Sprint 2026-11-05 (Telemetry 3) wrapped: 26+2 pts on sprint-2026-11-05 tip 9a5eabf, docs gate
+  clean, live pass + re-check done; team report meta/sprints/2026-11-05/team-report.html
+  (1.61/pt, P12: PO cold 2.05 -> 0.06, sprint cold 1.92). Waiting on the owner's merge answer;
+  after merge: team-launch skill live-pass env + restart step, Mimir naming fact to developer.md.
 
 ## Meta session 2026-11-05 (done)
 

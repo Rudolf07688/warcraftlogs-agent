@@ -1,0 +1,16 @@
+new context by kind (tool-result chars, share):
+main (team-lead)                          2143557 Read 94%, other bash 3%, git 1%, board 1%, shortcut 1%
+Fix round 059 (Nils)                       236709 source reads 41%, other bash 39%, board 11%, git 4%, check/pg 3%
+Shortcut board sync                         48451 shortcut 57%, git 23%, other bash 19%, ToolSearch 1%
+Fix round 058 (Ansel)                      788150 Read 78%, other bash 15%, check/pg 3%, source reads 2%, board 2%
+product-owner                              266871 other bash 31%, shortcut 26%, board 20%, source reads 10%, Agent 5%
+Dev 058 data-store telemetry               360837 other bash 52%, source reads 16%, board 12%, check/pg 10%, git 5%
+qa-security on 058 diff                    151410 git 51%, Read 25%, source reads 15%, other bash 6%, check/pg 3%
+Fix round 060 (Tomas)                      194712 other bash 46%, source reads 26%, board 16%, git 9%, check/pg 2%
+Dev 060 frontend build-runtime             345009 other bash 58%, source reads 17%, check/pg 11%, git 6%, board 5%
+Architecture docs pass (Tomas)            2204463 Read 82%, other bash 6%, html reports 5%, git 3%, source reads 3%
+QA bug hunt sweep                          220614 git 41%, source reads 29%, other bash 27%, check/pg 3%, Write 0%
+Dev 059 runtime profiles                   316751 other bash 51%, source reads 37%, git 6%, board 3%, shortcut 1%
+QA spec conformance sweep                  354218 other bash 55%, git 21%, source reads 16%, html reports 3%, board 2%
+QA performance sweep                       173257 git 40%, other bash 39%, source reads 21%, Write 0%, html reports 0%
+QA security sweep                          217306 git 39%, other bash 30%, source reads 16%, Read 11%, check/pg 4%

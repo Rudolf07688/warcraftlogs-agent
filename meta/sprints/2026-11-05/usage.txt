@@ -1,0 +1,32 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            148    56475    19799628     173285      2
+Fix round 059 (Nils)                        106    74241    16639802     429513      0
+Shortcut board sync                           7     3682      393063      57541      0
+Fix round 058 (Ansel)                        91    60225    12467856     339166      0
+product-owner                               236   121792    55481722     373177      3
+Dev 058 data-store telemetry                222   239478    70320491    1331623      1
+qa-security on 058 diff                      24    57789     1777778     133293      0
+Fix round 060 (Tomas)                        70    44845     9192165     180579      0
+Dev 060 frontend build-runtime              180   138429    44031068     351061      0
+Architecture docs pass (Tomas)               97    76545    18954991     298460      0
+QA bug hunt sweep                            50    63266     4902917     163111      0
+Dev 059 runtime profiles                    156   112365    32110715     298576      0
+QA spec conformance sweep                    59    54384     7374048     212288      0
+QA performance sweep                         42    55663     3354480     137853      0
+QA security sweep                            42    42519     3539680     141459      0
+TOTAL {'calls': 1530, 'out': 1201698, 'cr': 300340404, 'cc': 4620985, 'inp': 3324, 'sends': 6}
+main (team-lead) [('Bash', 109), ('Read', 10), ('Monitor', 6), ('ToolSearch', 2), ('ListAgents', 2), ('SendMessage', 2)]
+Fix round 059 (Nils) [('Bash', 102), ('Monitor', 2), ('ToolSearch', 1)]
+Shortcut board sync [('mcp__shortcut__search_stories', 9), ('Bash', 3), ('mcp__shortcut__update_story', 2), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__search_epics', 1)]
+Fix round 058 (Ansel) [('Bash', 85), ('Edit', 2), ('Read', 1), ('ToolSearch', 1), ('mcp__shortcut__get_story', 1), ('mcp__shortcut__create_story_comment', 1)]
+product-owner [('Bash', 140), ('mcp__shortcut__create_story_comment', 20), ('mcp__shortcut__update_story', 19), ('mcp__shortcut__create_story', 14), ('Agent', 13), ('Write', 8)]
+Dev 058 data-store telemetry [('Bash', 190), ('mcp__shortcut__update_story', 10), ('Write', 7), ('Skill', 5), ('ToolSearch', 4), ('WebFetch', 4)]
+qa-security on 058 diff [('Bash', 23), ('Read', 1), ('Write', 1)]
+Fix round 060 (Tomas) [('Bash', 70), ('bash', 1)]
+Dev 060 frontend build-runtime [('Bash', 168), ('Write', 8), ('mcp__shortcut__update_story', 6), ('ToolSearch', 2), ('Monitor', 2), ('mcp__shortcut__get_story', 1)]
+Architecture docs pass (Tomas) [('Bash', 96), ('Read', 6)]
+QA bug hunt sweep [('Bash', 49), ('Write', 1)]
+Dev 059 runtime profiles [('Bash', 144), ('mcp__shortcut__update_story', 8), ('ToolSearch', 3), ('Skill', 3), ('mcp__shortcut__get_story', 1), ('mcp__shortcut__get_workflow', 1)]
+QA spec conformance sweep [('Bash', 58), ('Write', 1)]
+QA performance sweep [('Bash', 41), ('Write', 1)]
+QA security sweep [('Bash', 41), ('Read', 1), ('Write', 1)]
