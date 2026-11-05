@@ -104,6 +104,8 @@ METRIC_ATTRIBUTES = frozenset(
         "app.cache.result",  # hit, miss, error
         "app.rag.index",  # wcl, guide, chat, all
         "app.rag.strategy",  # hybrid, keyword_only, vector, keyword
+        "app.llm.finish_reason",  # metrics.FINISH_REASONS (feature 059)
+        "app.embedding.task",  # document, query
     }
 )
 

@@ -69,6 +69,10 @@ datasources:
             value: service_name
       lokiSearch:
         datasourceUid: loki
+      # Service graph (feature 059, sc-462): Alloy's servicegraph connector writes
+      # traces_service_graph_* to Mimir; the service map and D6's node graph read them there.
+      serviceMap:
+        datasourceUid: mimir
       nodeGraph:
         enabled: true
       search:

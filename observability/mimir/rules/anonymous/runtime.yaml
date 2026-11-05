@@ -76,6 +76,24 @@ groups:
             rate(app_llm_stream_ttft{service_namespace="wcl-agent"}[5m])
           ))
 
+      # Feature 059 (sc-462): why model responses ended, and how deep conversations get
+      # (recorded at the end of each chat turn: the turns the conversation has had so far).
+      - record: genai:finish_reasons:rate5m
+        expr: >-
+          sum by (gen_ai_request_model, app_llm_finish_reason) (
+            rate(app_llm_finish_reasons{service_namespace="wcl-agent"}[5m])
+          )
+      - record: genai:turns_per_conversation:p50
+        expr: >-
+          histogram_quantile(0.5, sum by (gen_ai_agent_name) (
+            rate(app_agent_turns_per_conversation{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: genai:turns_per_conversation:p95
+        expr: >-
+          histogram_quantile(0.95, sum by (gen_ai_agent_name) (
+            rate(app_agent_turns_per_conversation{service_namespace="wcl-agent"}[5m])
+          ))
+
       # --- Knowledge base (D8) -------------------------------------------------------------
       - record: rag:retrieval_latency:p95
         expr: >-
@@ -110,6 +128,17 @@ groups:
             0 * sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m]))))
           / sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
 
+      # Feature 059: one point per provider embedding request (document = indexing, query = search).
+      - record: rag:embedding_latency:p95
+        expr: >-
+          histogram_quantile(0.95, sum by (gen_ai_request_model, app_embedding_task) (
+            rate(app_embedding_duration{service_namespace="wcl-agent"}[5m])
+          ))
+      - record: rag:embedding_batch_size:avg5m
+        expr: >-
+          sum by (gen_ai_request_model, app_embedding_task) (histogram_sum(rate(app_embedding_batch_size{service_namespace="wcl-agent"}[5m])))
+          / sum by (gen_ai_request_model, app_embedding_task) (histogram_count(rate(app_embedding_batch_size{service_namespace="wcl-agent"}[5m])))
+
       # --- WCL cache (D8) ------------------------------------------------------------------
       - record: cache:requests:rate5m
         expr: >-
@@ -124,3 +153,20 @@ groups:
       - record: db:client_connections:usage
         expr: >-
           sum by (state) (db_client_connections_usage{service_namespace="wcl-agent", service_name="api"})
+
+      # --- API latency (D6, feature 059) ---------------------------------------------------
+      # p50 and p99 beside red.yaml's p95 (055's file): same series, same exclusions.
+      - record: app:http_latency:p50
+        expr: >-
+          histogram_quantile(0.5,
+            sum by (service_name, http_route, le) (
+              rate(traces_spanmetrics_duration_bucket{span_kind="SPAN_KIND_SERVER", http_route!="", http_route!="/ws/chat", http_route!~".*/generate"}[5m])
+            )
+          )
+      - record: app:http_latency:p99
+        expr: >-
+          histogram_quantile(0.99,
+            sum by (service_name, http_route, le) (
+              rate(traces_spanmetrics_duration_bucket{span_kind="SPAN_KIND_SERVER", http_route!="", http_route!="/ws/chat", http_route!~".*/generate"}[5m])
+            )
+          )

@@ -1,7 +1,7 @@
 {
   "uid": "wcl-api-red",
   "title": "App: API RED",
-  "description": "D6 (feature 056): HTTP rate, errors and duration by route from Tempo spanmetrics, through the app:http_* aliases (055).",
+  "description": "D6 (feature 056): HTTP rate, errors and duration by route from Tempo spanmetrics, through the app:http_* aliases (055; p50 and p99 from 059), and the service graph (059).",
   "tags": [
     "wcl-agent",
     "runtime"
@@ -386,7 +386,7 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency by route",
+      "title": "Latency by route (p50, p95, p99)",
       "description": "The chat websocket and the streaming generate routes stay open for the whole answer, so they are excluded.",
       "datasource": {
         "type": "prometheus",
@@ -405,8 +405,32 @@
             "uid": "mimir"
           },
           "expr": "max by (http_route) (app:http_latency:p95{service_name=\"api\", http_route!~\"/ws/chat|.*/generate\"})",
-          "legendFormat": "{{http_route}}",
+          "legendFormat": "{{http_route}} p95",
           "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (http_route) (app:http_latency:p50{service_name=\"api\", http_route!~\"/ws/chat|.*/generate\"})",
+          "legendFormat": "{{http_route}} p50",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max by (http_route) (app:http_latency:p99{service_name=\"api\", http_route!~\"/ws/chat|.*/generate\"})",
+          "legendFormat": "{{http_route}} p99",
+          "refId": "C",
           "range": true,
           "instant": false,
           "format": "time_series"
@@ -625,6 +649,46 @@
         }
       ],
       "id": 13
+    },
+    {
+      "type": "row",
+      "title": "Service graph",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 14
+    },
+    {
+      "type": "nodeGraph",
+      "title": "Service graph",
+      "description": "Calls between services from client/server span pairs (Alloy's servicegraph connector, traces_service_graph_*): request rate, error share and latency per edge. Grafana's Tempo service map reads those series by their fixed names, so this panel queries no alias.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 41,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "serviceMap",
+          "refId": "A"
+        }
+      ],
+      "options": {},
+      "id": 15
     }
   ]
 }

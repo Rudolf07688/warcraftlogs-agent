@@ -146,5 +146,94 @@ def test_every_contract_alias_of_056_is_recorded():
 
 def test_latency_panels_exclude_the_chat_socket_and_streaming_routes():
     d6 = json.loads((DASHBOARDS / "api-red.json").read_text())
-    latency = [expr for expr in mimir_exprs(d6) if "app:http_latency:p95" in expr]
-    assert latency and all('http_route!~"/ws/chat|.*/generate"' in expr for expr in latency)
+    for quantile in ("p50", "p95", "p99"):
+        latency = [expr for expr in mimir_exprs(d6) if f"app:http_latency:{quantile}" in expr]
+        assert latency and all('http_route!~"/ws/chat|.*/generate"' in expr for expr in latency), quantile
+
+
+# --- feature 059 (sc-462) ----------------------------------------------------------------
+
+DATASOURCES = ROOT / "observability/grafana/provisioning/datasources/datasources.yaml"
+
+
+def test_the_059_aliases_are_recorded_and_on_their_dashboards():
+    assert {
+        "app:http_latency:p50",
+        "app:http_latency:p99",
+        "genai:finish_reasons:rate5m",
+        "genai:turns_per_conversation:p50",
+        "genai:turns_per_conversation:p95",
+        "rag:embedding_latency:p95",
+        "rag:embedding_batch_size:avg5m",
+    } <= recorded()
+    on = {
+        name: " ".join(mimir_exprs(json.loads((DASHBOARDS / name).read_text())))
+        for name in ("api-red.json", "app-api-llm.json", "rag.json")
+    }
+    assert "app:http_latency:p50" in on["api-red.json"] and "app:http_latency:p99" in on["api-red.json"]
+    assert "genai:finish_reasons:rate5m" in on["app-api-llm.json"]
+    assert "genai:turns_per_conversation:p95" in on["app-api-llm.json"]
+    assert "rag:embedding_latency:p95" in on["rag.json"] and "rag:embedding_batch_size:avg5m" in on["rag.json"]
+
+
+def test_the_059_rules_read_only_allowlisted_labels():
+    """The new aliases group by the OTLP-translated names of allowlisted attributes only."""
+    from backend.app.telemetry.setup import METRIC_ATTRIBUTES
+
+    translated = {name.replace(".", "_") for name in METRIC_ATTRIBUTES} | {"service_name", "le", "http_route"}
+    for group in yaml.safe_load(RULES.read_text())["groups"]:
+        for rule in group["rules"]:
+            if rule["record"].startswith(("genai:finish", "genai:turns", "rag:embedding", "app:http_latency")):
+                for grouping in re.findall(r"\bby \(([^()]*)\)", rule["expr"]):
+                    assert {label.strip() for label in grouping.split(",")} <= translated, rule["record"]
+
+
+def test_d6_has_the_service_graph_from_tempo():
+    d6 = json.loads((DASHBOARDS / "api-red.json").read_text())
+    [graph] = [p for p in d6["panels"] if p["type"] == "nodeGraph"]
+    assert graph["datasource"] == {"type": "tempo", "uid": "tempo"}
+    assert [t["queryType"] for t in graph["targets"]] == ["serviceMap"]
+    tempo = next(d for d in yaml.safe_load(DATASOURCES.read_text())["datasources"] if d["uid"] == "tempo")
+    assert tempo["jsonData"]["serviceMap"] == {"datasourceUid": "mimir"}
+
+
+# sc-471: a panel that shows one bar per interval, or totals in its legend, must read windows
+# equal to its step, or neighbouring windows overlap and the bars or totals overcount.
+_WINDOWS = re.compile(r"\[([^\]:]+)(?::[^\]]*)?\]")
+
+
+def per_interval(panel: dict) -> bool:
+    defaults = panel.get("fieldConfig", {}).get("defaults", {})
+    bars = defaults.get("custom", {}).get("drawStyle") == "bars"
+    totals = bool(set(panel.get("options", {}).get("legend", {}).get("calcs", [])) & {"sum", "count", "total"})
+    return bars or totals
+
+
+def windows_equal_the_step(panel: dict) -> bool:
+    for target in panel.get("targets", []):
+        if "expr" not in target:
+            continue
+        if any(window != "$__interval" for window in _WINDOWS.findall(target["expr"])):
+            return False
+        if _WINDOWS.findall(target["expr"]) and target.get("interval") in (None, ""):
+            return False
+    return True
+
+
+@pytest.mark.parametrize("path", DASHBOARD_FILES, ids=lambda p: p.name)
+def test_per_interval_bars_and_legend_totals_use_a_window_equal_to_the_step(path):
+    for panel in json.loads(path.read_text())["panels"]:
+        if per_interval(panel):
+            assert windows_equal_the_step(panel), panel["title"]
+
+
+def test_the_window_check_catches_an_overlapping_window():
+    """The check itself (sc-471): 5-minute windows under 1-minute bars overcount."""
+    bars = {"fieldConfig": {"defaults": {"custom": {"drawStyle": "bars"}}}, "options": {}}
+    overlapping = {**bars, "targets": [{"expr": "sum(increase(x[5m]))", "interval": "1m"}]}
+    stepped = {**bars, "targets": [{"expr": "sum(increase(x[$__interval]))", "interval": "1m"}]}
+    totals = {"fieldConfig": {"defaults": {}}, "options": {"legend": {"calcs": ["sum"]}}, "targets": overlapping["targets"]}
+    assert per_interval(overlapping) and not windows_equal_the_step(overlapping)
+    assert per_interval(totals) and not windows_equal_the_step(totals)
+    assert windows_equal_the_step(stepped)
+    assert not per_interval({"fieldConfig": {"defaults": {"custom": {"drawStyle": "line"}}}, "options": {}})
