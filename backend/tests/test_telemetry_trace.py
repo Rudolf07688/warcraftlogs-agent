@@ -142,6 +142,43 @@ async def test_routes_are_traced_by_template_and_health_is_not(otel, as_user, mo
     assert as_user.session_token not in str([dict(s.attributes) for s in capture.spans()])
 
 
+# Both only partly match a route in an included router (sc-461): the preflight matches the path
+# but not the method, and the raids list is GET-only.
+PARTIAL_MATCHES = (
+    (
+        "OPTIONS",
+        "/api/conversations",
+        {"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"},
+    ),
+    ("POST", "/api/raids", {}),
+)
+
+
+async def test_partial_route_matches_keep_their_status_with_telemetry_on(otel, as_user, monkeypatch):
+    async def statuses() -> list[int]:
+        return [
+            (await as_user.client.request(method, path, headers=headers)).status_code
+            for method, path, headers in PARTIAL_MATCHES
+        ]
+
+    off = await statuses()
+    capture = otel(environment="prod")
+    FastAPIInstrumentor.instrument_app(app, **setup.FASTAPI_OPTIONS)
+    monkeypatch.setattr(app, "middleware_stack", None)  # an earlier request built it uninstrumented
+    try:
+        on = await statuses()
+    finally:
+        FastAPIInstrumentor.uninstrument_app(app)
+
+    assert off == [200, 405]
+    assert on == off
+    servers = [s for s in capture.spans() if s.kind is SpanKind.SERVER]
+    assert [(s.name, s.attributes["http.route"]) for s in servers] == [
+        ("OPTIONS /api/conversations", "/api/conversations"),
+        ("POST /api/raids", "/api/raids"),
+    ]
+
+
 def test_the_chat_socket_and_health_polls_are_excluded():
     excluded = parse_excluded_urls(setup.EXCLUDED_URLS)
     assert excluded.url_disabled("http://localhost:8000/ws/chat")

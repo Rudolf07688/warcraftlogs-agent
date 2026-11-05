@@ -1,7 +1,7 @@
 {
   "uid": "wcl-app-api-llm",
   "title": "App: Agents and LLM",
-  "description": "D7 (feature 056): agent runs, models, tokens, cost and tools, through recording-rule aliases. HTTP moved to App: API RED (D6).",
+  "description": "D7 (feature 056): agent runs, models, tokens, cost and tools, through recording-rule aliases. HTTP moved to App: API RED (D6); finish reasons and conversation depth (059).",
   "tags": [
     "wcl-agent",
     "runtime"
@@ -1203,6 +1203,145 @@
         "dedupStrategy": "none"
       },
       "id": 24
+    },
+    {
+      "type": "row",
+      "title": "Finish reasons and conversation depth",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 25
+    },
+    {
+      "type": "timeseries",
+      "title": "Model responses / min by finish reason",
+      "description": "Why each model response ended (stop, max_tokens, safety, ...; anything unknown is other). A tool call ends its response with stop too.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 66,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (app_llm_finish_reason) (genai:finish_reasons:rate5m) * 60",
+          "legendFormat": "{{app_llm_finish_reason}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 26
+    },
+    {
+      "type": "timeseries",
+      "title": "Conversation depth (turns)",
+      "description": "Turns a conversation has had at the end of each chat turn (feature 059). Conversations from before 059 count from their first later turn.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 66,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:turns_per_conversation:p50",
+          "legendFormat": "{{gen_ai_agent_name}} p50",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "genai:turns_per_conversation:p95",
+          "legendFormat": "{{gen_ai_agent_name}} p95",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 27
     }
   ]
 }

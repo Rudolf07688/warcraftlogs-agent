@@ -78,6 +78,7 @@ report = {
     "root_handlers": [type(h).__name__ for h in logging.getLogger().handlers],
     "otlp_handler_filters": [type(f).__name__ for h in logging.getLogger().handlers if type(h).__name__ == "LoggingHandler" for f in h.filters],
     "env": {k: os.environ.get(k) for k in %(adk_env)r},
+    "pyroscope_loaded": "pyroscope" in sys.modules,
 }
 if report["tracer_provider"] == "TracerProvider":
     report["resource"] = dict(tp.resource.attributes)
@@ -115,7 +116,11 @@ def _probe(**env: str) -> dict:
 
 def _run_probe(env: dict[str, str]) -> tuple[dict, float]:
     """The probe's report, and how long the process took after reporting (its exit)."""
-    clean = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "WCL_ENVIRONMENT", "WCL_GIT_SHA", "ADK_"))}
+    clean = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("OTEL_", "WCL_ENVIRONMENT", "WCL_GIT_SHA", "ADK_", "PYROSCOPE_"))
+    }
     out = subprocess.run(
         [sys.executable, "-c", PROBE],
         cwd=ROOT,
@@ -142,6 +147,7 @@ def test_without_an_endpoint_nothing_is_installed():
     assert not (report["redis"] or report["httpx"] or report["sqlalchemy"])
     assert "LoggingHandler" not in report["root_handlers"]
     assert report["env"] == dict.fromkeys(ADK_CONTENT_ENV)  # the process env is untouched
+    assert not report["pyroscope_loaded"]
 
 
 def test_with_an_endpoint_everything_is_in_place_before_adk_loads():
@@ -176,6 +182,7 @@ def test_with_an_endpoint_everything_is_in_place_before_adk_loads():
     assert report["redis"] and report["httpx"] and report["sqlalchemy"]
     assert report["root_handlers"] == ["StreamHandler", "LoggingHandler"]  # stdout stays
     assert "RedactionFilter" in report["otlp_handler_filters"]
+    assert not report["pyroscope_loaded"]  # feature 059: no profiler without PYROSCOPE_SERVER_ADDRESS
 
 
 def test_a_down_collector_blocks_neither_startup_nor_requests():

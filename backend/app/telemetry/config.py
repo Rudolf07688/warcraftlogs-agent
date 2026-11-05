@@ -20,11 +20,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 @dataclass(frozen=True)
 class TelemetryConfig:
-    """Whether to export, the deployment environment and the version every signal carries."""
+    """Whether to export, the deployment environment and the version every signal carries;
+    where span profiles go (feature 059), empty when profiling is off."""
 
     enabled: bool
     environment: str
     version: str
+    profiles_address: str = ""
 
     @property
     def content_allowed(self) -> bool:
@@ -49,7 +51,8 @@ def _git_sha() -> str:
 
 def load_config() -> TelemetryConfig:
     """On iff ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set; ``WCL_ENVIRONMENT`` outside dev/ci/prod
-    (unset included) is ``unknown``, which is a lockdown like ci and prod."""
+    (unset included) is ``unknown``, which is a lockdown like ci and prod. Span profiles need
+    telemetry on and ``PYROSCOPE_SERVER_ADDRESS`` set."""
     # Same switch as config.LOAD_DOTENV (the test suite sets WCL_LOAD_DOTENV=0).
     if os.getenv("WCL_LOAD_DOTENV", "1").strip().lower() not in ("0", "false", "no"):
         load_dotenv()
@@ -60,4 +63,7 @@ def load_config() -> TelemetryConfig:
     version = os.getenv("WCL_GIT_SHA", "").strip()
     if enabled and not version:
         version = _git_sha()
-    return TelemetryConfig(enabled=enabled, environment=environment, version=version or "unknown")
+    profiles_address = os.getenv("PYROSCOPE_SERVER_ADDRESS", "").strip() if enabled else ""
+    return TelemetryConfig(
+        enabled=enabled, environment=environment, version=version or "unknown", profiles_address=profiles_address
+    )

@@ -230,3 +230,53 @@ switch Faro off), with `VITE_FARO_API_KEY`, `VITE_FARO_APP_VERSION` (`WCL_GIT_SH
 | Script | Proves |
 |---|---|
 | `test/faro.sh` | The app origin with the key is accepted; a wrong or missing key is refused; the preflight from another origin gets no CORS grant; a burst is rate limited; an oversized body is refused; no source map is fetched; a payload posing as the API / build layer lands as web / runtime / dev; Web Vitals and a log arrive in Loki with a seeded secret masked, and a browser span arrives in Tempo with its `session.id`. Needs `ALLOY_FARO_PORT` (default 24347). |
+
+## Profiles and runtime dashboards (059)
+
+**Span profiles** (spec §6.7, sc-421). The `pyroscope` service (observability profile,
+`grafana/pyroscope:2.4.3`, volume `pyroscope-data`, 7-day retention, `127.0.0.1:${PYROSCOPE_PORT:-4040}`)
+receives CPU profiles straight from the API: no Alloy hop. The backend profiles only when
+telemetry is on and `PYROSCOPE_SERVER_ADDRESS` is set (compose sets `http://pyroscope:4040`);
+the test suite sets neither, so no profiler starts there. `pyroscope-otel`'s
+`PyroscopeSpanProcessor` gives every *root* span (a request, a chat turn) the attribute
+`pyroscope.profile.id` and tags the CPU samples taken meanwhile with the same `span_id`;
+Tempo's `tracesToProfiles` turns that into **Profiles for this span** on the span in Grafana.
+Limits: samples are tagged per OS thread, and every asyncio request shares the event-loop
+thread, so two requests running at once share their samples; spans shorter than a few
+sampling intervals (100 Hz) may show an empty flame graph.
+
+**Service graph** (sc-462). Tempo's `serviceMap` reads Alloy's `traces_service_graph_*` from
+Mimir; D6 (App: API RED) shows it as a node graph. That panel is the one that queries raw
+names: Grafana's service map asks for those series by their fixed names. It wants the edge
+latency as `traces_service_graph_request_server_seconds_bucket`, so `runtime.yaml` records a
+copy of `traces_service_graph_request_server_bucket` under that name (Mimir adds no unit
+suffix). Pyroscope runs the v2 storage only (`-architecture.storage=v2`: a new install has
+no v1 data, and in the default dual mode its reads looked for v1 data and found none).
+
+**New app metrics** (all labels on `setup.METRIC_ATTRIBUTES`):
+
+| Metric | Labels | Recorded |
+|---|---|---|
+| `app.llm.finish_reasons` | `gen_ai.request.model`, `app.llm.finish_reason` (google-genai's reason names, anything else `other`) | each non-partial model response |
+| `app.agent.turns_per_conversation` | `gen_ai.agent.name` | the end of each chat turn: the turns so far, from `app_turns` in the ADK session state (older conversations count from their first turn after 059) |
+| `app.embedding.duration`, `app.embedding.batch_size` | `gen_ai.request.model`, `app.embedding.task` (`document`, `query`) | each provider embedding request |
+
+Aliases (`runtime.yaml`): `app:http_latency:p50` and `:p99` (beside red.yaml's p95, same
+exclusions), `genai:finish_reasons:rate5m`, `genai:turns_per_conversation:p50`/`:p95`,
+`rag:embedding_latency:p95`, `rag:embedding_batch_size:avg5m`. D7 shows finish reasons and
+depth, D8 embedding latency and batch size. Feedback ratio (§7.5) is not built: the app has
+no feedback feature. Any panel with per-interval bars or legend totals must read windows of
+`$__interval` with its `interval` set (sc-471); `test_telemetry_metrics_dashboards.py` checks it.
+
+**Board backfill window** (sc-463): accepted at what it is. Alloy drops records older than 6
+days and Loki refuses anything past 7 (`reject_old_samples`). That limit is per tenant, and
+there is one tenant, so it can't be widened for the board stream alone; widening it for
+everything would admit week-old content records that the 7-day content retention deletes
+again. Older sprints' boards are in `meta/sprints/*/board.jsonl`, and D13 is fed by
+`teamstats.py`, not Loki.
+
+`test/provisioning.sh` also proves: the Pyroscope datasource and Tempo's `serviceMap` and
+`tracesToProfiles`; the D6 service-graph query returns an edge; a CPU-bound span run through
+the real bootstrap carries its profile id and Pyroscope returns its flame graph; an 8-day-old
+board entry is dropped while a fresh one in the same file lands. Set `PYROSCOPE_PORT`
+(default 24040) with the other port overrides.

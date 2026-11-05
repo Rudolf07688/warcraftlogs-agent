@@ -39,7 +39,7 @@ from .agent_tools.profile_tools import PROFILE_TOOLS
 from .agent_tools.stored_data_tools import STORED_DATA_TOOLS
 from .config import settings
 from .scratch import TurnScratch
-from .telemetry.metrics import record_ttft
+from .telemetry.metrics import record_conversation_depth, record_finish_reason, record_ttft
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +123,14 @@ def _grounding_sources(gm: Any) -> list[dict]:
     return sources
 
 
-async def _ensure_session(session_id: str, user_id: str = USER_ID) -> None:
-    """Create the ADK session for this conversation if it doesn't exist yet.
+# Feature 059: the chat turns a conversation has had, in its ADK session state (session scope).
+# Conversations from before 059 count from their first turn after it.
+TURNS_KEY = "app_turns"
+
+
+async def _ensure_session(session_id: str, user_id: str = USER_ID) -> int:
+    """Create the ADK session for this conversation if it doesn't exist yet; return the chat
+    turns it has had (``TURNS_KEY``, 0 for a new session).
 
     With the DatabaseSessionService (US2), the session — including tool/turn
     context — is loaded from Postgres, so reopening a conversation after a restart
@@ -146,6 +152,9 @@ async def _ensure_session(session_id: str, user_id: str = USER_ID) -> None:
         await service.create_session(
             app_name=APP_NAME, user_id=user_id, session_id=session_id, state={}
         )
+        return 0
+    turns = (getattr(existing, "state", None) or {}).get(TURNS_KEY)
+    return turns if isinstance(turns, int) and not isinstance(turns, bool) and turns > 0 else 0
 
 
 _DONE = object()  # producer -> consumer sentinel (feature 011)
@@ -301,7 +310,11 @@ async def _run_turn(
     """
     turn_started = time.monotonic()
     runner = _get_runner(model)
-    await _ensure_session(session_id, user_id)
+    # Feature 059: chat turns advance the conversation's turn count with the user's message.
+    # The greeting and guide jobs run disposable sessions as the default local user.
+    chat = user_id != USER_ID
+    turns = (await _ensure_session(session_id, user_id) or 0) + 1
+    count_turn = {"state_delta": {TURNS_KEY: turns}} if chat else {}
 
     # US1: the KNOWN PLAYER CONTEXT preamble is not part of this message. It travels on the
     # turn's TurnStats and is injected per model request (PERF-004), so the ADK history
@@ -331,8 +344,13 @@ async def _run_turn(
         session_id=session_id,
         new_message=message,
         run_config=_RUN_CONFIG,
+        **count_turn,
     ):
         usage = getattr(event, "usage_metadata", None)
+        if not getattr(event, "partial", False):  # a streamed response repeats it on its partials
+            record_finish_reason(
+                (stats.switched_to if stats else None) or model, getattr(event, "finish_reason", None)
+            )
         if stats is not None and usage is not None:
             stats.record_prompt_tokens(
                 getattr(usage, "prompt_token_count", None),
@@ -426,3 +444,5 @@ async def _run_turn(
             stats.outcome = "empty"
         closing = PARAGRAPH + EMPTY_ANSWER_MESSAGE if text_sent else EMPTY_ANSWER_MESSAGE
         yield {"type": "token", "text": closing, "empty": True}
+    if chat:
+        record_conversation_depth(getattr(getattr(runner, "agent", None), "name", ""), turns)

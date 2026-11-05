@@ -30,6 +30,11 @@ dependencies = [
     "opentelemetry-instrumentation-sqlalchemy==0.63b1",
     "opentelemetry-instrumentation-redis==0.63b1",
     "opentelemetry-instrumentation-httpx==0.63b1",
+    # Span profiles (feature 059, spec §6.7): off unless PYROSCOPE_SERVER_ADDRESS is set.
+    "pyroscope-io==1.4.0",
+    "pyroscope-otel==1.1.0",
+    # observability/pricing/generate.py and its tests (sc-463); was only transitive.
+    "pyyaml>=6.0.3",
 ]
 
 [project.optional-dependencies]

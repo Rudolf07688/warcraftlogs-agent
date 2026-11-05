@@ -16,6 +16,7 @@ from __future__ import annotations
 import functools
 import logging
 import math
+import time
 from collections.abc import Sequence
 from typing import Literal, Protocol
 
@@ -24,12 +25,14 @@ from wcl_agent.llm.model_retry import RetryPolicy
 
 from ..config import settings
 from ..db.models import KB_DIMENSIONS
+from ..telemetry.metrics import record_embedding
 
 logger = logging.getLogger(__name__)
 
 EmbedTask = Literal["RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"]
 DIMENSIONS = KB_DIMENSIONS
 _POLICY = RetryPolicy(attempts=4, initial_s=2.0, max_s=20.0, budget_s=60.0)
+_TASK_LABELS: dict[EmbedTask, str] = {"RETRIEVAL_DOCUMENT": "document", "RETRIEVAL_QUERY": "query"}
 
 
 class Embedder(Protocol):
@@ -57,9 +60,12 @@ class VertexEmbedder:
         vectors: list[list[float]] = []
         for start in range(0, len(texts), self._request_batch):
             part = texts[start : start + self._request_batch]
+            started = time.monotonic()
             raw = await generation.embed_texts(
                 self.model, part, task=task, dimensions=DIMENSIONS, policy=_POLICY
             )
+            # Feature 059: per provider request; a failed one raises past this, unrecorded.
+            record_embedding(self.model, _TASK_LABELS[task], len(part), time.monotonic() - started)
             if len(raw) != len(part):
                 raise ValueError(f"embedder returned {len(raw)} vectors for {len(part)} texts")
             for values in raw:
