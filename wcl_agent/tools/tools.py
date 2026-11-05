@@ -144,10 +144,6 @@ async def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
 
     Call this first to confirm what you are analyzing before fetching rankings. There may
     be none in the web app; then use find_encounter.
-
-    Returns:
-        dict: {"status": "success", "selection": {...}} with the encounter name,
-            difficulty name, and partition (season) id.
     """
     sel = _selection(tool_context)
     if not sel.get("encounterID"):
@@ -172,16 +168,11 @@ async def get_selected_encounter(tool_context: ToolContext) -> dict[str, Any]:
 async def find_encounter(query: str) -> dict[str, Any]:
     """Resolve a raid boss/encounter by name to its id, zone, and difficulties.
 
-    Use this when no encounter is pre-selected (e.g. the web app) to turn a name
-    like "Ula'tek" or "heroic ulatek" into the encounter_id and difficulty_id that
-    get_rankings_distribution / compare_specs need.
+    Turns a name like "Ula'tek" or "heroic ulatek" into the encounter_id and difficulty_id
+    that get_rankings_distribution / compare_specs need when no encounter is pre-selected.
 
     Args:
         query (str): A boss/encounter name (partial, any casing), e.g. 'ulatek'.
-
-    Returns:
-        dict: {"status": "success", "matches": [ {encounter_id, encounter, zone,
-            zone_id, difficulties:[{id,name}], default_partition} ]} or an error.
     """
     try:
         zones = await load_world_zones()
@@ -222,17 +213,12 @@ async def find_encounter(query: str) -> dict[str, Any]:
 async def get_spec_options(class_name: str) -> dict[str, Any]:
     """List the valid API spec-filter values for a WoW class.
 
-    Warcraft Logs expects PascalCase, space-free class/spec names (e.g.
-    'Hunter' with specs 'BeastMastery', 'Marksmanship', 'Survival'). Use this to
-    get the exact strings to pass to get_rankings_distribution / compare_specs.
+    Warcraft Logs expects PascalCase, space-free names (e.g. 'Hunter' with 'BeastMastery',
+    'Marksmanship', 'Survival'): the exact strings for get_rankings_distribution /
+    compare_specs.
 
     Args:
-        class_name (str): A class name in any casing/spacing (e.g. 'hunter',
-            'Death Knight').
-
-    Returns:
-        dict: {"status": "success", "class_name": <filter value>,
-               "specs": [...]} or an error with the list of valid classes.
+        class_name (str): A class name in any casing/spacing (e.g. 'hunter', 'Death Knight').
     """
     roster = roster_snapshot()
     normalized = normalize_class_name(class_name)
@@ -264,31 +250,22 @@ async def get_rankings_distribution(
 ) -> dict[str, Any]:
     """Fetch current-season ranking scores for a class/spec and summarize them.
 
-    Pulls the leaderboard for the given (or session-selected) encounter+difficulty
-    and computes the score (amount) percentile distribution, a per-spec breakdown,
-    and the top parses. Scores are sorted highest-first, so a bounded page pull
-    characterizes the top of the current-season distribution.
+    Pulls the leaderboard for the given (or session-selected) encounter and difficulty and
+    returns the score percentiles, a per-spec breakdown and the top parses. Scores are
+    sorted highest-first, so a bounded pull covers the top of the distribution
+    (``completeness.sample_scope`` says which).
 
     Args:
-        class_name (str): API class filter, e.g. 'Hunter'. Pass '' for all classes.
-        spec_name (str): API spec filter, e.g. 'Marksmanship'. Pass '' for all
-            specs of the class (or all specs if class is also '').
-        metric (str): Ranking metric: 'dps', 'hps', 'wdps', or 'default'.
-        num_pages (int): How many 100-entry pages to pull (1-10). More pages =
-            deeper distribution but higher API cost. Use 3-5 for a good overview.
-        encounter_id (int): Encounter to analyze. 0 = use the session's selected
-            encounter. When nothing is pre-selected (web app), resolve it first with
-            find_encounter and pass the id here.
-        difficulty_id (int): 5=Mythic, 4=Heroic, 3=Normal, 1=LFR. 0 = use the
-            session's difficulty (defaults to Heroic if none).
-
-    Returns:
-        dict: {"status": "success", ...summary...} including sample_size,
-            amount_percentiles, spec_breakdown, top_parses, and a
-            ``completeness`` block whose ``sample_scope`` is
-            "top_of_leaderboard" when lower-ranked parses were not fetched
-            (so the percentiles describe the top of the leaderboard, not the
-            whole population); or an error.
+        class_name (str): API class filter, e.g. 'Hunter'; '' for all classes.
+        spec_name (str): API spec filter, e.g. 'Marksmanship'; '' for all specs of the
+            class (or all specs if class is also '').
+        metric (str): 'dps', 'hps', 'wdps', or 'default'.
+        num_pages (int): 100-entry pages to pull (1-10); more is deeper but costs more API
+            points. 3-5 gives a good overview.
+        encounter_id (int): 0 = the session's selected encounter; when nothing is
+            pre-selected (web app), resolve it with find_encounter first.
+        difficulty_id (int): 5=Mythic, 4=Heroic, 3=Normal, 1=LFR. 0 = the session's
+            difficulty (Heroic if none).
     """
     sel = _selection(tool_context)
     if encounter_id:
@@ -392,23 +369,18 @@ async def compare_specs(
 ) -> dict[str, Any]:
     """Compare every spec of a class on the given encounter side-by-side.
 
-    Runs get_rankings_distribution for each spec of the class and returns their
-    median/max/p95 scores together, ranked by median. Read completeness.sample_scope for
-    what the scores cover. The top_parses are leads for drilling into a report, not a
-    benchmark.
+    Runs get_rankings_distribution per spec and returns median/max/p95 scores ranked by
+    median. Read completeness.sample_scope for what the scores cover. The top_parses are
+    leads for drilling into a report, not a benchmark.
 
     Args:
         class_name (str): Class name in any casing (e.g. 'hunter').
-        metric (str): Ranking metric: 'dps', 'hps', 'wdps', or 'default'.
-        num_pages (int): Pages per spec (1-10). Keep small (1-3) since this makes
-            one request set per spec.
-        encounter_id (int): Encounter to analyze. 0 = session's selected encounter
-            (resolve with find_encounter first in the web app).
+        metric (str): 'dps', 'hps', 'wdps', or 'default'.
+        num_pages (int): Pages per spec (1-10); keep it small (1-3), as this makes one
+            request set per spec.
+        encounter_id (int): 0 = the session's selected encounter (resolve with
+            find_encounter first in the web app).
         difficulty_id (int): 5=Mythic, 4=Heroic, 3=Normal, 1=LFR. 0 = session default.
-
-    Returns:
-        dict: {"status": "success", "comparison": [ {spec, sample_size,
-            median, p95, max}, ... ]} ranked by median score, or an error.
     """
     roster = roster_snapshot()
     normalized = normalize_class_name(class_name)
@@ -483,10 +455,6 @@ async def compare_specs(
 
 async def check_rate_limit() -> dict[str, Any]:
     """Report the remaining Warcraft Logs API points for this hour.
-
-    Returns:
-        dict: {"status": "success", "limitPerHour": ..., "pointsSpentThisHour":
-            ..., "pointsRemaining": ..., "pointsResetIn": ...} or an error.
     """
     try:
         rl = await wcl_client.acheck_rate_limit()
@@ -519,10 +487,8 @@ async def create_chart(
 ) -> dict[str, Any]:
     """Render an interactive chart in the chat from data you have already gathered.
 
-    Use this when a visualization aids the answer (DPS/HPS over time, spec comparison
-    bars, ability breakdowns). Build ``series_json`` from numbers the WCL tools
-    returned — never invent data. The chart appears inline in your reply; still
-    explain it in text.
+    Use it when a visualization aids the answer (DPS/HPS over time, spec comparison bars,
+    ability breakdowns). The chart appears inline in your reply.
 
     Args:
         kind (str): One of "line", "bar", "scatter", "area".
@@ -533,10 +499,6 @@ async def create_chart(
         x_label (str): Optional x-axis label.
         y_label (str): Optional y-axis label.
         source_url (str): Optional Warcraft Logs link the data was sourced from.
-
-    Returns:
-        dict: {"status": "success", "chart": <ChartSpec>} or
-            {"status": "error", "error_message": ...}.
     """
     if kind not in _CHART_KINDS:
         return {

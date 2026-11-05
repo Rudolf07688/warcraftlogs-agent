@@ -19,22 +19,16 @@ _LABEL = {"raid": "Raid", "mplus": "Mythic+"}
 async def get_coaching_brief(class_name: str, spec_name: str, content_type: str = "raid") -> dict[str, Any]:
     """Get the verified coaching brief for a spec and content type (Raid or Mythic+).
 
-    Use it before spec-specific coaching when the brief for the player's spec and the
-    content type being discussed is not already in the context. Raid logs and boss
-    pulls use "raid"; dungeon runs and keys use "mplus". Never apply one content type's
-    brief to the other. The brief lists priorities, cooldowns, uptimes and common
-    mistakes, each with a tag ([O] observed, [B] benchmark, [G] guidance, confidence
-    H/M/L) and a LOG: line saying what to check in the log before calling it a mistake.
+    Use it before spec-specific coaching when that brief is not already in the context.
+    The brief lists priorities, cooldowns, uptimes and common mistakes, each tagged, with
+    a LOG: line saying what to check in the log; "no_brief" means no verified guidance
+    exists.
 
     Args:
         class_name (str): The class, any casing/spacing (e.g. "Mage", "Demon Hunter").
         spec_name (str): The spec (e.g. "Fire", "Devourer", "Beast Mastery").
-        content_type (str): "raid" or "mplus".
-
-    Returns:
-        dict: {"status": "success", "brief": <text>, "content_type", "game_patch",
-            "season", "freshness", "data_sufficient"} or {"status": "no_brief",
-            "message"} when no verified guidance exists, or an error with the valid values.
+        content_type (str): "raid" (raid logs, boss pulls) or "mplus" (dungeon runs,
+            keys).
     """
     if content_type not in _LABEL:
         return {

@@ -320,17 +320,13 @@ async def compare_player_to_cohort(
 ) -> dict[str, Any]:
     """Benchmark one player's kill against a matched cohort of similar kill parses.
 
-    Use this for "how do I compare", "why is my parse low", or "what should I do
-    differently" questions about a specific pull. It returns a matched cohort of
-    strong-but-not-extreme kill parses (same encounter, difficulty, spec, metric
-    and partition as the player's pull, ~75th–95th percentile, fight duration
-    within ±15%) with the median and range of casts per minute per ability and of
-    throughput. Do NOT use get_rankings_distribution's top_parses as a benchmark —
-    a single top parse is not representative.
-
-    Player casts per minute are computed over time ALIVE (dead windows removed;
-    see player.dead_s / alive_s). A death is itself a finding — report it before
-    judging the rates. Cohort members' rates use their full fight duration.
+    For "how do I compare", "why is my parse low" or "what should I do differently"
+    about a specific pull. The cohort: strong-but-not-extreme kill parses (~75th–95th
+    percentile) with the encounter, difficulty, spec, metric and partition of the
+    player's pull and a fight duration within ±15%, with the median and range of
+    throughput and of casts per minute per ability. Player rates are over time ALIVE
+    (``player.dead_s`` / ``alive_s``); cohort members' rates use their full fight
+    duration.
 
     Args:
         report_code (str): The report code of the player's pull.
@@ -341,13 +337,6 @@ async def compare_player_to_cohort(
             API budget is low.
         source_id (int): The player's source id, to disambiguate when two players
             share the name (an ambiguous name returns an error listing candidates).
-
-    Returns:
-        dict: {"status": "success", player, cohort: {size, requested_size, members,
-            criteria, unmet_criteria, label: matched|directional|anecdotal},
-            measures: [...], throughput: {...}, provenance, completeness};
-            {"status": "limited", reason} for a wipe; or {"status": "error", ...}
-            (with "candidates" when the name is ambiguous).
     """
     if metric not in METRICS or metric not in BENCHMARK_METRICS:
         return {"status": "error", "error_message": f"Bad metric '{metric}'.", "valid": list(BENCHMARK_METRICS)}

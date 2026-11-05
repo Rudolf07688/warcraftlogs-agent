@@ -79,9 +79,6 @@ async def get_report_participants(report_code: str, fight_id: int = 0) -> dict[s
     Args:
         report_code (str): The report code.
         fight_id (int): Single fight id (0 = all fights).
-
-    Returns:
-        dict: {"status": "success", "participants": [...]} or an error.
     """
     try:
         cached = await _participants(report_code, fight_id)
