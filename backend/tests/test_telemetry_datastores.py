@@ -101,8 +101,8 @@ def test_telemetry_on_appends_the_traceparent_of_the_exported_sql_span() -> None
     assert parents, statement
     # Only the traceparent: no driver or framework versions in every statement.
     assert "db_driver" not in statement and "db_framework" not in statement
-    # The last one is the exported span (two EngineTracers per async engine, board #31): the
-    # slow-query log parser in config.alloy takes the last for this reason.
+    # The last one is the exported span. Since the 059 fix there is one EngineTracer per async
+    # engine (it was two, board #31); the slow-query log parser in config.alloy still takes the last.
     assert parents[-1][1] in got["sql_spans"]
 
 

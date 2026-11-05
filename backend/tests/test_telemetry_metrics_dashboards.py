@@ -127,6 +127,21 @@ def test_ratios_are_fractions_on_a_fixed_axis(path):
             assert (defaults.get("min"), defaults.get("max")) == (0, 1), panel["title"]
 
 
+def test_ratio_rules_divide_by_a_positive_denominator_only():
+    """sc-508: an idle window gives 0 / 0 = NaN, and one NaN poisons every avg_over_time over
+    that range. Every division in runtime.yaml divides by ``(denominator > 0)``, as cross.yaml does."""
+    rules = yaml.safe_load(RULES.read_text())
+    ratios = 0
+    for rule in (r for group in rules["groups"] for r in group["rules"]):
+        expr = " ".join(_STRINGS.sub('""', rule["expr"]).split())
+        if "/" not in expr:
+            continue
+        ratios += 1
+        denominator = expr.rsplit("/", 1)[1].strip()
+        assert denominator.startswith("(") and denominator.endswith("> 0)"), (rule["record"], denominator)
+    assert ratios >= 6
+
+
 def test_the_name_scan_sees_raw_series():
     """The check itself: a raw OTel series in a query is found, functions and labels are not."""
     expr = 'histogram_quantile(0.95, sum by (le) (rate(http_server_duration{http_route!~"/ws/chat"}[5m]))) or vector(0)'
@@ -198,10 +213,15 @@ def test_d6_has_the_service_graph_from_tempo():
     tempo = next(d for d in yaml.safe_load(DATASOURCES.read_text())["datasources"] if d["uid"] == "tempo")
     assert tempo["jsonData"]["serviceMap"] == {"datasourceUid": "mimir"}
     # The service map asks for its latency under the Tempo names, with the unit suffix: the
-    # buckets for the edges, the sum for each node's average response time.
+    # buckets for the edges, the sum for each node's average response time. sc-504: a virtual
+    # server (no spans of its own, the connector records 0 for it) takes the client side's.
     rules = {r["record"]: r["expr"] for g in yaml.safe_load(RULES.read_text())["groups"] for r in g["rules"]}
-    assert rules["traces_service_graph_request_server_seconds_bucket"] == "traces_service_graph_request_server_bucket"
-    assert rules["traces_service_graph_request_server_seconds_sum"] == "traces_service_graph_request_server_sum"
+    for part in ("bucket", "sum"):
+        assert rules[f"traces_service_graph_request_server_seconds_{part}"] == " ".join([
+            f'traces_service_graph_request_server_{part}{{connection_type!="virtual_node"}}',
+            f'or traces_service_graph_request_server_{part}{{connection_type="virtual_node", client="user"}}',
+            f'or traces_service_graph_request_client_{part}{{connection_type="virtual_node", client!="user"}}',
+        ])
 
 
 # sc-471: a panel that shows one bar per interval, or totals in its legend, must read windows
