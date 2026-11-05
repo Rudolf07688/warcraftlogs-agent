@@ -455,7 +455,10 @@
             "excludeByName": {
               "Time": true,
               "Time 1": true,
-              "Time 2": true
+              "Time 2": true,
+              "__name__": true,
+              "__name__ 1": true,
+              "__name__ 2": true
             },
             "renameByName": {
               "Value #A": "Total time",
@@ -481,6 +484,18 @@
           "decimals": 0
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "queryid"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "string"
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -513,8 +528,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Statement time by queryid",
-      "description": "Seconds of execution per second, top 10 statements.",
+      "title": "Statement busy time by queryid",
+      "description": "Execution seconds per second of wall time (s/s), top 10 statements: 1 s/s is one backend busy with that statement all the time. Not a per-call latency: divide by calls per second for that.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -526,7 +541,7 @@
             "uid": "mimir"
           },
           "expr": "topk(10, pg:statement_seconds:rate5m)",
-          "legendFormat": "{{queryid}}",
+          "legendFormat": "queryid {{queryid}}",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -535,7 +550,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "suffix: s/s",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,

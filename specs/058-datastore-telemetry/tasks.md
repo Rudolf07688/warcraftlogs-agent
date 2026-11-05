@@ -11,7 +11,7 @@ Story labels: US1 = sc-417, US2 = sc-418, US3 = sc-419, US4 = sc-420, US5 = sc-4
 ## Phase 2: Foundational
 
 - [X] T002 db/redis host ports overridable (`DB_PORT`, `REDIS_PORT`), env_file optional, db `command:` (pg_stat_statements, logging) in docker-compose.yml
-- [X] T003 docker-proxy service and `docker-api` network; alloy environment (`WCL_PG_MONITOR_DSN`, `WCL_COMPOSE_PROJECT`), `observability/postgres` mount, network in docker-compose.yml
+- [X] T003 (superseded by T032: proxy and network removed) docker-proxy service and `docker-api` network; alloy environment (`WCL_PG_MONITOR_DSN`, `WCL_COMPOSE_PROJECT`), `observability/postgres` mount, network in docker-compose.yml
 - [X] T004 Migration 0022 (extension + monitoring role from env) in backend/migrations/versions/0022_pg_stat_statements.py
 - [X] T005 Variables without working values in .env.example
 - [X] T006 Stack test skeleton (db + redis + alloy + backends on 25xxx, schema via alembic as owner, monitor password per run) in observability/test/datastores.sh and observability/test/datastores_check.py
@@ -33,13 +33,13 @@ Story labels: US1 = sc-417, US2 = sc-418, US3 = sc-419, US4 = sc-420, US5 = sc-4
 
 - [X] T014 [US3] GitNexus impact on `instrument`, then the commenter flag in backend/app/telemetry/setup.py
 - [X] T015 [US3] Tests: traceparent of the exported span appended with telemetry on; byte-identical SQL with telemetry off in backend/tests/test_telemetry_datastores.py
-- [X] T016 [US3] docker discovery + loki.source.docker + loki.process (multiline, prefix) + otelcol.receiver.loki + transform "postgres" (resource, trace id, masks) in observability/alloy/config.alloy
+- [X] T016 [US3] (log source superseded by T032: local.file_match + loki.source.file on the pglog volume) docker discovery + loki.source.docker + loki.process (multiline, prefix) + otelcol.receiver.loki + transform "postgres" (resource, trace id, masks) in observability/alloy/config.alloy
 - [X] T017 [US3] Assert slow line in Loki with trace id, derived field resolves to the trace, seeded secret string and numeric id masked, no parameters, lock wait + autovacuum lines present in datastores_check.py
 - [X] T018 [US3] (not needed: the existing trace_id field resolves on postgres records, datastores.sh) Loki derivedFields only if T017 shows the existing field doesn't resolve, in observability/grafana/provisioning/datasources/datasources.yaml
 
 ## Phase 6: US4 cAdvisor, self-metrics, D9–D11 (sc-420)
 
-- [X] T019 [US4] cadvisor service (after docker-proxy) in docker-compose.yml
+- [X] T019 [US4] cadvisor service (after docker-proxy; since T032 with the Docker socket itself, hardened in T033) in docker-compose.yml
 - [X] T020 [US4] Scrapes: cadvisor, prometheus.exporter.self, loki/tempo/mimir /metrics, allowlists in observability/alloy/config.alloy; infra:*/meta:* aliases in datastores.yaml
 - [X] T021 [P] [US4] D9 observability/grafana/dashboards/infra/postgres.json
 - [X] T022 [P] [US4] D10 observability/grafana/dashboards/infra/redis.json
@@ -70,3 +70,10 @@ Story labels: US1 = sc-417, US2 = sc-418, US3 = sc-419, US4 = sc-420, US5 = sc-4
 
 Phase 2 before all stories. US1 → US2 → US3 → US4 → US5 (shared config.alloy section and datastores.yaml;
 the brief's order). Dashboards T021–T023 are parallel once the aliases exist.
+
+## QA fix round (2026-11-05, 058-fix: sweep + live pass)
+
+- [X] T036 D11 host line: the fail-closed drop spares the root cgroup (`cadvisor;;([^/].*|/.+)`) in observability/alloy/config.alloy; pytest evaluates the keep/drop rules, datastores_check.py requires `host`
+- [X] T037 Live #76 (Mimir `sample_duplicate_timestamp`): Claude Code's per-session/prompt streams summed in `metric_labels` after their ids are dropped (grant #88); datastores_check.py proves the sum and zero discards for the run
+- [X] T038 Live #77 D9 table: queryid unit `string`, `__name__ 1/2` hidden; BUG-007 "Statement busy time by queryid" in `s/s` in observability/grafana/dashboards/infra/postgres.json
+- [X] T039 SPEC-004 docs drift: spec, plan, research and tasks say what the rework built (pglog volume, no Docker access in Alloy)

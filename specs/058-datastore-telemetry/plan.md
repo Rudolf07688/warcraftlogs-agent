@@ -8,8 +8,9 @@
 ## Summary
 
 Postgres and Redis exporters, cAdvisor and the stack's self-metrics are scraped by Alloy and remote-
-written to Mimir; Postgres logs slow statements, lock waits and autovacuum to stderr, Alloy reads them
-through a GET-only Docker proxy, masks literals and feeds them into the existing redaction chain to
+written to Mimir; Postgres logs slow statements, lock waits and autovacuum to files on the `pglog`
+volume, Alloy tails them read-only (no Docker access; the first design's GET-only Docker proxy was
+removed in the security rework, T032), masks literals and feeds them into the existing redaction chain to
 Loki; the backend's SQLAlchemy instrumentation appends `traceparent` so a slow line links to its
 trace. Dashboards D9–D11 read new aliases in `datastores.yaml`; two Grafana-managed alert rules are
 provisioned. Proof: one stack script per story group on seeded, real-shaped data, plus pytest for
@@ -19,8 +20,9 @@ the commenter, the migration and the dashboard/alert files.
 
 **Language/Version**: Python 3.14 (backend), Alloy config language, PromQL/LogQL, Bash test scripts
 **Primary Dependencies**: Alloy v1.21.3 (`prometheus.exporter.postgres/redis/self`, `prometheus.scrape`,
-`prometheus.remote_write`, `discovery.docker`, `loki.source.docker`, `otelcol.receiver.loki`),
-cAdvisor 0.54.1, tecnativa/docker-socket-proxy v0.4.1, opentelemetry-instrumentation-sqlalchemy 0.63b1
+`prometheus.remote_write`, `local.file_match`, `loki.source.file`, `otelcol.receiver.loki`; the first
+design's `discovery.docker`/`loki.source.docker` and tecnativa/docker-socket-proxy were removed in
+T032), cAdvisor 0.54.1, opentelemetry-instrumentation-sqlalchemy 0.63b1
 (already installed: no manifest change)
 **Storage**: Postgres 17 + pgvector (extension `pg_stat_statements`, migration `0022`), Mimir, Loki
 **Testing**: pytest via `check.py` (SQLite + `--pg`); stack scripts `observability/test/datastores.sh`,
@@ -39,7 +41,8 @@ cAdvisor 0.54.1, tecnativa/docker-socket-proxy v0.4.1, opentelemetry-instrumenta
 - **II Small steps**: one story at a time in brief order (417 → 418 → 419 → 420 → 424), each proved by
   its script section before the next.
 - **III Simplicity**: built-in Alloy exporters; one remote_write; two new tiny services only where
-  security demands (docker-proxy, cadvisor — research R1). No new Python modules.
+  security demands (cadvisor — research R1; the docker-proxy of the first design was removed, R7).
+  No new Python modules.
 - **IV Typed boundaries**: no new API surface; config files are validated by the stack tests.
 - **V Async**: no backend runtime change besides an instrumentor flag.
 - **VI GitNexus**: `impact` on `instrument` before the edit; detect-changes before each commit.
@@ -62,7 +65,7 @@ specs/058-datastore-telemetry/
 
 ```text
 docker-compose.yml                          # db command + ports, redis ports, alloy env/mounts/network,
-                                            # new docker-proxy, cadvisor (after alloy)
+                                            # cadvisor, pglog volume (docker-proxy removed, T032)
 observability/alloy/config.alloy            # appended section "Data stores and infra (feature 058)"
 observability/postgres/queries.yaml         # exporter custom queries (vector index size, rows)
 observability/mimir/rules/anonymous/datastores.yaml
@@ -87,8 +90,9 @@ backend/tests/test_telemetry_datastores.py
    `custom_queries_config_path`), DSN from `sys.env("WCL_PG_MONITOR_DSN")`.
 2. **sc-418** `prometheus.exporter.redis "cache"` (`redis_addr = "redis:6379"`, no key checks).
 3. **sc-419** setup.py: `SQLAlchemyInstrumentor().instrument(skip_dep_check=True, enable_commenter=True,
-   commenter_options={"db_driver": False, "db_framework": False})`. db logs per research R4; Alloy
-   docker discovery filtered on the compose project (env `WCL_COMPOSE_PROJECT`) and service `db`.
+   commenter_options={"db_driver": False, "db_framework": False})`. db logs per research R4, written
+   to the `pglog` volume (T032); Alloy tails `postgresql-*.log` with `local.file_match` +
+   `loki.source.file` (the first design's docker discovery was removed with the proxy).
    Loki's existing `trace_id` derived field (structured metadata) covers the postgres record too; the
    test proves it resolves there, and datasources.yaml changes only if that proof fails.
 4. **sc-420** cadvisor service; scrapes of loki/tempo/mimir `/metrics`, `prometheus.exporter.self`;

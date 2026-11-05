@@ -194,6 +194,17 @@ otelcol.processor.transform "metric_labels" {
     ]
   }
 
+  // One Claude Code process exports a cumulative stream per session and prompt. Without those
+  // ids the streams of one export share their labels and timestamp: Mimir would keep the first
+  // and silently discard the rest (sample_duplicate_timestamp, board #76), so they are summed
+  // into the process total here.
+  metric_statements {
+    context    = "metric"
+    statements = [
+      `aggregate_on_attributes("sum") where resource.attributes["service.name"] == "claude-code"`,
+    ]
+  }
+
   output {
     metrics = [otelcol.processor.batch.default.input]
   }
@@ -860,11 +871,12 @@ prometheus.relabel "datastores" {
   }
 
   // Fail closed: with WCL_COMPOSE_PROJECT unset the keep below would match every non-compose
-  // container (empty project label), so those go first.
+  // container (empty project label), so those go first: every cgroup without a project label
+  // except the host's root cgroup ("/", D11's host line).
   rule {
     source_labels = ["job", "container_label_com_docker_compose_project", "id"]
     action        = "drop"
-    regex         = "cadvisor;;.+"
+    regex         = "cadvisor;;([^/].*|/.+)"
   }
 
   rule {
