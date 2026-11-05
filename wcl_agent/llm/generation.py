@@ -367,17 +367,33 @@ def embeddings_available() -> bool:
     return True
 
 
+@functools.cache
+def _located_genai_client(location: str) -> Any:
+    """One google-genai client per process and Vertex location (sc-428: embeddings)."""
+    return provider.genai_client(location=location)
+
+
 async def embed_texts(
-    model: str, texts: Sequence[str], *, task: str, dimensions: int, policy: RetryPolicy
+    model: str,
+    texts: Sequence[str],
+    *,
+    task: str,
+    dimensions: int,
+    policy: RetryPolicy,
+    location: str | None = None,
 ) -> list[list[float]]:
     """Raw (not normalised) embedding vectors for ``texts``, in order, from one request on the
     genai client, whichever provider serves chat. Over-long texts are truncated by the model.
-    Raises the SDK error or ``ModelRateLimited``."""
+    ``location`` names the Vertex location to embed at (empty or None: the model location). sc-428: the
+    ``global`` endpoint answers ``:predict``, which gemini-embedding-001 uses, about 12 s late
+    on every new connection, and an idle connection closes after 5 s. Raises the SDK error or
+    ``ModelRateLimited``."""
     config = genai_types.EmbedContentConfig(
         task_type=task, output_dimensionality=dimensions, auto_truncate=True
     )
+    client = functools.partial(_located_genai_client, location) if location else _genai_client
     response = await _with_retry(
-        lambda: _genai_client().aio.models.embed_content(model=model, contents=list(texts), config=config),
+        lambda: client().aio.models.embed_content(model=model, contents=list(texts), config=config),
         policy,
         model=model,
         operation="embeddings",

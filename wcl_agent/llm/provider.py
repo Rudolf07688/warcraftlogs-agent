@@ -187,12 +187,13 @@ def adk_client_kwargs() -> dict[str, Any]:
     return {"vertexai": True, "location": model_location()} if uses_vertex() else {}
 
 
-def genai_client() -> genai.Client:
+def genai_client(location: str | None = None) -> genai.Client:
+    """The google-genai client, on Vertex at ``location`` (default: the model location)."""
     from google import genai
 
     if not uses_vertex():
         return genai.Client()  # API-key setup: GOOGLE_API_KEY from the environment
-    return genai.Client(vertexai=True, project=project_id(), location=model_location())
+    return genai.Client(vertexai=True, project=project_id(), location=location or model_location())
 
 
 def _require_key() -> SecretStr:

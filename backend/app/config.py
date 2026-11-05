@@ -217,10 +217,13 @@ class Settings(BaseSettings):
     # embedded with `kb_embed_model` at 768 dimensions. Without embeddings chunks stay
     # keyword-searchable; rows still missing a vector are retried every
     # `kb_embed_sweep_s`. `kb_embed_request_batch` texts go in one Vertex request; the price
-    # (USD per 1M input tokens) only feeds the backfill's cost estimate.
+    # (USD per 1M input tokens) only feeds the backfill's cost estimate. sc-428: embeddings run
+    # at the regional `kb_embed_location` (empty: WCL_MODEL_LOCATION), because the global
+    # endpoint answers gemini-embedding-001 about 12 s late on every new connection.
     kb_index_enabled: bool = True
     kb_embed_enabled: bool = True
     kb_embed_model: str = "gemini-embedding-001"
+    kb_embed_location: str = "europe-west1"
     kb_index_queue_max: int = 1000
     kb_embed_batch: int = 32
     kb_embed_request_batch: int = 1
