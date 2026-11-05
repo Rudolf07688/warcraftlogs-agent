@@ -66,3 +66,22 @@ Grafana provisioning `alerting/*.yaml` (apiVersion 1, groups → rules with `dat
 threshold expression). State read at `/api/prometheus/grafana/api/v1/rules`. Exporter send failures
 count only after retries end, so the synthetic trigger is a permanent refusal: a log record 2 h older
 than its stream's newest gets Loki's 400.
+
+## R7 Security rework (qa-security, qa-reports/2026-11-05/058-security.md)
+
+- **SEC-001** row values: DETAIL/CONTEXT/HINT kept only in known shapes (key and row details, lock
+  waits, deadlocks, parameters), otherwise `<detail withheld>`; `Failing row contains (...)` and
+  `Key (...)=(...)` masked whole (greedy to the record's last `)`). Proved by pytest on the masks
+  of config.alloy and by datastores.sh seeding NOT NULL, CHECK and a `)` inside a key value.
+- **SEC-002/005** Docker proxy removed: Postgres writes its log with `logging_collector` into the
+  `pglog` volume (the image's `/var/log/postgresql`, root:postgres 1775, is copied into it), Alloy
+  tails it read-only. Alloy has no Docker access.
+- **SEC-003** cAdvisor still needs containerd.sock (R1) and now the Docker socket (no proxy):
+  both root-equivalent. Hardened (digest pin, `cap_drop: ALL`, `no-new-privileges`, read-only root,
+  internal network, observability profile) and documented as residual risk. Probed: it still
+  names containers with no capabilities and a read-only root.
+- **SEC-004** `tracestate: False`, `baggage: False`. In 0.63b1 the commenter injects with a
+  module-level `TraceContextTextMapPropagator`, so baggage never reaches the SQL (the option is a
+  guard for a later version); tracestate did, and the test with a client tracestate bites.
+- **SEC-007** 0022: password `[A-Za-z0-9]{16,}`, role name `fullmatch`, an existing role must be
+  monitor-only, never the owner or runtime role; downgrade refuses to drop anything else.

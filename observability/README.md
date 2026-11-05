@@ -352,36 +352,43 @@ Postgres, Redis, the containers and the telemetry stack itself (spec §7.2–7.4
   queryid = ...`. Utility statements are not tracked (their text keeps literals such as passwords).
 - **Monitoring role**: the exporter logs in as `PG_MONITOR_USER` (default `wcl_monitor`), a member
   of `pg_monitor` with CONNECT only. Migration 0022 creates it only when `PG_MONITOR_PASSWORD` is
-  set (letters and digits; there is no default). Unset: no role, the exporter reports `pg_up 0`,
-  nothing else changes. To add it later, set the password and run
+  set (16 or more letters and digits; there is no default). Unset: no role, the exporter reports
+  `pg_up 0`, nothing else changes. An existing role of that name is used only if it is
+  monitor-only itself (not superuser, CREATEROLE, CREATEDB or BYPASSRLS, no other memberships,
+  owns nothing), and never the owner or the runtime role: anything else stops the migration. To add it later, set the password and run
   `alembic downgrade 0021_raw_fetch_own_summary && alembic upgrade head` (or create the role by
   hand: `CREATE ROLE wcl_monitor LOGIN PASSWORD '...'; GRANT pg_monitor TO wcl_monitor;`). Alloy
   gets the DSN from compose (`WCL_PG_MONITOR_DSN`) and shows it as a secret.
 - **Slow statements to traces**: with telemetry on, the backend's SQLAlchemy instrumentation
   appends `/*traceparent='00-...'*/` to every statement (sqlcommenter, about 0.5 ms per statement:
   one prepare each, measured in `specs/058-datastore-telemetry/research.md`). Postgres logs
-  statements over 250 ms, lock waits and autovacuum runs to stderr with the prefix
-  `%m [%p] q=%Q %e ` and never logs bind values (`log_parameter_max_length=0`). Alloy reads the
-  db container's Docker log, joins multi-line messages, takes the last traceparent as the
-  record's trace and span id, masks quoted strings, dollar-quoted bodies and numbers (and, in
-  records without SQL, double-quoted values and `Key (...)=(...)` details; autovacuum, lock-wait,
-  checkpoint and start/stop messages keep their counters), and sends the records through the
-  same memory limiter, stamp, redaction, log window and classification as OTLP logs. In Loki they
+  statements over 250 ms, lock waits and autovacuum runs with the prefix `%m [%p] q=%Q %e ` and
+  never logs bind values (`log_parameter_max_length=0`). It writes them to files on the `pglog`
+  volume (`postgresql-<hour>.log`, each overwritten a day later), so `docker compose logs db`
+  shows only the start-up lines. Alloy tails the files from the volume mounted read-only (it has
+  no Docker access), joins multi-line messages, takes the last traceparent as the record's trace
+  and span id and masks: quoted strings, dollar-quoted bodies and numbers everywhere except
+  autovacuum, lock-wait, checkpoint and start/stop messages (they keep their counters); in
+  records without SQL also double-quoted values; a DETAIL, CONTEXT or HINT only in a known shape
+  (any other is withheld whole), with the row of `Failing row contains (...)` and a key detail's
+  values (`Key (...)=(...)`, to the record's last `)`) masked whole. Then the records go through
+  the same memory limiter, stamp, redaction, log window and classification as OTLP logs. In Loki they
   are `service_name=postgres` with `pg_duration_ms`, `pg_query_id`, `pg_severity`, `pg_sqlstate`,
   `pg_pid` and `trace_id` as structured metadata; the existing `trace_id` derived field opens the
   trace.
-- **Docker access**: Alloy never mounts the Docker socket (it parses browser payloads). The
-  `docker-proxy` service (tecnativa/docker-socket-proxy) answers GET on containers, networks,
-  info, version and events only, on the internal `docker-api` network, for Alloy (the db log,
-  discovery) and cAdvisor. A socket mounted `:ro` would not restrict the API; the proxy's verb
-  and path allowlist does. Residual: a container's inspect output (its environment) is readable
-  through it. Alloy and cAdvisor keep only their own compose project's containers
-  (`WCL_COMPOSE_PROJECT`), so the test stacks and the app's stack never mix.
-- **cAdvisor** (observability profile): its own service, not Alloy's built-in exporter: with
-  Docker's containerd image store it needs the containerd socket to name containers, and that
-  socket stays out of the collector that takes browser input. Not privileged, host paths
-  read-only, CPU and memory only, labelled `compose_service` (`host` = the whole machine).
-  Linux Docker hosts only.
+- **Docker access**: none in Alloy (it parses browser payloads): the Postgres log comes from
+  the `pglog` volume.
+- **cAdvisor** (observability profile): its own service, not Alloy's built-in exporter. With
+  Docker's containerd image store it needs the containerd socket and the Docker socket to name
+  containers. **Residual risk:** either socket is root-equivalent on the host whatever the mount
+  flag (`:ro` does not restrict API calls), so a compromised cAdvisor is a compromised host.
+  Mitigations: the image is pinned by digest; it runs with no capabilities, `no-new-privileges`
+  and a read-only root filesystem; it publishes no port and sits on the internal `cadvisor`
+  network that only Alloy shares; it takes no input but Alloy's scrapes; and it only runs with
+  the observability profile (leave it stopped if that trade is not worth D11's container panels:
+  `docker compose --profile observability stop cadvisor`). CPU and memory only, labelled
+  `compose_service` (`host` = the whole machine); Alloy keeps only its own compose project's
+  containers (`WCL_COMPOSE_PROJECT`; unset keeps none). Linux Docker hosts only.
 - **Alerts** (`grafana/provisioning/alerting/rules.yaml`, folder "WCL alerts"): *Telemetry
   pipeline failures or drops* (Alloy export or enqueue failures, or receiver refusals, in the last
   2 minutes) and *Build spend per day above threshold* (Claude Code's estimate over 24 hours
@@ -390,5 +397,5 @@ Postgres, Redis, the containers and the telemetry stack itself (spec §7.2–7.4
 
 | Script | Proves |
 |---|---|
-| `test/datastores.sh` | On a seeded stack (db migrated with the monitoring role, 200 embedded knowledge-base chunks, three traced slow statements issued through the backend's instrumentation, a lock wait, autovacuum, a long transaction, a key error, 7 Redis hits and 3 misses): the exporter logs in as the monitoring role only; the top statement by total time is the slow one; the vector index size equals `pg_relation_size`; rows = 200; Redis hit ratio = 0.7; each slow line in Loki carries the request's trace id and its SQL span id, and that trace is in Tempo; the seeded string, number, bound value and e-mail are absent from every Postgres record; lock wait and autovacuum logged; no DSN, password, key name or literal in any label value or in Alloy's logs and UI; container metrics for this project only; D9–D11 provision and every query is valid; the added series stay under 5k. Needs `DB_PORT` and `REDIS_PORT` (default 24432, 24379). |
+| `test/datastores.sh` | On a seeded stack (db migrated with the monitoring role, 200 embedded knowledge-base chunks, three traced slow statements issued through the backend's instrumentation, a lock wait, autovacuum, a long transaction, unique-key (one value with a `)`), NOT NULL and CHECK errors, 7 Redis hits and 3 misses): the exporter logs in as the monitoring role only; the top statement by total time is the slow one; the vector index size equals `pg_relation_size`; rows = 200; Redis hit ratio = 0.7; each slow line in Loki carries the request's trace id and its SQL span id, and that trace is in Tempo; the seeded string, number, bound value, e-mails and row values are absent from every Postgres record and the row and key details read `(?)`; lock wait and autovacuum logged; no DSN, password, key name or literal in any label value or in Alloy's logs and UI; container metrics for this project only; D9–D11 provision and every query is valid; the added series stay under 5k. Needs `DB_PORT` and `REDIS_PORT` (default 24432, 24379). |
 | `test/alerts.sh` | Both alert rules provision and start Normal; build spend fires on synthetic cost above a lowered threshold (in a mounted copy of the rules) and is Normal again once it is raised; the pipeline rule fires when Loki refuses a log batch for good and is Normal again after the window. About 8 minutes. |

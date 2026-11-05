@@ -99,5 +99,5 @@ backend/tests/test_telemetry_datastores.py
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| docker-proxy service | Alloy must read docker logs; it also parses browser input (Faro) | raw socket in Alloy = host root on an Alloy compromise; `:ro` doesn't restrict the API |
-| cadvisor service | naming containers needs the containerd socket on this host | Alloy's built-in cAdvisor would put containerd.sock (root-equivalent) and privileged mode into the Faro-facing collector |
+| pglog volume (rework, R7) | Alloy must read Postgres's log without Docker access | the GET-only proxy still exposed every container's files and env (SEC-002) |
+| cadvisor service | naming containers needs the containerd and Docker sockets on this host | Alloy's built-in cAdvisor would put both (root-equivalent) and privileged mode into the Faro-facing collector |

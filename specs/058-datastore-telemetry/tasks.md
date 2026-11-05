@@ -58,6 +58,14 @@ Story labels: US1 = sc-417, US2 = sc-418, US3 = sc-419, US4 = sc-420, US5 = sc-4
 - [X] T029 README section `## Data stores, infra and alerts (058)` in observability/README.md
 - [X] T030 check.py run (SQLite) + --pg receipt; detect-changes; ownership check; live-check questions on the board
 
+## Phase 9: Security rework (qa-security, one round)
+
+- [X] T031 SEC-001 detail masks + pytest mask test + stack seeds in observability/alloy/config.alloy, backend/tests/test_telemetry_datastores.py, observability/test/datastores_check.py
+- [X] T032 SEC-002/005 Postgres log file on the pglog volume, docker-proxy removed, in docker-compose.yml and observability/alloy/config.alloy
+- [X] T033 SEC-003 cAdvisor hardened and residual risk documented in docker-compose.yml, observability/README.md
+- [X] T034 SEC-004 tracestate/baggage out of the SQL comment in backend/app/telemetry/setup.py (+ test)
+- [X] T035 SEC-007 0022 password rule and monitor-only existing role in backend/migrations/versions/0022_pg_stat_statements.py (+ tests)
+
 ## Dependencies
 
 Phase 2 before all stories. US1 → US2 → US3 → US4 → US5 (shared config.alloy section and datastores.yaml;

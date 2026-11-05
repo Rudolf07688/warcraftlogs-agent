@@ -10,4 +10,4 @@ python3 .claude/team/check.py run --pg ansel                     # 0022 up/down
 ```
 
 Owner's stack: set `PG_MONITOR_PASSWORD` in `.env`, run migrations, recreate `db` and `alloy`
-(`docker compose up -d db alloy docker-proxy`), and with the profile `cadvisor`.
+(`docker compose up -d db alloy`), and with the observability profile `cadvisor`.

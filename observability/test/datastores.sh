@@ -3,9 +3,9 @@
 # monitoring role, an HNSW index with rows), Redis, Alloy and the backends. Asserts values, not
 # presence: the top statement by total time is the seeded slow one, the vector index size equals
 # pg_relation_size, Redis's hit ratio equals the hits and misses made, the slow-query line in Loki
-# carries the trace id of the traced statement (and that trace is in Tempo), seeded secrets are
-# masked, lock waits and autovacuum are logged, D9-D11 load and every query is valid, and the
-# added series stay inside the budget.
+# carries the trace id of the traced statement (and that trace is in Tempo), seeded secrets (also
+# in the row and key details of constraint errors) are masked, lock waits and autovacuum are
+# logged, D9-D11 load and every query is valid, and the added series stay inside the budget.
 #   observability/test/datastores.sh        (KEEP=1 leaves the stack up)
 export DB_PORT="${DB_PORT:-24432}" REDIS_PORT="${REDIS_PORT:-24379}"
 # Throwaway credentials for this run's database (the db service reads them from the shell).
@@ -15,7 +15,7 @@ export POSTGRES_USER=wcl POSTGRES_DB=wcl POSTGRES_PASSWORD="owner$(rnd)" \
 source "$(dirname "$0")/lib.sh"
 trap stack_down EXIT
 
-dc up -d --wait db redis docker-proxy cadvisor alloy "${BACKENDS[@]}" grafana >/dev/null
+dc up -d --wait db redis cadvisor alloy "${BACKENDS[@]}" grafana >/dev/null
 wait_ready
 
 # The schema as the app gets it (migrations as the owner, 0022 creates the monitoring role).

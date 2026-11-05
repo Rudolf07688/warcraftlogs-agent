@@ -748,10 +748,9 @@ otelcol.processor.transform "faro" {
 // Samples wait in the remote-write WAL (alloy-data volume) while Mimir is down.
 //
 // Logs: Postgres's slow statements, lock waits and autovacuum runs (docker-compose.yml, db
-// command) are read from the db container's Docker log, through the read-only Docker API proxy
-// (Alloy never mounts the socket: board scope:058:docker-access), parsed, masked here and then
-// sent through the same chain as OTLP logs (memory limiter, stamp, redact, log window, classify):
-// never straight to Loki.
+// command) are tailed from its log files on the pglog volume (mounted read-only; Alloy has no
+// Docker access at all), parsed, masked here and then sent through the same chain as OTLP logs
+// (memory limiter, stamp, redact, log window, classify): never straight to Loki.
 
 prometheus.remote_write "mimir" {
   endpoint {
@@ -860,6 +859,14 @@ prometheus.relabel "datastores" {
     ], "|")
   }
 
+  // Fail closed: with WCL_COMPOSE_PROJECT unset the keep below would match every non-compose
+  // container (empty project label), so those go first.
+  rule {
+    source_labels = ["job", "container_label_com_docker_compose_project", "id"]
+    action        = "drop"
+    regex         = "cadvisor;;.+"
+  }
+
   rule {
     source_labels = ["job", "container_label_com_docker_compose_project", "id"]
     action        = "keep"
@@ -885,23 +892,18 @@ prometheus.relabel "datastores" {
   }
 }
 
-// Postgres log (sc-419). Only this compose project's db container: the test stacks and the
-// app's stack share one Docker daemon. An unset project matches nothing.
-discovery.docker "db" {
-  host             = "tcp://docker-proxy:2375"
-  refresh_interval = "15s"
-
-  filter {
-    name   = "label"
-    values = ["com.docker.compose.service=db", "com.docker.compose.project=" + sys.env("WCL_COMPOSE_PROJECT")]
-  }
+// Postgres log (sc-419): this project's db writes postgresql-<hour>.log files to the pglog
+// volume and overwrites each a day later (log_truncate_on_rotation); the tail notices the
+// truncation and reads the file again from its start. Positions live on alloy-data.
+local.file_match "postgres" {
+  path_targets = [{"__path__" = "/var/log/postgresql/postgresql-*.log"}]
+  sync_period  = "10s"
 }
 
-loki.source.docker "db" {
-  host       = "tcp://docker-proxy:2375"
-  targets    = discovery.docker.db.targets
-  labels     = {"pg_source" = "docker"}
-  forward_to = [loki.process.postgres.receiver]
+loki.source.file "postgres" {
+  targets       = local.file_match.postgres.targets
+  forward_to    = [loki.process.postgres.receiver]
+  tail_from_end = false
 }
 
 // One record per Postgres message: a multi-line statement or autovacuum report is joined on the
@@ -943,7 +945,7 @@ loki.process "postgres" {
   }
 
   stage.label_drop {
-    values = ["pg_source"]
+    values = ["filename"]
   }
 
   stage.output {
@@ -960,12 +962,18 @@ otelcol.receiver.loki "postgres" {
 }
 
 // The resource is set here (a statement's text is partly user input). Masks, before the shared
-// redaction: quoted strings, dollar-quoted bodies (to the end of the record: RE2 has no
-// backreferences) and numeric literals in every record except known operational messages
-// (autovacuum and analyze reports, lock waits, checkpoints, start and stop: object names and
-// counters only); in records that carry no SQL also double-quoted values and key details
-// ("Key (email)=(...)"). Bind parameters are never logged (log_parameter_max_length=0), and a
-// "parameters:" detail that appears anyway is masked like any other.
+// redaction (kinds: sql, ops, detail, other):
+// - a DETAIL, CONTEXT or HINT is kept only in a known shape (key and row details, lock waits and
+//   deadlocks, parameters); any other is withheld whole. In "Failing row contains (...)" the row
+//   is masked whole, and in a key detail everything from the first "=(" to the record's last ")",
+//   so a ")" inside a value can't end the mask early;
+// - quoted strings, dollar-quoted bodies (to the end of the record: RE2 has no backreferences)
+//   and numeric literals in every record except known operational messages (autovacuum and
+//   analyze reports, lock waits, checkpoints, start and stop: object names and counters only);
+// - in records that carry no SQL also double-quoted values.
+// Bind parameters are never logged (log_parameter_max_length=0), and a "parameters:" detail
+// that appears anyway is masked like any other. backend/tests/test_telemetry_datastores.py runs
+// these masks on sample records; observability/test/datastores.sh on real ones.
 otelcol.processor.transform "postgres" {
   error_mode = "ignore"
 
@@ -990,11 +998,14 @@ otelcol.processor.transform "postgres" {
       `set(attributes["alloy.pg_kind"], "other")`,
       `set(attributes["alloy.pg_kind"], "sql") where attributes["pg_duration_ms"] != nil or attributes["pg_severity"] == "STATEMENT" or attributes["pg_severity"] == "QUERY" or IsMatch(body, "^(statement|execute|parse|bind)[^:]*: ")`,
       `set(attributes["alloy.pg_kind"], "ops") where attributes["alloy.pg_kind"] == "other" and attributes["pg_severity"] == "LOG" and IsMatch(body, "^(automatic (vacuum|analyze) of table |process \\d+ (still waiting for|acquired) |checkpoint (starting|complete)|database system |redo |starting PostgreSQL|listening on |received \\w+ shutdown request|aborting any active transactions|background worker |shutting down|all server processes terminated)")`,
+      `set(attributes["alloy.pg_kind"], "detail") where attributes["alloy.pg_kind"] == "other" and IsMatch(attributes["pg_severity"], "^(DETAIL|CONTEXT|HINT)$")`,
+      `set(body, "<detail withheld>") where attributes["alloy.pg_kind"] == "detail" and not IsMatch(body, "^(Key \\(|Failing row contains |Process holding the lock|Process \\d+ waits for |Process \\d+: |parameters: )")`,
+      `replace_pattern(body, "(?s)^(Failing row contains ).*$", "${1}(?)") where attributes["alloy.pg_kind"] == "detail"`,
+      `replace_pattern(body, "(?s)=\\(.*\\)", "=(?)") where attributes["alloy.pg_kind"] == "detail" or attributes["alloy.pg_kind"] == "other"`,
       `replace_pattern(body, "'(?:[^'\\\\]|''|\\\\[\\s\\S])*(?:'|$)", "'?'") where attributes["alloy.pg_kind"] != "ops"`,
       `replace_pattern(body, "\\$[A-Za-z_]*\\$[\\s\\S]*$", "<dollar-quoted:masked>") where attributes["alloy.pg_kind"] != "ops"`,
       `replace_pattern(body, "(^|[^\\w$.])-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?", "${1}?") where attributes["alloy.pg_kind"] != "ops"`,
-      `replace_pattern(body, "\"[^\"]*\"", "\"?\"") where attributes["alloy.pg_kind"] == "other"`,
-      `replace_pattern(body, "=\\([^)]*\\)", "=(?)") where attributes["alloy.pg_kind"] == "other"`,
+      `replace_pattern(body, "\"[^\"]*\"", "\"?\"") where attributes["alloy.pg_kind"] == "detail" or attributes["alloy.pg_kind"] == "other"`,
       `delete_key(attributes, "alloy.pg_kind")`,
     ]
   }

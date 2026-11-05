@@ -137,7 +137,8 @@ asyncio.run(main())
 def seed(s: Stack) -> dict:
     sec = {"secret": secrets.token_hex(8), "account": str(4_200_000_000 + secrets.randbelow(99_999_999)),
            "bound": "sk-bound" + secrets.token_hex(8), "email": f"leak{secrets.token_hex(6)}@example.com",
-           "key": "seedkey-" + secrets.token_hex(6)}
+           "key": "seedkey-" + secrets.token_hex(6), "row": "rowsecret" + secrets.token_hex(6),
+           "check": f"check{secrets.token_hex(6)}@example.com", "paren": secrets.token_hex(6)}
     # Knowledge base: one guide, 200 embedded chunks (the HNSW index from 0019 fills).
     s.psql("INSERT INTO spec_guides (id, class_name, spec) VALUES (gen_random_uuid(), 'Mage', 'Fire') ON CONFLICT DO NOTHING")
     s.psql("""INSERT INTO kb_chunks (id, kind, guide_id, chunk_key, label, text, content_hash, embedding)
@@ -166,9 +167,15 @@ def seed(s: Stack) -> dict:
     s.psql("SELECT count(*) FROM seed_lock")
     holder.wait(timeout=30)
     sec["long_tx"] = s.psql_bg("echo 'BEGIN; SELECT txid_current();'; sleep 90; echo 'COMMIT;'")
-    s.psql(f"INSERT INTO seed_users VALUES ('{sec['email']}')")
-    s.dc("exec", "-T", "db", "psql", "-X", "-qAt", "-U", s.owner, "-d", s.db, "-c",
-         f"INSERT INTO seed_users VALUES ('{sec['email']}')", check_rc=False)
+    # Constraint errors whose DETAIL quotes row values: a unique key (one with a ")" inside the
+    # value), a NOT NULL and a CHECK violation ("Failing row contains (...)").
+    paren = f"paren({sec['paren']})tail@example.com"
+    s.psql("CREATE TABLE seed_accounts (email text NOT NULL, note text, n int CHECK (n > 0))")
+    s.psql(f"INSERT INTO seed_users VALUES ('{sec['email']}'), ('{paren}')")
+    for sql in (f"INSERT INTO seed_users VALUES ('{sec['email']}')", f"INSERT INTO seed_users VALUES ('{paren}')",
+                f"INSERT INTO seed_accounts VALUES (NULL, '{sec['row']}', 5)",
+                f"INSERT INTO seed_accounts VALUES ('{sec['check']}', 'x', -1)"):
+        s.dc("exec", "-T", "db", "psql", "-X", "-qAt", "-U", s.owner, "-d", s.db, "-c", sql, check_rc=False)
     # Redis: 7 hits, 3 misses on a fresh instance (nothing else reads keys).
     s.redis("SET", sec["key"], "v")
     for _ in range(7):
@@ -268,12 +275,15 @@ def loki_checks(s: Stack, sec: dict) -> None:
           "and the span id of its exported SQL span (the last traceparent)")
     check(all(float(m["pg_duration_ms"]) >= SLOW_S * 1000 for m, _ in rows), "pg_duration_ms >= the sleep")
     everything = "\n".join(b + json.dumps(m) for m, b in s.loki('{service_name="postgres"}', limit=2000))
-    for what in ("secret", "account", "bound", "email"):
+    for what in ("secret", "account", "bound", "email", "row", "check", "paren"):
         check(sec[what] not in everything, f"seeded {what} literal absent from every Postgres record")
     check("parameters:" not in everything, "no bind-parameter details logged")
     check(any("pg_sleep(?)" in b and "'?'" in b for _, b in rows), "the statement text is kept with literals masked")
-    check(any(m.get("pg_sqlstate") == "23505" for m, _ in s.loki('{service_name="postgres"} | pg_severity="ERROR"')),
-          "the unique-key error is logged (SQLSTATE 23505), its key detail masked")
+    errors = {m.get("pg_sqlstate") for m, _ in s.loki('{service_name="postgres"} | pg_severity="ERROR"')}
+    check({"23505", "23502", "23514"} <= errors, f"unique, NOT NULL and CHECK errors logged ({sorted(errors)})")
+    details = [b for _, b in s.loki('{service_name="postgres"} | pg_severity="DETAIL"')]
+    check(sum(b == "Failing row contains (?)" for b in details) >= 2 and "Key (email)=(?) already exists." in details,
+          "their row and key details are masked whole")
     ds = s.get("api/datasources/uid/loki", admin=True).get("jsonData", {}).get("derivedFields", [])
     link = [f for f in ds if f.get("matcherType") == "label" and f.get("matcherRegex") == "trace_id"
             and f.get("datasourceUid") == "tempo"]

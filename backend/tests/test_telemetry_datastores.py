@@ -8,9 +8,11 @@ exporter values, the masked slow-query log in Loki, the trace link, the alert st
 - Migration 0022: the monitoring role only with a password, never a default one, and a role name
   that can't carry SQL.
 - D9-D11 and the alert rules read recording-rule aliases only, with sound query shapes.
-- The security pins of the compose file and the Alloy section: no Docker socket in Alloy, a
-  GET-only proxy, no Redis key checks, no statement text as a label, Postgres logs through the
-  redaction chain.
+- The Postgres log masks of config.alloy, run on sample records (row and key details, other
+  details, SQL, operational messages).
+- The security pins of the compose file and the Alloy section: no Docker access in Alloy (it
+  tails Postgres's log files), a hardened cAdvisor, no Redis key checks, no statement text as a
+  label, Postgres logs through the redaction chain.
 """
 
 from __future__ import annotations
@@ -64,6 +66,14 @@ async def main():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     sent = []
     event.listen(engine.sync_engine, "after_cursor_execute", lambda c, cur, statement, *a: sent.append(statement))
+    token = None
+    if len(sys.argv) > 2:  # a request whose client sent tracestate and baggage
+        from opentelemetry import baggage, context
+        from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
+        parent = SpanContext(trace_id=0x1234, span_id=0x5678, is_remote=True, trace_flags=TraceFlags(1),
+                             trace_state=TraceState([("vendor", "client-tracestate")]))
+        ctx = baggage.set_baggage("client", "client-baggage", trace.set_span_in_context(NonRecordingSpan(parent)))
+        token = context.attach(ctx)
     with trace.get_tracer("t").start_as_current_span("request"):
         async with engine.connect() as conn:
             await conn.execute(text("SELECT :a AS answer"), {"a": 42})
@@ -75,9 +85,9 @@ asyncio.run(main())
 """
 
 
-def sent_sql(mode: str) -> dict:
+def sent_sql(mode: str, *client: str) -> dict:
     env = {k: v for k, v in os.environ.items() if not k.startswith("OTEL_")}
-    r = subprocess.run([sys.executable, "-c", _STATEMENT, mode], cwd=ROOT, env=env, capture_output=True,
+    r = subprocess.run([sys.executable, "-c", _STATEMENT, mode, *client], cwd=ROOT, env=env, capture_output=True,
                        text=True, timeout=120)
     assert r.returncode == 0, r.stderr[-2000:]
     return json.loads(r.stdout.strip().splitlines()[-1])
@@ -96,6 +106,14 @@ def test_telemetry_on_appends_the_traceparent_of_the_exported_sql_span() -> None
     assert parents[-1][1] in got["sql_spans"]
 
 
+def test_client_tracestate_and_baggage_stay_out_of_the_sql() -> None:
+    """The propagator would inject them too; the commenter options keep only the traceparent."""
+    statement = sent_sql("on", "client")["sent"][-1]
+    comments = re.findall(r"/\*(.*?)\*/", statement)
+    assert comments and all(re.fullmatch(r"traceparent='00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}'", c) for c in comments), statement
+    assert "client-" not in statement and "tracestate" not in statement and "baggage" not in statement
+
+
 def test_telemetry_off_sends_the_statement_unchanged() -> None:
     assert sent_sql("off")["sent"] == ["SELECT ? AS answer"]
 
@@ -104,57 +122,154 @@ def test_telemetry_off_sends_the_statement_unchanged() -> None:
 
 
 class _Bind:
-    """Records what the migration sends (Postgres dialect, no role yet)."""
+    """Records what the migration sends (Postgres dialect). ``existing`` answers the monitor-only
+    check: None = no such role, "" = monitor-only, text = what is wrong with it."""
 
-    def __init__(self) -> None:
+    def __init__(self, existing: str | None) -> None:
         self.sql: list[str] = []
+        self.existing = existing
         self.dialect = type("D", (), {"name": "postgresql"})()
 
     def execute(self, statement, params=None):
-        self.sql.append(str(statement))
-        result = None if "pg_roles" in str(statement) else "wcl"
+        text = str(statement)
+        self.sql.append(text)
+        result = self.existing if "pg_roles r WHERE" in text else "wcl"
         return type("R", (), {"scalar": lambda self: result})()
 
     def exec_driver_sql(self, statement):
         self.sql.append(statement)
 
 
-def run_upgrade(monkeypatch, **env) -> list[str]:
-    for key in ("PG_MONITOR_USER", "PG_MONITOR_PASSWORD"):
-        monkeypatch.delenv(key, raising=False)
-    for key, value in env.items():
-        monkeypatch.setenv(key, value)
+def migration_0022():
     spec = importlib.util.spec_from_file_location("migration_0022", MIGRATION)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
-    bind = _Bind()
+    return migration
+
+
+def run(monkeypatch, step: str = "upgrade", existing: str | None = None, **env) -> list[str]:
+    for key in ("PG_MONITOR_USER", "PG_MONITOR_PASSWORD", "POSTGRES_USER", "APP_DB_USER"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    migration = migration_0022()
+    bind = _Bind(existing)
     monkeypatch.setattr(migration.op, "get_bind", lambda: bind, raising=False)
     monkeypatch.setattr(migration.op, "execute", lambda sql: bind.sql.append(str(sql)), raising=False)
-    migration.upgrade()
-    return bind.sql
+    getattr(migration, step)()
+    return [q for q in bind.sql if not q.lstrip().startswith("SELECT")]
+
+
+PASSWORD = "Mon1tor2Pass3word4"
 
 
 def test_0022_without_a_password_creates_the_extension_and_no_role(monkeypatch) -> None:
-    sql = run_upgrade(monkeypatch)
-    assert sql == ["CREATE EXTENSION IF NOT EXISTS pg_stat_statements"]
+    assert run(monkeypatch) == ["CREATE EXTENSION IF NOT EXISTS pg_stat_statements"]
 
 
 def test_0022_with_a_password_creates_a_pg_monitor_login_and_nothing_more(monkeypatch) -> None:
-    sql = run_upgrade(monkeypatch, PG_MONITOR_PASSWORD="it's:secret")
-    create = next(s for s in sql if s.startswith("CREATE ROLE"))
-    assert create == ("CREATE ROLE wcl_monitor LOGIN PASSWORD 'it''s:secret' "
-                      "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS")
-    grants = [s for s in sql if s.startswith("GRANT")]
-    assert grants == ["GRANT pg_monitor TO wcl_monitor", 'GRANT CONNECT ON DATABASE "wcl" TO wcl_monitor']
+    assert run(monkeypatch, PG_MONITOR_PASSWORD=PASSWORD) == [
+        "CREATE EXTENSION IF NOT EXISTS pg_stat_statements",
+        f"CREATE ROLE wcl_monitor LOGIN PASSWORD '{PASSWORD}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS",
+        "GRANT pg_monitor TO wcl_monitor",
+        'GRANT CONNECT ON DATABASE "wcl" TO wcl_monitor',
+    ]
 
 
-@pytest.mark.parametrize("name", ["wcl_monitor; DROP TABLE users", "Monitor", "x-y", ""])
+@pytest.mark.parametrize("password", ["short1", "it's:a-secret-password", "sixteen+chars-but-symbols", "abcdefghijklmno\\"])
+def test_0022_refuses_a_password_that_is_not_16_letters_and_digits(monkeypatch, password: str) -> None:
+    with pytest.raises(ValueError, match="letters and digits"):
+        run(monkeypatch, PG_MONITOR_PASSWORD=password)
+
+
+def test_0022_reuses_an_existing_monitor_only_role(monkeypatch) -> None:
+    sql = run(monkeypatch, existing="", PG_MONITOR_PASSWORD=PASSWORD)
+    assert not any(q.startswith("CREATE ROLE") for q in sql) and "GRANT pg_monitor TO wcl_monitor" in sql
+
+
+@pytest.mark.parametrize("reasons", ["superuser", "bypassrls", "other memberships", "owns objects"])
+def test_0022_refuses_an_existing_role_that_is_not_monitor_only(monkeypatch, reasons: str) -> None:
+    with pytest.raises(RuntimeError, match="not monitor-only"):
+        run(monkeypatch, existing=reasons, PG_MONITOR_PASSWORD=PASSWORD)
+    with pytest.raises(RuntimeError, match="not monitor-only"):
+        run(monkeypatch, "downgrade", existing=reasons)
+
+
+@pytest.mark.parametrize("var", ["POSTGRES_USER", "APP_DB_USER"])
+def test_0022_refuses_the_owner_or_runtime_role_as_monitor(monkeypatch, var: str) -> None:
+    with pytest.raises(ValueError, match="owner or the runtime role"):
+        run(monkeypatch, PG_MONITOR_USER="wcl_app", PG_MONITOR_PASSWORD=PASSWORD, **{var: "wcl_app"})
+
+
+@pytest.mark.parametrize("name", ["wcl_monitor; DROP TABLE users", "Monitor", "x-y", "wcl_monitor\n"])
 def test_0022_refuses_a_role_name_that_is_not_a_plain_identifier(monkeypatch, name: str) -> None:
-    if not name:  # empty falls back to the default name
-        assert "GRANT pg_monitor TO wcl_monitor" in run_upgrade(monkeypatch, PG_MONITOR_USER=name, PG_MONITOR_PASSWORD="p")
-        return
-    with pytest.raises(ValueError):
-        run_upgrade(monkeypatch, PG_MONITOR_USER=name, PG_MONITOR_PASSWORD="p")
+    with pytest.raises(ValueError, match="identifier"):
+        run(monkeypatch, PG_MONITOR_USER=name, PG_MONITOR_PASSWORD=PASSWORD)
+
+
+# --- Postgres log masks (config.alloy, transform "postgres") ---------------------------------------
+
+_OTTL_STRING = r'"((?:[^"\\]|\\.)*)"'
+
+
+def _ottl(text: str) -> str:
+    return re.sub(r"\\(.)", r"\1", text)
+
+
+def masks() -> list[tuple[str, set[str], object]]:
+    """The body statements of the postgres transform as (kind condition, kinds, action): each
+    replace_pattern and the withheld-detail rule, in order. Kinds are set by the stack."""
+    alloy = ALLOY.read_text()
+    block = alloy[alloy.index('otelcol.processor.transform "postgres"'):]
+    block = block[:block.index("\n}\n")]
+    out = []
+    for stmt in re.findall(r"`((?:replace_pattern|set)\(body, .*?)`", block):
+        kinds = set(re.findall(r'attributes\["alloy.pg_kind"\] == "(\w+)"', stmt))
+        excluded = set(re.findall(r'attributes\["alloy.pg_kind"\] != "(\w+)"', stmt))
+        if excluded:
+            kinds = {"sql", "ops", "detail", "other"} - excluded
+        args = [_ottl(a) for a in re.findall(_OTTL_STRING, stmt.split(" where ")[0])]
+        if stmt.startswith("replace_pattern"):
+            pattern, repl = args
+            out.append((stmt, kinds, (re.compile(pattern), re.sub(r"\$\{(\d+)\}", r"\\g<\1>", repl))))
+        else:
+            keep = re.compile(_ottl(re.search(r'not IsMatch\(body, ' + _OTTL_STRING, stmt).group(1)))
+            out.append((stmt, kinds, (keep, args[0])))
+    return out
+
+
+def mask(kind: str, body: str) -> str:
+    for stmt, kinds, (pattern, repl) in masks():
+        if kind not in kinds:
+            continue
+        if stmt.startswith("set("):
+            body = body if pattern.search(body) else repl
+        else:
+            body = pattern.sub(repl, body)
+    return body
+
+
+ROW = ("Failing row contains (3f0c2a1e-9b7d-4c1e-8f3a-2d6b9e0a7c41, alice.smith@example.com, "
+       "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo, active, f, null, 7).")
+
+
+@pytest.mark.parametrize(("kind", "body", "want"), [
+    ("detail", ROW, "Failing row contains (?)"),
+    ("detail", "Failing row contains (a(b)c, (x), secret)) trailing.", "Failing row contains (?)"),
+    ("detail", "Key (email)=(bob(work)@example.com) already exists.", "Key (email)=(?) already exists."),
+    ("detail", "Key (tenant_id, code)=(42, a)b) is not present in table \"reports\".",
+     "Key (tenant_id, code)=(?) is not present in table \"?\"."),
+    ("detail", "Array value must start with \"{\" or dimension information: alice@example.com", "<detail withheld>"),
+    ("detail", "Process holding the lock: 123. Wait queue: 456.", "Process holding the lock: ?. Wait queue: ?."),
+    ("other", "duplicate key value violates unique constraint \"uq_users_email\"",
+     "duplicate key value violates unique constraint \"?\""),
+    ("other", "invalid input syntax for type uuid: \"alice-secret\"", "invalid input syntax for type uuid: \"?\""),
+    ("sql", "execute s1: SELECT pg_sleep(0.8), 'hunter2' AS pw, 4242424242 AS id WHERE a = $1 /*traceparent='00-ab-cd-01'*/",
+     "execute s1: SELECT pg_sleep(?), '?' AS pw, ? AS id WHERE a = $1 /*traceparent='?'*/"),
+    ("ops", 'automatic vacuum of table "wcl.public.t": index scans: 0', 'automatic vacuum of table "wcl.public.t": index scans: 0'),
+])
+def test_postgres_log_masks(kind: str, body: str, want: str) -> None:
+    assert mask(kind, body) == want
 
 
 # --- dashboards and alert rules -------------------------------------------------------------------
@@ -253,21 +368,30 @@ def test_alert_rules_read_aliases_and_the_threshold_is_one_rule() -> None:
 # --- security pins ------------------------------------------------------------------------------
 
 
-def test_alloy_reaches_docker_only_through_the_get_only_proxy() -> None:
-    services = yaml.safe_load(COMPOSE.read_text())["services"]
-    for name in ("alloy", "backend", "frontend", "db", "redis"):
-        assert not any("docker.sock" in str(v) or "containerd.sock" in str(v) for v in services[name].get("volumes", [])), name
-    proxy = services["docker-proxy"]
-    assert proxy["environment"]["POST"] == 0 and "ports" not in proxy and proxy["networks"] == ["docker-api"]
-    assert "ports" not in services["cadvisor"] and "privileged" not in services["cadvisor"]
-    assert all(v.endswith(":ro") for v in services["cadvisor"]["volumes"])
-    assert yaml.safe_load(COMPOSE.read_text())["networks"]["docker-api"]["internal"] is True
+def test_only_cadvisor_holds_a_container_socket_and_it_is_hardened() -> None:
+    compose = yaml.safe_load(COMPOSE.read_text())
+    services = compose["services"]
+    assert "docker-proxy" not in services
+    for name, service in services.items():
+        if name != "cadvisor":
+            assert not any(".sock" in str(v) for v in service.get("volumes", [])), name
+    cadvisor = services["cadvisor"]
+    assert cadvisor["profiles"] == ["observability"] and "@sha256:" in cadvisor["image"]
+    assert cadvisor["cap_drop"] == ["ALL"] and cadvisor["security_opt"] == ["no-new-privileges:true"]
+    assert cadvisor["read_only"] is True and "ports" not in cadvisor and "privileged" not in cadvisor
+    assert all(v.endswith(":ro") for v in cadvisor["volumes"])
+    assert cadvisor["networks"] == ["cadvisor"] and compose["networks"]["cadvisor"]["internal"] is True
+    # Postgres's log reaches Alloy as files on its own volume, read-only there.
+    assert "pglog:/var/log/postgresql" in services["db"]["volumes"]
+    assert "pglog:/var/log/postgresql:ro" in services["alloy"]["volumes"]
+    assert "pglog" in compose["volumes"]
 
 
 def test_alloy_section_keeps_keys_sql_and_secrets_out() -> None:
     alloy = ALLOY.read_text()
     section = alloy[alloy.index("// --- Data stores and infra (feature 058) ---"):]
-    assert "docker.sock" not in section and "check_keys" not in section
+    assert not re.search(r"(discovery|loki\.source)\.docker|docker\.sock|docker-proxy", section)
+    assert '"__path__" = "/var/log/postgresql/postgresql-*.log"' in section and "check_keys" not in section
     assert re.search(r"include_query\s*=\s*false", section)
     assert 'sys.env("WCL_PG_MONITOR_DSN")' in section and "postgresql://" not in section
     # Postgres's log goes through the redaction chain, never straight to a Loki writer.
@@ -276,3 +400,4 @@ def test_alloy_section_keeps_keys_sql_and_secrets_out() -> None:
     assert re.search(r"output \{\s*logs = \[otelcol\.processor\.memory_limiter\.default\.input\]", postgres)
     db = yaml.safe_load(COMPOSE.read_text())["services"]["db"]["command"]
     assert "log_parameter_max_length=0" in db and "pg_stat_statements.track_utility=off" in db
+    assert {"logging_collector=on", "log_directory=/var/log/postgresql", "log_truncate_on_rotation=on"} <= set(db)

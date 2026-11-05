@@ -220,12 +220,13 @@ def instrument() -> None:
     # Its declared range stops below SQLAlchemy 2.1 (we run 2.1.x); the engine events it uses
     # are unchanged, and the in-memory trace test proves the SQL spans.
     # sqlcommenter (feature 058): each statement carries its span's W3C traceparent, so
-    # Postgres's slow-query log links to the trace. Only the traceparent (no driver/framework
-    # versions); it costs one prepare per statement (~0.5 ms, board scope:058:commenter).
+    # Postgres's slow-query log links to the trace. Only the traceparent: no driver/framework
+    # versions, and no tracestate or baggage, which a client sends and the propagator would copy
+    # into every statement. It costs one prepare per statement (~0.5 ms, board scope:058:commenter).
     SQLAlchemyInstrumentor().instrument(
         skip_dep_check=True,
         enable_commenter=True,
-        commenter_options={"db_driver": False, "db_framework": False},
+        commenter_options={"db_driver": False, "db_framework": False, "tracestate": False, "baggage": False},
     )
     RedisInstrumentor().instrument()
     HTTPXClientInstrumentor().instrument()
