@@ -37,6 +37,7 @@ import type {
   SpellCardState,
 } from "./types";
 import { clampSidebarWidth, getSidebarWidth, setSidebarWidth } from "./uiPrefs";
+import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -561,17 +562,19 @@ export default function App() {
   return (
     <div className="app">
       <Ambient paused={streaming} />
-      <Sidebar
-        conversations={conversations}
-        raids={raids}
-        activeId={activeId}
-        onSelect={selectConversation}
-        onNew={newChat}
-        onDelete={removeConversation}
-        onTogglePin={togglePin}
-        onInvestigateRaid={handleInvestigateRaid}
-        onOpenProfile={openProfile}
-      />
+      <TelemetryBoundary name="sidebar">
+        <Sidebar
+          conversations={conversations}
+          raids={raids}
+          activeId={activeId}
+          onSelect={selectConversation}
+          onNew={newChat}
+          onDelete={removeConversation}
+          onTogglePin={togglePin}
+          onInvestigateRaid={handleInvestigateRaid}
+          onOpenProfile={openProfile}
+        />
+      </TelemetryBoundary>
       <div
         className="resizer"
         role="separator"
@@ -628,21 +631,25 @@ export default function App() {
             Sign out
           </Button>
         </header>
-        <MessageList
-          messages={messages}
-          streaming={streaming}
-          status={status}
-          error={error}
-          streamCards={streamCards}
-          selectedBosses={selectedBosses}
-          onSelectBosses={setSelectedBosses}
-          onPickSuggestion={send}
-          onDownloadMessage={handleDownloadMessage}
-          looseProposals={looseProposals}
-          onFollowUp={appendFollowUp}
-          footer={welcome}
-        />
-        <Composer disabled={streaming || !connected} onSend={send} />
+        <TelemetryBoundary name="messages">
+          <MessageList
+            messages={messages}
+            streaming={streaming}
+            status={status}
+            error={error}
+            streamCards={streamCards}
+            selectedBosses={selectedBosses}
+            onSelectBosses={setSelectedBosses}
+            onPickSuggestion={send}
+            onDownloadMessage={handleDownloadMessage}
+            looseProposals={looseProposals}
+            onFollowUp={appendFollowUp}
+            footer={welcome}
+          />
+        </TelemetryBoundary>
+        <TelemetryBoundary name="composer">
+          <Composer disabled={streaming || !connected} onSend={send} />
+        </TelemetryBoundary>
         <div className="attribution">
           Icons by{" "}
           <a href="https://game-icons.net" target="_blank" rel="noopener noreferrer">

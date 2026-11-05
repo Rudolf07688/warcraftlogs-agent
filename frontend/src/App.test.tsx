@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   onFrame: null as ((f: unknown) => void) | null,
   onStatus: null as ((connected: boolean) => void) | null,
   details: {} as Record<string, unknown>,
+  listThrows: false,
 }));
 
 vi.mock("./api/wsClient", () => ({
@@ -57,15 +58,18 @@ vi.mock("./components/Sidebar", () => ({
   ),
 }));
 vi.mock("./components/MessageList", () => ({
-  MessageList: (p: { messages: Message[]; looseProposals: ProfileProposal[]; status: string }) => (
-    <div>
-      <div data-testid="attached">
-        {p.messages.flatMap((m) => m.proposals ?? []).map((x) => x.id).join(",")}
+  MessageList: (p: { messages: Message[]; looseProposals: ProfileProposal[]; status: string }) => {
+    if (h.listThrows) throw new Error("list exploded");
+    return (
+      <div>
+        <div data-testid="attached">
+          {p.messages.flatMap((m) => m.proposals ?? []).map((x) => x.id).join(",")}
+        </div>
+        <div data-testid="loose">{p.looseProposals.map((x) => x.id).join(",")}</div>
+        <div data-testid="status">{p.status}</div>
       </div>
-      <div data-testid="loose">{p.looseProposals.map((x) => x.id).join(",")}</div>
-      <div data-testid="status">{p.status}</div>
-    </div>
-  ),
+    );
+  },
 }));
 vi.mock("./components/Composer", () => ({
   Composer: (p: { onSend: (t: string) => void }) => <button onClick={() => p.onSend("hi")}>send</button>,
@@ -195,5 +199,27 @@ describe("spells", () => {
     expect(spellFor(name)).not.toBe(DEFAULT_SPELL);
     expect(toolLabel(name)).not.toBe(toolLabel("an_unknown_tool"));
     expect(toolLabel(name)).not.toMatch(/Warcraft Logs/);
+  });
+});
+
+// Feature 060 (sc-416): a chat panel that throws is contained by its own boundary.
+describe("panel error boundaries", () => {
+  afterEach(() => {
+    h.listThrows = false;
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("a throwing message list shows its fallback; the sidebar and composer keep working", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    h.listThrows = true;
+    render(<App />);
+    await act(async () => {
+      h.onStatus?.(true);
+    });
+    expect(screen.getByRole("alert").textContent).toContain("Something went wrong");
+    expect(screen.queryByText(/list exploded/)).toBeNull();
+    expect(screen.getByText("new-chat")).toBeTruthy();
+    expect(screen.getByText("send")).toBeTruthy();
   });
 });

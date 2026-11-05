@@ -79,7 +79,7 @@ describe("REST calls and the Faro session", () => {
 
   it("sends x-faro-session-id when Faro has a session", async () => {
     registerFaro({
-      api: { getOTEL: () => undefined, getSession: () => ({ id: "a1B2c3D4e5" }), setUser() {}, resetUser() {} },
+      api: { getOTEL: () => undefined, getSession: () => ({ id: "a1B2c3D4e5" }), setUser() {}, resetUser() {}, setView() {} },
     } as never);
     expect((await headersSent())["x-faro-session-id"]).toBe("a1B2c3D4e5");
   });

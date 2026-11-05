@@ -5,6 +5,7 @@ import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./auth/RequireAuth";
 import { BackendBootGate } from "./components/BackendBootGate";
+import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 import { initTelemetry } from "./telemetry/faro";
 import "./styles.css";
 import "./index.css";
@@ -69,7 +70,10 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BackendBootGate>
       <AuthProvider>
-        <RouterProvider router={router} />
+        {/* Feature 060: the last line of defence; each chat panel has its own boundary. */}
+        <TelemetryBoundary name="shell">
+          <RouterProvider router={router} />
+        </TelemetryBoundary>
       </AuthProvider>
     </BackendBootGate>
   </StrictMode>,
