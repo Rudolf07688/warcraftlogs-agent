@@ -1,7 +1,7 @@
 # Docs brief (tier S): architecture docs + spec as-built notes, Tomas
 
 - **Seat:** `dev-2` (Tomas). Alone this round; no other developer runs.
-- **Tier:** S. Work **directly on the sprint branch** `sprint-2026-11-05` (tip `70ba94d`) in the sprint worktree `/home/rudolf/dev/wcl-worktrees/sprint` — the docs pass is the last change before the review, and the PO merges nothing meanwhile. Commit there; never push.
+- **Tier:** S. Work **directly on the sprint branch** `sprint-2026-11-05` (tip `8233424`) in the sprint worktree `/home/rudolf/dev/wcl-worktrees/sprint` — the docs pass is the last change before the review, and the PO merges nothing meanwhile. Commit there; never push.
 - **Security-core:** no. **Migration:** none.
 
 ## Do
