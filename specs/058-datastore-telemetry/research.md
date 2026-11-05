@@ -9,6 +9,9 @@
 - cAdvisor 0.54.1 with `/run/containerd/containerd.sock:ro`, `/sys:ro`, `/var/lib/docker:ro`, Docker
   API through the proxy, not privileged: names, images and the compose labels appear; CPU, memory,
   pressure and task metrics per container. No network metrics (they need the host's /proc per pid).
+- **Superseded in part by R7 (SEC-002/005):** there is no `docker-proxy` and Alloy has no Docker
+  access; Postgres logs reach Alloy as files on the `pglog` volume and cAdvisor mounts the Docker
+  socket itself. The original decision, for the record:
 - **Decision**: separate `cadvisor` service (observability profile), Docker API via `docker-proxy`
   (GET-only, internal network `docker-api`), containerd.sock only in cadvisor. Alloy reads docker logs
   and discovery through the same proxy. **Rejected**: Alloy's built-in `prometheus.exporter.cadvisor`
@@ -42,6 +45,9 @@ backlog (board `backlog:sqlalchemy-double-tracer`; setup.py beyond the instrumen
 
 - `jsonlog` needs `logging_collector=on`, which writes files under pgdata instead of stderr: rejected.
   stderr with `log_line_prefix='%m [%p] q=%Q %e '` (timestamp, pid, query id, SQLSTATE).
+  As built since R7: the same stderr format, but with `logging_collector=on` writing it to
+  `postgresql-<hour>.log` on the `pglog` volume (`log_directory=/var/log/postgresql`, outside
+  pgdata), which Alloy tails; nothing goes to Docker's log driver any more.
 - `log_min_duration_statement=250ms`, `log_lock_waits=on`, `log_autovacuum_min_duration=0`,
   `log_parameter_max_length=0` (bind values never in duration lines; on-error default is 0 already).
 - Multi-line messages (SQLAlchemy SQL has newlines; autovacuum reports span lines): joined in

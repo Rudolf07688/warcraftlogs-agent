@@ -18,13 +18,17 @@ Answered by the developer (owner preference 16); each is a board decision `scope
 
 - Q: How does the collector read Docker (container logs, container names)? → A: Through a GET-only
   Docker socket proxy on an internal network; Alloy never mounts the raw socket (#32).
+  **Superseded by the security rework (T032, research R7):** the proxy still exposed every
+  container's files and env, so it is gone. Postgres writes its log to files on the `pglog` volume,
+  Alloy tails them read-only and has no Docker access at all; only cAdvisor names containers.
 - Q: Where does cAdvisor run? → A: A separate, unprivileged service in the observability profile with
   read-only host mounts, because naming containers on this Docker needs the containerd socket (#33).
 - Q: How do exporter metrics reach Mimir? → A: Prometheus remote write with series allowlists and fixed
   job/instance labels, outside the OTLP path (#34).
 - Q: Is statement text a metric label? → A: No; top statements by query id, text found in the masked
   slow-query log by the same id; utility statements untracked (#35).
-- Q: What is the Postgres log format and masking? → A: stderr with a parseable prefix, bound values
+- Q: What is the Postgres log format and masking? → A: stderr format with a parseable prefix (since
+  T032 written by the logging collector to files on the `pglog` volume), bound values
   never logged, Alloy masks literals and quoted values and routes through the redaction chain (#36);
   the monitoring role exists only when its password is configured (#37); the sqlcommenter carries
   only `traceparent` (#30); the spend threshold is one constant rule (#38).
@@ -221,8 +225,9 @@ Normal.
 
 ## Assumptions
 
-- Local-only app and stack (spec §14 decision 5): Postgres logs go to the container's stderr and
-  Docker's log driver, as today.
+- Local-only app and stack (spec §14 decision 5). As built (T032): Postgres logs go to files on
+  the `pglog` volume (`logging_collector`), not to stderr and Docker's log driver; `docker compose
+  logs db` shows only the start-up lines.
 - Grafana alert notifications need no contact point beyond the default; the state is what counts.
 - Query text stays out of metric labels (§9.3); the slow-query log is where statement text is
   read, linked by query id.

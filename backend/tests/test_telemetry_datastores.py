@@ -340,6 +340,19 @@ def test_d9_lists_top_statements_and_the_knowledge_base_index() -> None:
     assert '{service_name="postgres"} | pg_duration_ms != ""' in logs
 
 
+def test_d9_statement_panels_read_as_ids_and_busy_time() -> None:
+    by_title = {p["title"]: p for p in panels(dashboard("postgres.json"))}
+    table = by_title["Top statements by total time"]
+    # queryid is a 64-bit id: unit "string" keeps Grafana from formatting it as a number (#77).
+    queryid = [o for o in table["fieldConfig"]["overrides"] if o["matcher"] == {"id": "byName", "options": "queryid"}]
+    assert queryid and {"id": "unit", "value": "string"} in queryid[0]["properties"]
+    hidden = next(t for t in table["transformations"] if t["id"] == "organize")["options"]["excludeByName"]
+    assert {"__name__", "__name__ 1", "__name__ 2"} <= {k for k, v in hidden.items() if v}
+    # Seconds of execution per second is a busy fraction, not a per-call latency (unit "s").
+    busy = by_title["Statement busy time by queryid"]
+    assert busy["fieldConfig"]["defaults"]["unit"] == "suffix: s/s"
+
+
 def test_d11_shows_drops_queue_ingest_and_series_against_the_budget() -> None:
     used = set().union(*(metric_names(e) for _, e in mimir_targets(dashboard("infra.json"))))
     assert {"meta:exporter_failures:increase2m", "meta:export_queue:ratio", "meta:ingest:rate5m",
@@ -401,3 +414,57 @@ def test_alloy_section_keeps_keys_sql_and_secrets_out() -> None:
     db = yaml.safe_load(COMPOSE.read_text())["services"]["db"]["command"]
     assert "log_parameter_max_length=0" in db and "pg_stat_statements.track_utility=off" in db
     assert {"logging_collector=on", "log_directory=/var/log/postgresql", "log_truncate_on_rotation=on"} <= set(db)
+
+
+def _relabel_filters(project: str) -> list[tuple[str, list[str], re.Pattern]]:
+    """The keep/drop rules of prometheus.relabel "datastores" as (action, source labels, regex),
+    with WCL_COMPOSE_PROJECT set to `project`; Prometheus anchors relabel regexes at both ends."""
+    alloy = ALLOY.read_text()
+    block = alloy[alloy.index('prometheus.relabel "datastores"'):]
+    block = block[:block.index("\n}\n")]
+    rules = []
+    for body in re.findall(r"rule \{(.*?)\n  \}", block, re.S):
+        action = re.search(r'action\s*=\s*"(\w+)"', body)
+        if not action or action[1] not in {"keep", "drop"}:
+            continue
+        labels = re.findall(r'"([^"]+)"', re.search(r"source_labels\s*=\s*\[(.*?)\]", body, re.S)[1])
+        expr = re.search(r"regex\s*=\s*(.*)", body)[1].replace('sys.env("WCL_COMPOSE_PROJECT")', json.dumps(project))
+        if expr.startswith("string.join"):  # the __name__ allowlist
+            names = re.findall(r'"((?:[^"\\]|\\.)*)"', body)
+            regex = "|".join(names[1:-1])
+        else:
+            regex = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', expr))
+        rules.append((action[1], labels, re.compile(f"(?:{regex})")))
+    return rules
+
+
+def _kept(project: str, **series: str) -> bool:
+    for action, labels, regex in _relabel_filters(project):
+        hit = regex.fullmatch(";".join(series.get(label, "") for label in labels)) is not None
+        if hit != (action == "keep"):
+            return False
+    return True
+
+
+@pytest.mark.parametrize("project", ["wcl-obs-ansel", ""])
+def test_cadvisor_keeps_the_host_and_this_project_only(project: str) -> None:
+    cpu = {"__name__": "container_memory_working_set_bytes", "job": "cadvisor"}
+    # The root cgroup is the host line of D11 (BUG-001: it used to be dropped).
+    assert _kept(project, **cpu, id="/")
+    # Other projects' containers and unlabelled cgroups go, also with the project unset.
+    assert not _kept(project, **cpu, id="/system.slice/docker-1.scope", container_label_com_docker_compose_project="other")
+    assert not _kept(project, **cpu, id="/system.slice/ssh.service")
+    assert not _kept(project, **cpu, id="system.slice")
+    assert _kept(project, **cpu, id="/system.slice/docker-2.scope",
+                 container_label_com_docker_compose_project=project) == bool(project)
+
+
+def test_claude_code_streams_are_summed_after_their_ids_are_dropped() -> None:
+    """Board #76: without the sum, the streams of one export share labels and timestamp and Mimir
+    silently discards all but one (datastores.sh proves the values on the stack)."""
+    alloy = ALLOY.read_text()
+    block = alloy[alloy.index('otelcol.processor.transform "metric_labels"'):]
+    block = block[:block.index("\n}\n")]
+    delete = block.index('context    = "datapoint"')
+    total = block.index('`aggregate_on_attributes("sum") where resource.attributes["service.name"] == "claude-code"`')
+    assert delete < total and 'context    = "metric"' in block[delete:total]

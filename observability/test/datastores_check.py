@@ -256,7 +256,8 @@ def label_checks(s: Stack, sec: dict) -> None:
     check(bool(series) and not (labels & banned), f"cAdvisor/exporter series carry no {sorted(banned)} label")
     services = {r["metric"].get("compose_service") for r in s.mimir("infra:container_memory:bytes")}
     own = set(s.dc("ps", "--services").split()) | {"host"}
-    check({"db", "redis", "alloy"} <= services <= own, f"container metrics for this project only: {sorted(services)}")
+    check({"db", "redis", "alloy", "host"} <= services <= own,
+          f"container metrics for this project and the host's root cgroup only: {sorted(services)}")
     logs = s.dc("logs", "alloy", check_rc=False)
     ui = json.dumps(s.get_alloy("api/v0/web/components"))
     check(os.environ["PG_MONITOR_PASSWORD"] not in logs + ui, "the monitoring password is not in Alloy's logs or UI")
@@ -324,6 +325,62 @@ def dashboard_checks(s: Stack) -> None:
     check(active is not None and 0 < active < 50000, f"meta:active_series:count = {active} (< 50000)")
 
 
+
+def _sum_metric(service: str, name: str, points: list[tuple[dict, float]], t_ns: int) -> str:
+    """One OTLP/JSON request: a cumulative monotonic sum with one data point per attribute set."""
+    kv = lambda d: [{"key": k, "value": {"stringValue": v}} for k, v in d.items()]
+    return json.dumps({"resourceMetrics": [{
+        "resource": {"attributes": kv({"service.name": service, "service.namespace": "wcl-agent"})},
+        "scopeMetrics": [{"scope": {"name": "datastores-probe"}, "metrics": [{"name": name, "sum": {
+            "aggregationTemporality": 2, "isMonotonic": True,
+            "dataPoints": [{"attributes": kv(a), "startTimeUnixNano": str(t_ns - 120 * 10**9),
+                            "timeUnixNano": str(t_ns), "asDouble": v} for a, v in points]}}]}]}]})
+
+
+def discard_checks(s: Stack) -> None:
+    """Board #76: one Claude Code process exports a stream per session and prompt; once Alloy drops
+    those ids, Mimir would keep one point per export and discard the rest without an error. Two
+    exports of two sessions' cost must arrive summed, other services' points as they are, and
+    Mimir must have discarded nothing during the whole run."""
+    def push(body: str) -> bool:
+        req = urllib.request.Request(f"{s.a.otlp}/v1/metrics", body.encode(), {"Content-Type": "application/json"})
+        try:
+            return urllib.request.urlopen(req, timeout=20).status == 200
+        except urllib.error.URLError:
+            return False
+
+    model = f"probe-{secrets.token_hex(3)}"
+    sessions = [({"session.id": "s1", "prompt.id": "p1", "model": model}, (1.0, 2.0)),
+                ({"session.id": "s2", "prompt.id": "p2", "model": model}, (0.5, 1.5))]
+    stamps = []
+    for i in (0, 1):
+        stamps.append(time.time_ns())
+        ok = push(_sum_metric("claude-code", "claude_code.cost.usage", [(a, v[i]) for a, v in sessions], stamps[-1]))
+        ok &= push(_sum_metric("api", "app.datastores_probe", [({"app.rag.index": "wcl"}, 3.0 + i),
+                                                                ({"app.rag.index": "guide"}, 4.0 + i)], stamps[-1]))
+        check(ok, f"export {i + 1}: two Claude Code sessions' cost and an api metric accepted")
+        if i == 0:
+            time.sleep(30)
+
+    def at(q: str, t_ns: int) -> list[dict]:  # only the samples stamped t_ns
+        r = s.get("api/datasources/proxy/uid/mimir/api/v1/query", query=f"last_over_time({q}[2s])",
+                  time=f"{t_ns / 1e9 + 1:.3f}")
+        return (r.get("data") or {}).get("result") or []
+
+    cost = f'claude_code_cost_usage{{model="{model}"}}'
+    got = [poll(60, at, cost, t) for t in stamps]
+    values = [[float(r["value"][1]) for r in g] for g in got]
+    check(values == [[1.5], [3.5]], f"Claude Code cost arrives as one series summed over sessions: {values} == [[1.5], [3.5]]")
+    api = {r["metric"].get("app_rag_index"): float(r["value"][1]) for r in poll(60, at, "app_datastores_probe", stamps[1])}
+    check(api == {"wcl": 4.0, "guide": 5.0}, f"other services' points are not aggregated: {api}")
+    alias = poll(150, s.value, f'cc:cost_usd:rate5m{{model="{model}"}}')
+    check(alias is not None and alias > 0, f"cc:cost_usd:rate5m reads the summed series ({alias})")
+
+    # The counter appears only with a first discard; wait for a Mimir self-scrape after the last push.
+    fresh = lambda: (s.value('timestamp(cortex_ingester_active_series{job="mimir"})') or 0) > stamps[-1] / 1e9 + 1
+    discarded = s.value('sum(cortex_discarded_samples_total{job="mimir"})') if poll(90, fresh) else -1
+    check(discarded in (None, 0.0), f"Mimir discarded no samples during the run ({discarded or 0})")
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     for arg in ("--otlp", "--grafana", "--project", "--repo", "--alloy-ui"):
@@ -338,6 +395,7 @@ def main() -> int:
         loki_checks(s, sec)
         label_checks(s, sec)
         dashboard_checks(s)
+        discard_checks(s)
     finally:
         sec["long_tx"].kill()
     return 1 if failures else 0
