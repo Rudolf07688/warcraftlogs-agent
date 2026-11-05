@@ -10,3 +10,5 @@ saves a status=partial agent message only when the process survives and sees the
 (_persist_partial); a backend restart saves nothing, so the reload re-appends the local partial.
 The Composer is disabled while disconnected, so tests cannot click send between drop and
 reconnect.
+The partial (and a finished `done` answer) is appended only when the turn's chat is the open one;
+a pending dropRef is cleared by sendText and selectConversation. An idle `error` frame is shown.

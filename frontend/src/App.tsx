@@ -41,7 +41,7 @@ import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 
 const CONNECTION_LOST = "Connection lost, the answer may be incomplete.";
 // Frames that only make sense while a turn is streaming here.
-const TURN_FRAMES = new Set<Frame["type"]>(["token", "tool_start", "tool_end", "done", "error"]);
+const TURN_FRAMES = new Set<Frame["type"]>(["token", "tool_start", "tool_end", "done"]);
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -124,6 +124,7 @@ export default function App() {
       const turnIsOpen = () =>
         turnConvRef.current !== null && turnConvRef.current === activeIdRef.current;
       // sc-376: a frame of a turn that was already ended locally (socket drop) is stale.
+      // An `error` frame is not: it is shown even when idle (it never touches the messages).
       if (TURN_FRAMES.has(f.type) && !streamingRef.current) return;
       switch (f.type) {
         case "meta":
@@ -246,20 +247,24 @@ export default function App() {
             setLooseProposals((l) => l.filter((x) => !proposals.some((p) => p.id === x.id)));
           }
           activeEncountersRef.current = encounters; // the live picker tracks this turn's bosses
-          setMessages((m) => [
-            ...m,
-            {
-              id: f.message_id,
-              role: "agent",
-              content: text,
-              grounded,
-              fallback,
-              tools,
-              encounters,
-              artifacts,
-              proposals,
-            },
-          ]);
+          // Only into the chat that asked; another open chat must not get this answer (the
+          // backend has it saved, so it shows when that chat is reopened).
+          if (turnConvRef.current === activeIdRef.current) {
+            setMessages((m) => [
+              ...m,
+              {
+                id: f.message_id,
+                role: "agent",
+                content: text,
+                grounded,
+                fallback,
+                tools,
+                encounters,
+                artifacts,
+                proposals,
+              },
+            ]);
+          }
           setStreaming(false);
           streamStore.set("");
           setStatus(THINKING_DEFAULT);
@@ -301,8 +306,8 @@ export default function App() {
   );
 
   // sc-376: the saved (partial) answer replaces the local copy after a drop. Only if the chat
-  // is still open and no newer turn began meanwhile; a failed reload keeps the local copy and
-  // is retried on the next open.
+  // is still open and no newer turn began meanwhile; a failed reload keeps the drop for the
+  // next reconnect, until a new turn or opening a chat makes it stale.
   const reloadAfterDrop = useCallback(async (drop: { conversationId: string; partial: string }) => {
     const seq = turnSeqRef.current;
     try {
@@ -322,7 +327,10 @@ export default function App() {
       setMessages(loaded);
       setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
     } catch {
-      dropRef.current ??= drop;
+      // Not kept when a new turn began or the chat changed while the request was in flight.
+      if (turnSeqRef.current === seq && activeIdRef.current === drop.conversationId) {
+        dropRef.current ??= drop;
+      }
     }
   }, []);
 
@@ -347,7 +355,10 @@ export default function App() {
         }
         dropRef.current = { conversationId, partial };
       }
-      if (partial) setMessages((m) => [...m, { role: "agent", content: partial }]);
+      // The partial belongs to the chat that asked; another open chat must not get it.
+      if (partial && conversationId === activeIdRef.current) {
+        setMessages((m) => [...m, { role: "agent", content: partial }]);
+      }
       setError(CONNECTION_LOST);
       setStreaming(false);
       streamStore.set("");
@@ -420,6 +431,7 @@ export default function App() {
   // Sidebar, Composer and MessageList don't re-render when App does.
   const selectConversation = useCallback(async (id: string) => {
     greetingReqId.current++; // a late greeting must not land in another chat
+    dropRef.current = null; // the chat is loaded from the backend now: no drop to replay
     const detail = await getConversation(id);
     activeIdRef.current = id;
     setActiveId(id);
@@ -498,6 +510,7 @@ export default function App() {
         opts && "conversationId" in opts ? opts.conversationId ?? null : activeIdRef.current;
       turnConvRef.current = convId;
       turnSeqRef.current++;
+      dropRef.current = null; // a drop kept after a failed reload is stale once a turn follows
       setError(null);
       setMessages((m) => [...m, { role: "user", content: text }]);
       streamRef.current = "";
