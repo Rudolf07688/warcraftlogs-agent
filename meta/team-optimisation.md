@@ -223,6 +223,21 @@ across 37 files.
   facts branch and merge with the code they describe, need no credentials, and an embedding
   index stays a possible derived cache. Personal memories keep their 500-word cap for
   style, process and teammates. Owner preference 25.
+- **D21. Test building blocks, then the whole, once; stop re-testing.** Owner, 2026-11-05,
+  in the full-team retro of 2026-11-05b: "You need to test small isolated blocks per
+  developer and then make sure everything works and that's it. If you're confident about the
+  building blocks (with small, useful local tests) then the QA sweep shouldn't send everybody
+  into a rabbit hole." The team agreed (five of six fully; Tomas and Nils keep one
+  independent read of how blocks combine). The shape is P14 §1. Owner preference 26.
+  Backlog, not built yet ("implement all these things, but not now").
+- **D22. GitNexus gates only for code-symbol diffs.** Owner, 2026-11-05: "yes, relax them for
+  non-code diffs, go ahead." `impact` before an edit and `detect-changes` before a commit are
+  required when a code symbol changes. They are not required for config, YAML, dashboard JSON,
+  docs, docstring-only or comment-only edits, or a single-component frontend file where the
+  graph always answers "the App component". `detect-changes` runs once before hand-off, not
+  at every commit. Needs CLAUDE.md's GitNexus block to change: a GitNexus upgrade or analyze
+  may regenerate that block, so the change goes in a marked local section and is re-checked
+  after each upgrade. Owner preference 27. Backlog, not built yet.
 
 ## Proposals under discussion
 
@@ -516,6 +531,100 @@ Levers, by expected saving per sprint:
   corrected, stale; near-duplicates refused (rediscoveries); the team's own verdict in the
   full-team retro (owner joins).
 
+### P14. Ways of working and tools from the first full-team retro (owner go 2026-11-05; backlog, build next meta session)
+
+Source: `meta/sprints/2026-11-05b/retro.md`, which has every member's words. The owner:
+"We want to adopt the ways of work as well as give the agents the tools they need ... for
+tomorrow, we evolve." Each section below is one story in the Shortcut epic "Agent team: ways
+of working and tools (retro 2026-11-05b)".
+
+**§1 Testing shape (D21).** Each layer proves what the one before it can't, once.
+1. *Developer, the building block:* targeted tests while building; one honest contract test
+   per promise the story makes (Nils: test what "bounded at 5" means, not how it's written).
+   Hand-off receipt: one suite run for the part touched (frontend: vitest plus build; backend:
+   pytest; config only: the targeted tests). No full suites mid-build. Mutation only for
+   security and concurrency guards, one bite each.
+2. *Merge, the whole:* check each stream's receipt on its branch, merge all the disjoint
+   streams, run one full suite at the tip, bisect only on red (Maren, Ilse).
+3. *One independent read:* the QA sweep covers the sprint diff only. The fix bar is a broken
+   AC, a security hole or data loss (Medium and above in new code). Lows go to the backlog
+   unless they're in the same hunk. Code that already had a P7 security review at hand-off is
+   not swept again. Keep this layer: it found BUG-002, the wrong-chat partial answer, which
+   no building-block test could see (Tomas).
+4. *Live pass on real data, once at the tip.* Re-check only when a fix touched that path.
+5. *Drop:*
+   - prompt-wording pin tests, except those that guard security wording; keep the prompt-size
+     budget test (Vera)
+   - one-claim-two-proofs stack runs, where a static test already proves it (Ansel)
+   - the docs pass re-verifying facts whose authors edited them this sprint (Tomas)
+   - the tier-L tasks gate, leaving spec plus plan (Ilse)
+   - the deferred-QA ritual on small sprints (Maren)
+   - fix rounds when nothing meets the fix bar
+
+   Touches: `developer.md`, `product-owner.md`, `scrum-master.md`, the qa-sweep skill, the
+   QA agent prompts, team-launch, `check.py` (receipt scoped by area).
+
+**§2 PO process.**
+- Developers never make credentialed calls. This rule goes in `product-owner.md`; Maren slipped
+  even with it in her memory.
+- A live pre-check slot in briefs: the developer posts `live-check:<feature>-pre` with the exact
+  command, and the lead runs it straight away (Nils).
+- EXPECT pins facts from the stored report, never wording (all).
+- Diagnosis tickets are pointed and briefed as spikes, naming the read-only data sources and the
+  verification scripts (Ansel).
+- Scope from the steer. When the steer says "plan from the backlog", fill one sprint with
+  4–8 disjoint tier-S streams rather than two small sprints (all).
+- Model per stream: hand mechanical sub-work (for example rewording) to a sonnet sub-agent, and
+  plan on opus medium unless the work needs judgement throughout (Vera).
+- Don't re-read full hand-offs that are already on the board (Tomas).
+
+**§3 Scrum master.** Grants keyed per path (`owner:<path>`), so an added file is one post.
+Two gates, spec and plan. Seat an SM only when two streams need the same file in the same
+window, for a migration chain, or for several gated Spec Kit streams (Ilse).
+
+**§4 GitNexus gates for code only (D22)**, in CLAUDE.md, `developer.md` and the pre-commit
+hook.
+
+**§5 Facts and briefs.**
+- `facts.py brief` covers the paths a developer *runs* (stack scripts, test libs, what they
+  source), not only the paths they write (Ansel, Maren, Tomas).
+- Facts to add: the Grafana source-map recipe (Ansel), and the pinning test files on
+  `tool-docstring-is-prompt` (Vera).
+- `facts.py` directory-anchor stale gap: `file:.claude/team/` would still go stale on a fact
+  edit (Tomas).
+
+**§6 Communication.**
+- The board hook delivers only entries relevant to the reader's stream (its keys, its files,
+  steer and decisions addressed to all), not every entry (Ansel, Maren).
+- No ritual notices: a GitNexus result that never changes a decision is not posted (Tomas).
+- Agent files: cut what repeats the constitution and skills, and mark the rules that bite, so a
+  newcomer can tell (Vera, Ilse).
+- Lighter hand-off format (Ansel).
+
+**§7 Test tools.** `mutate.py` for vitest (Tomas, first priority). `npm ci` in `check.py` for
+fresh worktrees. `check.py` receipt by touched area (§1).
+
+**§8 New tools the team asked for.**
+- a stack-up helper that picks free ports and writes the env file (Ansel)
+- a headless browser on the developer's own port (Tomas)
+- an offline token counter for a chat request (Vera)
+- a read-only Tempo/Loki query helper (Nils)
+- a "finding in this sprint's diff or older code?" check for triage (Maren)
+
+**App backlog, not meta:** Vera's `assert_prompt_pins(text, PINS)` helper with one pin
+registry, plus pruning the wording-only pins (a story for a sprint). sc-512: owner yes on
+Nils's design (empty default, follow a pinned region, `global` → europe-west1).
+
+**Unchanged, unanimous:** no push, no `.env`, no developer credentialed calls, own worktree and
+footprint, never grant a file twice, one rework round.
+
+**Measure after the first sprint on P14:**
+- full-suite runs per sprint (11-05b: about 7 on the PO side plus 2–3 per developer)
+- build calls per point (15–40 in 11-05b)
+- fix-round cost (0.87 M in 11-05b)
+- the coordination share (35%)
+- QA findings that a building-block test should have caught
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -768,3 +877,5 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-11-05 (retro, Telemetry 3):** Owner ended the telemetry epic and asked whether a
   graph-like tool for the team would help (D20, P13). Built the team knowledge layer with
   three sub-agents the same evening; owner will bring the full team to the next retro.
+- **2026-11-05 (sprint 2026-11-05b, back to the app):** 10/10 pts, 11.9 M, 1.19/pt, cold 0.44 (P12 target met for the first time), coordination 35%. P13 first trial: 4 facts added, 0 stale. Merged to main bb22117.
+- **2026-11-05 (first full-team retro):** All six members were relaunched read-only by seat. Round 1: all six rejected "two small sprints" (the fixed cost is per sprint) in favour of more disjoint streams in one sprint. The lighter merge (one suite at the tip). Brief facts for the paths a developer runs. The live pre-check slot. Spikes as spikes. Round 2 was the owner on over-testing: the team agreed and named its own repeats; Tomas and Nils keep one independent read of how blocks combine. GitNexus gates on non-code diffs were the most-named cost; the owner approved relaxing them. Recorded as D21, D22 and P14, plus a Shortcut epic; built next meta session, not now (owner). Full record: `meta/sprints/2026-11-05b/retro.md`.
