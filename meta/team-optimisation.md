@@ -412,6 +412,52 @@ last boss kill" (sc-365) surfaced only because two turns disagreed.
 - The chart prompt now asks the agent to name the boss, so it can be checked.
 - Measure: wrong answers caught by the run rather than by eye.
 
+### P12. Where Telemetry 2's extra cost went (measured 2026-11-05)
+
+Owner asked to measure before choosing a lever. Telemetry 2 (11-04b) cost 31.2 for 24 pts;
+at 11-01b's 1.03/pt it would have cost 24.7. Against 11-01b (20.5), by bucket:
+
+| Bucket | 11-01b | 11-04b | Change |
+|---|---|---|---|
+| Build (developers) | 9.6 (0.48/pt) | 9.9 (0.41/pt) | +0.3, cheaper per point |
+| QA fix rounds | 1.8 | 5.6 | **+3.8** |
+| Docs close-out (new since 11-04) | 0 | 2.8 | **+2.8** (first pass 1.8, delta pass after the fixes 1.0) |
+| Product owner | 3.8 | 6.2 | **+2.4** |
+| Team-lead | 1.3 | 3.3 | +2.0 (owner's two panels with screenshots ≈ 1.7, live pass ≈ 1.0) |
+| QA sweeps, security reviews, sync | 4.0 | 3.4 | −0.6 |
+
+Readings:
+- **The build is not the problem**; everything after it is. The fix rounds, the docs
+  pass and the PO's waiting all grew.
+- **Screenshots are not the cost.** By characters, `Read` was 74–97% of new context for
+  the lead, PO and fix rounds, but base64 overstates images. Charged by the cache write
+  they caused, image reads cost 0.14 (Nils's fix round) and 0.31 (lead). Closes the
+  11-04 lever "measure screenshot Read cost".
+- **Cold caches are a standing tax of about 10%.** Sub-agents keep a 5-minute prompt
+  cache (gaps of 5.2–5.6 min already went cold). Each wake after a longer idle rewrites
+  the whole context: 2.5 (11-01b), 3.2 (11-02), 4.2 (11-04), 3.2 (11-04b). Maren is most
+  of it: on 11-04b she woke cold 7 times after 5–32 min idle, rewriting 130–285k each,
+  2.05 of her 6.16. Developers pay it when resumed (Tomas's delta pass, Ansel's resume).
+- **The docs pass ran twice** because it started in parallel with the fix rounds and
+  needed a delta pass once they merged.
+- Ansel's fix round (nine items, 147 calls, 18:26 to past 19:33) was as large as a build
+  stream; Nils's took 96 calls.
+
+Levers, by expected saving per sprint:
+1. **Keep the PO's cache warm** (≈ 1.5). While she waits longer than 5 minutes, she
+   waits in slices of ≤ 4.5 min (`board.py wait --timeout 270`, re-armed on timeout). A
+   warm wake at ~200k costs ≈ 0.02 against ≈ 0.3 for a cold one. First check whether
+   sub-agents can get the 1-hour cache the main session already has; that would be the
+   cleaner fix.
+2. **Docs close-out once, after the fix rounds merge** (≈ 1.0). Drop the parallel first
+   pass plus delta pass.
+3. **Smaller fix rounds** (to measure, not yet a rule). Split a round above ~5 items into
+   two fresh agents, as 11-01 did.
+- Measure next sprint: cold-call weight (target < 1.5), the PO's cost per point (0.26 on
+  11-04b), docs close-out (≤ 1.8), fix-round cost per item.
+- Tool: `carry.py` and `rewrites.py` in the 2026-11-05 session scratchpad; move them into
+  `usage.py --cold` if the levers are adopted.
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -654,3 +700,9 @@ through respawns as the same named member, with its own small, curated memory. I
   single lever. Lesson: the live pass ran on an Alloy started before the QA fix to its
   config, so identifier labels still reached Mimir; restart config-reading services
   before a live check (lead memory).
+- **2026-11-05 (meta session, cost of Telemetry 2):** Owner opened with meta, as agreed, and
+  asked where Telemetry 2's extra cost went. Measured as P12: build got cheaper per point;
+  the extra sat in the QA fix rounds (+3.8), the new docs close-out running twice (+2.8),
+  the PO (+2.4, of which 2.05 were cold-cache wakes) and the lead (+2.0, the owner's panels
+  and the live pass). Screenshots are not the cost (my 11-04b guess was wrong). Three
+  levers proposed; owner to decide.

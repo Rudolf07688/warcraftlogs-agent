@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-04 (sprint 2026-11-04b closed, merged and pushed)
+Updated: 2026-11-05 (meta session open: cost of Telemetry 2 measured, P12)
 
 ## Topic
 
@@ -23,7 +23,14 @@ The agent-team redesign: persistence and autonomy. Full record in
 - Lessons this sprint (in lead.md): proofs on real-shaped data, render checks taller than the
   page, search Shortcut before filing, run tools from the branch that has the change.
 
-## Next session: meta first
+## This session (2026-11-05, meta first as agreed)
+
+- Measured where Telemetry 2's extra cost went: P12 in team-optimisation.md. Build got
+  cheaper per point; extra is fix rounds, docs pass run twice, PO cold-cache wakes, lead.
+- Proposed levers: keep the PO's cache warm (or 1-hour cache for sub-agents), docs
+  close-out once after the fixes, split big fix rounds. Waiting for the owner's call.
+
+## Agreed 2026-11-04: meta first
 
 Owner, 2026-11-04: "Next time we will speak meta again first." Open the next session with a
 meta discussion (team, process, tooling) before any sprint; no sprint launch until then.
