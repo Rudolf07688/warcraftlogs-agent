@@ -84,10 +84,16 @@ def _response_attributes(response: Any) -> dict[str, Any]:
 
 
 async def _with_retry(
-    call: Callable[[], Awaitable[Any]], policy: RetryPolicy, *, model: str, operation: str = "chat"
+    call: Callable[[], Awaitable[Any]],
+    policy: RetryPolicy,
+    *,
+    model: str,
+    operation: str = "chat",
+    deadline: float | None = None,
 ) -> Any:
     """``call()`` once per attempt under the shared rate-limit loop, in one GenAI client span
     (feature 054; a no-op without a tracer provider). Metadata only, never the prompt or reply.
+    ``deadline`` is passed to :func:`generate_with_retry`.
     """
     with _tracer.start_as_current_span(
         f"{operation} {model}",
@@ -103,7 +109,7 @@ async def _with_retry(
             yield await call()
 
         try:
-            async for response in generate_with_retry(once, policy):
+            async for response in generate_with_retry(once, policy, deadline=deadline):
                 span.set_attributes(_response_attributes(response))
                 return response
             raise RuntimeError("model returned no response")
@@ -367,19 +373,38 @@ def embeddings_available() -> bool:
     return True
 
 
+@functools.cache
+def _located_genai_client(location: str) -> Any:
+    """One google-genai client per process and Vertex location (sc-428: embeddings)."""
+    return provider.genai_client(location=location)
+
+
 async def embed_texts(
-    model: str, texts: Sequence[str], *, task: str, dimensions: int, policy: RetryPolicy
+    model: str,
+    texts: Sequence[str],
+    *,
+    task: str,
+    dimensions: int,
+    policy: RetryPolicy,
+    location: str | None = None,
+    deadline: float | None = None,
 ) -> list[list[float]]:
     """Raw (not normalised) embedding vectors for ``texts``, in order, from one request on the
     genai client, whichever provider serves chat. Over-long texts are truncated by the model.
+    ``location`` names the Vertex location to embed at (empty or None: the model location). sc-428: the
+    ``global`` endpoint answers ``:predict``, which gemini-embedding-001 uses, about 12 s late
+    on every new connection, and an idle connection closes after 5 s. No rate-limit retry wait
+    may end after ``deadline`` (a ``time.monotonic`` time; None: the policy alone decides).
     Raises the SDK error or ``ModelRateLimited``."""
     config = genai_types.EmbedContentConfig(
         task_type=task, output_dimensionality=dimensions, auto_truncate=True
     )
+    client = functools.partial(_located_genai_client, location) if location else _genai_client
     response = await _with_retry(
-        lambda: _genai_client().aio.models.embed_content(model=model, contents=list(texts), config=config),
+        lambda: client().aio.models.embed_content(model=model, contents=list(texts), config=config),
         policy,
         model=model,
         operation="embeddings",
+        deadline=deadline,
     )
     return [list(embedding.values or []) for embedding in response.embeddings or []]

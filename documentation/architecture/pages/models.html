@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 1cedb4e · 2026-11-05">
+<meta name="verified-at" content="commit 8b43895 · 2026-11-05">
 <title>Models &amp; providers · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -49,9 +49,9 @@
     <li><b>One switch.</b> <code>WCL_LLM_PROVIDER</code> is <code>vertex</code> (the default; unknown values fall back to it with a warning) or <code>anthropic</code>. <code>wcl_agent/llm/provider.py</code> reads it once per process, so a change needs a restart. It is the only module that reads the switch or <code>ANTHROPIC_API_KEY</code> and the only one that builds model clients (<code>genai_client()</code>, <code>anthropic_client()</code>, <code>async_anthropic_client()</code>, <code>adk_client_kwargs()</code>).</li>
     <li><b><code>vertex</code></b>: Gemini through ADK's <code>Gemini</code> class and google-genai, on Vertex AI with Google application default credentials when <code>GOOGLE_GENAI_USE_VERTEXAI</code> is true (otherwise a plain API-key client, the AI Studio setup, with no catalog). Claude through Model Garden with <code>AnthropicVertex</code> / <code>AsyncAnthropicVertex</code>.</li>
     <li><b><code>anthropic</code></b>: Claude through the Anthropic API (<code>Anthropic</code> / <code>AsyncAnthropic</code>) with <code>ANTHROPIC_API_KEY</code>, held as a pydantic <code>SecretStr</code> and passed straight into the client. Gemini is not served: a Gemini id set for a role is ignored with one warning and the provider default is used. A missing key is logged once at boot (<code>credentials_error()</code>), the greeting is not primed, and discovery serves the fallback list.</li>
-    <li><b>Where Vertex calls run.</b> <code>wcl_agent/llm/vertex.py</code> → <code>model_location()</code> reads <code>WCL_MODEL_LOCATION</code> (default <code>global</code>). Every Vertex model client uses it, so <code>GOOGLE_CLOUD_LOCATION</code> can stay regional for everything else. <code>vertex.py</code> also owns the project id and the Model Garden catalog listing.</li>
+    <li><b>Where Vertex calls run.</b> <code>wcl_agent/llm/vertex.py</code> → <code>model_location()</code> reads <code>WCL_MODEL_LOCATION</code> (default <code>global</code>). Every Vertex model client uses it, so <code>GOOGLE_CLOUD_LOCATION</code> can stay regional for everything else. The one exception is embeddings, which pass their own location (next item). <code>vertex.py</code> also owns the project id and the Model Garden catalog listing.</li>
     <li><b>Model ids.</b> Dated Claude ids are <code>name@YYYYMMDD</code> on Vertex and <code>name-YYYYMMDD</code> on the Anthropic API; <code>to_provider_id()</code> is the one place ids are rewritten. Any id containing <code>claude</code> is a Claude id (<code>is_anthropic_model()</code>). A chat whose stored model is not served (for example after a switch) continues on the default (<code>resolve_chat_model()</code> in <code>backend/app/model_state.py</code>).</li>
-    <li><b>Embeddings</b> for the knowledge base (<code>KB_EMBED_MODEL</code>, default <code>gemini-embedding-001</code>, 768 dimensions) always run on the google-genai client, whichever provider serves chat. See <a href="knowledge-base.html">Knowledge base</a>.</li>
+    <li><b>Embeddings</b> for the knowledge base (<code>KB_EMBED_MODEL</code>, default <code>gemini-embedding-001</code>, 768 dimensions) always run on the google-genai client, whichever provider serves chat, at their own Vertex location (<code>KB_EMBED_LOCATION</code>, default <code>europe-west1</code>): <code>genai_client(location=…)</code> builds a client for it, <code>embed_texts(location=…)</code> keeps one per location, and an empty location means the model location. The <code>global</code> endpoint answers embeddings about 12 s late on every new connection. See <a href="knowledge-base.html">Knowledge base</a>.</li>
   </ul>
 
   <figure class="diagram">
@@ -165,7 +165,7 @@
       <tr><td>Guide research</td><td><code>generate_grounded</code> + <code>generate_json</code> · <code>guide_pipeline/research.py</code></td><td>guide role</td><td>settings policy</td><td>none</td></tr>
       <tr><td>Guide authoring and revision</td><td><code>generate_json</code> · <code>guide_pipeline/authoring.py</code></td><td>guide role</td><td>settings policy; 1 retry on invalid output</td><td>none</td></tr>
       <tr><td>Guide review</td><td><code>generate_json</code> · <code>guide_pipeline/review.py</code></td><td>guide-review role</td><td>settings policy; 1 retry on invalid output</td><td>none</td></tr>
-      <tr><td>Knowledge-base embeddings</td><td><code>embed_texts</code> · <code>backend/app/kb/embedder.py</code></td><td><code>gemini-embedding-001</code></td><td>4 attempts, 60 s budget</td><td>none</td></tr>
+      <tr><td>Knowledge-base embeddings</td><td><code>embed_texts</code> · <code>backend/app/kb/embedder.py</code></td><td><code>gemini-embedding-001</code></td><td>4 attempts, 60 s budget (a search's query requests: waits end by a 3 s deadline)</td><td>none</td></tr>
       <tr><td>Discovery probes</td><td>blocking SDK calls · <code>wcl_agent/llm/models.py</code></td><td>each candidate</td><td>one 429 retry after 2 s; one transient retry</td><td>10 s per probe</td></tr>
     </tbody>
   </table></div>

@@ -34,11 +34,11 @@ groups:
       - record: genai:inference_calls_per_invocation:avg5m
         expr: >-
           sum by (gen_ai_agent_name) (histogram_sum(rate(gen_ai_invoke_agent_inference_calls{service_namespace="wcl-agent"}[5m])))
-          / sum by (gen_ai_agent_name) (histogram_count(rate(gen_ai_invoke_agent_inference_calls{service_namespace="wcl-agent"}[5m])))
+          / (sum by (gen_ai_agent_name) (histogram_count(rate(gen_ai_invoke_agent_inference_calls{service_namespace="wcl-agent"}[5m]))) > 0)
       - record: genai:tool_calls_per_invocation:avg5m
         expr: >-
           sum by (gen_ai_agent_name) (histogram_sum(rate(gen_ai_invoke_agent_tool_calls{service_namespace="wcl-agent"}[5m])))
-          / sum by (gen_ai_agent_name) (histogram_count(rate(gen_ai_invoke_agent_tool_calls{service_namespace="wcl-agent"}[5m])))
+          / (sum by (gen_ai_agent_name) (histogram_count(rate(gen_ai_invoke_agent_tool_calls{service_namespace="wcl-agent"}[5m]))) > 0)
       - record: genai:model_latency:p95
         expr: >-
           histogram_quantile(0.95, sum by (gen_ai_request_model) (
@@ -108,7 +108,7 @@ groups:
       - record: rag:retrieved_chunks:avg5m
         expr: >-
           sum by (app_rag_index) (histogram_sum(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
-          / sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
+          / (sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m]))) > 0)
       - record: rag:top_score:p50
         expr: >-
           histogram_quantile(0.5, sum by (app_rag_index) (
@@ -126,7 +126,7 @@ groups:
         expr: >-
           (sum by (app_rag_index) (rate(app_rag_empty_results{service_namespace="wcl-agent"}[5m])) or
             0 * sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m]))))
-          / sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m])))
+          / (sum by (app_rag_index) (histogram_count(rate(app_rag_retrieved_chunks{service_namespace="wcl-agent"}[5m]))) > 0)
 
       # Feature 059: one point per provider embedding request (document = indexing, query = search),
       # failed ones included with their error_type ("none" when it succeeded, live check #78).
@@ -146,7 +146,7 @@ groups:
       - record: rag:embedding_batch_size:avg5m
         expr: >-
           sum by (gen_ai_request_model, app_embedding_task) (histogram_sum(rate(app_embedding_batch_size{service_namespace="wcl-agent"}[5m])))
-          / sum by (gen_ai_request_model, app_embedding_task) (histogram_count(rate(app_embedding_batch_size{service_namespace="wcl-agent"}[5m])))
+          / (sum by (gen_ai_request_model, app_embedding_task) (histogram_count(rate(app_embedding_batch_size{service_namespace="wcl-agent"}[5m]))) > 0)
 
       # --- WCL cache (D8) ------------------------------------------------------------------
       - record: cache:requests:rate5m
@@ -156,7 +156,7 @@ groups:
         expr: >-
           (sum by (app_cache_name) (rate(app_cache_requests{service_namespace="wcl-agent", app_cache_result="hit"}[5m])) or
             0 * sum by (app_cache_name) (rate(app_cache_requests{service_namespace="wcl-agent"}[5m])))
-          / sum by (app_cache_name) (rate(app_cache_requests{service_namespace="wcl-agent"}[5m]))
+          / (sum by (app_cache_name) (rate(app_cache_requests{service_namespace="wcl-agent"}[5m])) > 0)
 
       # --- Database pool (D6) --------------------------------------------------------------
       - record: db:client_connections:usage
@@ -170,10 +170,20 @@ groups:
       # asks for, give the graph's edges their latency and its nodes their average response
       # time (the request counts are read as they are). The only rules without a
       # level:metric:operation name, so `mimirtool rules check` flags them: deliberate.
+      # sc-504: an uninstrumented server (connection_type virtual_node with a real client, such
+      # as api -> redis) has no server span, and the connector records its server latency as 0,
+      # so the node read 0.00 ms/r. Its latency is the client side's. A virtual client ("user",
+      # the connector's fixed name for a missing caller) keeps the server side, which is real.
       - record: traces_service_graph_request_server_seconds_bucket
-        expr: traces_service_graph_request_server_bucket
+        expr: >-
+          traces_service_graph_request_server_bucket{connection_type!="virtual_node"}
+          or traces_service_graph_request_server_bucket{connection_type="virtual_node", client="user"}
+          or traces_service_graph_request_client_bucket{connection_type="virtual_node", client!="user"}
       - record: traces_service_graph_request_server_seconds_sum
-        expr: traces_service_graph_request_server_sum
+        expr: >-
+          traces_service_graph_request_server_sum{connection_type!="virtual_node"}
+          or traces_service_graph_request_server_sum{connection_type="virtual_node", client="user"}
+          or traces_service_graph_request_client_sum{connection_type="virtual_node", client!="user"}
 
       # --- API latency (D6, feature 059) ---------------------------------------------------
       # p50 and p99 beside red.yaml's p95 (055's file): same series, same exclusions.

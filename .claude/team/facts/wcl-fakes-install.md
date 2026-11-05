@@ -3,7 +3,7 @@ id: wcl-fakes-install
 anchors: [file:backend/tests/wcl_fakes.py, file:wcl_agent/tools/]
 by: dev-2 Tomas
 source: meta/team/dev-2.md L23
-verified: b9cf9a3 2026-11-05
+verified: 32010a6 2026-11-05
 ---
 Tool tests fake Warcraft Logs with `backend.tests.wcl_fakes.install(monkeypatch, responder)`.
 It replaces `wcl_client.get_async_client`, which every `wcl_agent` module reaches WCL through.

@@ -2,6 +2,7 @@
 # Recording rules (feature 055): every rule file loads and evaluates; the cc:* build aliases
 # from synthetic Claude Code metrics; genai:cost_usd:rate5m equals tokens x list price for one
 # Claude and one Gemini model; after a price change, cost already recorded keeps the old price.
+# sc-508: the per-invocation ratios record a busy agent's window and skip an idle one (no NaN).
 # The rules run from a temporary copy (MIMIR_RULES_DIR), so the price change never touches
 # the checkout.
 #   observability/test/rules.sh        (KEEP=1 leaves the stack up)

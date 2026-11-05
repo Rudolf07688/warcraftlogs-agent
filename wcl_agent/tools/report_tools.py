@@ -503,27 +503,18 @@ def _fight_ids(fight_id: int) -> list[int] | None:
 async def get_report_fights(report_code: str) -> dict[str, Any]:
     """List the fights (pulls) in a Warcraft Logs report, with the players in each.
 
-    Use this to turn a report code (e.g. from a leaderboard parse) into fight IDs
-    and player source IDs, which the other report tools need. Report codes are the
-    short string in a log URL: warcraftlogs.com/reports/<CODE>.
+    Turns a report code (the short string in warcraftlogs.com/reports/<CODE>) into the
+    fight ids and player source ids the other report tools need.
 
     For "the last kill" or "the last boss" of a report, use ``last_kill``: the latest boss
-    kill by time, never a guess from the fight list. ``bosses`` lists each boss and difficulty
-    once with its pulls, kills and the fights to inspect. Both cover every fight, even when
-    the fight list itself is too large and comes back truncated.
+    kill by time, never a guess from the fight list. ``bosses`` lists each boss and
+    difficulty once with its pulls, kills, ``last_kill_fight_id`` and
+    ``last_pull_fight_id``. Both cover every fight, even when the fight list itself is too
+    large and comes back truncated. Mythic+ key runs (fights with ``keystoneLevel``) are
+    not boss kills.
 
     Args:
         report_code (str): The report code.
-
-    Returns:
-        dict: {"status": "success", "title": ..., "zone": ..., "guild": ...,
-               "start_time_ms": ..., "players": {id: {"name", "class"}},
-               "last_kill": {fight_id, name, encounterID, difficulty, difficulty_name} | null,
-               "bosses": [{encounterID, name, difficulty, difficulty_name, pulls, kills,
-                           last_kill_fight_id, last_pull_fight_id}],
-               "fights": [{id, name, encounterID, difficulty, kill, averageItemLevel,
-                           size, players:[names], keystoneLevel (Mythic+ runs only)}]}
-            or an error. Mythic+ key runs are not boss kills.
     """
     try:
         summary = await load_report_summary(report_code)
@@ -573,14 +564,10 @@ async def get_report_fights(report_code: str) -> dict[str, Any]:
 async def get_report_master_data(report_code: str) -> dict[str, Any]:
     """Get the actor (player/NPC/pet) and ability id->name maps for a report.
 
-    Useful for resolving source_id / ability_id values used by the table, events,
-    and graph tools.
+    Resolves the source_id / ability_id values the table, events and graph tools use.
 
     Args:
         report_code (str): The report code.
-
-    Returns:
-        dict: {"status": "success", "actors": [...], "abilities": [...]} or error.
     """
     query = """
     query ReportMaster($code: String!) {
@@ -644,12 +631,10 @@ async def get_report_table(
 ) -> dict[str, Any]:
     """Get an analysis table for a report — the richest general-purpose tool.
 
-    This is the data behind the Warcraft Logs website tabs. Depending on
-    data_type it breaks a fight down by ability and by source/target, e.g.:
-    - 'DamageDone' / 'Healing': totals per player, with per-ability breakdowns.
-      Set source_id to one player to see WHICH SPELLS contribute their damage.
-    - 'Casts': how many times each ability was cast.
-    - 'Buffs' / 'Debuffs': uptime of each aura.
+    The data behind the Warcraft Logs website tabs, by ability and by source/target:
+    - 'DamageDone' / 'Healing': totals per player; set source_id to one player to see
+      WHICH SPELLS contribute their numbers.
+    - 'Casts': casts per ability. 'Buffs' / 'Debuffs': uptime of each aura.
     - 'Deaths': who died, when, and to what.
     - 'DamageTaken': damage taken per source (set hostility_type='Enemies' to see
       what the boss/adds did).
@@ -660,20 +645,12 @@ async def get_report_table(
             Deaths, Debuffs, Buffs, Dispels, Interrupts, Resources, Threat,
             Survivability, Summons.
         fight_id (int): A single fight id (from get_report_fights). 0 = all fights.
-        source_id (int): Filter to one actor id (0 = all). Use this to drill into
-            one player's abilities.
-        ability_id (int): Filter to one ability's game id (0 = all).
+        source_id (int): One actor id (0 = all), to drill into one player's abilities.
+        ability_id (int): One ability's game id (0 = all).
         hostility_type (str): 'Friendlies' (players) or 'Enemies' (NPCs/boss).
         overview (bool): True for a slim per-boss overview: the top 10 rows of each
             list with plain fields, no per-player details and no composition list.
             The recent-raid kickoff uses it; leave False otherwise.
-
-    Returns:
-        dict: {"status": "success", "data_type": ..., "table": {...},
-               "provenance": {...}, "completeness": {...}} or an error.
-            A large table comes back compacted: the top rows of each list with a
-            count of omitted rows (see its ``_note``). ``completeness.truncated``
-            is true only when rows were omitted.
     """
     if data_type not in TABLE_DATA_TYPES:
         return {"status": "error", "error_message": f"Bad data_type '{data_type}'.",
@@ -769,9 +746,9 @@ async def get_report_events(
 ) -> dict[str, Any]:
     """Get the raw combat event stream for a report (paginated).
 
-    Use for granular questions the summary tables can't answer (exact timings,
-    sequences, individual hits). Prefer get_report_table for aggregates. Always
-    scope with fight_id + source_id to keep results small.
+    For granular questions the tables can't answer (exact timings, sequences, individual
+    hits); prefer get_report_table for aggregates. Always scope with fight_id + source_id
+    to keep results small.
 
     Args:
         report_code (str): The report code.
@@ -783,14 +760,9 @@ async def get_report_events(
         ability_id (int): Ability game id filter (0 = all).
         hostility_type (str): 'Friendlies' or 'Enemies'.
         limit (int): Max events per page (1-500).
-        start_time (int): Report-relative ms to start from; pass the previous
-            call's nextPageTimestamp to page forward. 0 = fight start.
-
-    Returns:
-        dict: {"status": "success", "events": {data:[...], nextPageTimestamp},
-               "provenance": {...}, "completeness": {"has_more": bool, ...}} or
-            error. ``completeness.has_more`` is true when another page exists
-            (pass ``nextPageTimestamp`` as ``start_time`` to continue).
+        start_time (int): Report-relative ms to start from (0 = fight start). When
+            ``completeness.has_more`` is true, pass the result's ``nextPageTimestamp``
+            here for the next page.
     """
     if data_type not in EVENT_DATA_TYPES:
         return {"status": "error", "error_message": f"Bad data_type '{data_type}'.",
@@ -847,9 +819,6 @@ async def get_report_graph(
         fight_id (int): Single fight id (0 = all).
         source_id (int): Actor id filter (0 = all).
         hostility_type (str): 'Friendlies' or 'Enemies'.
-
-    Returns:
-        dict: {"status": "success", "graph": {...}} or an error.
     """
     if data_type not in GRAPH_DATA_TYPES:
         return {"status": "error", "error_message": f"Bad data_type '{data_type}'.",
@@ -887,31 +856,22 @@ async def get_report_rankings(
 ) -> dict[str, Any]:
     """Get the parse percentiles for the players in a report's fight(s), with context.
 
-    A percentile depends on what it is compared against (feature 009, FR-018):
+    A percentile depends on what it is compared against:
     - compare='Rankings' (default): against every character's BEST score for the
-      tier (what the WCL rankings pages show). compare='Parses': against all
-      individual pulls logged in roughly the last two weeks, i.e. typical
-      execution rather than best scores — percentiles are usually higher.
+      tier (what the WCL rankings pages show). 'Parses': against all pulls logged
+      in roughly the last two weeks, i.e. typical execution; percentiles are
+      usually higher.
     - timeframe='Historical' (default): as evaluated at the time of the kill.
-      timeframe='Today': re-evaluated against the current population.
-    Say which pair you used when it matters. The result's `percentiles` list is a
-    flattened row per ranked player with both the overall `rank_percent` and the
-    item-level `bracket_percent`, the population size `total_parses`, partition,
-    and fight context — present overall and bracket together when both exist.
+      'Today': re-evaluated against the current population.
+    Say which pair you used when it matters. ``percentiles`` has one row per ranked
+    player with rank_percent, bracket_percent, total_parses, partition, item_level and
+    the fight context.
 
     Args:
         report_code (str): The report code.
         fight_id (int): Single fight id (0 = all fights).
         compare (str): 'Rankings' or 'Parses'.
         timeframe (str): 'Historical' or 'Today'.
-
-    Returns:
-        dict: {"status": "success", "rankings": {...raw...}, "percentiles": [
-            {name, server, class_name, spec, role, population, timeframe,
-             rank_percent, bracket_percent, bracket, item_level, total_parses,
-             partition, metric, encounter_id, difficulty, fight_id, kill,
-             duration_s, amount}], "provenance": {...compare, timeframe...},
-            "completeness": {...}} or an error.
     """
     if compare not in RANKING_COMPARE_TYPES:
         return {"status": "error", "error_message": f"Bad compare '{compare}'.",
@@ -945,9 +905,6 @@ async def get_report_player_details(report_code: str, fight_id: int = 0) -> dict
     Args:
         report_code (str): The report code.
         fight_id (int): Single fight id (0 = all fights).
-
-    Returns:
-        dict: {"status": "success", "playerDetails": {...}} or an error.
     """
     field = "playerDetails(fightIDs: $fightIDs)"
     var_decls = ", $fightIDs: [Int]"
@@ -1076,11 +1033,8 @@ async def get_character_zone_rankings(
         metric (str): 'dps', 'hps', etc.
         difficulty (int): Difficulty id (0 = default, e.g. 4=Heroic, 5=Mythic).
         force_refresh (bool): True only when the user explicitly asks to refresh or check
-            again; bypasses the cached copy (at most once a minute per character).
-
-    Returns:
-        dict: {"status": "success", "zoneRankings": {...}} or an error. With
-            force_refresh, "refresh" is "done" or "skipped_recent" (refreshed moments ago).
+            again; bypasses the cached copy at most once a minute per character (else
+            "refresh" is "skipped_recent").
     """
     if metric not in METRICS:
         return {"status": "error", "error_message": f"Bad metric '{metric}'.", "valid": METRICS}
@@ -1119,11 +1073,8 @@ async def get_character_encounter_rankings(
         metric (str): 'dps', 'hps', etc.
         difficulty (int): Difficulty id (0 = default).
         force_refresh (bool): True only when the user explicitly asks to refresh or check
-            again; bypasses the cached copy (at most once a minute per character).
-
-    Returns:
-        dict: {"status": "success", "encounterRankings": {...}} or an error. With
-            force_refresh, "refresh" is "done" or "skipped_recent" (refreshed moments ago).
+            again; bypasses the cached copy at most once a minute per character (else
+            "refresh" is "skipped_recent").
     """
     if metric not in METRICS:
         return {"status": "error", "error_message": f"Bad metric '{metric}'.", "valid": METRICS}
@@ -1158,15 +1109,12 @@ async def run_wcl_graphql(query: str, variables_json: str = "") -> dict[str, Any
     (guild(...)), gameData (abilities/items/classes/factions), and rateLimitData.
     Fields like characterRankings, table, events, graph, zoneRankings return a
     JSON scalar (request them with no sub-selection). Endpoint is the public
-    client API — private reports are not accessible. Validate the response before using it.
+    client API — private reports are not accessible. Validate the response before
+    using it; GraphQL errors come back so you can fix the query.
 
     Args:
         query (str): A complete GraphQL query string.
         variables_json (str): JSON object of variables, or '' for none.
-
-    Returns:
-        dict: {"status": "success", "data": {...}} with the raw response, or an
-            error (including GraphQL errors) so you can fix the query and retry.
     """
     try:
         variables = json.loads(variables_json) if variables_json.strip() else {}

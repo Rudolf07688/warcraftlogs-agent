@@ -1,0 +1,55 @@
+# Brief 062-dashboard-ratios (tier S)
+
+- Feature 062, branch `062-dashboard-ratios`. Seat dev-1 (Ansel). Model opus, effort medium.
+- Worktree `/home/rudolf/dev/wcl-worktrees/dev-b`, base ref `sprint-2026-11-05b` (0678ea7).
+- Parallel developers: Nils (061, KB embedding), Tomas (063, frontend), the dev-4 holder (064, agent instruction). Disjoint footprints.
+- Not security-core. No migration.
+
+## Footprint
+`observability/**`, and in `backend/tests/test_telemetry_datastores.py` only the stale comment at line ~104. Backend telemetry tests that read `observability/` files (e.g. `backend/tests/test_telemetry_metrics_dashboards.py`) may change where your rule/dashboard change requires it; say so in the hand-off.
+
+## Stories (acceptance criteria verbatim)
+
+### QA live: D6 service-graph nodes show no or zero average response time (sc-504, 1 pt)
+After 059-fix added the `_seconds_sum` copy (`observability/mimir/rules/anonymous/runtime.yaml`), D6's service-graph node graph shows an average response time only on the wcl node, as "0.00 ms/r"; api and redis show none. Possibly low traffic right after an Alloy restart, or a seconds-vs-milliseconds mismatch in the copied series Grafana expects.
+Fix: check with steady traffic; if still wrong, compare the copied series' names and units with what Grafana's Tempo service map queries, and add a stack assertion on a non-zero node average.
+
+### Dashboard ratios: guard runtime ratio rules and bound the cache hit ratio panel (sc-508, 1 pt)
+- Ratio rules: `observability/mimir/rules/anonymous/runtime.yaml` records `genai:inference_calls_per_invocation:avg5m` and `genai:tool_calls_per_invocation:avg5m` without a `(denominator > 0)` guard. An idle window records NaN, and one NaN poisons every `avg_over_time` over that range. `cross.yaml` already uses the guard.
+- Panel bounds: the "Cache hit ratio over time" panel in `observability/grafana/dashboards/build/claude-code-overview.json` (D1) has no min 0 / max 1.
+- Stale test comment: the comment at `backend/tests/test_telemetry_datastores.py:104` still says "two EngineTracers per async engine". The 059 fix made it one; the assertion itself still holds.
+
+Acceptance: both rules are guarded (with a rules check like `observability/test/rules.sh`), the panel is bounded, and the comment is corrected.
+
+## My notes
+- sc-504 needs the running stack with steady traffic (fact `grafana-servicemap-browser`: run the service-graph Prometheus queries by Grafana's fixed names through the Mimir datasource, as `provisioning.sh` does). Grafana's node graph computes the average as `sum(rate(traces_service_graph_request_server_seconds_sum))/sum(rate(..._count))` per server; check which of these copies exist, in which unit, and whether api/redis nodes are servers or clients in the edges. Assert a non-zero node average for at least api in a stack test.
+- If sc-504 turns out to be "only low traffic", the AC is still the stack assertion that proves it under steady traffic.
+- Ratio guards: also apply `rule-ratio-guards` to any other unguarded division you meet in `runtime.yaml` (same story), but no new rules.
+
+## Process (all streams)
+- Tier S: post a short plan on the board (`decision`, key `plan:<NNN>`), then implement. No Spec Kit.
+- Branch `<NNN>-<short-name>` from the base ref, in your worktree. Stay inside the footprint; if a root cause sits outside it, post a `question` on the board naming the file and hunk, and keep going on the rest.
+- Move your stories to In Progress when you start and to Under Review in your hand-off (Team 1, Standard workflow: In Progress 500000008, Under Review 500000023). Never Done.
+- **Team facts (P13 trial, first sprint):** run `python3 .claude/team/facts.py for <path>` before you change a file you haven't read yet; trust what it says, re-check anything marked STALE. When you learn something about this code that the next developer would otherwise rediscover (a trap, a contract, a non-obvious cause), add it with `facts.py add` and commit the fact file on your branch. Name the facts you used and the ones you added in the hand-off.
+- Checks: `python3 .claude/team/check.py run --as <your-name>` on your final committed clean tree (the RECEIPT is what lets me merge without re-running). GitNexus `detect-changes --scope all` before each commit.
+- Commit messages end with `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`. Never push. Never commit CLAUDE.md, AGENTS.md, todo.md, the constitution or .specify/feature.json.
+- **Hand-off:** post a board `handoff` (key `status:<NNN>`) and return the same as your result: branch, commits, files, the check.py RESULT and RECEIPT lines, the AC-to-test mapping, risks, a **live-check** suggestion (prompt or action plus the expected facts), facts used/added, and one line starting `Retro:` (what helped or slowed you this run, for the team retro).
+
+## Known facts for this footprint
+
+Team facts for `observability/`, `observability/mimir/rules/anonymous/runtime.yaml`, `observability/grafana/dashboards/build/claude-code-overview.json`, `observability/test/rules.sh`, `backend/tests/test_telemetry_datastores.py` (`python3 .claude/team/facts.py for ...`). Trust them, but re-check one marked STALE before relying on it; record a new lesson with `facts.py add`.
+
+- **absent-label-matches-not-equal** (direct: file:observability/mimir/rules/anonymous/cross.yaml is inside observability/; verified b9cf9a3 2026-11-05): In PromQL an absent label matches `!="x"`. Alloy's spanmetrics `target_info` has no `service_version`: the `spanmetrics_version` transform deletes it, because the connector keeps its first span's whole resource and would export a stale version. So `service_version!="unknown"` also selects it. Use `service_version!~"|unknown"` to exclude both. Check other streams' selectors against any label your change removes.
+- **exporter-counters-first-sample** (direct: file:observability/mimir/rules/anonymous/datastores.yaml is inside observability/; verified b9cf9a3 2026-11-05): Scraped exporter counters (`pg_stat_statements_*`, Alloy's `otelcol_*_failed_*`) appear with their first value already counted, so `rate()`/`increase()` miss a one-off event, such as a single slow statement or one failed export. Read cumulative aliases (`pg:statement_seconds:total`) or use `sum(x) - (sum(x offset w) or vector(0))`, as the pipeline-failure alert in `datastores.yaml` does.
+- **faro-loki-line-shape** (direct: file:observability/grafana/dashboards/runtime/frontend.json is inside observability/; verified b9cf9a3 2026-11-05): Faro lines in Loki are logfmt (`| logfmt`): `kind=` (measurement, event, exception, log), `view_name` (the route template), `value_<vital>` (`value_lcp`, `value_inp`, `value_cls`, ...), `event_name` and `event_data_<attr>` (`event_data_ttft_ms`). `session_id` is masked by the redaction rules. Find the session id as `session.id` on spans in Tempo. Probe real line shapes on your own stack before designing queries.
+- **grafana-headless-render-height** (direct: file:observability/grafana/dashboards/ is inside observability/; verified b9cf9a3 2026-11-05): Grafana leaves the uPlot canvases blank for panels outside the browser window. A headless screenshot with a window shorter than the page therefore shows empty time series: legends, no lines, no axes. Use a window taller than the page (D7 needs about 2800 px at 1600 px wide), or screenshot each panel.
+- **grafana-servicemap-browser** (direct: file:observability/grafana/dashboards/runtime/api-red.json is inside observability/; verified b9cf9a3 2026-11-05): Grafana runs the Tempo `serviceMap` query in the browser, and `/api/ds/query` refuses it, so a stack test can't run the panel the way Grafana does. Instead, run its Prometheus queries (`traces_service_graph_*`, by the fixed names Grafana uses) through the Mimir datasource, as `provisioning.sh` does.
+- **mimir-otlp-metric-names** (direct: file:observability/mimir/ is inside observability/; verified b9cf9a3 2026-11-05): Over OTLP, Mimir keeps the OTel metric name with dots turned into underscores and adds no unit or _total suffix (app.llm.finish_reasons -> app_llm_finish_reasons); histograms are native, with no _bucket/_count series unless a rule makes them. Scraped exporters keep their Prometheus names. Details: observability/README.md, Recording rules.
+- **mimirtool-colon-names** (direct: file:observability/mimir/rules/anonymous/ is inside observability/; verified b9cf9a3 2026-11-05): `mimirtool rules check` rejects record names without the `level:metric:operation` colons. `cost.yaml`'s `llm_price_usd_per_token` and the Grafana-named service-graph copies in `runtime.yaml` are deliberate exceptions. `rules.sh` lints only `build.yaml` and `red.yaml` and proves cost.yaml loads and evaluates in Mimir. A new colon-less rule needs a comment saying why.
+- **ottl-empty-regex-group** (direct: file:observability/alloy/config.alloy is inside observability/; verified b9cf9a3 2026-11-05): On Alloy's `loki.process` -> `otelcol.receiver.loki` path, a regex group that matched nothing arrives as an attribute holding an empty string, not as a missing attribute. Delete it (`delete_key(...) where attributes["x"] == ""`, as the postgres transform does) and test values with `IsMatch`, not `!= nil`.
+- **promql-timestamp-bare-selector** (direct: file:observability/mimir/rules/anonymous/cross.yaml is inside observability/; verified b9cf9a3 2026-11-05): PromQL `timestamp()` returns a sample's own time only for a bare selector. On any computed vector it returns the evaluation time. To prefer one class of series, join two `timestamp(selector)` with `or on (label)`, then take `topk`, as `cross:running_version:info` does.
+- **ratio-panels-min-max** (direct: file:observability/grafana/dashboards/ is inside observability/; verified b9cf9a3 2026-11-05): Give every `percentunit` time-series panel `min: 0` and `max: 1`. An all-zero ratio series otherwise auto-scales to 0..100, which reads as 10000%. At b9cf9a3, D1's "Cache hit ratio over time" (`claude-code-overview.json`) still has no bounds.
+- **rule-ratio-guards** (direct: file:observability/mimir/rules/anonymous/ is inside observability/; verified b9cf9a3 2026-11-05): In recording rules, divide by `(denominator > 0)` and clamp `histogram_quantile(...)` with `>= 0`. Otherwise an idle window records NaN or Inf, and a single NaN poisons every `avg_over_time` over that range. `cross.yaml` follows this. The per-invocation ratios in `runtime.yaml` don't yet.
+- **runtime-dashboards-test-glob** (direct: file:observability/grafana/dashboards/runtime/ is inside observability/; verified b9cf9a3 2026-11-05): `test_telemetry_metrics_dashboards.py` globs every `*.json` in `dashboards/runtime/` (except `frontend.json`) and requires each Mimir query to use only the aliases in `runtime.yaml` or the contracted aliases. A new dashboard file there falls under that test (in 060 one broke two tests). Either place it elsewhere or ask for the one-line grant on the test at specify time.
+
+(17 more: `facts.py brief --all ...`)

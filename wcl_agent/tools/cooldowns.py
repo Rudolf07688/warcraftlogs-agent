@@ -111,15 +111,10 @@ async def get_cooldown_usage(
 
     Use this BEFORE saying a cooldown was under-used or "missed". It computes the
     player's eligible time (fight length minus time dead and intermissions — not
-    WCL activeTime) and, when the spec's coaching brief for this content type provides
-    cooldown durations (`guide.available`), "uses of ~opportunities" per major cooldown.
-    The content type (Raid or Mythic+) is read from the report unless you pass it;
-    a Mythic+ run never uses the Raid brief, or the reverse. Express
-    results as "N of ~M opportunities" only when `guide.available` is true; the
-    counts are always approximate (`approximate: true`) and carry
-    `freshness_caveat` when the guide may be out of date. Otherwise compare the
-    `rates` (casts per minute of eligible time) with the cohort and never say
-    "missed". `time.excluded_windows_unknown` lists what could not be excluded.
+    WCL activeTime), cast ``rates``, and, when the spec's coaching brief for this content
+    type provides cooldown durations (``guide.available``), uses of ~opportunities per
+    major cooldown. The content type (Raid or Mythic+) is read from the report unless
+    you pass it.
 
     Args:
         report_code (str): The report code.
@@ -128,16 +123,6 @@ async def get_cooldown_usage(
         source_id (int): The player's source id, to disambiguate duplicate names.
         content_type (str): "raid" or "mplus" to override the content type read from
             the report; leave empty to infer it.
-
-    Returns:
-        dict: {"status": "success", player: {name, source_id, class, spec},
-            time: {fight_s, dead_s, intermission_s, eligible_s, excluded_windows_unknown},
-            guide: {available, content_type, game_patch, freshness, generated_at},
-            cooldowns: [{name, spell_id, cooldown_s, charges, talent_modified, uses,
-                         opportunities, approximate, freshness_caveat}],
-            rates: [{ability: {name, guid}, casts, casts_per_min}],
-            provenance, completeness} or {"status": "error", ...} (with
-            "candidates" when the name is ambiguous).
     """
     if not fight_id or fight_id < 1:
         return {"status": "error", "error_message": "fight_id must be a single fight id (> 0)."}
