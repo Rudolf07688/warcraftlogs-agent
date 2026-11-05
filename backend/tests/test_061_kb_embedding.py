@@ -126,11 +126,14 @@ async def test_query_requests_go_out_together_and_documents_one_by_one(monkeypat
     assert fake.peak == 1  # the background indexer's load is unchanged
 
 
-async def test_query_concurrency_is_bounded(monkeypatch):
+async def test_query_concurrency_is_bounded_across_the_process(monkeypatch):
+    """QA BUG-005: one search sends at most 5 queries, so the bound only means something across
+    searches (several in one model round, several players)."""
     fake = SlowGenai(delay_s=0.05)
     monkeypatch.setattr(generation, "_genai_client", lambda: fake)
-    await VertexEmbedder(MODEL).embed([f"q{i}" for i in range(QUERY_CONCURRENCY + 3)], task="RETRIEVAL_QUERY")
-    assert fake.peak == QUERY_CONCURRENCY and fake.calls == QUERY_CONCURRENCY + 3
+    searches = [VertexEmbedder(MODEL).embed([f"q{i}" for i in range(4)], task="RETRIEVAL_QUERY") for _ in range(3)]
+    await asyncio.gather(*searches)
+    assert fake.peak == QUERY_CONCURRENCY and fake.calls == 12
 
 
 async def test_a_multi_query_embedding_takes_about_one_request(monkeypatch):
@@ -182,10 +185,14 @@ async def test_a_search_whose_embedding_times_out_records_each_cancelled_request
     assert_clean(points.all_labels())
 
 
-async def test_recording_a_cancelled_request_does_not_swallow_the_cancellation(monkeypatch):
+async def test_a_cancelled_request_is_not_swallowed_and_a_document_one_is_not_a_failure(
+    metric_reader, monkeypatch
+):
+    """The cancellation propagates; and QA BUG-006: a document request cancelled by the indexer's
+    shutdown (``KbIndexer.stop``) is not recorded as a failed embedding."""
     fake = SlowGenai(gate=asyncio.Event())
     monkeypatch.setattr(generation, "_genai_client", lambda: fake)
-    # Documents await the request directly; for queries gather's own cancellation would hide a swallow.
+    # Documents await the request directly; for queries the TaskGroup's own cancellation would hide a swallow.
     task = asyncio.create_task(VertexEmbedder(MODEL).embed(["a"], task="RETRIEVAL_DOCUMENT"))
     while fake.calls == 0:
         await asyncio.sleep(0)
@@ -193,3 +200,60 @@ async def test_recording_a_cancelled_request_does_not_swallow_the_cancellation(m
     with pytest.raises(asyncio.CancelledError):
         await task
     assert task.cancelled()
+    assert metric_reader()["app.embedding.duration"] == []
+
+
+# --- QA BUG-003: one failed query cancels its siblings ----------------------------------------
+
+
+class FailingFirst(SlowGenai):
+    """Query ``bad`` fails at once with ``error``; every other request waits on a gate that is
+    never released."""
+
+    def __init__(self, error: BaseException):
+        super().__init__(gate=asyncio.Event())
+        self.error = error
+
+    async def embed_content(self, *, model, contents, config):
+        if contents == ["bad"]:
+            self.calls += 1
+            await asyncio.sleep(0.01)  # the siblings are in flight by now
+            raise self.error
+        return await super().embed_content(model=model, contents=contents, config=config)
+
+
+async def test_a_failed_query_cancels_its_siblings_and_each_is_recorded_once(metric_reader, monkeypatch):
+    fake = FailingFirst(RuntimeError("bad request"))
+    monkeypatch.setattr(generation, "_genai_client", lambda: fake)
+
+    with pytest.raises(RuntimeError):
+        await VertexEmbedder(MODEL).embed(["q1", "bad", "q3"], task="RETRIEVAL_QUERY")
+
+    assert fake.calls == 3 and fake.in_flight == 0  # nothing left running after embed returns
+    points = metric_reader()
+    counts = {p.attributes["error.type"]: p.count for p in points["app.embedding.duration"]}
+    assert counts == {"RuntimeError": 1, "CancelledError": 2}
+
+
+# --- QA BUG-006: a rate-limited query fails inside search's budget, as a rate limit ----------
+
+
+def test_the_query_deadline_fits_inside_searchs_budget():
+    assert 0 < kb_embedder.QUERY_DEADLINE_S <= kb.EMBED_TIMEOUT_S
+
+
+async def test_a_rate_limited_query_surfaces_as_a_rate_limit_not_a_timeout(metric_reader, monkeypatch):
+    from google.genai import errors as genai_errors
+
+    limited = genai_errors.APIError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+    fake = FailingFirst(limited)
+    monkeypatch.setattr(generation, "_genai_client", lambda: fake)
+    # The real schedule's shape: the first retry wait (2-3 s) would end past the 3 s budget.
+    monkeypatch.setattr(kb_embedder, "_POLICY", RetryPolicy(attempts=4, initial_s=3.5, jitter_s=0))
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    assert await kb._embed(["bad"], VertexEmbedder(MODEL)) is None  # keyword only
+    assert loop.time() - started < 2.0  # failed at once, did not sleep into the budget
+    labels = metric_reader().labels("app.embedding.duration")
+    assert [attrs["error.type"] for attrs in labels] == ["ModelRateLimited"]
