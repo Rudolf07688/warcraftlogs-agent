@@ -217,7 +217,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "quantile_over_time(0.95, {service_name=\"web\"} |= \"agent_first_token_rendered\" | logfmt | kind=\"event\" | event_name=\"agent_first_token_rendered\" | unwrap event_data_ttft_ms | __error__=\"\" [$__range])",
+          "expr": "quantile_over_time(0.95, {service_name=\"web\"} |= \"agent_first_token_rendered\" | logfmt | kind=\"event\" | event_name=\"agent_first_token_rendered\" | unwrap event_data_ttft_ms | __error__=\"\" [$__range]) by ()",
           "refId": "A",
           "queryType": "instant",
           "legendFormat": "__auto"

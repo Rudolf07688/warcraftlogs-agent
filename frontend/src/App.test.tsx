@@ -222,4 +222,19 @@ describe("panel error boundaries", () => {
     expect(screen.getByText("new-chat")).toBeTruthy();
     expect(screen.getByText("send")).toBeTruthy();
   });
+
+  it("switching to another conversation starts the panel clean (reset key = conversation id)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    h.details = { A: detail("A"), B: detail("B") };
+    h.listThrows = true;
+    render(<App />);
+    await act(async () => {
+      h.onStatus?.(true);
+    });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    h.listThrows = false; // chat B renders fine
+    await click("open-B");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByTestId("status")).toBeTruthy();
+  });
 });

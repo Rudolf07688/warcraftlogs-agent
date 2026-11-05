@@ -5,7 +5,11 @@
 # to runtime p95 latency, error ratio and LLM cost per request.
 #
 # The version running at a moment is the one whose target_info was sampled last (the app
-# exports every minute; an old version's sample stays visible for the 5-minute lookback). A
+# exports every minute; an old version's sample stays visible for the 5-minute lookback),
+# among the versions other than "unknown": a stray series from a process that built its
+# Resource without the git SHA must not hide the real one. With only "unknown" left, it is
+# what D12 shows (as unattributed). timestamp() only reads a selector's own sample time, so
+# the preference is two selectors joined with `or on (job)`, not a filter on the result. A
 # rate window spans 5 minutes, so a new version's first minutes still include the old one's
 # requests. commit = the first 7 characters of service.version, as on the board.
 groups:
@@ -16,12 +20,17 @@ groups:
         expr: |
           label_replace(
             label_replace(
-              topk by (job) (1, max by (job, service_version) (timestamp(target_info{job="wcl-agent/api"}))) * 0 + 1,
+              topk by (job) (1, max by (job, service_version) (
+                timestamp(target_info{job="wcl-agent/api", service_version!="unknown"})
+                or on (job) timestamp(target_info{job="wcl-agent/api"})
+              )) * 0 + 1,
               "service_name", "$1", "job", "wcl-agent/(.+)"
             ),
             "commit", "$1", "service_version", "(.{1,7}).*"
           )
-      # One seat per commit (the latest push wins), from the last 30 days of board entries.
+      # One seat per commit, from the last 30 days of board entries. A commit pushed with two
+      # seats (a roster edit between pushes) keeps two series; commits.py gives each a fixed
+      # tie-break value in [1, 2), so the larger wins on every evaluation and D12 never flaps.
       - record: cross:commit_seat:info
         expr: |
           topk by (commit) (1, max by (commit, seat, feature) (last_over_time(build_commit_info[30d])))

@@ -47,7 +47,7 @@ component error posted to the receiver appears on D5's top-errors query with its
 ### User Story 2 - Seeded secrets never reach a backend (sc-423, Priority: P1)
 
 The owner needs proof that secrets (bearer tokens, JWTs, `sk-`/`AIza` keys, DSN passwords)
-sent through every telemetry path (the build layer shaped like Claude Code, the real backend
+sent through the telemetry paths of the app and the build layer (shaped like Claude Code, the real backend
 telemetry bootstrap, the browser receiver) are masked before they are stored in any backend
 (logs, traces including span attributes and events, metrics including labels and values).
 
@@ -125,4 +125,4 @@ The attribution rule is stated on the dashboard.
 - "Stream aborted" means the chat connection closed while a turn was streaming (the app has no stop button).
 - Build cost per commit is estimated from the sprint's per-agent usage file (written at wrap-up); without it the cost is empty.
 - Runtime delta = a version's mean over the dashboard range minus the mean of all versions over the same range.
-- The Postgres slow-query log path (058) is added to the redaction script's path table later.
+- The Postgres log path (058) is not a row in the redaction script's `PATHS`: `observability/test/datastores.sh` already seeds a secret through it and proves it masked (decision on board #67). The script covers the build layer, the backend and the browser receiver.

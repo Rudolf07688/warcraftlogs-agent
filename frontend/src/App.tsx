@@ -562,7 +562,7 @@ export default function App() {
   return (
     <div className="app">
       <Ambient paused={streaming} />
-      <TelemetryBoundary name="sidebar">
+      <TelemetryBoundary name="sidebar" resetKey={activeId}>
         <Sidebar
           conversations={conversations}
           raids={raids}
@@ -631,7 +631,7 @@ export default function App() {
             Sign out
           </Button>
         </header>
-        <TelemetryBoundary name="messages">
+        <TelemetryBoundary name="messages" resetKey={activeId}>
           <MessageList
             messages={messages}
             streaming={streaming}
@@ -647,7 +647,7 @@ export default function App() {
             footer={welcome}
           />
         </TelemetryBoundary>
-        <TelemetryBoundary name="composer">
+        <TelemetryBoundary name="composer" resetKey={activeId}>
           <Composer disabled={streaming || !connected} onSend={send} />
         </TelemetryBoundary>
         <div className="attribution">
