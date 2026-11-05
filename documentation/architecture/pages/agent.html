@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
+<meta name="verified-at" content="commit 9d6712e · 2026-11-05">
 <title>Agent runtime &amp; tools · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -253,6 +253,7 @@
   </ul>
   <p>Every turn logs one <code>turn stats</code> INFO line from <code>stream_response()</code>: model, requests, rounds, retries, seconds waited, outcome (<code>answered</code>, <code>empty</code>, <code>rate_limited</code>, <code>error</code> or <code>abandoned</code>), prompt and cached tokens, trimmed results, tool calls and the fallback model.</p>
   <p>With telemetry on, <code>stream_response()</code> also records the turn's time to first answer text (<code>app.llm.stream.ttft</code>, by model and by the agent that wrote the text; the first non-blank streamed text, or the final response when nothing streamed) through <code>record_ttft()</code> in <code>backend/app/telemetry/metrics.py</code>. It is measured from the start of the turn, so tool rounds before the answer count. The model is the fallback model when the turn switched. See <a href="observability.html#runtime">Observability</a>.</p>
+  <p>Two more metrics come from <code>_run_turn()</code> in <code>agent_runner.py</code>, both through <code>backend/app/telemetry/metrics.py</code>. <code>record_finish_reason()</code> counts each finished model response (not the partial events of a stream) by the reason it ended, under the model that answered, as <code>app.llm.finish_reasons</code>; the label is a fixed set of reason names with everything else as <code>other</code>. <code>record_conversation_depth()</code> records how many chat turns the conversation has had, at the end of each chat turn (<code>app.agent.turns_per_conversation</code>, by agent). The count is kept in the conversation's ADK session state under <code>app_turns</code>: <code>_ensure_session()</code> returns it, and the turn raises it by passing a <code>state_delta</code> with the user's message. The greeting and guide jobs run disposable sessions as the default local user and are not counted; conversations that started before this existed count from their first turn after it.</p>
 
   <h3>Why</h3>
   <p class="why">One short transaction for setup and short ones for captures and the save, so a turn holds no database connection while the model streams.<cite>backend/app/api/ws.py (_handle_turn comments, QA PERF-006)</cite></p>

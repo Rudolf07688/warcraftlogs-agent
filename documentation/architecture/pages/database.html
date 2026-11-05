@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 5c0c7e9 · 2026-11-04">
+<meta name="verified-at" content="commit 9d6712e · 2026-11-05">
 <title>Database &amp; migrations · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -23,7 +23,7 @@
     <span class="muted verified"></span>
   </div>
   <nav class="onpage" aria-label="On this page">
-    <a href="#overview">Postgres and the two roles</a>
+    <a href="#overview">Postgres and its roles</a>
     <a href="#access">Engine, sessions &amp; repositories</a>
     <a href="#tables">Tables</a>
     <a href="#rls">Row-level security</a>
@@ -35,27 +35,28 @@
 
 <!-- ============================================================ OVERVIEW -->
 <section class="layer" id="overview">
-  <h2>Postgres and the two roles</h2>
-  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">PostgreSQL 17</span><span class="chip">pgvector &ge; 0.8 (extension)</span><span class="chip">citext (extension)</span><span class="chip">pgvector&gt;=0.5.1 (Python)</span></div>
+  <h2>Postgres and its roles</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">PostgreSQL 17</span><span class="chip">pgvector &ge; 0.8 (extension)</span><span class="chip">citext (extension)</span><span class="chip">pg_stat_statements (extension)</span><span class="chip">pgvector&gt;=0.5.1 (Python)</span></div>
 
   <h3>What it does, and where it lives</h3>
   <ul>
-    <li><code>docker-compose.yml</code> service <code>db</code>: image <code>pgvector/pgvector:pg17-trixie</code>, which is Postgres 17 plus the pgvector extension. It uses the same major version and on-disk format as <code>postgres:17</code>, so an existing <code>pgdata</code> volume starts as it is. The <code>-trixie</code> tag matches <code>postgres:17</code>'s Debian 13 glibc. The plain <code>pg17</code> tag is built on bookworm and would leave a collation-version mismatch. The port is published on loopback only (<code>127.0.0.1:5432</code>), with a <code>pg_isready</code> healthcheck that the backend waits on.</li>
+    <li><code>docker-compose.yml</code> service <code>db</code>: image <code>pgvector/pgvector:pg17-trixie</code>, which is Postgres 17 plus the pgvector extension. It uses the same major version and on-disk format as <code>postgres:17</code>, so an existing <code>pgdata</code> volume starts as it is. The <code>-trixie</code> tag matches <code>postgres:17</code>'s Debian 13 glibc. The plain <code>pg17</code> tag is built on bookworm and would leave a collation-version mismatch. The port is published on loopback only (<code>127.0.0.1:${DB_PORT:-5432}</code>), with a <code>pg_isready</code> healthcheck that the backend waits on. The service starts Postgres with <code>pg_stat_statements</code> preloaded and a file log for slow statements, lock waits and autovacuum runs, on its own <code>pglog</code> volume (see <a href="observability.html#backends">Observability</a>); none of it changes the data volume.</li>
     <li><b>Owner role</b> (<code>POSTGRES_USER</code>, <code>DATABASE_OWNER_URL</code>): owns the tables and runs Alembic. <code>Settings.owner_database_url</code> in <code>backend/app/config.py</code> falls back to the runtime URL when <code>DATABASE_OWNER_URL</code> is empty, for single-role dev setups.</li>
     <li><b>Runtime role</b> (<code>APP_DB_USER</code>, default <code>wcl_app</code>, <code>DATABASE_URL</code>): what the app connects as. It is not a superuser or a table owner and has no <code>BYPASSRLS</code>, so the RLS policies bind it. Migration <code>0004_rls</code> creates it if it is missing, so there is no init script. The <code>DATABASE_URL</code> default is <code>postgresql+asyncpg://wcl:wcl@localhost:5432/wcl</code>.</li>
+    <li><b>Monitoring role</b> (<code>PG_MONITOR_USER</code>, default <code>wcl_monitor</code>): what Alloy's Postgres exporter logs in as. A member of <code>pg_monitor</code> with <code>CONNECT</code> on the database and nothing else: no table privileges, not the owner, not a superuser. Migration <code>0022_pg_stat_statements</code> creates it only when <code>PG_MONITOR_PASSWORD</code> is set (16 or more letters and digits, no default); unset, there is no role and the exporter reports the database as down while the app is unaffected. An existing role of that name is reused only if it is itself monitor-only, and never the owner or the runtime role: anything else stops the migration.</li>
     <li>ADK's <code>DatabaseSessionService</code> (agent session history) lives in the same database. It reuses the app's engine (<code>backend/app/main.py</code>) and creates its own tables with <code>prepare_tables()</code>, outside Alembic. <code>0004_rls</code> grants the runtime role <code>CREATE</code> on <code>public</code> for that reason.</li>
   </ul>
 
   <figure class="diagram">
-    <svg class="dg" viewBox="0 0 960 470" role="img" aria-labelledby="db-roles-title db-roles-desc">
+    <svg class="dg" viewBox="0 0 960 580" role="img" aria-labelledby="db-roles-title db-roles-desc">
       <title id="db-roles-title">Who connects to Postgres, and as which role</title>
-      <desc id="db-roles-desc">The FastAPI app connects as the runtime role. It sets app.tenant_id and app.user_id for each transaction and reaches the 17 tenant tables under forced row-level security, and the 12 global tables, which have no RLS. ADK's DatabaseSessionService shares the app's engine and writes its own tables. Alembic and the init_db command connect as the owner role and run DDL, RLS policies, grants and CREATE EXTENSION.</desc>
+      <desc id="db-roles-desc">The FastAPI app connects as the runtime role. It sets app.tenant_id and app.user_id for each transaction and reaches the 17 tenant tables under forced row-level security, and the 12 global tables, which have no RLS. ADK's DatabaseSessionService shares the app's engine and writes its own tables. Alembic and the init_db command connect as the owner role and run DDL, RLS policies, grants and CREATE EXTENSION. Alloy's Postgres exporter connects as the monitoring role, which can read only the statistics views.</desc>
       <defs>
         <marker id="db-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
         <marker id="db-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
       </defs>
 
-      <rect class="zone" x="470" y="14" width="476" height="442" rx="14"/>
+      <rect class="zone" x="470" y="14" width="476" height="552" rx="14"/>
       <text class="zlbl" x="486" y="40">db · Postgres 17 + pgvector</text>
 
       <rect class="node core" x="20" y="40" width="300" height="90" rx="10"/>
@@ -82,19 +83,30 @@
       <text class="t" x="710" y="356" text-anchor="middle">ADK tables</text>
       <text class="sub" x="710" y="380" text-anchor="middle">made by prepare_tables(), not Alembic</text>
 
+      <rect class="node ext" x="20" y="470" width="300" height="90" rx="10"/>
+      <text class="t" x="170" y="506" text-anchor="middle">Alloy · Postgres exporter</text>
+      <text class="sub" x="170" y="530" text-anchor="middle">monitoring role · pg_monitor</text>
+
+      <rect class="node store" x="500" y="450" width="420" height="90" rx="10"/>
+      <text class="t" x="710" y="486" text-anchor="middle">Statistics views</text>
+      <text class="sub" x="710" y="510" text-anchor="middle">pg_stat_statements, pg_stat_* · read only</text>
+
       <path class="flow" marker-end="url(#db-ah)" d="M320,85 H497"/>
       <text class="lbl" x="408" y="75" text-anchor="middle">set_config(…)</text>
       <path class="flow" marker-end="url(#db-ah)" d="M320,115 H420 V225 H497"/>
       <path class="flow" marker-end="url(#db-ah)" d="M320,235 H390 V355 H497"/>
       <path class="flow ret" marker-end="url(#db-ah2)" d="M320,415 H467"/>
       <text class="lbl" x="393" y="405" text-anchor="middle">DDL, RLS, grants</text>
+      <path class="flow" marker-end="url(#db-ah)" d="M320,515 H497"/>
+      <text class="lbl" x="408" y="505" text-anchor="middle">statistics only</text>
     </svg>
-    <figcaption>The app and ADK share one async engine as the runtime role. Only Alembic (directly or through <code>backend.cli.init_db</code>) uses the owner role.</figcaption>
+    <figcaption>The app and ADK share one async engine as the runtime role. Only Alembic (directly or through <code>backend.cli.init_db</code>) uses the owner role. The monitoring role belongs to the telemetry stack and can read statistics only.</figcaption>
   </figure>
 
   <h3>Why</h3>
   <p class="why">PostgreSQL 17 was the owner's call: "We will spin up a backend postgres 17 database to keep track of app state over time".<cite>specs/001-streaming-chat-frontend/spec.md (Input)</cite></p>
   <p class="why">The vectors live in the same Postgres through the pgvector image, not in a separate vector database, which the owner's design rejected. The <code>-trixie</code> tag avoids a collation mismatch on the existing volume.<cite>specs/043-kb-store-embed/research.md R1</cite></p>
+  <p class="why">The monitoring role is a third, separate login with <code>pg_monitor</code> only, so a leaked exporter credential cannot read or change app data, and the migration refuses to reuse a role with more rights.<cite>backend/migrations/versions/0022_pg_stat_statements.py (docstring)</cite></p>
   <p class="why">Two roles exist so RLS really constrains the app. A single superuser role could bypass RLS and defeat it. The owner role is used only by Alembic.<cite>specs/006-multi-tenancy/research.md R4</cite></p>
 </section>
 
@@ -245,7 +257,7 @@ tenant_user_isolation:  the tenant predicate AND
 <!-- ============================================================ MIGRATIONS -->
 <section class="layer" id="migrations">
   <h2>Migrations</h2>
-  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">alembic&gt;=1.13.0</span><span class="chip">21 revisions, linear</span></div>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">alembic&gt;=1.13.0</span><span class="chip">22 revisions, linear</span></div>
 
   <h3>What it does, and where it lives</h3>
   <ul>
@@ -277,6 +289,7 @@ tenant_user_isolation:  the tenant predicate AND
       <tr><td>0019</td><td><code>0019_kb_chunks</code> · 043</td><td>Postgres only. <code>CREATE EXTENSION vector</code>, fails if pgvector is older than 0.8. Adds <code>uq_conversations_id_tenant</code>, <code>kb_chunks</code>, and <code>kb_chat_chunks</code> with RLS and the composite FK, plus the HNSW, GIN and filter indexes.</td></tr>
       <tr><td>0020</td><td><code>0020_raw_fetch_summary_index</code> · 047, 051</td><td>Partial index <code>ix_raw_fetches_summaries</code>, built concurrently. Superseded by 0021.</td></tr>
       <tr><td>0021</td><td><code>0021_raw_fetch_own_summary</code> · 051</td><td><code>raw_fetches.own_summary</code> with a constant default, a backfill in committed chunks of 1000 rows, three indexes built concurrently, and 0020's index dropped. Everything runs outside the migration transaction. It imports the query text and key function from <code>wcl_agent.client</code> to apply the old rule.</td></tr>
+      <tr><td>0022</td><td><code>0022_pg_stat_statements</code> · 058</td><td>Postgres only. <code>CREATE EXTENSION pg_stat_statements</code> (the db service preloads the library). With <code>PG_MONITOR_PASSWORD</code> set, also the monitoring role: <code>LOGIN</code>, no other attributes, <code>pg_monitor</code> and <code>CONNECT</code>. Downgrade drops the role (only if it is monitor-only) and the extension.</td></tr>
     </tbody>
   </table></div>
 
@@ -322,7 +335,7 @@ tenant_user_isolation:  the tenant predicate AND
     <li><code>docker-compose.yml</code>, <code>pyproject.toml</code>, <code>backend/app/config.py</code>, <code>.env.example</code>, <code>README.md</code> (database setup)</li>
     <li><code>backend/app/db/session.py</code>, <code>models.py</code>, <code>repository.py</code>, <code>timestamps.py</code></li>
     <li><code>backend/app/tenancy/context.py</code>, <code>backend/app/repositories/*.py</code>, <code>backend/app/kb/search.py</code>, <code>backend/app/api/ws.py</code>, <code>backend/app/main.py</code></li>
-    <li><code>backend/alembic.ini</code>, <code>backend/migrations/env.py</code>, <code>script.py.mako</code>, <code>versions/0001…0021</code></li>
+    <li><code>backend/alembic.ini</code>, <code>backend/migrations/env.py</code>, <code>script.py.mako</code>, <code>versions/0001…0022</code></li>
     <li><code>backend/cli/init_db.py</code>, <code>backend/tests/conftest.py</code>, <code>backend/tests/test_rls.py</code>, <code>backend/tests/test_047_card_lock_pg.py</code></li>
     <li><code>specs/001-streaming-chat-frontend/</code>, <code>specs/006-multi-tenancy/research.md</code>, <code>specs/013-welcome-recent-raids/research.md</code>, <code>specs/020-fetch-persistence/research.md</code>, <code>specs/043-kb-store-embed/research.md</code>, <code>specs/051-raw-store-hardening/research.md</code></li>
   </ul>
