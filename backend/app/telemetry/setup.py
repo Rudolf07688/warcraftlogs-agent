@@ -21,6 +21,7 @@ from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation import fastapi as fastapi_instrumentation
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
@@ -181,6 +182,25 @@ def name_span_by_route(span: Span, scope: dict[str, Any]) -> None:
             span.update_name(f"{scope.get('method', 'HTTP')} {template}")
             return
 
+
+_instrumentation_route_details = fastapi_instrumentation._get_route_details
+
+
+def _route_details(scope: dict[str, Any]) -> str | None:
+    """The instrumentation's own route lookup, without its crash on a partial match (sc-461).
+
+    On a request that only partly matches a route (a CORS preflight, a POST to a GET-only route)
+    it reads ``path`` from FastAPI's lazily included router, which has none, and the 405 became a
+    500. ``None`` here leaves the span named by its method until ``name_span_by_route`` names it.
+    """
+    try:
+        return _instrumentation_route_details(scope)
+    except AttributeError:
+        return None
+
+
+# Looked up as a module global on every request, so replacing it covers every instrumented app.
+fastapi_instrumentation._get_route_details = _route_details
 
 FASTAPI_OPTIONS: dict[str, Any] = {
     "excluded_urls": EXCLUDED_URLS,
