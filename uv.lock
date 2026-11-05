@@ -1842,6 +1842,34 @@ wheels = [
 ]
 
 [[package]]
+name = "pyroscope-io"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/f4/a375d0b3eab82fda80b28511b6e514131e969a637443e67b35db4b2b69ed/pyroscope_io-1.4.0.tar.gz", hash = "sha256:f3d987a945a7bf79d831596f07b1aa54be8363e264cd4046e3e1118b236b7a4f", size = 258962, upload-time = "2026-10-22T09:06:55.81Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/47/739a5833dd349acc73078a9810f072ee43dfd17e1ad8dff1c0e709b69fa7/pyroscope_io-1.4.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:a5e7f25e0de7737f692d2b60ba98cb4899c0051a8dad6b1ea43b8f2f70b793f6", size = 2157779, upload-time = "2026-10-22T09:06:45.943Z" },
+    { url = "https://files.pythonhosted.org/packages/74/64/36eecaa5a76d03fcc8956ea975bc3432b7aee642d0680e659671a472f039/pyroscope_io-1.4.0-cp314-cp314-macosx_11_0_x86_64.whl", hash = "sha256:0ccd47ac6b7f3ee03336ce8f07151c60fb08a9ca95ceadb2e36d2abe8300aaae", size = 2245698, upload-time = "2026-10-22T09:06:47.402Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/92/ca4b0f4b392f03fa253aa2aab7716646ea388652bdb11507b72bd1e36276/pyroscope_io-1.4.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:21b487b632f4f33dbe4a16599c4ef4038a14b8b66f09d8fa0cf695669413b685", size = 5571641, upload-time = "2026-10-22T09:06:48.781Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/c7/0a990aabfb525e9e65b339bba6f238a4dfa8ef181ab1c4a72a65d12a5810/pyroscope_io-1.4.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:d39e1755e0bbf46d84f2effd994848f70bdec404647e84cb6921c5e8e24eb7d3", size = 5095644, upload-time = "2026-10-22T09:06:50.5Z" },
+    { url = "https://files.pythonhosted.org/packages/77/60/c7dbe092738ce04341cee36eac9b75e6a1a9f644123a3a2255de6266c04c/pyroscope_io-1.4.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:5e3493aa05c6efa2d2d34cc8117607c9e08f489a2edf8151bdd0dcfad333a71d", size = 5635996, upload-time = "2026-10-22T09:06:52.245Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/94/d71d46d57ab384792b6a97831181b328bba66a684456e46b42cb13a41a9d/pyroscope_io-1.4.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:2d24d0a130aa9bdb00395494b1e2caf31fc4082e23ee78933c934a91437022e7", size = 5400724, upload-time = "2026-10-22T09:06:53.929Z" },
+]
+
+[[package]]
+name = "pyroscope-otel"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-sdk" },
+    { name = "pyroscope-io" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/8b/d76727b27efed19b8893a9be56e3c62ecdbe2259268d69b16dcdb09444e8/pyroscope_otel-1.1.0.tar.gz", hash = "sha256:552e3401446d0406407f4c8c9487d36604949324cd240599af58a69d0d634175", size = 14107, upload-time = "2026-06-30T10:38:44.5Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/ef/d01ea5c880f478d1d91f7b7e4aa77837e7430fa6e3038ea7fbfe04f37e82/pyroscope_otel-1.1.0-py3-none-any.whl", hash = "sha256:a10accd2a60fa00a18445f8e95df91500630f8f6b177133693792785f57637e5", size = 11815, upload-time = "2026-06-30T10:38:43.306Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2342,7 +2370,10 @@ dependencies = [
     { name = "plotly" },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic-settings" },
+    { name = "pyroscope-io" },
+    { name = "pyroscope-otel" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
@@ -2385,9 +2416,12 @@ requires-dist = [
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.2.1" },
     { name = "pydantic-settings", specifier = ">=2.4.0" },
     { name = "pypdf", marker = "extra == 'test'", specifier = ">=6.21.1" },
+    { name = "pyroscope-io", specifier = "==1.4.0" },
+    { name = "pyroscope-otel", specifier = "==1.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "redis", specifier = ">=6" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
