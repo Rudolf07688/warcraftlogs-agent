@@ -130,4 +130,4 @@ groups:
     rules:
       # Estimated Claude Code spend per day (USD) above which "Build spend per day" fires.
       - record: alert:build_spend_usd_per_day:threshold
-        expr: vector(50)
+        expr: vector(200)

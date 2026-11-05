@@ -436,7 +436,7 @@ Dashboards query aliases, not raw OTel names, so semconv churn is absorbed in on
 | Redis | Evictions above 0 sustained, memory above 85% |
 | Telemetry pipeline | Alloy exporter failures, dropped spans/logs, Loki or Mimir ingest rejects |
 
-> **As built (2026-11-05, feature 058; the code wins):** only two of these exist, as Grafana-managed rules in folder "WCL alerts", provisioned from `observability/grafana/provisioning/alerting/rules.yaml` (edits in the UI are not saved) with no contact point; the state shows in Grafana's alert list. *Telemetry pipeline failures or drops*: Alloy export or enqueue failures or receiver refusals for any signal in the last 2 minutes (`meta:exporter_failures:increase2m`). *Build spend per day above threshold*: Claude Code's estimate over 24 hours against `alert:build_spend_usd_per_day:threshold`, a recording rule (50 USD) in `datastores.yaml`, so changing the number is a rules edit. The other rows are not built.
+> **As built (2026-11-05, feature 058; the code wins):** only two of these exist, as Grafana-managed rules in folder "WCL alerts", provisioned from `observability/grafana/provisioning/alerting/rules.yaml` (edits in the UI are not saved) with no contact point; the state shows in Grafana's alert list. *Telemetry pipeline failures or drops*: Alloy export or enqueue failures or receiver refusals for any signal in the last 2 minutes (`meta:exporter_failures:increase2m`). *Build spend per day above threshold*: Claude Code's estimate over 24 hours against `alert:build_spend_usd_per_day:threshold`, a recording rule (200 USD, the owner's choice on 2026-11-05) in `datastores.yaml`, so changing the number is a rules edit. The other rows are not built.
 
 ## 9. Naming, labels and cardinality budget
 
