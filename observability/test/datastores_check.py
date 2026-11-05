@@ -209,7 +209,9 @@ def postgres_checks(s: Stack, sec: dict) -> None:
         r = s.mimir("topk(1, pg:statement_seconds:total)")
         return r[0]["metric"].get("queryid") if r else None
 
-    check(poll(150, top_alias) == top_sql, "pg:statement_seconds:total (D9's table) ranks it first too")
+    # Wait for the ruler's evaluation that includes it: until then the alias's top is an older one.
+    got = poll(150, lambda: top_alias() == top_sql) and top_sql or top_alias()
+    check(got == top_sql, f"pg:statement_seconds:total (D9's table) ranks it first too (got {got})")
 
     size = int(s.psql("SELECT pg_relation_size('ix_kb_chunks_embedding')"))
     want = f'pg_vector_index_size_bytes{{job="postgres", index="ix_kb_chunks_embedding"}} == {size}'
@@ -226,7 +228,8 @@ def postgres_checks(s: Stack, sec: dict) -> None:
 def redis_checks(s: Stack, sec: dict) -> None:
     check(poll(120, s.value, 'redis_keyspace_hits_total{job="redis"} == 7') == 7, "Redis keyspace hits = 7")
     check(poll(60, s.value, 'redis_keyspace_misses_total{job="redis"} == 3') == 3, "Redis keyspace misses = 3")
-    ratio = poll(150, s.value, "redis:hit_ratio:5m")
+    poll(150, lambda: abs((s.value("redis:hit_ratio:5m") or 0) - 0.7) < 0.01)
+    ratio = s.value("redis:hit_ratio:5m")
     check(ratio is not None and abs(ratio - 0.7) < 0.01, f"redis:hit_ratio:5m = {ratio} (7 / 10)")
 
 
