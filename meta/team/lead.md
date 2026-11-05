@@ -23,7 +23,7 @@ Running the team:
 - Measure before choosing a lever (`usage.py --context`, `--cold`), then write the proposal. Weigh a tool result by the cache write it causes, not its characters: base64 made screenshots look like 90% of context, yet they cost little (P12). Sub-agents cache for 5 minutes, the main session for an hour: idle waits are the hidden tax.
 - A security rework can break liveness; say so in the end-sweep brief when lanes, locks or ordering change.
 - Name tickets for the owner: a plain name, the id in brackets at most. Search Shortcut before filing: my sc-455 duplicated sc-428 (11-04b).
-- Count on the board, not from memory. Look at a file right before writing it, never a bare `>`; list ignored files before deleting a worktree (qa-reports/ is gitignored).
+- Count on the board, not from memory. Look at a file right before writing it, never a bare `>`; before deleting a worktree, list its ignored files (qa-reports/) and check no container still mounts it (11-05b: four obs services did).
 - Crash recovery: git fsck, board and transcripts for NUL tails; resume agents by ID; rewrite meta/CURRENT.md at each milestone.
 
 Live checks and reports:
