@@ -1,4 +1,5 @@
-"""Checks for rules.sh (feature 055): rules load, build aliases, cost arithmetic, price history."""
+"""Checks for rules.sh (feature 055): rules load, build aliases, cost arithmetic, price history;
+sc-508: guarded per-invocation ratios."""
 from __future__ import annotations
 
 import argparse
@@ -75,6 +76,17 @@ def token_hist(points: list[tuple[dict, float, int]], start: int, now: int) -> d
             "exponentialHistogram": {"aggregationTemporality": 2, "dataPoints": dps}}
 
 
+def agent_hist(name: str, points: list[tuple[str, float, int, int]], now: int) -> dict:
+    """ADK's per-invocation histograms (gen_ai.invoke_agent.*), exponential like the backend's."""
+    dps = [{"startTimeUnixNano": str(start), "timeUnixNano": str(now), "count": str(count), "sum": total,
+            "scale": 0, "zeroCount": "0", "positive": {"offset": 1, "bucketCounts": [str(count)]},
+            "attributes": attrs({"gen_ai.agent.name": agent})} for agent, total, count, start in points]
+    return {"name": name, "unit": "{call}", "exponentialHistogram": {"aggregationTemporality": 2, "dataPoints": dps}}
+
+
+IDLE_START = time.time_ns() - 3600 * 10**9  # an hour back: no created-time sample in any 5m window
+
+
 def send(otlp: str, step: int, start: int) -> None:
     now = time.time_ns()
     cc = [
@@ -102,6 +114,10 @@ def send(otlp: str, step: int, start: int) -> None:
         ({"gen_ai.request.model": GEMINI, "gen_ai.token.type": "input", "gen_ai.agent.name": "wcl_agent"}, 20000.0 * step, step),
         ({"gen_ai.request.model": GEMINI, "gen_ai.token.type": "output", "gen_ai.agent.name": "wcl_agent"}, 1500.0 * step, step),
     ], start, now)]
+    # sc-508: busy_agent runs one invocation per step (3 model calls, 2 tool calls each);
+    # idle_agent ran one an hour ago and nothing since, so its 5m window divides 0 by 0.
+    for name, per in (("gen_ai.invoke_agent.inference_calls", 3.0), ("gen_ai.invoke_agent.tool_calls", 2.0)):
+        runtime.append(agent_hist(name, [("busy_agent", per * step, step, start), ("idle_agent", per, 1, IDLE_START)], now))
     push(otlp, {"resourceMetrics": [resource("claude-code", cc, "build"), resource("api", runtime, "runtime")]})
 
 
@@ -171,6 +187,19 @@ def main() -> int:
     ratio = wait(a.grafana, "cc:cache_hit_ratio", 120)
     check(bool(ratio) and abs(float(ratio[0]["value"][1]) - 0.6) < 0.01,
           f"cc:cache_hit_ratio = cacheRead / input side = 3000/5000, output left out ({ratio and ratio[0]['value'][1]})")
+
+    # sc-508: the per-invocation ratios record busy windows and skip idle ones, never NaN.
+    for alias, raw, per in (("genai:inference_calls_per_invocation:avg5m", "gen_ai_invoke_agent_inference_calls", 3),
+                            ("genai:tool_calls_per_invocation:avg5m", "gen_ai_invoke_agent_tool_calls", 2)):
+        busy = wait(a.grafana, f'{alias}{{gen_ai_agent_name="busy_agent"}}', 120)
+        check(bool(busy) and abs(float(busy[0]["value"][1]) - per) < 0.01,
+              f"{alias} = {per} for a busy agent ({busy and busy[0]['value'][1]})")
+        unguarded = query(a.grafana, f'sum(histogram_sum(rate({raw}{{gen_ai_agent_name="idle_agent"}}[5m])))'
+                                     f' / sum(histogram_count(rate({raw}{{gen_ai_agent_name="idle_agent"}}[5m])))')
+        check(bool(unguarded) and unguarded[0]["value"][1] == "NaN",
+              f"idle_agent's window is idle: the unguarded ratio is NaN ({unguarded and unguarded[0]['value'][1]})")
+        idle = query(a.grafana, f'last_over_time({alias}{{gen_ai_agent_name="idle_agent"}}[10m])')
+        check(not idle, f"{alias} records nothing for an idle window ({idle and idle[0]['value'][1]})")
 
     prices = prices_from(a.cost_rules)
     check(len(prices) >= 4, f"{len(prices)} price rows in cost.yaml")

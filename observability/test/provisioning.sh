@@ -103,11 +103,42 @@ graph_edges() {
     && mimir_has 'histogram_quantile(0.5, sum by (le, client, server) (rate(traces_service_graph_request_server_seconds_bucket{client="claude-code", server="api"}[15m])))' \
     && mimir_has 'sum by (client, server) (rate(traces_service_graph_request_server_seconds_sum{client="claude-code", server="api"}[15m]))'
 }
-send_pair() { post_otlp traces "{\"resourceSpans\":[$(span claude-code "$client" "" 3 "GET /api/health"),$(span api "$(hex 8)" "$client" 2 "GET /api/health")]}"; }
+# sc-504: the api server span calls Redis, which has no spans of its own (a virtual node). The
+# Redis call takes 20 ms of the api's 50.
+server="$(hex 8)"; t2="$(( t0 + 20000000 ))"
+redis_span() {
+  printf '{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"api"}},{"key":"service.namespace","value":{"stringValue":"wcl-agent"}}]},"scopeSpans":[{"spans":[{"traceId":"%s","spanId":"%s","parentSpanId":"%s","name":"GET","kind":3,"startTimeUnixNano":"%s","endTimeUnixNano":"%s","attributes":[{"key":"db.system","value":{"stringValue":"redis"}}]}]}]}' \
+    "$trace_id" "$(hex 8)" "$server" "$t0" "$t2"
+}
+send_pair() { post_otlp traces "{\"resourceSpans\":[$(span claude-code "$client" "" 3 "GET /api/health"),$(span api "$server" "$client" 2 "GET /api/health"),$(redis_span)]}"; }
 send_pair
 poll 180 graph_edges \
   && pass "D6 service graph: the service map's queries return the claude-code -> api edge with its latency and the node's response time" \
   || fail "service graph queries returned no edge"
+# node_avg_ms NODE: a node's average response time as the node graph computes it in the browser
+# (Grafana 13 tempo graphTransform.ts): the per-edge rates summed over the edges into the node,
+# server seconds / requests, in ms. Prints nothing when the graph would show none.
+node_avg_ms() {
+  python3 - "$GRAFANA" "$1" <<'PY'
+import json, sys, urllib.parse, urllib.request
+grafana, node = sys.argv[1:]
+def rate_into(metric):
+    q = f"sum by (client, server) (rate({metric}[15m]))"
+    url = f"{grafana}/api/datasources/proxy/uid/mimir/api/v1/query?" + urllib.parse.urlencode({"query": q})
+    rows = json.load(urllib.request.urlopen(url, timeout=15))["data"]["result"]
+    rows = [float(r["value"][1]) for r in rows if r["metric"].get("server") == node]
+    return sum(rows) if rows else None
+total, seconds = rate_into("traces_service_graph_request_total"), rate_into("traces_service_graph_request_server_seconds_sum")
+if total and seconds is not None:
+    print(f"{seconds / total * 1000:.2f}")
+PY
+}
+# The ruler records the copy once a minute: poll for the asserted values, not for any result.
+nodes_have_latency() { python3 -c 'import sys; a, r = map(float, sys.argv[1:]); sys.exit(0 if 45 <= a <= 55 and 15 <= r <= 25 else 1)' \
+  "$(node_avg_ms api || true)" "$(node_avg_ms redis || true)" 2>/dev/null; }
+poll 180 nodes_have_latency \
+  && pass "D6 service graph: api node averages its 50 ms server span, the Redis virtual node its 20 ms client call (sc-504)" \
+  || fail "D6 node averages: api '$(node_avg_ms api || true)' ms/r, redis '$(node_avg_ms redis || true)' ms/r (want ~50 and ~20)"
 
 # Span profile: a CPU-bound function under a root span, through the real bootstrap.
 read -r prof_trace prof_span < <(cd "$REPO_ROOT" && env -i HOME="$HOME" PATH="$PATH" WCL_LOAD_DOTENV=0 \

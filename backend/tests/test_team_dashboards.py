@@ -96,6 +96,15 @@ def test_ratio_panels_divide_two_totals_and_nothing_else(name: str) -> None:
         assert top_level_operators(expr) in ([], ["/"]), f"{name} '{title}': {expr}"
 
 
+@pytest.mark.parametrize("name", [D1, D2, D13])
+def test_ratio_time_series_sit_on_a_fixed_0_to_1_axis(name: str) -> None:
+    """sc-508: an all-zero ratio series otherwise auto-scales its percent axis to 0..10000 %."""
+    for p in panels(load(name)):
+        defaults = p.get("fieldConfig", {}).get("defaults", {})
+        if p["type"] == "timeseries" and defaults.get("unit") == "percentunit":
+            assert (defaults.get("min"), defaults.get("max")) == (0, 1), f"{name} '{p['title']}'"
+
+
 def test_cache_hit_ratio_leaves_output_tokens_out() -> None:
     """Spec §5.5: cacheRead / (input + cacheRead + cacheCreation), in the rule and the panels."""
     rule = (BUILD.parents[2] / "mimir" / "rules" / "anonymous" / "build.yaml").read_text()
