@@ -268,7 +268,7 @@ def test_this_sprints_board_attributes_every_hand_off_and_merge_commit():
 def test_the_running_version_prefers_a_known_version_over_unknown():
     expr = " ".join(cross_recorded()["cross:running_version:info"].split())
     # Two selectors, because timestamp() of an `or` result is the evaluation time, not a sample time.
-    assert 'timestamp(target_info{job="wcl-agent/api", service_version!="unknown"}) or on (job) timestamp(target_info{job="wcl-agent/api"})' in expr
+    assert 'timestamp(target_info{job="wcl-agent/api", service_version!~"|unknown"}) or on (job) timestamp(target_info{job="wcl-agent/api"})' in expr
 
 
 def test_two_seats_for_one_commit_get_different_stable_values_so_topk_has_no_tie():
