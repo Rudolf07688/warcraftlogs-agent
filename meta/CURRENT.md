@@ -28,21 +28,26 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## REMIND THE OWNER
 
-- **The next retro has the full team** (owner, 2026-11-05): raise it when the next sprint's
-  PO report lands. team-launch wrap-up step 8 says how.
+- **Full-team retro is next** (see NEXT below).
 
-## Sprint 2026-11-05b (running, first trial of P13)
+## Sprint 2026-11-05b (merged to main bb22117, unpushed)
 
-- Launched 17:48Z, board sprint-2026-11-05b, branch from 0678ea7. Owner confirmed my proposal: back to the app.
-  Semantic search always down (sc-428; lead: the 3 s embed budget), D8 misses cancelled
-  embeddings (sc-503), service-graph average (sc-504), dashboard ratio guards (sc-508, 1 pt),
-  and as candidates: 23k prompt tokens per chat (sc-367), chat input locked after a drop
-  (sc-376).
-- Check at wrap-up: facts added, refused as duplicates, stale (`facts.py stats --since
-  <base>`); developers' cold weight (`usage.py --cold`, target < 1.5); stack and navigation
-  calls per point (scratch nav.py idea → fold into usage.py if it proves useful).
-- Members' memories still hold lines that facts now cover; `member.py lint` shows each
-  member theirs (23 lines). They trim them themselves.
+- 10/10 pts, live 4/4 PASS, cost 1.19/pt, cold 0.44 (P12 target met), P13 first trial: 4 facts
+  added, 0 stale. Team report meta/sprints/2026-11-05b/team-report.html. Worktrees removed,
+  stack runs from main, GitNexus reindexed (sound). Stories Under Review (Done is the owner's).
+- Owner decision open: sc-512 (embed region vs a pinned model location).
+
+## NEXT: full-team retro (owner asked, 2026-11-05, "after compaction")
+
+Relaunch each member by seat, read-only (team-launch wrap-up step 8): Maren (po), Ilse (sm),
+Ansel (dev-1), Tomas (dev-2), Nils (dev-3), Vera (dev-4). Give each: the sprint numbers
+(team-report.html), their own `Retro:` line (PO final report; board export
+meta/sprints/2026-11-05b/board.jsonl), and their `member.py lint --seat` lines. Ilse sat out
+this sprint: ask for her view on the tier-S shape and the PO's coordination share (35%).
+Relay views side by side with mine; then delete reminder-full-team-retro memory.
+My topics: small fact-loaded streams as the default shape; coordination share on small
+sprints; EXPECT pins facts not patterns; tool follow-ups (mutate.py vitest, npm ci in check.py,
+prompt-pin helper, lib.sh facts in obs briefs); PO credentialed-call routing.
 
 ## Open with the owner
 

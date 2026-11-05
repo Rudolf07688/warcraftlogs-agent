@@ -102,8 +102,11 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
     FAILs join the one fix round.
   - **Restart what reads config at start** before every pass and re-check: `restart alloy
     mimir grafana` (plus loki/tempo if theirs changed). `up -d --build` leaves them on the
-    old config. Before removing the worktrees, re-create the stack from the main checkout,
-    because its bind mounts point into the sprint worktree.
+    old config. Before removing the worktrees, re-create the stack from the main checkout
+    *with* `--profile observability` (`up -d --build --force-recreate`; without the profile,
+    grafana/loki/mimir/tempo keep their sprint-worktree mounts), then check that no container
+    mounts `wcl-worktrees` (`docker inspect … {{range .Mounts}}{{.Source}}`). Only then remove
+    the worktrees. On 2026-11-05b I removed them first and had to recreate four services.
   - **Judge answers, not just arrival.** Add an `EXPECT` entry for every prompt whose answer
     the stored report fixes. Take the facts from `livecheck.py --facts <code>`, never from a
     model. The run prints PASS/FAIL per turn and a `LIVE RESULT` line, and exits 1 on any FAIL
