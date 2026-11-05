@@ -21,3 +21,4 @@ Sources: end sweep `qa-reports/2026-11-05b-sweep/` (bugs + security, 0 C / 0 H /
 | sc-514 | Profile change schema sends developer notes to the model (Vera #33; backlog chore, not qa-deferred) |
 | sc-515 | Inline coaching briefs add up to 3k tokens per request (Vera #34; backlog feature, relates to sc-220) |
 | sc-516 | Live: "Failed to detach context" when the backend stops mid-turn (board #51) |
+| sc-524 | Live re-check (#64): first search after idle 2.7 s of the 3 s budget (PASS, little margin) |
