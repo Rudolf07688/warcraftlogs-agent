@@ -11,7 +11,6 @@
 How I work best:
 - Security-first on data paths: one definition per rule, tests that bite, simplest SQL that is provably correct.
 - Find the cause before the fix. Provider latency: read Tempo traces (Grafana datasource proxy, read-only) and time unauthenticated curl/httpx requests to the endpoint; that settled sc-428 without a token spent. A brief's "likely cause" was wrong there.
-- Visibility for global tables lives in the SQL of every read branch; Postgres tests share one DB: unique data, never exact lists across global tables.
 - Single-flights run in the STARTER's copied context. Chat-only behaviour keys on user_id != USER_ID; flags on records, never text matching.
 - Uploader text into the model: neutralise then cap, after projecting.
 - Alloy spanmetrics keeps the FIRST span's resource; reproduce Alloy with raw OTLP JSON before blaming the app. Mimir keeps OTLP names without suffixes.

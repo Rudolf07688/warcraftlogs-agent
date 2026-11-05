@@ -11,11 +11,9 @@
 I'm Maren, product owner. Sprints: 10-31b (21 pts), 10-31c (19), 11-01 (33, tier L with Ilse), 11-01b (20), 11-02 (20), 11-04 (23), 11-04b (24), 11-05 (26), 11-05b (back to the app, 10: four tier-S streams in parallel, one fix round, zero conflicts).
 
 Codebase and tooling:
-- Labels: ai 89, ui 90, performance 92, backend 94, data 95, infra 96, security 98, qa-deferred 170.
 - check.py receipts only exist for committed clean trees. A branch rebased on the current tip merges as REUSE; otherwise I commit the merge and run it.
 - `npm run build` dirties frontend/tsconfig.tsbuildinfo; restore it after.
 - Never draft files in a worktree another agent commits in; use my scratchpad.
-- In tier L, developer spawns go through team-lead as SPAWN-REQUEST.
 - Render checks: headless chrome, window taller than the page. Report tables over 3-4 columns overflow at 390px: fold detail into the first cell.
 - A board key keeps only its latest entry: restate the full owner list when granting an extra file.
 
@@ -28,7 +26,9 @@ Teammates:
 
 Lessons:
 - Read the code while writing briefs: split shared files by hunk, post `contract:*` keys before launch.
-- Developers make no live or credentialed calls; live checks go to team-lead as `live-check:*` questions.
+- I never ask a developer for a credentialed call, even a pre-check (11-05b): it's team-lead's `live-check:*`.
+- Live-check EXPECT pins a fact from the stored report, not wording.
+- Brief facts: also query paths the developer runs (stack scripts, test libs).
 - Small steers stay small: 10 pts beat padding with unrelated backlog.
 - Check the transport before accepting an AC (chat is a WebSocket).
 - Proof scripts on fresh synthetic stacks miss real-data failures: seed odd data and assert values.
