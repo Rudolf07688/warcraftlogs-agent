@@ -51,12 +51,12 @@ Story labels: US1 = sc-417, US2 = sc-418, US3 = sc-419, US4 = sc-420, US5 = sc-4
 
 - [X] T026 [US5] Alert rules in observability/grafana/provisioning/alerting/rules.yaml; threshold alias in datastores.yaml
 - [X] T027 [US5] File test (uids, datasource, aliases) in backend/tests/test_telemetry_datastores.py
-- [ ] T028 [US5] Synthetic triggers: Firing then Normal for each rule in observability/test/alerts.sh
+- [X] T028 [US5] Synthetic triggers: Firing then Normal for each rule in observability/test/alerts.sh
 
 ## Phase 8: Polish
 
 - [X] T029 README section `## Data stores, infra and alerts (058)` in observability/README.md
-- [ ] T030 check.py run (SQLite) + --pg receipt; detect-changes; ownership check; live-check questions on the board
+- [X] T030 check.py run (SQLite) + --pg receipt; detect-changes; ownership check; live-check questions on the board
 
 ## Dependencies
 
