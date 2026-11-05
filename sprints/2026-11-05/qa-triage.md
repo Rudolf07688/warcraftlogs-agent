@@ -37,12 +37,17 @@ Sources: hand-off review `qa-reports/2026-11-05/058-security.md` (fixed in Ansel
 | sc-496 | PERF-005..008 collection and query cost | Low |
 | sc-480 | 058 review SEC-006 scrape sample/label limits | Low (created at hand-off) |
 | sc-481 | pre-existing: backend/frontend ports on all interfaces | pre-existing |
+| sc-503 | live re-check #106: D8 records no failure when the 3 s query timeout cancels the call | accepted under the one-rework rule; sc-462's D8 AC met |
+| sc-504 | live re-check #106: service-graph node average response time missing/zero (UNCLEAR) | needs steady traffic to judge |
 
 Also from developers' findings (not QA): sc-475 app-side redaction skips resource attributes.
 
 ## Existing QA tickets
 - sc-471 (dashboard overcount), sc-458, sc-459, sc-460: not reported in this sweep (scoped to the sprint's diff); comment added.
 - Duplicates merged: none across tickets; duplicates inside the sweep are grouped above.
+
+## Live re-check (team-lead, on 9a4d860)
+- 058-fix PASS (#104), 060-fix PASS (#105), 059-fix PASS except D8 failures (sc-503) and the node-graph average (sc-504) (#106). sc-428 got the 3 s embedding-budget lead.
 
 ## Live-pass notes for the owner
 - "Build spend per day" alert fires truthfully (138 vs 50 USD threshold): the threshold is the owner's call.

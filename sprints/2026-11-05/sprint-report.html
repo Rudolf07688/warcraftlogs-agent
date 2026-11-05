@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-05 Review</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+/* Text containers are block flow, not grid: a grid makes every inline child (<b>, <code>, a bare word run) its own row. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flow-root}
+.card>*+*{margin-top:8px}
+.card>:first-child{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:flow-root;margin:10px 0}
+.callout>*{margin:0}
+.callout>*+*{margin-top:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;display:flex}
+.bar .fill{display:block;flex:none;height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:flow-root;background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;margin:0}
+.checks li.ok{border-left-color:var(--ok)}
+.checks li.no{border-left-color:var(--warn)}
+.checks span.no{float:left;margin-right:10px;min-width:24px;padding:0 4px;font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted);margin-left:6px;white-space:nowrap}
+.checks ul{margin:6px 0 0;padding-left:20px}
+[role=tabpanel]>*+*{margin-top:16px}
+[role=tabpanel]>h3{margin-bottom:0}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint review · WCL Agent App · local report</div>
+  <h1>Telemetry 3: data stores, profiles and build-to-runtime</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-05</b></span> <span>Tip <b class="mono">9a4d860 code · 4fd9a71 docs</b></span> <span>Base <b class="mono">6437aa2</b></span> <span>Written by Maren (product owner)</span></div>
+  <p>The telemetry epic is complete. Grafana now shows Postgres, Redis, containers and the telemetry pipeline itself. A slow query links to its trace, and a request span links to a CPU profile. A build-versus-runtime dashboard ties each commit to the seat that built it and the runtime change it caused, and one script proves that seeded secrets never reach a backend. Two alerts guard the pipeline and the daily build spend. All 12 planned stories are merged and Under Review, plus one backlog bug the QA sweep pulled in. Nothing is pushed.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">26<small> / 26 pts</small></span><span class="s">12 stories, + sc-474 (2) pulled in</span></div>
+  <div class="kpi"><span class="eyebrow">Suite on tip</span><span class="v">2314</span><span class="s">passed, 71 skipped (Postgres run 2371 / 0)</span></div>
+  <div class="kpi"><span class="eyebrow">Rework</span><span class="v">1</span><span class="s">security round (058) + one QA fix round</span></div>
+  <div class="kpi"><span class="eyebrow">Deferred</span><span class="v">11</span><span class="s">QA tickets, all qa-deferred</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-a" aria-controls="p-a" aria-selected="true">Data stores <span class="count">5</span></button>
+  <button class="tab" role="tab" id="tab-b" aria-controls="p-b" aria-selected="false" tabindex="-1">Runtime and profiles <span class="count">4</span></button>
+  <button class="tab" role="tab" id="tab-c" aria-controls="p-c" aria-selected="false" tabindex="-1">Frontend and build-to-runtime <span class="count">3</span></button>
+  <button class="tab" role="tab" id="tab-q" aria-controls="p-q" aria-selected="false" tabindex="-1">QA and live pass</button>
+  <button class="tab" role="tab" id="tab-o" aria-controls="p-o" aria-selected="false" tabindex="-1">For you</button>
+</div></nav>
+
+<div role="tabpanel" id="p-a" aria-labelledby="tab-a" tabindex="0">
+  <h2 class="panel-title">Data-store telemetry (feature 058, Ansel)</h2>
+  <table class="tbl">
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What you get</th></tr>
+    <tr><td>Postgres exporter with pg_stat_statements and pgvector queries <span class="ref">sc-417</span></td><td><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td><td>D9 "Data: Postgres": top statements, knowledge-base index size (equal to psql on the live stack, 4.63 MiB). A pg_monitor-only role, created only when <code>PG_MONITOR_PASSWORD</code> is set.</td></tr>
+    <tr><td>Redis exporter next to the app's cache hit ratio <span class="ref">sc-418</span></td><td><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>D10 "Data: Redis": Redis's hit ratio next to the app's, memory against the 256 MB limit.</td></tr>
+    <tr><td>Slow-query log linked to traces <span class="ref">sc-419</span></td><td><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td>Every SQL statement carries only its traceparent (about +0.5 ms each, measured). Postgres writes to a file volume, and Alloy tails it through redaction. Row and key values in error details are masked whole.</td></tr>
+    <tr><td>Infra and meta-monitoring dashboards <span class="ref">sc-420</span></td><td><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td><td>D11: CPU and memory per service plus the host, pipeline drops and queues, ingest rates, and active series (2.55k against a 50k budget).</td></tr>
+    <tr><td>Minimal local alerts <span class="ref">sc-424</span></td><td><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>"WCL alerts" folder: pipeline failures and daily build spend.</td></tr>
+  </table>
+  <div class="callout warn"><p>The security review at hand-off found two High issues: row values from constraint errors reached Loki, and a "GET-only" Docker proxy could read every container's files and environment. It also found three Medium issues. All were fixed in one rework round. The proxy is gone, and Alloy has no Docker access at all.</p></div>
+</div>
+
+<div role="tabpanel" id="p-b" aria-labelledby="tab-b" tabindex="0" hidden>
+  <h2 class="panel-title">Runtime profiles and dashboards (feature 059, Nils)</h2>
+  <table class="tbl">
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What you get</th></tr>
+    <tr><td>Partly matching route returns 500 instead of 405 with telemetry on <span class="ref">sc-461</span></td><td><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td>A CORS preflight returns 200 and a wrong method returns 405 (confirmed live).</td></tr>
+    <tr><td>Runtime dashboards: service graph, finish reasons, conversation depth, embedding latency <span class="ref">sc-462</span></td><td><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td><td>Service graph with node latency and p50/p95/p99 on D6. Finish reasons and conversation depth on D7. Embedding latency, batch size and failures by outcome on D8. Feedback ratio was dropped because the app has no feedback feature.</td></tr>
+    <tr><td>Declare PyYAML, decide the board backfill window <span class="ref">sc-463</span></td><td><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td><td>PyYAML is declared. The board window stays at Loki's 7 days, because the limit is per tenant and widening it would also admit week-old content.</td></tr>
+    <tr><td>Pyroscope span profiles for the backend <span class="ref">sc-421</span></td><td><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td><td>"Profiles for this span" opens a flame graph. Profiling is opt-in with <code>WCL_PROFILES=1</code>. Labels hold route templates only, never ids.</td></tr>
+  </table>
+  <div class="callout ok"><p>Pulled in: the double SQL tracer <span class="ref">sc-474</span>, which Ansel found while building. The sweep showed it leaked profiler tags, so Nils fixed it at the root. Each engine now has one tracer, and each statement gets one span.</p></div>
+</div>
+
+<div role="tabpanel" id="p-c" aria-labelledby="tab-c" tabindex="0" hidden>
+  <h2 class="panel-title">Frontend, build-to-runtime and redaction proof (feature 060, Tomas)</h2>
+  <table class="tbl">
+    <tr><th>Story</th><th>Pts</th><th>State</th><th>What you get</th></tr>
+    <tr><td>Frontend dashboard and error boundaries <span class="ref">sc-416</span></td><td><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td>A plain fallback with Retry, never the error text, at route level and around the sidebar, messages and composer. Four chat events. D5 shows sessions, turns, client time to first token, Web Vitals by route and stream aborts (live: 967 ms TTFT).</td></tr>
+    <tr><td>End-to-end redaction tests <span class="ref">sc-423</span></td><td><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td><td><code>observability/test/redaction-e2e.sh</code> passes on the real config and fails on five mutated copies.</td></tr>
+    <tr><td>Build vs runtime dashboard <span class="ref">sc-422</span></td><td><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td><td>D12: commit annotations, commit to seat to build cost to runtime change. All 7 of this sprint's commits are attributed (only 1 was before the fix round).</td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-q" aria-labelledby="tab-q" tabindex="0" hidden>
+  <h2 class="panel-title">QA sweep, live pass and the fix round</h2>
+  <p>The sweep on fcef188 reported 1 Critical, 2 High, 6 Medium and 22 Low findings (<span class="mono">qa-reports/2026-11-05-sweep/</span>, local only). The team-lead live pass on the same commit reported 5 FAILs. One fix round, split by author, closed every crucial item:</p>
+  <ul class="checks">
+    <li class="ok">Critical: a profiler tag leak caused by the double SQL tracer. Fixed at the root <span class="ref">sc-474</span>.</li>
+    <li class="ok">High: the app-shell error boundary sat outside the router, so route errors showed the raw message and stack. Routes now have their own error page.</li>
+    <li class="ok">Medium: profile labels carried raw request paths with ids. They now carry route templates only.</li>
+    <li class="ok">Live: Mimir silently dropped about 2 samples per second. The cause was a pre-existing transform that collapsed Claude Code's per-session streams, so <b>build-spend figures before this fix undercount</b>.</li>
+    <li class="ok">Live: D12 showed the running version as "unknown". Alloy's spanmetrics kept the first span's version; that version is now removed there.</li>
+    <li class="ok">Live: D12 attributed only 1 commit, D8 was blank while embeddings failed, and the D9 table was garbled. All fixed.</li>
+    <li class="ok">Medium: the D5 first-token "p95" showed one tile per event, and the D11 host line never appeared. Both fixed.</li>
+  </ul>
+  <h3>Deferred to the backlog (label qa-deferred)</h3>
+  <table class="tbl">
+    <tr><th>Ticket</th><th>Why later</th></tr>
+    <tr><td>SQL trace comments cost the statement cache <span class="ref">sc-490</span></td><td>By design and measured (about 16 ms per chat turn); the story asks for the comments</td></tr>
+    <tr><td>Profiles tagged per thread on the event loop <span class="ref">sc-491</span></td><td>Library limitation, documented; this is a one-user app</td></tr>
+    <tr><td>Redaction test skips the profile and Postgres paths <span class="ref">sc-492</span></td><td>Both paths have their own proofs</td></tr>
+    <tr><td>Raw browser error text on D5 <span class="ref">sc-493</span></td><td>Grafana is on loopback only</td></tr>
+    <tr><td>cAdvisor holds host sockets <span class="ref">sc-494</span></td><td>Hardened and documented; an opt-in profile would make it your choice</td></tr>
+    <tr><td>Monitoring-role password rotation and grants <span class="ref">sc-495</span></td><td>Fails safe (D9 goes empty)</td></tr>
+    <tr><td>Collection and dashboard query cost <span class="ref">sc-496</span></td><td>Low</td></tr>
+    <tr><td>Scrape sample and label limits <span class="ref">sc-480</span></td><td>Low (from the hand-off review)</td></tr>
+    <tr><td>Backend and frontend ports open on all interfaces <span class="ref">sc-481</span></td><td>Pre-existing</td></tr>
+    <tr><td>D8 misses failures cancelled by the 3 s timeout <span class="ref">sc-503</span></td><td>Live re-check; the story's D8 criteria are met</td></tr>
+    <tr><td>Service-graph node averages <span class="ref">sc-504</span></td><td>Unclear right after the restart</td></tr>
+    <tr><td>App-side redaction skips resource attributes <span class="ref">sc-475</span></td><td>Alloy masks them anyway (proven)</td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-o" aria-labelledby="tab-o" tabindex="0" hidden>
+  <h2 class="panel-title">For you</h2>
+  <ul class="checks">
+    <li class="no"><b>Decide:</b> merge <span class="mono">sprint-2026-11-05</span> to main and push (nothing is pushed). Stories stay Under Review until you move them.</li>
+    <li class="no"><b>Decide:</b> the daily build-spend threshold. The alert fires truthfully today (138 USD against a 50 USD threshold).</li>
+    <li class="no"><b>Setup on your stack:</b> add <code>PG_MONITOR_PASSWORD</code> (16+ letters and digits) to <code>.env</code> and migrate to 0022 for D9. Add <code>WCL_PROFILES=1</code> if you want profiles. Restart Alloy so the stream fix applies.</li>
+    <li class="no"><b>Changed behaviour:</b> <code>docker compose logs db</code> now shows only start-up lines. The Postgres log is in Loki (masked) and on the <code>pglog</code> volume.</li>
+    <li class="no"><b>Live re-check:</b> Done on 9a4d860. Every fix passed except two small items, now tickets: D8 still records no failure when the 3 s query-embedding timeout cancels the call (sc-503), and the service-graph node averages need steady traffic to judge (sc-504). A strong lead for &ldquo;semantic search always down&rdquo; (sc-428): every search takes the full 3 s budget.</li>
+  </ul>
+  <h3>Decisions</h3>
+  <ul class="checks">
+    <li class="ok">I added the QA bug where a CORS preflight returned 500 with telemetry on, because it sat in the same file as this sprint's work. I left the other deferred QA tickets out.</li>
+    <li class="ok">I dropped the feedback-ratio panel, since the app has no feedback feature.</li>
+    <li class="ok">There were three parallel tier-M streams with shared files split by section, and no merge conflicts beyond the README.</li>
+    <li class="ok">I granted two cross-footprint fixes during the fix round (the Claude Code stream collapse, and the spanmetrics version), because both fixed the root cause rather than the symptom.</li>
+  </ul>
+  <h3>Architecture docs</h3>
+  <p>Tomas re-verified the architecture pages against the code: observability, database, deployment, frontend, agent, knowledge base, backend API, the index (layer table, system diagram) and open points. <code>archdocs.py check</code> reports 15 pages, 0 problems. <code>specs/telemetry_spec.md</code> also has as-built notes for sprint 3.</p>
+</div>
+<footer>Written by Maren, product owner, 2026-11-05.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>
