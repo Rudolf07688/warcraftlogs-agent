@@ -1,4 +1,5 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
+import { useRouteError } from "react-router-dom";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { reportError } from "./context";
@@ -12,6 +13,8 @@ import { reportError } from "./context";
 interface Props {
   /** The boundary's name on the report: shell, sidebar, messages, composer. */
   name: string;
+  /** The panel starts clean when this changes (the chat panels pass the conversation id). */
+  resetKey?: string | null;
   children: ReactNode;
 }
 
@@ -39,12 +42,29 @@ export class TelemetryBoundary extends Component<Props, State> {
     reportError(withComponentStack(error, info), { boundary: this.props.name });
   }
 
+  componentDidUpdate(prev: Props): void {
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false });
+  }
+
   private retry = () => this.setState({ failed: false });
 
   render() {
     if (!this.state.failed) return this.props.children;
     return <PanelFallback onRetry={this.retry} />;
   }
+}
+
+/**
+ * The route tree's errorElement. A data router catches route render errors itself, before
+ * the shell boundary around RouterProvider ever sees them, and its default page prints the
+ * message and stack. This reports like the shell boundary and shows the same plain fallback.
+ */
+export function RouteErrorFallback() {
+  const error = useRouteError();
+  useEffect(() => {
+    reportError(error instanceof Error ? error : new Error(String(error)), { boundary: "shell" });
+  }, [error]);
+  return <PanelFallback onRetry={() => window.location.reload()} />;
 }
 
 export function PanelFallback({ onRetry }: { onRetry: () => void }) {
