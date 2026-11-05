@@ -3,7 +3,7 @@ id: absent-label-matches-not-equal
 anchors: [file:observability/mimir/rules/anonymous/cross.yaml, file:observability/alloy/config.alloy, comp:mimir, comp:alloy]
 by: dev-3 Nils
 source: meta/team/dev-3.md L22, L39; meta/sprints/2026-11-05/board.jsonl #95
-verified: b9cf9a3 2026-11-05
+verified: 32010a6 2026-11-05
 ---
 In PromQL an absent label matches `!="x"`. Alloy's spanmetrics `target_info` has no
 `service_version`: the `spanmetrics_version` transform deletes it, because the connector

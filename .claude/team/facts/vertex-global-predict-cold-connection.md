@@ -3,7 +3,7 @@ id: vertex-global-predict-cold-connection
 anchors: [sym:wcl_agent/llm/generation.py::embed_texts, file:backend/app/kb/embedder.py]
 by: dev-3 Nils
 source: 061 board #23
-verified: 0678ea7 2026-11-05
+verified: 32010a6 2026-11-05
 ---
 On Vertex, google-genai sends gemini-embedding-001 to `:predict` (not embedContent). The
 `global` endpoint answers :predict about 12 s late on every NEW connection (even a 401; measured
