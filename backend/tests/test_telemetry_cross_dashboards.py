@@ -63,7 +63,7 @@ def test_d5_reads_loki_only_and_parses_known_faro_fields():
         assert '{service_name="web"}' in expr, expr
         used = set(re.findall(r"\b([a-z_]+)(?:!?=|=~)\"", expr.split("|", 1)[1])) | set(re.findall(r"\bunwrap (\w+)", expr))
         used -= {"__error__"}
-        used |= {g for m in re.findall(r"\bby \(([^)]*)\)", expr) for g in m.replace(" ", "").split(",")}
+        used |= {g for m in re.findall(r"\bby \(([^)]*)\)", expr) for g in m.replace(" ", "").split(",") if g}
         assert used <= D5_FIELDS, (panel["title"], used - D5_FIELDS)
 
 
@@ -77,6 +77,17 @@ def test_d5_covers_the_story_panels():
     sent = {e for e in CUSTOM_EVENTS if f'event_name="{e}"' in exprs}
     assert sent == CUSTOM_EVENTS
     assert "agent_feedback" not in exprs  # no feedback feature (spec §7.5 reserved)
+
+
+def test_every_quantile_is_grouped_so_a_stat_shows_one_percentile_not_one_per_event():
+    """An ungrouped quantile_over_time keeps one series per log line's own labels (timestamp,
+    session_id, ...): the stat shows a tile per event. `by ()` makes it one number."""
+    seen = 0
+    for panel, target in targets(load(D5)):
+        if target["expr"].startswith("quantile_over_time("):
+            seen += 1
+            assert re.search(r"\]\)\s+by \([^)]*\)$", target["expr"]), (panel["title"], target["expr"])
+    assert seen
 
 
 def test_unwrapped_values_drop_parse_errors():
@@ -216,6 +227,53 @@ def test_a_merge_belongs_to_the_hand_off_author_on_its_key():
         "def5678": ("tomas (dev-2)", "060"),
         "2222222": ("maren (po)", "qa-fix"),
     }
+
+
+# Sprint 2026-11-05's hand-off and merge entries as the board exported them (texts cut short):
+# hand-offs are keyed status:<feature> and name their head only in the text, merges are keyed
+# merge:<feature> and carry the SHA as a ref. Only 1 of these 7 commits used to be attributed.
+SPRINT_1105 = [
+    {"id": 47, "ts": "2026-11-05T14:06:27+00:00", "author": "nils", "kind": "handoff", "key": "status:059", "refs": None,
+     "text": "059 done on branch 059-runtime-profiles (base 6437aa2, head 5447873; commits 67eee52 sc-461, a468f6e sc-463"},
+    {"id": 49, "ts": "2026-11-05T14:09:57+00:00", "author": "maren", "kind": "merge", "key": "merge:059", "refs": ["953a11a"],
+     "text": "059 merged into sprint-2026-11-05 as 953a11a: check.py on the merged tree RESULT PASS 2243 passed"},
+    {"id": 59, "ts": "2026-11-05T14:37:09+00:00", "author": "ansel", "kind": "handoff", "key": "status:058", "refs": None,
+     "text": "058 done on branch 058-datastore-telemetry (base 953a11a after rebase, head 2fc9826; commits e207633 spec"},
+    {"id": 66, "ts": "2026-11-05T15:04:36+00:00", "author": "tomas", "kind": "handoff", "key": "status:060", "refs": ["7068f46"],
+     "text": "060 done: branch 060-frontend-build-runtime (base 953a11a after rebase, head 7068f46; commits a2e7589 sc-416"},
+    {"id": 67, "ts": "2026-11-05T15:06:00+00:00", "author": "maren", "kind": "merge", "key": "merge:060", "refs": ["8ca8a3b"],
+     "text": "060 merged into sprint-2026-11-05 as 8ca8a3b: verify --index REUSE (tomas receipt, 2258 passed)"},
+    {"id": 69, "ts": "2026-11-05T15:12:28+00:00", "author": "ansel", "kind": "handoff", "key": "status:058", "refs": None,
+     "text": "058 security rework done on 058-datastore-telemetry, rebased onto 8ca8a3b, head 3bc726d (rework commit; earlier"},
+    {"id": 70, "ts": "2026-11-05T15:13:13+00:00", "author": "maren", "kind": "merge", "key": "merge:058", "refs": ["fcef188"],
+     "text": "058 merged into sprint-2026-11-05 as fcef188 after its security rework: verify --index --need-pg REUSE"},
+]
+
+
+def test_this_sprints_board_attributes_every_hand_off_and_merge_commit():
+    commits = load_commits()
+    roster = {"nils": "nils (dev-3)", "ansel": "ansel (dev-1)", "tomas": "tomas (dev-2)", "maren": "maren (po)"}
+    got = {c.commit: (c.seat, c.feature) for c in commits.attribute(SPRINT_1105, "2026-11-05", roster)}
+    assert got == {
+        "5447873": ("nils (dev-3)", "059"),  # head named in the text only
+        "953a11a": ("nils (dev-3)", "059"),  # merge:059 belongs to 059's hand-off author
+        "2fc9826": ("ansel (dev-1)", "058"),
+        "7068f46": ("tomas (dev-2)", "060"),
+        "8ca8a3b": ("tomas (dev-2)", "060"),
+        "3bc726d": ("ansel (dev-1)", "058"),
+        "fcef188": ("ansel (dev-1)", "058"),
+    }
+
+
+def test_a_hand_off_without_refs_takes_the_head_not_the_base_or_a_word():
+    commits = load_commits()
+    roster = {"nils": "nils (dev-3)"}
+    text = "done (base 1234567, head abcdef1; added decade defaced notes)"
+    (c,) = commits.attribute([board_entry(1, "nils", "handoff", "status:070", []) | {"text": text}], "s", roster)
+    assert c.commit == "abcdef1"
+    no_head = "done (base 1234567), the tip is deadbee1"
+    (c,) = commits.attribute([board_entry(1, "nils", "handoff", "status:070", None) | {"text": no_head}], "s", roster)
+    assert c.commit == "deadbee"  # first SHA-shaped word with a digit; "base" ones and plain words are skipped
 
 
 def test_build_cost_is_booked_on_the_features_last_commit_from_its_usage_rows(tmp_path):

@@ -10,13 +10,14 @@ metrics, so D12 can put commit, seat, build cost and runtime deltas in one table
 timestamped at the board entry that names the commit. Sources, all already on disk:
 
   team board JSONL   meta/sprints/<sprint>/board.jsonl and the live boards (git common dir,
-                     team-board/<board>.jsonl): hand-off and merge entries carry the commit as
-                     a ref, and their key names the feature (status:<feature>)
+                     team-board/<board>.jsonl): hand-off and merge entries name the commit as
+                     a ref, or (no ref) as "head <sha>" / the first SHA in the text, and their
+                     key names the feature (status:<feature> or merge:<feature>)
   meta/team/*.md     the roster: member name -> seat
   meta/sprints/<sprint>/usage.txt   per-agent tokens (usage.py, written at wrap-up)
 
 Attribution rule (also on the dashboard): a commit belongs to the seat of the latest hand-off
-on the same board key at or before the entry that names it; a merge entry with no hand-off on
+on the same feature at or before the entry that names it; a merge entry with no hand-off on
 its key belongs to its own author. Commits are the first 7 characters of the ref, matching the
 running version's short SHA. Build cost: the usage rows of the feature (the label starts with
 the feature's number, or names its word, and names the seat holder; "-fix" keys match rows
@@ -50,6 +51,11 @@ _spec.loader.exec_module(teamstats)  # reuse its usage parser, pricing and gauge
 
 SHA = re.compile(r"^[0-9a-f]{7,40}$")
 COMMIT_KINDS = ("handoff", "merge")
+KEY_PREFIXES = ("status:", "merge:")
+# Prose that names a commit when the entry has no ref: "head abc1234" first, else the first
+# SHA-shaped word that has a digit (so "decade" is no commit) and isn't the "base" of a rebase.
+HEAD_IN_TEXT = re.compile(r"\bhead (?:commit )?([0-9a-f]{7,40})\b")
+SHA_IN_TEXT = re.compile(r"(?<!base )\b(?=[0-9a-f]*\d)([0-9a-f]{7,40})\b")
 
 
 @dataclass
@@ -80,22 +86,34 @@ def board_files(meta: Path, board_dir: Path | None) -> list[tuple[str, Path]]:
     return files
 
 
+def named_commits(e: dict) -> list[str]:
+    """The SHAs an entry names: its refs, or else the head (or first SHA) in its text."""
+    refs = [r for r in e.get("refs") or [] if SHA.match(r)]
+    if refs:
+        return refs
+    text = e.get("text") or ""
+    found = HEAD_IN_TEXT.search(text) or SHA_IN_TEXT.search(text)
+    return [found.group(1)] if found else []
+
+
+def feature_of(key: str) -> str | None:
+    return next((key.removeprefix(p) for p in KEY_PREFIXES if key.startswith(p)), None)
+
+
 def attribute(entries: list[dict], sprint: str, roster: dict[str, str]) -> list[Commit]:
     """The commits one board names, by the attribution rule in the module docstring."""
     last_handoff: dict[str, str] = {}
     out: dict[str, Commit] = {}
     for e in sorted(entries, key=lambda e: e["id"]):
-        key = e.get("key") or ""
-        if e["kind"] == "handoff":
-            last_handoff[key] = e["author"]
-        if e["kind"] not in COMMIT_KINDS or not key.startswith("status:"):
+        feature = feature_of(e.get("key") or "")
+        if feature is None or e["kind"] not in COMMIT_KINDS:
             continue
-        author = last_handoff.get(key, e["author"])
-        for ref in e.get("refs") or []:
-            if SHA.match(ref):
-                commit = ref[:7]
-                out[commit] = Commit(commit, roster.get(author, author), key.removeprefix("status:"), sprint,
-                                     datetime.fromisoformat(e["ts"]))
+        if e["kind"] == "handoff":
+            last_handoff[feature] = e["author"]
+        author = last_handoff.get(feature, e["author"])
+        for ref in named_commits(e):
+            commit = ref[:7]
+            out[commit] = Commit(commit, roster.get(author, author), feature, sprint, datetime.fromisoformat(e["ts"]))
     return list(out.values())
 
 

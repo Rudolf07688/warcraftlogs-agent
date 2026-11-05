@@ -38,6 +38,8 @@ payload() {
     {"name": "session_start", "timestamp": "$NOW_ISO"},
     {"name": "agent_message_sent", "attributes": {"model": "m1"}, "timestamp": "$NOW_ISO"},
     {"name": "agent_first_token_rendered", "attributes": {"model": "m1", "ttft_ms": "850"}, "timestamp": "$NOW_ISO"},
+    {"name": "agent_first_token_rendered", "attributes": {"model": "m1", "ttft_ms": "450"}, "timestamp": "$NOW_ISO"},
+    {"name": "agent_first_token_rendered", "attributes": {"model": "m1", "ttft_ms": "250"}, "timestamp": "$NOW_ISO"},
     {"name": "agent_response_completed", "attributes": {"model": "m1", "duration_ms": "4200"}, "timestamp": "$NOW_ISO"},
     {"name": "agent_message_sent", "attributes": {"model": "m1"}, "timestamp": "$NOW_ISO"},
     {"name": "stream_aborted", "attributes": {"model": "m1", "reason": "connection_lost", "elapsed_ms": "900"}, "timestamp": "$NOW_ISO"}
@@ -96,16 +98,21 @@ for ref, name, want in (("A", "LCP", 2400), ("B", "INP", 180), ("C", "CLS", 0.05
     check(any(r["metric"].get("view_name") == "/app/*" and abs(value(r) - want) < 1e-6 for r in vitals[ref]),
           f"Web Vitals: {name} p75 for /app/* is {want}")
 stats = {p["title"]: results.get((p["title"], "A"), []) for p in d["panels"] if p["type"] == "stat"}
-for title, want in (("Sessions", 1), ("Turns sent", 2), ("JS errors", 1), ("Client TTFT p95", 850),
+for title, want in (("Sessions", 1), ("Turns sent", 2), ("JS errors", 1),
                     ("Stream aborts", 1), ("Completed turns", 1)):
     got = [value(r) for r in stats.get(title, [])]
     check(got == [want], f"stat '{title}' is {want} (got {got})")
+# Three TTFT events (250, 450, 850): the p95 stat is ONE tile between the 2nd and 3rd value,
+# not one tile per event (an ungrouped quantile_over_time keeps every event's own series).
+p95 = [value(r) for r in stats.get("Client TTFT p95", [])]
+check(len(p95) == 1 and 450 < p95[0] <= 850, f"stat 'Client TTFT p95' is one tile in (450, 850] (got {p95})")
 aborts = results.get(("Stream aborts per interval", "A"), [])
 check(sum(value(r) for r in aborts if r["metric"].get("event_data_reason") == "connection_lost") == 1,
       "Stream aborts per interval: one connection_lost abort")
 ttft = results.get(("Client TTFT", "B"), [])
-check(any(r["metric"].get("event_data_model") == "m1" and any(float(v) == 850 for _, v in r["values"]) for r in ttft),
-      "Client TTFT: p95 850 ms for model m1")
+check(len(ttft) == 1 and ttft[0]["metric"].get("event_data_model") == "m1"
+      and any(450 < float(v) <= 850 for _, v in ttft[0]["values"]),
+      "Client TTFT: one p95 series for model m1, between the 2nd and 3rd value")
 errs = results.get(("JS errors / min by route", "A"), [])
 check(any(r["metric"].get("view_name") == "/app/*" and any(float(v) > 0 for _, v in r["values"]) for r in errs),
       "JS errors / min: a non-zero rate on /app/*")
