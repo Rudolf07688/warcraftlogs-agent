@@ -24,8 +24,8 @@
 - [X] T015 [US4] `PYROSCOPE_SERVER_ADDRESS` in `telemetry/config.py`; `pyroscope.configure` + `PyroscopeSpanProcessor` in `setup.install`
 - [X] T016 [US4] Tests: off by default, never configured in the suite, processor wired when set (fake pyroscope) in `backend/tests/test_telemetry_profiles.py`
 - [X] T017 [US4] Compose `pyroscope` service + volume + backend env; Pyroscope datasource; Tempo `tracesToProfiles`
-- [ ] T018 [US4] Stack proof: CPU-bound span → profile id → Pyroscope flame graph for that span
+- [X] T018 [US4] Stack proof: CPU-bound span → profile id → Pyroscope flame graph for that span
 
 ## Phase 5: polish
 - [X] T019 README section `## Profiles and runtime dashboards (059)`
-- [ ] T020 Live-check questions on the board; full `check.py run`; hand-off
+- [X] T020 Live-check questions on the board; full `check.py run`; hand-off
