@@ -141,7 +141,9 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
      - the cost per point compared with the baseline table in `meta/team-optimisation.md`
        (add this sprint's row there too), then push the sprint's facts to the
        "Agent Team: Improvement" dashboard: `uv run python .claude/team/teamstats.py`
-       (needs Alloy up; check the new sprint shows in Grafana)
+       (needs Alloy up). Then check that the sprint reached Mimir:
+       `docker exec warcraftlogs-agent-grafana-1 wget -qO- http://mimir:9009/prometheus/api/v1/label/sprint/values`
+       must list it. On 2026-11-05b I skipped the push and the owner found it missing.
      - the coordination, build and QA shares
      - what worked and what to change next time, next to the team's own `Retro:` lines
 4. **Architecture docs gate** (owner's rule, 2026-11-04): run from the sprint worktree,
