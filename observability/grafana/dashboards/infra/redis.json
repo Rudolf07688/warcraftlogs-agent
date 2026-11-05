@@ -1,0 +1,738 @@
+{
+  "uid": "wcl-d10-redis",
+  "title": "Data: Redis",
+  "description": "D10 (feature 058): Redis memory, evictions, ops, latency and its hit ratio next to the app's, through recording-rule aliases.",
+  "tags": [
+    "wcl-agent",
+    "infra"
+  ],
+  "editable": true,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "1m",
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "wcl-agent"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Exporter",
+      "description": "1 when Alloy's Redis exporter reaches Redis.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:up",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "-",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Memory used",
+      "description": "Used memory against maxmemory, now.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:memory:used_bytes / redis:memory:max_bytes",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Evictions/s",
+      "description": "Keys evicted per second, last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:evictions:rate5m",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1e-06
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Ops/s",
+      "description": "Commands processed per second, last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:commands:rate5m",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "noValue": "-"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Redis hit ratio",
+      "description": "Keyspace hits / (hits + misses), last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:hit_ratio:5m",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "noValue": "-"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "id": 5
+    },
+    {
+      "type": "stat",
+      "title": "App cache hit ratio",
+      "description": "app.cache.requests hits / lookups, all cache families, last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "(sum(cache:requests:rate5m{app_cache_result=\"hit\"}) or vector(0)) / sum(cache:requests:rate5m)",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "noValue": "-"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "Hit ratio: Redis vs the app",
+      "description": "Redis counts key reads; the app counts logical lookups per cache family (a family can read several keys, and a stale hit refreshes in the background). Both last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:hit_ratio:5m",
+          "legendFormat": "Redis keyspace",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "(sum(cache:requests:rate5m{app_cache_result=\"hit\"}) or vector(0)) / sum(cache:requests:rate5m)",
+          "legendFormat": "app (all families)",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "cache:hit_ratio",
+          "legendFormat": "app: {{app_cache_name}}",
+          "refId": "C",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 9
+      },
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory",
+      "description": "Used memory and maxmemory.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:memory:used_bytes",
+          "legendFormat": "used",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:memory:max_bytes",
+          "legendFormat": "max",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "id": 8
+    },
+    {
+      "type": "timeseries",
+      "title": "Evictions and commands",
+      "description": "Evicted keys and processed commands per second.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:evictions:rate5m",
+          "legendFormat": "evictions/s",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:commands:rate5m",
+          "legendFormat": "commands/s",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Command latency",
+      "description": "Mean seconds per call by command.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:command_latency:avg5m",
+          "legendFormat": "{{cmd}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Clients and slowlog",
+      "description": "Connected clients and slowlog entries.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:clients:connected",
+          "legendFormat": "clients",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "redis:slowlog:length",
+          "legendFormat": "slowlog entries",
+          "refId": "B",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "id": 11
+    }
+  ]
+}

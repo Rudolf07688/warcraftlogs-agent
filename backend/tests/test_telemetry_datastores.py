@@ -1,0 +1,278 @@
+"""Feature 058: data-store telemetry (sc-417, sc-419, sc-420, sc-424) — the parts pytest can prove.
+
+The stack scripts prove the rest on seeded data (observability/test/datastores.sh, alerts.sh):
+exporter values, the masked slow-query log in Loki, the trace link, the alert states.
+
+- sqlcommenter: with telemetry on, the SQL the driver gets ends with the traceparent of the
+  statement's exported span; with telemetry off it is byte-identical to the statement.
+- Migration 0022: the monitoring role only with a password, never a default one, and a role name
+  that can't carry SQL.
+- D9-D11 and the alert rules read recording-rule aliases only, with sound query shapes.
+- The security pins of the compose file and the Alloy section: no Docker socket in Alloy, a
+  GET-only proxy, no Redis key checks, no statement text as a label, Postgres logs through the
+  redaction chain.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+from backend.tests.test_telemetry_metrics_dashboards import metric_names
+
+ROOT = Path(__file__).resolve().parents[2]
+RULES_DIR = ROOT / "observability/mimir/rules/anonymous"
+DASHBOARDS = ROOT / "observability/grafana/dashboards/infra"
+ALERTS = ROOT / "observability/grafana/provisioning/alerting/rules.yaml"
+ALLOY = ROOT / "observability/alloy/config.alloy"
+COMPOSE = ROOT / "docker-compose.yml"
+MIGRATION = ROOT / "backend/migrations/versions/0022_pg_stat_statements.py"
+UIDS = {"postgres.json": "wcl-d9-postgres", "redis.json": "wcl-d10-redis", "infra.json": "wcl-d11-infra"}
+
+# --- sqlcommenter -----------------------------------------------------------------------------
+
+# Runs in a fresh interpreter: instrument() patches FastAPI, SQLAlchemy, Redis and HTTPX globally.
+_STATEMENT = r"""
+import asyncio, json, sys
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+memory = InMemorySpanExporter()
+provider = TracerProvider()
+provider.add_span_processor(SimpleSpanProcessor(memory))
+trace.set_tracer_provider(provider)
+if sys.argv[1] == "on":
+    from backend.app.telemetry.setup import instrument
+    instrument()
+else:
+    from backend.app.telemetry import configure_telemetry
+    configure_telemetry()  # no OTLP endpoint: a no-op
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+async def main():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sent = []
+    event.listen(engine.sync_engine, "after_cursor_execute", lambda c, cur, statement, *a: sent.append(statement))
+    with trace.get_tracer("t").start_as_current_span("request"):
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT :a AS answer"), {"a": 42})
+    await engine.dispose()
+    spans = [format(s.context.span_id, "016x") for s in memory.get_finished_spans() if s.name.startswith("SELECT")]
+    print(json.dumps({"sent": sent, "sql_spans": spans}))
+
+asyncio.run(main())
+"""
+
+
+def sent_sql(mode: str) -> dict:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("OTEL_")}
+    r = subprocess.run([sys.executable, "-c", _STATEMENT, mode], cwd=ROOT, env=env, capture_output=True,
+                       text=True, timeout=120)
+    assert r.returncode == 0, r.stderr[-2000:]
+    return json.loads(r.stdout.strip().splitlines()[-1])
+
+
+def test_telemetry_on_appends_the_traceparent_of_the_exported_sql_span() -> None:
+    got = sent_sql("on")
+    statement = got["sent"][-1]
+    assert statement.startswith("SELECT ? AS answer /*")
+    parents = re.findall(r"traceparent='00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}'", statement)
+    assert parents, statement
+    # Only the traceparent: no driver or framework versions in every statement.
+    assert "db_driver" not in statement and "db_framework" not in statement
+    # The last one is the exported span (two EngineTracers per async engine, board #31): the
+    # slow-query log parser in config.alloy takes the last for this reason.
+    assert parents[-1][1] in got["sql_spans"]
+
+
+def test_telemetry_off_sends_the_statement_unchanged() -> None:
+    assert sent_sql("off")["sent"] == ["SELECT ? AS answer"]
+
+
+# --- migration 0022 -----------------------------------------------------------------------------
+
+
+class _Bind:
+    """Records what the migration sends (Postgres dialect, no role yet)."""
+
+    def __init__(self) -> None:
+        self.sql: list[str] = []
+        self.dialect = type("D", (), {"name": "postgresql"})()
+
+    def execute(self, statement, params=None):
+        self.sql.append(str(statement))
+        result = None if "pg_roles" in str(statement) else "wcl"
+        return type("R", (), {"scalar": lambda self: result})()
+
+    def exec_driver_sql(self, statement):
+        self.sql.append(statement)
+
+
+def run_upgrade(monkeypatch, **env) -> list[str]:
+    for key in ("PG_MONITOR_USER", "PG_MONITOR_PASSWORD"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    spec = importlib.util.spec_from_file_location("migration_0022", MIGRATION)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    bind = _Bind()
+    monkeypatch.setattr(migration.op, "get_bind", lambda: bind, raising=False)
+    monkeypatch.setattr(migration.op, "execute", lambda sql: bind.sql.append(str(sql)), raising=False)
+    migration.upgrade()
+    return bind.sql
+
+
+def test_0022_without_a_password_creates_the_extension_and_no_role(monkeypatch) -> None:
+    sql = run_upgrade(monkeypatch)
+    assert sql == ["CREATE EXTENSION IF NOT EXISTS pg_stat_statements"]
+
+
+def test_0022_with_a_password_creates_a_pg_monitor_login_and_nothing_more(monkeypatch) -> None:
+    sql = run_upgrade(monkeypatch, PG_MONITOR_PASSWORD="it's:secret")
+    create = next(s for s in sql if s.startswith("CREATE ROLE"))
+    assert create == ("CREATE ROLE wcl_monitor LOGIN PASSWORD 'it''s:secret' "
+                      "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS")
+    grants = [s for s in sql if s.startswith("GRANT")]
+    assert grants == ["GRANT pg_monitor TO wcl_monitor", 'GRANT CONNECT ON DATABASE "wcl" TO wcl_monitor']
+
+
+@pytest.mark.parametrize("name", ["wcl_monitor; DROP TABLE users", "Monitor", "x-y", ""])
+def test_0022_refuses_a_role_name_that_is_not_a_plain_identifier(monkeypatch, name: str) -> None:
+    if not name:  # empty falls back to the default name
+        assert "GRANT pg_monitor TO wcl_monitor" in run_upgrade(monkeypatch, PG_MONITOR_USER=name, PG_MONITOR_PASSWORD="p")
+        return
+    with pytest.raises(ValueError):
+        run_upgrade(monkeypatch, PG_MONITOR_USER=name, PG_MONITOR_PASSWORD="p")
+
+
+# --- dashboards and alert rules -------------------------------------------------------------------
+
+
+def recorded(*files: str) -> set[str]:
+    names = set()
+    for path in RULES_DIR.glob("*.yaml") if not files else (RULES_DIR / f for f in files):
+        for group in yaml.safe_load(path.read_text())["groups"]:
+            names |= {rule["record"] for rule in group["rules"]}
+    return names
+
+
+def dashboard(name: str) -> dict:
+    return json.loads((DASHBOARDS / name).read_text())
+
+
+def panels(d: dict) -> list[dict]:
+    return [q for p in d["panels"] for q in [p, *p.get("panels", [])]]
+
+
+def mimir_targets(d: dict) -> list[tuple[dict, str]]:
+    return [(p, t["expr"]) for p in panels(d) for t in p.get("targets", [])
+            if (t.get("datasource") or p.get("datasource") or {}).get("uid") == "mimir"]
+
+
+def test_d9_d10_d11_are_provisioned_with_their_uids() -> None:
+    assert {p.name: dashboard(p.name)["uid"] for p in DASHBOARDS.glob("*.json")} == UIDS
+
+
+@pytest.mark.parametrize("name", sorted(UIDS))
+def test_every_mimir_query_reads_aliases_only(name: str) -> None:
+    aliases = recorded()
+    targets = mimir_targets(dashboard(name))
+    assert targets
+    for panel, expr in targets:
+        used = metric_names(expr)
+        assert used and used <= aliases, (panel["title"], used - aliases)
+    # D10's comparison: Redis's own ratio next to the app's (056's cache:hit_ratio alias).
+    if name == "redis.json":
+        exprs = " ".join(e for p, e in mimir_targets(dashboard(name)) if p["title"].startswith("Hit ratio"))
+        assert "redis:hit_ratio:5m" in exprs and "cache:hit_ratio" in exprs
+
+
+@pytest.mark.parametrize("name", sorted(UIDS))
+def test_query_shapes(name: str) -> None:
+    for panel, expr in mimir_targets(dashboard(name)):
+        # Aliases are already rates or gauges: no rate()/increase() on top of them.
+        assert not re.search(r"\b(rate|irate|increase)\(", expr), (panel["title"], expr)
+        # sc-471: per-interval bars or legend totals need a window equal to the step.
+        custom = panel.get("fieldConfig", {}).get("defaults", {}).get("custom", {})
+        calcs = panel.get("options", {}).get("legend", {}).get("calcs", [])
+        if custom.get("drawStyle") == "bars" or {"sum", "total"} & set(calcs):
+            windows = set(re.findall(r"\[([^\]]+)\]", expr))
+            assert windows == {"$__interval"} and panel.get("interval"), (panel["title"], windows)
+        if panel["type"] != "row":
+            assert panel.get("fieldConfig", {}).get("defaults", {}).get("unit"), panel["title"]
+
+
+def test_d9_lists_top_statements_and_the_knowledge_base_index() -> None:
+    exprs: dict[str, list[str]] = {}
+    for p, e in mimir_targets(dashboard("postgres.json")):
+        exprs.setdefault(p["title"], []).append(e)
+    assert exprs["Top statements by total time"] == ["topk(15, pg:statement_seconds:total)", "pg:statement_calls:total"]
+    assert exprs["Knowledge-base index size"] == ["sum(pg:vector_index:bytes)"]
+    logs = [t["expr"] for p in panels(dashboard("postgres.json")) for t in p.get("targets", [])
+            if (t.get("datasource") or {}).get("uid") == "loki"]
+    assert '{service_name="postgres"} | pg_duration_ms != ""' in logs
+
+
+def test_d11_shows_drops_queue_ingest_and_series_against_the_budget() -> None:
+    used = set().union(*(metric_names(e) for _, e in mimir_targets(dashboard("infra.json"))))
+    assert {"meta:exporter_failures:increase2m", "meta:export_queue:ratio", "meta:ingest:rate5m",
+            "meta:active_series:count", "meta:active_series:budget", "infra:container_cpu:rate5m",
+            "infra:container_memory:bytes"} <= used
+    budget = next(r for g in yaml.safe_load((RULES_DIR / "datastores.yaml").read_text())["groups"]
+                  for r in g["rules"] if r["record"] == "meta:active_series:budget")
+    assert budget["expr"] == "vector(50000)"
+
+
+def test_alert_rules_read_aliases_and_the_threshold_is_one_rule() -> None:
+    groups = yaml.safe_load(ALERTS.read_text())["groups"]
+    rules = {r["uid"]: r for g in groups for r in g["rules"]}
+    assert set(rules) == {"wcl-alert-pipeline", "wcl-alert-build-spend"}
+    aliases = recorded()
+    for rule in rules.values():
+        queries = [d for d in rule["data"] if d["datasourceUid"] == "mimir"]
+        assert queries and rule["noDataState"] == "OK"
+        for q in queries:
+            assert metric_names(q["model"]["expr"]) <= aliases, rule["uid"]
+    spend = " ".join(q["model"].get("expr", q["model"].get("expression", "")) for q in rules["wcl-alert-build-spend"]["data"])
+    assert "cc:cost_usd:rate5m[24h]" in spend and "alert:build_spend_usd_per_day:threshold" in spend
+    assert "alert:build_spend_usd_per_day:threshold" in recorded("datastores.yaml")
+
+
+# --- security pins ------------------------------------------------------------------------------
+
+
+def test_alloy_reaches_docker_only_through_the_get_only_proxy() -> None:
+    services = yaml.safe_load(COMPOSE.read_text())["services"]
+    for name in ("alloy", "backend", "frontend", "db", "redis"):
+        assert not any("docker.sock" in str(v) or "containerd.sock" in str(v) for v in services[name].get("volumes", [])), name
+    proxy = services["docker-proxy"]
+    assert proxy["environment"]["POST"] == 0 and "ports" not in proxy and proxy["networks"] == ["docker-api"]
+    assert "ports" not in services["cadvisor"] and "privileged" not in services["cadvisor"]
+    assert all(v.endswith(":ro") for v in services["cadvisor"]["volumes"])
+    assert yaml.safe_load(COMPOSE.read_text())["networks"]["docker-api"]["internal"] is True
+
+
+def test_alloy_section_keeps_keys_sql_and_secrets_out() -> None:
+    alloy = ALLOY.read_text()
+    section = alloy[alloy.index("// --- Data stores and infra (feature 058) ---"):]
+    assert "docker.sock" not in section and "check_keys" not in section
+    assert re.search(r"include_query\s*=\s*false", section)
+    assert 'sys.env("WCL_PG_MONITOR_DSN")' in section and "postgresql://" not in section
+    # Postgres's log goes through the redaction chain, never straight to a Loki writer.
+    assert "loki.write" not in section
+    postgres = section[section.index('otelcol.processor.transform "postgres"'):]
+    assert re.search(r"output \{\s*logs = \[otelcol\.processor\.memory_limiter\.default\.input\]", postgres)
+    db = yaml.safe_load(COMPOSE.read_text())["services"]["db"]["command"]
+    assert "log_parameter_max_length=0" in db and "pg_stat_statements.track_utility=off" in db

@@ -1,0 +1,85 @@
+# Grafana-managed alert rules as code (feature 058, sc-424, spec §8.4): the minimal local set.
+# Both read recording-rule aliases (observability/mimir/rules/anonymous/datastores.yaml,
+# build.yaml). No contact point is configured: the state shows in Grafana's alert list, which is
+# what a local stack needs. Edits in the UI are not saved: change this file and restart Grafana.
+# Proved by observability/test/alerts.sh (each rule Firing on a synthetic trigger, then Normal).
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: telemetry
+    folder: WCL alerts
+    interval: 30s
+    rules:
+      # Alloy export failures (after retries), full export queues and memory-limiter refusals
+      # for any signal in the last two minutes: telemetry is being lost.
+      - uid: wcl-alert-pipeline
+        title: Telemetry pipeline failures or drops
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              refId: A
+              expr: sum(meta:exporter_failures:increase2m)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: Alloy failed to export, enqueue or accept telemetry in the last 2 minutes.
+          description: See D11 (Infra and telemetry pipeline) and Alloy's log (docker compose logs alloy).
+
+      # Claude Code's own list-price estimate over the last 24 hours, against the threshold in
+      # datastores.yaml (alert:build_spend_usd_per_day:threshold).
+      - uid: wcl-alert-build-spend
+        title: Build spend per day above threshold
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              refId: A
+              expr: sum(sum_over_time(cc:cost_usd:rate5m[24h])) * 60
+              instant: true
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: mimir
+            model:
+              refId: B
+              expr: max(alert:build_spend_usd_per_day:threshold)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: $A > $B
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: info
+        annotations:
+          summary: Estimated Claude Code spend in the last 24 hours is above the daily threshold.
+          description: Estimate at list price (Claude Code's own cost metric). Threshold in observability/mimir/rules/anonymous/datastores.yaml.
