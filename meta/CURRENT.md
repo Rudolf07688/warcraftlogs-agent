@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-05 (meta session open: cost of Telemetry 2 measured, P12)
+Updated: 2026-11-05 (meta talk done, P12 built and pushed; next session: the sprint)
 
 ## Topic
 
@@ -15,9 +15,10 @@ The agent-team redesign: persistence and autonomy. Full record in
 ## Where we are
 
 - Telemetry 2 (sprint 2026-11-04b) merged, pushed and Done; team report
-  meta/sprints/2026-11-04b/. The meta-first talk the owner asked for is under way (below).
+  meta/sprints/2026-11-04b/. The meta-first talk is done (below); owner: "push it and prepare
+  for a clear to start the next sprint". Next session launches the sprint (team-launch).
 
-## This session (2026-11-05, meta first as agreed)
+## Meta session 2026-11-05 (done)
 
 - Measured where Telemetry 2's extra cost went: P12 in team-optimisation.md. Build got
   cheaper per point; the extra is fix rounds, docs pass run twice, PO cold-cache wakes, lead.
@@ -25,7 +26,8 @@ The agent-team redesign: persistence and autonomy. Full record in
   cache stays warm, 2 calls per tick; saving ≈ 0.7/sprint) and lever 2 (docs pass once,
   after every fix round). `usage.py --cold` measures it at the next wrap-up. Lever 3 (split
   big fix rounds) stays a measurement.
-- Next sprint check: cold weight < 1.5, PO cost per point (0.26 on 11-04b), docs ≤ 1.8.
+- Next sprint, first trial: arm PO/SM waits with `--since N --warm`; check at wrap-up: cold
+  weight < 1.5 (`usage.py --cold`), PO cost per point (0.26 on 11-04b), docs ≤ 1.8.
 
 ## Open with the owner
 

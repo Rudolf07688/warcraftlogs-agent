@@ -15,4 +15,4 @@ are archived in `meta/sprints/<date>/usage.txt` so they outlive the transcripts.
 | 2026-11-01 | 5f887f5b-3c0e-4240-8359-5507acf337d8 | First fresh meta session: tooling reflection, P9 "tools over rules" built (25fe6c1), sc-336 filed |
 | 2026-11-01 | f6f1e132-ef58-44e1-9fd8-49f0643502f4 | Sprint 2026-11-01b (big-report turns + KB debt, 20 pts, tier M): planned with Maren in the room, owner preference 23 (ticket names); merged + pushed; retro → P10 (lighter PO admin) + P11 (live checks judge answers), pushed b8a6a54+ |
 | 2026-11-02 | c88ddb6f-410c-4a10-ac79-a0cce79d1cd1 | Fully autonomous sprint 2026-11-02 (050–052, 20 pts, tier M, 3 devs); owner gave only the steer; merged 557e3b6 and pushed; team report + P10/P11 first trial readings; report shell CSS fixed after owner feedback; QA reports restored from transcripts |
-| 2026-11-05 | 47e15afc-b142-40f2-9358-f15cbc9b75d1 | Meta session (owner asked for meta first after Telemetry 2) |
+| 2026-11-05 | 47e15afc-b142-40f2-9358-f15cbc9b75d1 | Meta session: where Telemetry 2's extra cost went (P12), warm board waits + one docs pass built and probed (9dac0a5), pushed |
