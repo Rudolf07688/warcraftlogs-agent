@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-05 late (first full-team retro done; P14 captured, build next session)
+Updated: 2026-11-05 late (retro captured as P14; next sprint 2026-11-06 = P14, steer parked below)
 
 ## Topic
 
@@ -23,24 +23,36 @@ The agent-team redesign: persistence and autonomy. Full record in
 - Owner: "implement all these things, but not now ... for tomorrow, we evolve." **Nothing in
   P14 is built yet.**
 
-## NEXT (meta session): build P14
+## Next sprint steer (owner, 2026-11-05: "prepare this meta-agent enablement as the work for the next sprint")
 
-Shortcut epic 525 "Agent team: ways of working and tools (retro 2026-11-05b)", built in this order:
+Sprint 2026-11-06, agent enablement. The team builds P14, its own retro, as Shortcut epic 525
+in iteration 536: 8 stories, 20 pts (sc-526..533). Read `meta/sprints/2026-11-05b/retro.md`
+and P14 in `meta/team-optimisation.md` first. The stories hold the ACs.
+- **Ownership:** agent files, skills and CLAUDE.md are team-lead's (prefs 18, 27). For this
+  sprint the team edits them on the sprint branch, and team-lead reviews those diffs before
+  the merge question. Members' memories stay their own (pref 21). Rewrite rather than append,
+  and cut every rule a change replaces.
+- **File overlaps for the PO's shape:**
+  - sc-526, 527, 528, 532 and the agent-file part of 531 all edit `developer.md` and
+    `product-owner.md`, so they go to **one developer**.
+  - Separate streams: `facts.py` (529); `check.py` and `mutate.py` (530, plus 526's receipt by
+    area); board and hook (531); new tools (533, splittable).
+- **Use D21 already in this sprint:** each developer tests their building block, one suite at
+  the merged tip, the QA sweep covers the sprint diff only, and the fix bar is a broken AC,
+  security or data loss.
+- **Board and hook changes must not break the live board:** test them on a throwaway board.
+  They take effect after the merge.
+- **Live pass:** small. I run the stack helper and the headless browser once. The agent-file
+  changes are measured on the sprint after this one (P14, last paragraph).
+- **Not in scope:** the prompt-pin helper (sc-534) and embeddings following a pinned location
+  (sc-512, owner yes, 1 pt). They go to the next app sprint.
 
-1. Testing shape (sc-526, 3)
-2. GitNexus gates only for code (sc-527, 1; CLAUDE.md local section)
-3. PO process (sc-528, 2)
-4. Facts for the paths a developer runs (sc-529, 2)
-5. Test tools (sc-530, 3)
-6. Board noise (sc-531, 3)
-7. Scrum master (sc-532, 1)
-8. New tools (sc-533, 5)
-
-Rewrite agent files rather than append, and cut the rules each change replaces. Then measure on
-the next sprint (P14, last paragraph).
-
-App backlog for a sprint: the prompt-pin helper (sc-534, 2). Embeddings follow a pinned model
-location (sc-512, 1 pt): the owner said yes, and the design is in the ticket comment.
+Lead pre-flight tomorrow:
+- Start the session through `bin/claude-otel`.
+- `git status` clean on main.
+- Reindex GitNexus (stale at bb22117 after meta-only commits) and check `context stream_response`.
+- ADC login only if a live app call is needed.
+- Remove this section once launched (team-launch 1.1).
 
 ## Open with the owner
 
