@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -111,3 +112,142 @@ def test_the_window_check_bites():
     assert counts_per_interval(bars)
     assert not window_is_step(bars, 'sum(count_over_time({service_name="web"} [5m]))')
     assert window_is_step(bars, 'sum(count_over_time({service_name="web"} [$__auto]))')
+
+
+# --- D12: Build vs Runtime -------------------------------------------------------------------
+
+D12 = CROSS / "build-runtime.json"
+CROSS_RULES = ROOT / "observability/mimir/rules/anonymous/cross.yaml"
+# Pushed by observability/build-runtime/commits.py (team.* style gauges, no unit suffix).
+PUSHED = {"build_commit_info", "build_commit_cost_usd"}
+
+
+def cross_recorded() -> dict[str, str]:
+    import yaml
+
+    rules = yaml.safe_load(CROSS_RULES.read_text())
+    return {rule["record"]: rule["expr"] for group in rules["groups"] for rule in group["rules"]}
+
+
+def test_d12_has_its_uid_in_the_cross_folder():
+    assert load(D12)["uid"] == "wcl-d12-build-runtime"
+    assert D12.parent.name == "cross"
+
+
+def test_d12_reads_cross_aliases_and_pushed_commit_facts_only():
+    from backend.tests.test_telemetry_metrics_dashboards import metric_names
+
+    allowed = set(cross_recorded()) | PUSHED
+    d12 = load(D12)
+    exprs = [t["expr"] for _, t in targets(d12)] + [a["expr"] for a in d12["annotations"]["list"]]
+    assert exprs
+    for expr in exprs:
+        names = metric_names(expr)
+        assert names and names <= allowed, (expr, names - allowed)
+
+
+def test_d12_overlays_commit_annotations_on_the_three_runtime_panels():
+    d12 = load(D12)
+    (annotation,) = d12["annotations"]["list"]
+    assert "cross:running_commit:info" in annotation["expr"] and "{{commit}}" in annotation["titleFormat"]
+    series = [p for p in d12["panels"] if p["type"] == "timeseries"]
+    assert {metric for p in series for t in p["targets"] for metric in re.findall(r"cross:[\w:]+_by_commit", t["expr"])} == {
+        "cross:http_latency:p95_by_commit", "cross:http_error_ratio:5m_by_commit", "cross:llm_cost_per_request:5m_by_commit"}
+
+
+def test_d12_table_maps_commit_to_seat_cost_and_deltas_and_states_its_rules():
+    d12 = load(D12)
+    (table,) = [p for p in d12["panels"] if p["type"] == "table"]
+    for target in table["targets"]:
+        assert target["instant"] and target["format"] == "table"
+        assert target["expr"].startswith("max by (commit, seat, feature)"), target["expr"]
+    renames = next(t for t in table["transformations"] if t["id"] == "organize")["options"]["renameByName"]
+    assert {"commit", "seat", "Value #D"} <= set(renames) and any(v.startswith("Δ") for v in renames.values())
+    text = next(p for p in d12["panels"] if p["type"] == "text")["options"]["content"]
+    assert "Attribution" in text and "Build cost" in text and "Runtime deltas" in text and "unattributed" in text
+
+
+def test_cross_rules_join_on_the_running_version_and_record_every_by_commit_alias():
+    rules = cross_recorded()
+    assert 'target_info{job="wcl-agent/api"}' in rules["cross:running_version:info"]
+    assert "build_commit_info" in rules["cross:commit_seat:info"]
+    assert "unattributed" in rules["cross:running_commit:info"]
+    for base in ("cross:http_latency:p95", "cross:http_error_ratio:5m", "cross:llm_cost_per_request:5m"):
+        assert f"{base} * on (service_name) group_left" in rules[f"{base}_by_commit"]
+    assert 'http_route!="/ws/chat"' in rules["cross:http_latency:p95"]  # the chat socket is excluded
+    # An idle window yields no sample, never NaN or infinity (one would poison every range mean).
+    assert rules["cross:http_latency:p95"].rstrip().endswith(">= 0")
+    for ratio in ("cross:http_error_ratio:5m", "cross:llm_cost_per_request:5m"):
+        assert 'app:http_requests:rate5m{service_name="api"}) > 0)' in rules[ratio], ratio
+
+
+# --- commits.py: the attribution rule ---------------------------------------------------------
+
+
+def load_commits():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("commits", ROOT / "observability/build-runtime/commits.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["commits"] = module  # dataclasses resolve their module by name
+    spec.loader.exec_module(module)
+    return module
+
+
+def board_entry(id_: int, author: str, kind: str, key: str, refs: list[str], ts: str = "2026-11-05T12:00:00+00:00") -> dict:
+    return {"id": id_, "ts": ts, "author": author, "kind": kind, "text": "", "key": key, "refs": refs}
+
+
+def test_a_merge_belongs_to_the_hand_off_author_on_its_key():
+    commits = load_commits()
+    roster = {"tomas": "tomas (dev-2)", "maren": "maren (po)", "nils": "nils (dev-3)"}
+    found = commits.attribute([
+        board_entry(1, "tomas", "handoff", "status:060", ["abc1234ff"]),
+        board_entry(2, "nils", "handoff", "status:059", ["1111111"]),
+        board_entry(3, "maren", "merge", "status:060", ["def5678"]),
+        board_entry(4, "maren", "merge", "status:qa-fix", ["2222222"]),
+        board_entry(5, "tomas", "change", "status:060", ["3333333"]),  # not a hand-off or merge
+        board_entry(6, "tomas", "handoff", "status:060", ["not-a-sha"]),
+    ], "s", roster)
+    got = {c.commit: (c.seat, c.feature) for c in found}
+    assert got == {
+        "abc1234": ("tomas (dev-2)", "060"),
+        "1111111": ("nils (dev-3)", "059"),
+        "def5678": ("tomas (dev-2)", "060"),
+        "2222222": ("maren (po)", "qa-fix"),
+    }
+
+
+def test_build_cost_is_booked_on_the_features_last_commit_from_its_usage_rows(tmp_path):
+    commits = load_commits()
+    (tmp_path / "team").mkdir()
+    (tmp_path / "team" / "dev-2.md").write_text("# Tomas\n\n- **name:** Tomas\n- **seat:** dev-2\n")
+    sprint = tmp_path / "sprints" / "s1"
+    sprint.mkdir(parents=True)
+    sprint.joinpath("board.jsonl").write_text("\n".join(json.dumps(e) for e in [
+        board_entry(1, "tomas", "handoff", "status:060", ["aaaaaaa"], "2026-11-05T12:00:00+00:00"),
+        board_entry(2, "maren", "merge", "status:060", ["bbbbbbb"], "2026-11-05T13:00:00+00:00"),
+        board_entry(3, "tomas", "handoff", "status:060-fix", ["ccccccc"], "2026-11-05T14:00:00+00:00"),
+    ]) + "\n")
+    # 060: (100000*5 + 10000000*0.1 + 400000*1.25) / 1e6 = 2 M units -> $8; the fix round $4.
+    sprint.joinpath("usage.txt").write_text(
+        "agent    calls  out  cacheRd  cacheWr  sends\n"
+        "060 frontend build-runtime (Tomas)   10   100000   10000000   400000   0\n"
+        "060 QA fix round (Tomas)   5   50000   5000000   200000   0\n"
+        "059 runtime profiles (Nils)   5   50000   5000000   200000   0\n"
+        "TOTAL {}\n")
+    found = {c.commit: c for c in commits.collect(tmp_path, None)}
+    assert found["aaaaaaa"].cost_usd is None
+    assert found["bbbbbbb"].cost_usd == 8.0 and found["bbbbbbb"].seat == "tomas (dev-2)"
+    assert found["ccccccc"].cost_usd == 4.0
+
+
+def test_no_usage_file_means_no_cost_not_zero(tmp_path):
+    commits = load_commits()
+    sprint = tmp_path / "sprints" / "s1"
+    sprint.mkdir(parents=True)
+    sprint.joinpath("board.jsonl").write_text(json.dumps(board_entry(1, "tomas", "handoff", "status:060", ["aaaaaaa"])) + "\n")
+    (c,) = commits.collect(tmp_path, None)
+    assert c.cost_usd is None and c.seat == "tomas"  # no roster entry: the board name as is
+    metrics = commits.payload([c])["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert [m["name"] for m in metrics] == ["build.commit.info"]

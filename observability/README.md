@@ -280,3 +280,54 @@ again. Older sprints' boards are in `meta/sprints/*/board.jsonl`, and D13 is fed
 the real bootstrap carries its profile id and Pyroscope returns its flame graph; an 8-day-old
 board entry is dropped while a fresh one in the same file lands. Set `PYROSCOPE_PORT`
 (default 24040) with the other port overrides.
+
+## Frontend, build vs runtime and redaction e2e (060)
+
+**D5, App: Frontend** (`grafana/dashboards/runtime/frontend.json`, uid `wcl-d5-frontend`) reads
+Faro's lines in Loki directly (no Loki ruler): Web Vitals p75 by route, JS errors per minute
+and the top errors with route and boundary, client-side TTFT, stream aborts, sessions
+(`session_start` events; the session id itself is masked) and turns. The route is the React
+Router template (`/app/*`, never a raw path), which the app sets as Faro's view, so every line
+carries `view_name`. The app (`frontend/src/telemetry/`):
+
+- **Error boundaries** around the app shell and each chat panel (sidebar, message list,
+  composer): a panel that throws shows a plain "Something went wrong" with Retry, never the
+  error text (it can carry model or WCL text); the other panels keep working; the error goes
+  to Faro as `React ErrorBoundary <type>` with the component stack, `context_route` and
+  `context_boundary`. The boundary reports through the registered Faro instance, so Faro stays
+  out of the main bundle; with Faro off it only shows the fallback.
+- **Chat events**, once per turn: `agent_message_sent`, `agent_first_token_rendered`
+  (`ttft_ms`, after the first token is on screen), `agent_response_completed` (`duration_ms`),
+  `stream_aborted` (`reason` `connection_lost`, or `closed` when the app closed the socket,
+  e.g. leaving the chat; an error frame is not an abort). Attributes: the model and whole
+  milliseconds, never text or ids. `agent_feedback` is not sent (no feedback feature, §7.5).
+
+**D12, Build vs Runtime** (`grafana/dashboards/cross/build-runtime.json`, uid
+`wcl-d12-build-runtime`): annotations for each api version while it ran, p95 latency, error
+ratio and LLM cost per request by commit, and a table commit → seat → estimated build cost →
+runtime deltas. Its aliases are in `mimir/rules/anonymous/cross.yaml`: the running version
+comes from `target_info{job="wcl-agent/api"}` (`service.version` is not a promoted label), the
+seat from `build_commit_info`, which `build-runtime/commits.py` pushes from the team boards,
+the roster and `usage.txt` (run it at wrap-up next to `teamstats.py`; `--dry-run` prints the
+table). The attribution rule, the cost estimate and the delta definition are stated on the
+dashboard and in `commits.py`'s docstring. A version no board entry names is *unattributed*.
+
+**Redaction end to end** (`test/redaction_e2e.py`): fresh secrets of each shape in `SHAPES`
+(bearer, JWT, `sk-`, `AIza`, DSN password) go through each path in `PATHS`: the build layer
+(OTLP shaped like Claude Code's: logs with its event names, a span with a `tool.output` event,
+a metric), the backend's real telemetry bootstrap in a subprocess (span attributes, a span
+event, a log record through the OTLP log handler, an allowlisted metric attribute, the
+resource), and the Faro receiver (log, exception, event, measurement context, a span). Then
+everything Loki, Tempo and Mimir hold for the run is read back (log lines with structured
+metadata, whole traces, every series' labels including `target_info`); any raw value fails
+the run. A new shape or path is one row (the Postgres slow-query log from 058 goes in
+`PATHS`). The app-side redactor never sees resource attributes; Alloy masks them.
+
+| Script | Proves |
+|---|---|
+| `test/frontend.sh` | D5 provisions; its own queries return a synthetic component error with route `/app/*` and boundary, LCP/INP/CLS p75 for the route, client TTFT, one stream abort, sessions and turns. |
+| `test/redaction-e2e.sh` | No seeded secret is stored unmasked on any path; then the check fails on each of five mutated copies of the Alloy config (JWT, bearer, `AIza`, URL password attribute masks; `sk-` body mask). `MUTATE=0` skips the mutations. |
+| `test/build-runtime.sh` | Two api versions as real spans and metrics, a synthetic board: D12's table shows the regression commit against its seat with positive p95, error and cost deltas and its build cost; the annotations and timeseries show both commits. `PHASE_S` sets each version's run time (default 240 s). |
+
+All three set `ALLOY_FARO_PORT` (default 24347) and run their own compose project like the
+other scripts.
