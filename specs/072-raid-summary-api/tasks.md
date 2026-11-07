@@ -11,4 +11,4 @@
 - [X] T009 Postgres test of both reads (backend/tests/test_072_raid_summary_pg.py)
 - [X] T010 mutate.py bite on the visibility guard of each new read
 - [X] T012 Re-verify (decision:072-reverify): one summary request, in-band status + grant, timeout, cooldown; tests incl. Postgres RLS
-- [ ] T011 detect-changes, check.py receipt, contract "as built" post, hand-off
+- [X] T011 detect-changes, check.py receipt, contract "as built" post, hand-off
