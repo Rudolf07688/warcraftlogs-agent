@@ -1,0 +1,43 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                             88    43105    11311288     161486      0
+Fix 070 browse/stack (Ansel)                 25    31847     2199516      94468      0
+QA security on sprint diff                   34    42313     2303765     113241      0
+Dev 066 test tools (Tomas)                   62    48678     7514447     151014      0
+Reword four qa-* agent prompts                5     3313      178764      52249      0
+product-owner                               116    93594    22006705     290578      0
+Dev 068 stack/browser (Ansel)                49    47171     5004977     121547      0
+QA bugs on sprint diff                       35    53739     2540163     127276      0
+Dev 065 agent files (Vera)                   52    45767     6059656     139667      0
+Fix 069 board hook (Nils)                    25    26679     2086471      92483      0
+Dev 067 board hook (Nils)                    48    43182     5029390     129291      0
+Shortcut sync at sprint wrap-up               5     2606      251058      95438      0
+Fix 071 check receipts (Tomas)               15    10126      970048      80272      0
+TOTAL {'calls': 559, 'out': 492120, 'cr': 67456248, 'cc': 1649010, 'inp': 1206, 'sends': 0}
+main (team-lead) [('Bash', 55), ('Read', 4), ('ToolSearch', 3), ('Edit', 2), ('Monitor', 2), ('Skill', 1)]
+Fix 070 browse/stack (Ansel) [('Bash', 24), ('SubagentHandback', 1)]
+QA security on sprint diff [('Bash', 33), ('Write', 1), ('SubagentHandback', 1)]
+Dev 066 test tools (Tomas) [('Bash', 56), ('mcp__shortcut__update_story', 4), ('Write', 2), ('ToolSearch', 2), ('Edit', 1), ('mcp__shortcut__get_story', 1)]
+Reword four qa-* agent prompts [('Bash', 4), ('SubagentHandback', 1)]
+product-owner [('Bash', 84), ('Agent', 10), ('mcp__shortcut__create_story_comment', 9), ('mcp__shortcut__create_story', 6), ('Write', 4), ('ToolSearch', 2)]
+Dev 068 stack/browser (Ansel) [('Bash', 42), ('Write', 4), ('mcp__shortcut__update_story', 2), ('ToolSearch', 1), ('mcp__shortcut__list_workflow_states', 1), ('SubagentHandback', 1)]
+QA bugs on sprint diff [('Bash', 33), ('Write', 1), ('SubagentHandback', 1)]
+Dev 065 agent files (Vera) [('Bash', 38), ('mcp__shortcut__update_story', 8), ('Write', 5), ('Read', 4), ('Edit', 2), ('ToolSearch', 1)]
+Fix 069 board hook (Nils) [('Bash', 25), ('SubagentHandback', 1)]
+Dev 067 board hook (Nils) [('Bash', 41), ('mcp__shortcut__update_story', 4), ('Write', 4), ('ToolSearch', 2), ('mcp__shortcut__get_story', 1), ('mcp__shortcut__list_workflow_states', 1)]
+Shortcut sync at sprint wrap-up [('Bash', 2), ('mcp__shortcut__search_stories', 2), ('Read', 1), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1)]
+Fix 071 check receipts (Tomas) [('Bash', 15), ('SubagentHandback', 1)]
+
+new context by kind (tool-result chars, share):
+main (team-lead)                           379946 Read 67%, other bash 20%, git 8%, board 3%, html reports 0%
+Fix 070 browse/stack (Ansel)                70413 other bash 38%, board 30%, source reads 27%, check/pg 5%, git 0%
+QA security on sprint diff                 132099 other bash 51%, check/pg 19%, board 15%, source reads 9%, git 6%
+Dev 066 test tools (Tomas)                 145886 check/pg 42%, other bash 26%, source reads 12%, board 9%, git 8%
+Reword four qa-* agent prompts              21069 other bash 98%, git 2%, SubagentHandback 0%
+product-owner                              490438 Read 57%, other bash 16%, board 9%, shortcut 8%, git 6%
+Dev 068 stack/browser (Ansel)               75361 other bash 31%, git 22%, board 16%, source reads 14%, check/pg 11%
+QA bugs on sprint diff                     142597 other bash 54%, board 22%, check/pg 19%, git 3%, source reads 1%
+Dev 065 agent files (Vera)                 135701 other bash 71%, board 19%, git 5%, shortcut 2%, Read 1%
+Fix 069 board hook (Nils)                   75252 board 89%, other bash 11%, SubagentHandback 0%, git 0%
+Dev 067 board hook (Nils)                   90050 board 54%, other bash 33%, git 5%, shortcut 5%, source reads 2%
+Shortcut sync at sprint wrap-up             88320 shortcut 71%, other bash 15%, Read 14%, ToolSearch 1%, SubagentHandback 0%
+Fix 071 check receipts (Tomas)              40833 check/pg 55%, other bash 28%, board 17%, SubagentHandback 0%

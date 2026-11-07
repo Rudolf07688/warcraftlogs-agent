@@ -1,0 +1,42 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                             87    42495    11115332     160111      0
+Fix 070 browse/stack (Ansel)                 25    31847     2199516      94468      0
+QA security on sprint diff                   34    42313     2303765     113241      0
+Dev 066 test tools (Tomas)                   62    48678     7514447     151014      0
+Reword four qa-* agent prompts                5     3313      178764      52249      0
+product-owner                               116    93594    22006705     290578      0
+Dev 068 stack/browser (Ansel)                49    47171     5004977     121547      0
+QA bugs on sprint diff                       35    53739     2540163     127276      0
+Dev 065 agent files (Vera)                   52    45767     6059656     139667      0
+Fix 069 board hook (Nils)                    25    26679     2086471      92483      0
+Dev 067 board hook (Nils)                    48    43182     5029390     129291      0
+Shortcut sync at sprint wrap-up               5     2606      251058      95438      0
+Fix 071 check receipts (Tomas)               15    10126      970048      80272      0
+TOTAL {'calls': 558, 'out': 491510, 'cr': 67260292, 'cc': 1647635, 'inp': 1204, 'sends': 0}
+main (team-lead) [('Bash', 54), ('Read', 4), ('ToolSearch', 3), ('Edit', 2), ('Monitor', 2), ('Skill', 1)]
+Fix 070 browse/stack (Ansel) [('Bash', 24), ('SubagentHandback', 1)]
+QA security on sprint diff [('Bash', 33), ('Write', 1), ('SubagentHandback', 1)]
+Dev 066 test tools (Tomas) [('Bash', 56), ('mcp__shortcut__update_story', 4), ('Write', 2), ('ToolSearch', 2), ('Edit', 1), ('mcp__shortcut__get_story', 1)]
+Reword four qa-* agent prompts [('Bash', 4), ('SubagentHandback', 1)]
+product-owner [('Bash', 84), ('Agent', 10), ('mcp__shortcut__create_story_comment', 9), ('mcp__shortcut__create_story', 6), ('Write', 4), ('ToolSearch', 2)]
+Dev 068 stack/browser (Ansel) [('Bash', 42), ('Write', 4), ('mcp__shortcut__update_story', 2), ('ToolSearch', 1), ('mcp__shortcut__list_workflow_states', 1), ('SubagentHandback', 1)]
+QA bugs on sprint diff [('Bash', 33), ('Write', 1), ('SubagentHandback', 1)]
+Dev 065 agent files (Vera) [('Bash', 38), ('mcp__shortcut__update_story', 8), ('Write', 5), ('Read', 4), ('Edit', 2), ('ToolSearch', 1)]
+Fix 069 board hook (Nils) [('Bash', 25), ('SubagentHandback', 1)]
+Dev 067 board hook (Nils) [('Bash', 41), ('mcp__shortcut__update_story', 4), ('Write', 4), ('ToolSearch', 2), ('mcp__shortcut__get_story', 1), ('mcp__shortcut__list_workflow_states', 1)]
+Shortcut sync at sprint wrap-up [('Bash', 2), ('mcp__shortcut__search_stories', 2), ('Read', 1), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1)]
+Fix 071 check receipts (Tomas) [('Bash', 15), ('SubagentHandback', 1)]
+
+cold-cache calls (weighted at 1.25x the rewrite):
+main (team-lead)                           1 calls   0.04
+Fix 070 browse/stack (Ansel)               1 calls   0.04
+Dev 066 test tools (Tomas)                 1 calls   0.04
+Reword four qa-* agent prompts             1 calls   0.05
+product-owner                              1 calls   0.06
+Dev 068 stack/browser (Ansel)              1 calls   0.04
+Dev 065 agent files (Vera)                 1 calls   0.04
+Fix 069 board hook (Nils)                  1 calls   0.04
+Dev 067 board hook (Nils)                  1 calls   0.04
+Shortcut sync at sprint wrap-up            1 calls   0.05
+Fix 071 check receipts (Tomas)             1 calls   0.06
+TOTAL cold weight                                    0.48

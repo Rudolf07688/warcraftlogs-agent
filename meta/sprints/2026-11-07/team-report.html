@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Report 2026-11-07</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+/* Text containers are block flow, not grid: a grid makes every inline child (<b>, <code>, a bare word run) its own row. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flow-root}
+.card>*+*{margin-top:8px}
+.card>:first-child{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:flow-root;margin:10px 0}
+.callout>*{margin:0}
+.callout>*+*{margin-top:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;display:flex}
+.bar .fill{display:block;flex:none;height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:flow-root;background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;margin:0}
+.checks li.ok{border-left-color:var(--ok)}
+.checks li.no{border-left-color:var(--warn)}
+.checks span.no{float:left;margin-right:10px;min-width:24px;padding:0 4px;font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted);margin-left:6px;white-space:nowrap}
+.checks ul{margin:6px 0 0;padding-left:20px}
+[role=tabpanel]>*+*{margin-top:16px}
+[role=tabpanel]>h3{margin-bottom:0}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Team report · agent team · local report</div>
+  <h1>Sprint 2026-11-07: the team built its own retro (P14)</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-07</b></span><span>Base <b class="mono">9ff8602</b></span><span>Tip <b class="mono">736ee13</b></span><span>Team-lead</span></div>
+  <p>Four tier-S streams in parallel, one fix round, 49 minutes from launch to the sprint review. At 0.56 M per point it is the cheapest sprint so far, and the first run under the new testing shape (D21): two full suites all sprint, none by developers. The work was mostly stdlib Python tools under <code>.claude/team/</code>, which is cheaper than app or stack work, so the real test of P14 is the next app sprint.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Cost per point</span><span class="v">0.56<small> M/pt</small></span><span class="s">11.2 M for 20 pts (11-05b: 1.19)</span></div>
+  <div class="kpi"><span class="eyebrow">Build per point</span><span class="v">0.20<small> M/pt</small></span><span class="s">4 builders, 3.96 M (11-05b: 0.50)</span></div>
+  <div class="kpi"><span class="eyebrow">Full suites</span><span class="v">2</span><span class="s">both at the tip (11-05b: ~7 PO side + 2–3 per developer)</span></div>
+  <div class="kpi"><span class="eyebrow">Cold cache</span><span class="v">0.48</span><span class="s">target &lt; 1.5, met again</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-cost" aria-controls="p-cost" aria-selected="true">Cost</button>
+  <button class="tab" role="tab" id="tab-p14" aria-controls="p-p14" aria-selected="false" tabindex="-1">P14 measures</button>
+  <button class="tab" role="tab" id="tab-retro" aria-controls="p-retro" aria-selected="false" tabindex="-1">Retro <span class="count">8</span></button>
+  <button class="tab" role="tab" id="tab-next" aria-controls="p-next" aria-selected="false" tabindex="-1">Next</button>
+  <button class="tab" role="tab" id="tab-hist" aria-controls="p-hist" aria-selected="false" tabindex="-1">Earlier sprints</button>
+</div></nav>
+
+<div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
+  <h2 class="panel-title">Where the 11.2 M went</h2>
+  <div class="bars">
+    <div class="bar"><span>Coordination 42%</span><span class="track"><span class="fill" style="width:42%"></span></span><span class="n">4.71</span></div>
+    <div class="bar"><span>Build 47%</span><span class="track"><span class="fill" style="width:47%"></span></span><span class="n">5.27</span></div>
+    <div class="bar"><span>QA 11%</span><span class="track"><span class="fill" style="width:11%"></span></span><span class="n">1.26</span></div>
+  </div>
+  <table class="tbl">
+    <tr><th>Agent</th><th>Calls</th><th>Weighted M</th><th>Per point</th></tr>
+    <tr><td>Product owner (Maren)</td><td class="num">116</td><td class="num">3.03</td><td class="num">0.15</td></tr>
+    <tr><td>Team-lead (includes the pre-launch meta talk, 4 live checks, agent-file review)</td><td class="num">87</td><td class="num">1.52</td><td class="num">—</td></tr>
+    <tr><td>Dev 065 agent files (Vera), plus a sonnet reword sub-agent 0.10</td><td class="num">52</td><td class="num">1.01</td><td class="num">0.14 (7 pts; 531 counted with Nils)</td></tr>
+    <tr><td>Dev 066 test tools and facts (Tomas)</td><td class="num">62</td><td class="num">1.18</td><td class="num">0.24 (5 pts)</td></tr>
+    <tr><td>Dev 067 board and triage tools (Nils)</td><td class="num">48</td><td class="num">0.88</td><td class="num">0.18 (5 pts)</td></tr>
+    <tr><td>Dev 068 stack, browser, tokens (Ansel)</td><td class="num">49</td><td class="num">0.89</td><td class="num">0.30 (3 pts)</td></tr>
+    <tr><td>Fix round: 069 Nils, 070 Ansel, 071 Tomas</td><td class="num">65</td><td class="num">1.21</td><td class="num">—</td></tr>
+    <tr><td>QA sweep: bugs + security on the sprint diff</td><td class="num">69</td><td class="num">1.26</td><td class="num">—</td></tr>
+    <tr><td>Shortcut sync</td><td class="num">5</td><td class="num">0.16</td><td class="num">—</td></tr>
+  </table>
+  <div class="callout ok"><p>Maren's cost per point fell from 0.25 to 0.15: contracts went on the board before launch, and one suite at the tip replaced a suite per merge. Builders averaged 10.6 calls per point (11-05b: 15–40).</p></div>
+  <div class="callout warn"><p>The coordination share rose to 42% (11-05b: 35%) because the build got so cheap; per point it fell from 0.42 to 0.24. My share includes this morning's meta talk, which ran in the same session.</p></div>
+</div>
+
+<div role="tabpanel" id="p-p14" aria-labelledby="tab-p14" tabindex="0" hidden>
+  <h2 class="panel-title">The measures P14 set, against 11-05b</h2>
+  <table class="tbl">
+    <tr><th>Measure</th><th>11-05b</th><th>11-07</th><th>Reading</th></tr>
+    <tr><td>Full-suite runs</td><td>~7 PO + 2–3 per dev</td><td class="num">2</td><td><span class="tag t-ok">held</span> both at the tip</td></tr>
+    <tr><td>Build calls per point</td><td>15–40</td><td class="num">10.6</td><td><span class="tag t-ok">down</span> tooling work, so partly the work type</td></tr>
+    <tr><td>Fix-round cost</td><td class="num">0.87</td><td class="num">1.21</td><td><span class="tag t-warn">up</span> 1 High + 7 Mediums against 11-05b's few</td></tr>
+    <tr><td>Coordination share</td><td>35%</td><td>42%</td><td><span class="tag t-warn">share up</span> the build shrank faster</td></tr>
+    <tr><td>QA findings a building-block test should have caught</td><td>—</td><td>8</td><td>all in tools that guard <code>.env</code>, loopback or an agent's identity</td></tr>
+  </table>
+  <ul class="checks">
+    <li class="ok">Board noise: replaying 11-05b, developers would receive 18 of 237 entries (8%). It takes effect after the merge to main.</li>
+    <li class="ok">Live checks: stack, browser (twice), trace query, all PASS. The re-check ran only on the path a fix touched.</li>
+    <li class="ok">Facts: 3 added by the builders, 3 chronically stale team facts re-anchored, 0 stale, lint clean.</li>
+    <li class="no">The QA findings show where D21's building-block layer is thin: a tool that guards a secret, a port or an identity is security work, and its brief must name the attack paths.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-retro" aria-labelledby="tab-retro" tabindex="0" hidden>
+  <h2 class="panel-title">The team's retro lines, with mine</h2>
+  <div class="stack">
+    <div class="card"><b>Maren</b>: keep contracts on the board before launch and merge-all-then-one-suite; change: treat team tools that guard <code>.env</code>, loopback or identity as security work and brief their attack paths up front.</div>
+    <div class="card"><b>Vera</b>: keep contract keys on the board (she documented four tools she never read); change: the user-level QA files should live in git or have an owner.</div>
+    <div class="card"><b>Ansel</b>: keep hand-testing a new tool against real Chrome and compose first; change: a contract should name only flags its sender's base has; mutate.py should say a second guard layer may be catching the mutation.</div>
+    <div class="card"><b>Tomas</b>: keep fake <code>uv</code>/<code>npm</code> on PATH driving the real CLI in a temp repo; change: brief start steps list "Shortcut In Progress" right after the identity check; test the <code>--base=VALUE</code> argparse form.</div>
+    <div class="card"><b>Nils</b>: keep contract keys and mutate.py per guard; change: hook reader detection must not depend on regexes over command text, and the fixed hook should go live soon, because the old one renamed every QA agent and him during the fix.</div>
+    <div class="card"><b>Team-lead</b>: keep the parallel shape and one suite at the tip, which made this the fastest sprint (49 minutes). Change: I agree with Maren, so team-tool guards go into the D18 security-core list. One live-check lesson: in <code>browse.py</code>, wait for the content you need, not the page title (the Fetch guard adds latency).</div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-next" aria-labelledby="tab-next" tabindex="0" hidden>
+  <h2 class="panel-title">What I'd change next</h2>
+  <ul class="checks">
+    <li><span class="no">1</span>Merge soon: until the merge, the live board hook keeps the identity flaw, which renamed agents this sprint.</li>
+    <li><span class="no">2</span>After the merge, install the staged QA agent prompts and qa-sweep skill. Vera's point stands: I'd keep project copies in <code>.claude/agents/</code> and <code>.claude/skills/</code> so they're in git (project definitions take precedence over user-level ones), and leave the user-level files alone.</li>
+    <li><span class="no">3</span>Add team tools that guard secrets, ports or identity to the security-core list in <code>product-owner.md</code> (D18 review at hand-off).</li>
+    <li><span class="no">4</span>The next app sprint is the real test of P14 and the first with the P15 reserve rule: compare against 11-05b on build calls per point, full suites, fix-round cost and coordination share.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-hist" aria-labelledby="tab-hist" tabindex="0" hidden>
+  <h2 class="panel-title">Earlier sprints</h2>
+  <table class="tbl">
+    <tr><th>Sprint</th><th>Pts</th><th>M/pt</th><th>Coord.</th><th>Note</th></tr>
+    <tr><td>10-25</td><td class="num">23</td><td class="num">2.65</td><td>55%</td><td>first team sprint</td></tr>
+    <tr><td>10-31b</td><td class="num">21</td><td class="num">0.83</td><td>29%</td><td>autonomy grant, PO + 2 devs</td></tr>
+    <tr><td>11-01b</td><td class="num">20</td><td class="num">1.03</td><td>26%</td><td>P9 tools over rules</td></tr>
+    <tr><td>11-04b</td><td class="num">24</td><td class="num">1.30</td><td>31%</td><td>Telemetry 2</td></tr>
+    <tr><td>11-05</td><td class="num">26</td><td class="num">1.61</td><td>22%</td><td>Telemetry 3, P12 warm waits</td></tr>
+    <tr><td>11-05b</td><td class="num">10</td><td class="num">1.19</td><td>35%</td><td>back to the app, P13 facts</td></tr>
+    <tr><td><b>11-07</b></td><td class="num">20</td><td class="num"><b>0.56</b></td><td>42%</td><td>P14, tooling sprint, D21 first run</td></tr>
+  </table>
+</div>
+
+<footer>Written by team-lead, 2026-11-07. Data: <code>meta/sprints/2026-11-07/usage*.txt</code>, <code>board.jsonl</code>, <code>facts.py stats</code>.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>

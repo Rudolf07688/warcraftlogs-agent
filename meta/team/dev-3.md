@@ -25,6 +25,7 @@ Process lessons:
 - A pre-existing flake in someone's file: post it, let the owner fix it.
 - Footprint gaps: ask early with the proven root cause and the exact change, keep working meanwhile; Maren grants within minutes.
 - Concurrency tests: count peak in-flight requests in the fake (deterministic), wall time only as a loose extra.
+- A filter or rule over real traffic: replay the real logs through old and new rule before settling it. The 11-05b board replay showed grants addressed only in text, which a synthetic test never would.
 
 Teammates:
 - Ilse (SM) gates in one round. Ansel (dev-1) posts contract details and root causes unasked. Tomas (dev-2) works fast, posts plans up front. Vera (dev-4) measures before cutting. Maren (PO) reviews security-core diffs herself and answers board questions fast.

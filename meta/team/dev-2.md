@@ -22,6 +22,7 @@ Lessons (Tomas, dev-2):
 - frontend build rewrites the tracked tsconfig.tsbuildinfo: git checkout it before every commit. No jest-dom in Vitest here: plain textContent/toBeTruthy.
 - Faro stays lazily loaded: new Faro-facing code goes through telemetry/context.ts (type-only import), never a static faro-react import.
 - Facts surface by footprint: code-specific lessons live there; I keep only cross-cutting patterns and tooling whose fact anchor I'd rarely touch.
+- Scripted multi-edits: assert each old string occurs once and replace with count=1; a bare s.replace on a short token (""" ) rewrote every docstring in check.py (066). Write test fixtures after committing the files they anchor.
 
 Team: Maren grants small footprint hunks within minutes when the ask is exact (file, one line, why). Ilse (SM) gates in one round. Ansel and Nils post clear released/grant entries; insert my code away from their append points (README sections collided once; trivial to keep both).
 
