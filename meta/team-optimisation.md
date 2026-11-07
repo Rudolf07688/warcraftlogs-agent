@@ -625,6 +625,44 @@ footprint, never grant a file twice, one rework round.
 - the coordination share (35%)
 - QA findings that a building-block test should have caught
 
+### P15. Kanban flow, closed by points (owner go 2026-11-07: fixed size plus reserve backfill, in `product-owner.md`; first trial next backlog sprint)
+
+- **Idea (owner):** a full kanban board, with the sprint ending once a fixed number of points
+  (about 23) is done, instead of a set of stories planned up front.
+- **My view: helps if flow is used only inside the sprint and the close-out stays a batch.**
+  Developers pull ready stories; at the point cap the team stops pulling, finishes what's in
+  flight, then runs the one closing batch from D21: one suite at the tip, the QA sweep on the
+  diff, the live pass, the docs pass, the report and teamstats. It hinders if it turns into
+  continuous merging with checks per item, which brings back the over-testing D21 removes.
+- **Why it helps:** the per-sprint fixed cost is shared across a stable number of points (on
+  11-05b, 10 pts meant 35% coordination). A fixed size makes sprints comparable for the cost
+  per point. A free developer pulls the next story instead of idling behind the longest
+  stream.
+- **Rules it needs:** a ready queue with footprints and tiers set before a story can be
+  pulled; WIP = the number of developers; stories at most 5 pts (058 at 10 pts was the
+  long tail); a fresh developer per story (resumed ones carry 210–260k, 11-02); "done" means
+  merged to the sprint branch; QA fixes count no points; the cap is checked when a story is
+  pulled (stop at cap minus what's in flight).
+- **Risks:** the PO's context grows with each story she pulls and briefs; footprint
+  conflicts get decided mid-flight; pointing becomes the steering wheel, so the points have
+  to stay honest.
+- **Sequencing:** one change at a time. P14 first, as planned. Trial the flow on the next
+  app sprint, which has a backlog to pull from.
+- **Owner (2026-11-07):** unsure; expects the same or worse numbers, since it needs a
+  near-perfect board up front and well-designed pick rules. Asked whether the message board
+  can help.
+- **Revised view (agreed with the owner's doubt):** developers here don't pick work; the PO
+  launches one fresh sub-agent per brief. So "pulling" would only mean the PO launching the
+  next story when a slot frees, and an idle developer costs wall-clock, not tokens. The
+  token gain comes almost entirely from the fixed size, and planning to a fixed size up
+  front gets that without kanban. P14 §2 already says to fill one sprint with 4–8 disjoint
+  streams. **Proposal: drop full kanban.** Plan to about 23 pts and add one **backfill
+  rule**: the plan lists 1–2 small reserve stories (≤ 3 pts, footprints disjoint from
+  everything, briefs written); when a developer hands off early, the PO may launch one if
+  the sprint is under its cap. On the board: a `decision` entry keyed `reserve:<sc-id>` per
+  story, overwritten (latest entry wins) with "launched" when it starts. The existing kinds
+  and hook carry it; no new board kind needed. Trial after P14.
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -879,3 +917,5 @@ through respawns as the same named member, with its own small, curated memory. I
   three sub-agents the same evening; owner will bring the full team to the next retro.
 - **2026-11-05 (sprint 2026-11-05b, back to the app):** 10/10 pts, 11.9 M, 1.19/pt, cold 0.44 (P12 target met for the first time), coordination 35%. P13 first trial: 4 facts added, 0 stale. Merged to main bb22117.
 - **2026-11-05 (first full-team retro):** All six members were relaunched read-only by seat. Round 1: all six rejected "two small sprints" (the fixed cost is per sprint) in favour of more disjoint streams in one sprint. The lighter merge (one suite at the tip). Brief facts for the paths a developer runs. The live pre-check slot. Spikes as spikes. Round 2 was the owner on over-testing: the team agreed and named its own repeats; Tomas and Nils keep one independent read of how blocks combine. GitNexus gates on non-code diffs were the most-named cost; the owner approved relaxing them. Recorded as D21, D22 and P14, plus a Shortcut epic; built next meta session, not now (owner). Full record: `meta/sprints/2026-11-05b/retro.md`.
+- **2026-11-07 (meta, owner question):** Reviewed the last three sprints' levers and outcomes for the owner. The owner asked about kanban flow closed by a fixed number of points: recorded as P15 (my view: flow inside the sprint, batch close-out; trial after P14).
+- **2026-11-07 (owner go on P15, narrowed):** "Add the reserve rule for the next app sprint." `product-owner.md` §1: target about 23 pts (21–25, was 19–23); in backlog sprints 1–2 reserve stories (≤ 3 pts, tier S, disjoint, briefed; board `reserve:<sc-id>`). §3: backfill one reserve in a fresh developer on an early hand-off while merged plus in-flight points are under 25; stop at the end sweep. Inactive in the P14 sprint (its steer names the work). Measure: reserves launched, idle-developer time, cost per point at the steady size.

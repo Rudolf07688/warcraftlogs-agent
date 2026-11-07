@@ -99,7 +99,12 @@ Your board decisions replace `decisions.md`; key them `decision:<topic>`.
      - group stories that touch the same files
      - prefer finishing epics over starting new ones
 
-     The target is about 21 points (19–23).
+     The target is about 23 points (21–25): the per-sprint cost is fixed, so a steady size
+     keeps the cost per point low and comparable.
+   - **Reserve stories (P15, backlog sprints only).** Also pick 1–2 reserve stories: at most
+     3 points each, tier S, footprints disjoint from every planned stream, brief written up
+     front. Post each as a `decision` with key `reserve:<sc-id>` and list them in the plan
+     under their own heading. They don't count towards the target.
 2. **Tickets.**
    - Estimates are 1, 2, 3 or 5. Use the create-then-update pattern from `shortcut-sync`.
    - Link every story to its epic.
@@ -217,6 +222,12 @@ happened 7 times and cost 2.05 of your 6.16. `--warm` wakes you every 4.5 minute
   own background agents run (QA sweeps, fix rounds, docs): their notices still wake you.
 - Exit 2 ("warm window over", 25 minutes after the `--since` entry with no match) means
   more ticks would cost more than one cold wake: check the developer, then re-arm without `--warm`. Exit 0 is a real entry.
+
+**Backfill from the reserve (P15).** When a developer hands off and the sprint's merged plus
+in-flight points are below 25, you may launch one reserve story in a fresh developer (never
+resume the one who just finished) with the same brief rules. Re-post its `reserve:<sc-id>`
+key as "launched by <dev>" and post its `owner:<glob>`. Stop backfilling once the end sweep
+starts; unlaunched reserves go back to the backlog and are named in the review.
 
 **Developer statuses:**
 - **Hand-off:** a board `handoff` (your wait fires) plus the sub-agent's result: branch,
