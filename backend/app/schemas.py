@@ -416,13 +416,12 @@ ValidationCode = Literal[
 ProposalStatus = Literal["pending", "applied", "cancelled", "expired"]
 
 
+# One change the agent proposes. Addressed by identity, never by id (C5).
+# The strings carry no length limits on purpose: one bad item (e.g. a hostile character
+# name from a log) is shown as skipped instead of failing the whole tool call (D4, C14).
+# No class docstring: Pydantic would send it to the model as the schema's description on
+# every request (sc-514).
 class ProfileChangeIn(BaseModel):
-    """One change the agent proposes. Addressed by identity, never by id (C5).
-
-    The strings carry no length limits on purpose: one bad item (e.g. a hostile character
-    name from a log) is shown as skipped instead of failing the whole tool call (D4, C14).
-    """
-
     action: Literal["add", "update", "remove"]
     target: Literal["own", "friend"]
     name: str

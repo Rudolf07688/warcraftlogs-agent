@@ -28,8 +28,8 @@ CLAUDE = "claude-sonnet-4@20250514"
 # Measured after the cuts (chars / 4); the budget leaves about 10% headroom for new tools and
 # rules. Raise it only with a measurement table on the board: every token here is paid on every
 # model request of every turn.
-MEASURED = {GEMINI: 11_646, CLAUDE: 11_549}
-FIXED_BUDGET = 12_800
+MEASURED = {GEMINI: 11_579, CLAUDE: 11_482}
+FIXED_BUDGET = 12_733  # 12_800 less the 67 sc-514 saved (ProfileChangeIn docstring)
 # The recent-raid kickoff turn adds only its playbook to the instruction.
 KICKOFF_PLAYBOOK_BUDGET = 250
 
