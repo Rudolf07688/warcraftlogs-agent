@@ -10,7 +10,10 @@ Facts are committed with the code, so a fact added on a branch reaches the team 
 
   facts.py for TARGET... [--depth 0|1] [--all]   facts for paths, path::symbol or comp:name
   facts.py diff [--staged | --base REF] [--hook]  facts for the files and symbols a diff touches
-  facts.py brief TARGET...                        the same as `for`, as a markdown brief section
+  facts.py brief TARGET... [--runs PATH...]       the same as `for`, as a markdown brief section;
+                                                  --runs adds the paths the developer runs but
+                                                  doesn't write (stack scripts, test libs, files
+                                                  their tests source or import)
   facts.py add --id ID --anchor A [--anchor A...] --by "<seat> <Name>" [--source S] TEXT|-
   facts.py stale [--to REF]                       facts whose anchor moved since `verified`
   facts.py verify ID... [--ref REF]               re-stamp after re-checking a fact
@@ -22,7 +25,8 @@ Ranking (for, diff, brief): 1 direct anchor (or a symbol inside a target file), 
 on the target's file or a parent directory, 3 a component covering the target, 4 a graph
 neighbour: a caller or callee of the target symbols (or of the symbols in a target file).
 Staleness: file and comp anchors go stale on any change under them since the verified commit; a
-sym anchor only when a change overlaps the symbol's lines. Symbol line ranges are parsed from
+sym anchor only when a change overlaps the symbol's lines. Edits to fact files never count,
+except for an anchor on the facts directory itself. Symbol line ranges are parsed from
 the exact revision (Python ast; a regex for top-level TS/JS function/const/class/type).
 GitNexus: always the MAIN checkout's index, `--repo <main checkout path>`. From a worktree,
 `--repo .` fails ("Repository "." not found") and .gitnexus/ is absent; paths are repo-relative
@@ -527,7 +531,8 @@ def rank_facts(facts, targets, nbrs):
     best = {}
     for f in facts:
         for a in f.anchors:
-            hits = [m for t in targets if (m := match(t, a))]
+            hits = [(m[0], m[1] + (" (you run it)" if t.get("runs") else ""))
+                    for t in targets if (m := match(t, a))]
             if a.kind == "sym":
                 key = next((k for k in ((a.path, a.name), (a.path, a.name.split(".")[-1])) if k in nbrs), None)
                 if key:
@@ -605,21 +610,27 @@ def file_hunks(diff_text):
     return out
 
 
+def is_fact_file(path, a):
+    """A fact file is data, not the code an anchor covers: editing a fact must not stale every
+    fact anchored on comp:team or a directory above the facts (2026-11-05b retro, Tomas). An anchor
+    on the facts directory itself still sees them."""
+    facts_dir = FACTS_REL + "/"
+    return path.startswith(facts_dir) and not (a.kind == "file" and a.path.startswith(facts_dir))
+
+
 def anchor_state(a, sha, to):
     """("ok"|"stale"|"gone", detail) for one anchor between sha and to."""
     if a.kind == "comp":
         if a.name not in COMPONENTS:
             return "gone", f"no component {a.name!r} in COMPONENTS"
-        # Fact files are data, not the component's code: editing a fact must not stale every
-        # comp:team fact (2026-11-05b retro, Tomas).
-        moved = [p for p in changed_files(sha, to) if not p.startswith(".claude/team/facts/")
+        moved = [p for p in changed_files(sha, to) if not is_fact_file(p, a)
                  and any(comp_covers(q, p) for q in COMPONENTS[a.name])]
     else:
         files = tree_files(to)
         if a.kind == "file" and a.path.endswith("/"):
             if not any(p.startswith(a.path) for p in files):
                 return "gone", f"no directory {a.path} at {to}"
-            moved = [p for p in changed_files(sha, to) if p.startswith(a.path)]
+            moved = [p for p in changed_files(sha, to) if p.startswith(a.path) and not is_fact_file(p, a)]
         else:
             if a.path not in files:
                 return "gone", f"no file {a.path} at {to}"
@@ -665,9 +676,10 @@ def fact_state(f, to):
 def collect(targets, depth, deadline):
     facts = [f for f in load_facts() if not f.errors]
     nbrs = {}
-    if depth >= 1 and facts:
+    written = [t for t in targets if not t.get("runs")]   # a path you only run has no callers to edit
+    if depth >= 1 and facts and written:
         left = deadline - time.monotonic() - 0.4 if deadline else GRAPH_TIMEOUT
-        nbrs = neighbours(targets, min(GRAPH_TIMEOUT, left))
+        nbrs = neighbours(written, min(GRAPH_TIMEOUT, left))
     return rank_facts(facts, targets, nbrs)
 
 
@@ -706,11 +718,15 @@ def cmd_for(a):
 
 
 def cmd_brief(a):
+    if not a.targets and not a.runs:
+        raise Bad("brief: give the paths the developer writes, --runs paths, or both")
     targets = [target_of(t) for t in a.targets]
-    ranked = collect(targets, 0 if a.no_graph else a.depth, None)
+    runs = [dict(target_of(t), runs=True) for t in a.runs]
+    ranked = collect(targets + runs, 0 if a.no_graph else a.depth, None)
     cap = None if a.all else a.max
     print("## Known facts for this footprint\n")
-    print(f"Team facts for {', '.join(f'`{label(t)}`' for t in targets)} "
+    ran = f", and the paths you run: {', '.join(f'`{label(t)}`' for t in runs)}" if runs else ""
+    print(f"Team facts for {', '.join(f'`{label(t)}`' for t in targets) or 'no written paths'}{ran} "
           "(`python3 .claude/team/facts.py for ...`). Trust them, but re-check one marked STALE "
           "before relying on it; record a new lesson with `facts.py add`.\n")
     for w in WARNINGS:
@@ -1021,7 +1037,11 @@ def main(argv=None):
         q.add_argument("--max", type=int, default=DEFAULT_MAX)
     for name in ("for", "brief"):
         q = s.add_parser(name)
-        q.add_argument("targets", nargs="+", help="path, path::symbol or comp:name")
+        q.add_argument("targets", nargs="+" if name == "for" else "*", help="path, path::symbol or comp:name")
+        if name == "brief":
+            q.add_argument("--runs", nargs="+", default=[], metavar="PATH",
+                           help="paths the developer runs but doesn't write: stack scripts, test "
+                                "libs, files their tests source or import")
         matching(q)
     q = s.add_parser("diff")
     g = q.add_mutually_exclusive_group()

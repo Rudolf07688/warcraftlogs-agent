@@ -8,7 +8,13 @@ really caused by the mutation.
 
   mutate.py FILE --old "exact text" --new "replacement" --test backend/tests/test_x.py [--test ...]
   mutate.py FILE --line 42 --new "    return True" --test backend/tests/test_x.py::test_name
+  mutate.py frontend/src/lib/x.ts --old "a" --new "b" --test frontend/src/lib/x.test.tsx
   options: --pg-url URL (PG tests), --no-baseline
+
+A --test under frontend/ (or ending .test.tsx/.test.ts) runs under vitest, in frontend/, with
+`npm ci` first when node_modules is missing; give whole test files. All --test values must be
+of one kind. Same guarantees as pytest: green baseline, verified restore, and a suite that fails
+to load (a compile or import error) is not a bite.
 
 After a crash, a leftover backup sits in .git/team-checks/backups/<file>-*.bak: copy it back.
 
@@ -24,7 +30,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check import checks_dir, env_file_refusal, run_pytest, toplevel  # noqa: E402
+from check import checks_dir, env_file_refusal, is_frontend_test, run_tests, toplevel  # noqa: E402
 
 
 def sha(path):
@@ -44,6 +50,9 @@ def main():
     p.add_argument("--no-baseline", action="store_true")
     p.add_argument("--allow-env", action="store_true", help="run even though the tree has a .env")
     a = p.parse_args()
+    kinds = {is_frontend_test(t) for t in a.test}
+    if len(kinds) > 1:
+        sys.exit("mutate: --test mixes frontend (vitest) and backend (pytest) tests; run them separately")
     refusal = env_file_refusal(toplevel())
     if refusal and not a.allow_env:
         sys.exit(refusal)
@@ -64,7 +73,7 @@ def main():
         mutated = "".join(lines)
 
     if not a.no_baseline:
-        rc, line, counts, log, _ = run_pytest(a.test, a.pg_url, log_name="mutate-baseline")
+        rc, line, counts, log, _ = run_tests(a.test, a.pg_url, log_name="mutate-baseline")
         if rc or counts.get("failed") or counts.get("errors") or not counts.get("passed"):
             sys.exit(f"mutate: baseline is not green, so a bite would prove nothing: {line or 'no summary'} (log: {log})")
 
@@ -95,7 +104,7 @@ def main():
     signal.signal(signal.SIGTERM, on_signal)
     try:
         open(path, "w").write(mutated)
-        rc, line, counts, log, _ = run_pytest(a.test, a.pg_url, log_name="mutate")
+        rc, line, counts, log, _ = run_tests(a.test, a.pg_url, log_name="mutate")
     finally:
         restore()
 
