@@ -68,6 +68,25 @@ def test_lib_sh_default_project_is_refused(repo: Path) -> None:
     assert not (repo / ".git" / "team-stack" / "test.env").exists()
 
 
+def test_up_and_down_refuse_a_checkout_with_a_dotenv(repo: Path) -> None:
+    """Compose reads every service's env_file, selected or not, so no compose call at all."""
+    tools = repo / ".claude" / "team"
+    tools.mkdir(parents=True)
+    shutil.copy(STACK, tools / "stack.py")
+    shutil.copy(STACK.parents[2] / "docker-compose.yml", repo / "docker-compose.yml")
+    (repo / ".env").write_text("SECRET=never-read\n")
+    bin_dir, log = repo / "bin", repo / "docker.log"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text(f"#!/bin/sh\necho \"$@\" >> {log}\n")
+    (bin_dir / "docker").chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    for args in (["up", "alpha"], ["down", "alpha"]):
+        r = subprocess.run([sys.executable, str(tools / "stack.py"), *args], cwd=repo, env=env,
+                           capture_output=True, text=True, timeout=60)
+        assert r.returncode != 0 and "has a .env" in r.stderr, (args, r.stderr)
+    assert not log.exists()
+
+
 def _docker_has(image: str) -> bool:
     if not shutil.which("docker"):
         return False
@@ -85,6 +104,7 @@ def _project_objects(project: str) -> list[str]:
 
 
 @pytest.mark.skipif(not _docker_has("grafana/loki:3.7.9"), reason="needs Docker and the Loki image")
+@pytest.mark.skipif((STACK.parents[2] / ".env").exists(), reason="stack.py refuses a checkout with a .env")
 def test_up_starts_the_project_and_down_removes_it(repo: Path) -> None:
     name = f"t{uuid.uuid4().hex[:8]}"
     project = f"wcl-obs-{name}"
@@ -98,5 +118,4 @@ def test_up_starts_the_project_and_down_removes_it(repo: Path) -> None:
         assert not (repo / ".git" / "team-stack" / f"{name}.env").exists()
     finally:
         if _project_objects(project):
-            subprocess.run(["docker", "compose", "-p", project, "down", "-v"], capture_output=True,
-                           env={**os.environ})
+            run(repo, "down", name)  # stack.py's own down: compose never sees a .env

@@ -4,7 +4,8 @@ anchors: [file:docker-compose.yml]
 by: dev-1 Ansel
 verified: 9ff8602 2026-11-07
 ---
-docker compose --env-file F replaces the checkout's .env only for ${VAR} interpolation. The db
-service's env_file (.env, required: false) and backend's (required) still read .env into the
-container, and 'compose config' fails in a worktree without one. stack.py therefore refuses db,
-backend and frontend in a checkout that has a .env; the observability services have no env_file.
+docker compose --env-file F replaces the checkout's .env only for ${VAR} interpolation. Compose
+still opens every service's env_file while building the model, selected or not (db: .env,
+required: false; backend: .env), and 'compose config' fails in a worktree without one. So
+stack.py refuses up and down in any checkout with a .env; run it from a worktree without one
+(env files live in the git common dir, so any worktree can down a stack).

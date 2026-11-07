@@ -3,12 +3,12 @@
 
 Agent-facing. One compose project per NAME (use your board name): wcl-obs-NAME. Never the
 owner's project, never compose's default ports, never a .env (compose gets --env-file).
+up and down refuse in a checkout with a .env: compose would read it through backend's and
+db's env_file even when those services aren't selected. Run them from a worktree without one.
 
   stack.py env NAME [--new]                 pick free ports, write the env file, print its path
   stack.py up NAME [--services S ...]       env, then compose up -d --wait (default services:
                                             alloy loki tempo mimir grafana, as lib.sh stack_up)
-                                            (db/redis allowed; db, backend and frontend are refused
-                                            in a checkout with a .env: their env_file reads it)
   stack.py down NAME                        compose down -v (containers, network, volumes), then
                                             remove the env file and the stack's board dir
 
@@ -40,9 +40,14 @@ PORT_KEYS = ["ALLOY_OTLP_GRPC_PORT", "ALLOY_OTLP_HTTP_PORT", "ALLOY_UI_PORT", "A
              "GRAFANA_PORT", "PYROSCOPE_PORT", "DB_PORT", "REDIS_PORT", "APP_PORT"]
 FIRST, LAST = 25000, 32767
 DEFAULT_SERVICES = ["alloy", "loki", "tempo", "mimir", "grafana"]
-# Services whose compose definition reads the checkout's .env (env_file).
-ENV_FILE_SERVICES = {"db", "backend", "frontend"}
 LINE = re.compile(r"^(?:export )?([A-Z_][A-Z0-9_]*)=(.*)$")
+
+
+def no_dotenv():
+    """Exit if this checkout has a .env: compose loads every service's env_file, selected or not."""
+    if (REPO / ".env").exists():
+        sys.exit(f"stack: {REPO} has a .env, which docker compose would read (backend's and db's "
+                 "env_file); run stack.py up/down from a worktree without one")
 
 
 def name_ok(name):
@@ -166,9 +171,7 @@ def cmd_env(a):
 def cmd_up(a):
     name = name_ok(a.name)
     services = a.services or DEFAULT_SERVICES
-    if set(services) & ENV_FILE_SERVICES and (REPO / ".env").exists():
-        sys.exit(f"stack: {', '.join(sorted(set(services) & ENV_FILE_SERVICES))} would load this "
-                 "checkout's .env; run stack.py from a worktree without one")
+    no_dotenv()
     path = write_env(name, a.new)
     rc = compose(path, "up", "-d", "--wait", *services)
     v = read_env(path)
@@ -181,6 +184,7 @@ def cmd_up(a):
 
 def cmd_down(a):
     name = name_ok(a.name)
+    no_dotenv()
     path = env_path(name)
     if not path.exists():
         # Down by name with a throwaway env file, so compose still never reads a .env.
