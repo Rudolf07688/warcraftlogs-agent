@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-07 18:15Z (P14 sprint done; merge question open)
+Updated: 2026-11-07 (P14 merged to main, unpushed)
 
 ## Topic
 
@@ -28,21 +28,21 @@ The agent-team redesign: persistence and autonomy. Full record in
 - Owner: "implement all these things, but not now ... for tomorrow, we evolve." **Nothing in
   P14 is built yet.**
 
-## Sprint 2026-11-07 (P14) done, awaiting the merge question
+## Sprint 2026-11-07 (P14) merged
 
-20/20 pts on `sprint-2026-11-07` tip 736ee13 (base 9ff8602), not merged, not pushed. 11.2 M,
-0.56/pt (cheapest yet; tooling work), build 0.20/pt, 2 full suites, cold 0.48, 49 min.
-QA 1H+7M in tools guarding .env/loopback/identity, fixed in one fresh round. Archdocs and facts
-gate clean. Reports: sprint review in the sprint worktree `sprints/2026-11-07/sprint-report.html`,
-team report `meta/sprints/2026-11-07/team-report.html`. Teamstats pushed, Mimir has it.
-After a merge: install the staged user-level QA files (`sprints/2026-11-07/user-level/README.md`;
-I'd keep project copies in `.claude/agents` + `.claude/skills`), add team-tool guards to D18
-security-core in product-owner.md, reindex GitNexus, remove worktrees (stack: no wcl-obs-lead
-containers left). The live board hook keeps the identity flaw until the merge.
+Merged to main 23c73aa (owner go), plus 236f251: QA prompts + qa-sweep skill installed (project
+copies in `.claude/agents/qa-*.md`, `.claude/skills/qa-sweep/` are the source of truth; also
+copied to `~/.claude`, originals in `~/.claude/backups/qa-files-2026-11-07/`), and D18
+security-core now covers team tools that guard secrets, ports or identity. Worktrees removed,
+QA reports copied, GitNexus reindexed and sound. 0.56 M/pt, build 0.20/pt, 2 full suites.
+**Next app sprint** = the real test of P14 and the first use of the P15 reserve rule; compare
+against 11-05b. In scope there: the prompt-pin helper (sc-534) and embeddings following a pinned
+location (sc-512).
 
 ## Open with the owner
 
-2. Move the 7 sprint stories to Done (the owner's call).
+1. Push main? (23c73aa + 236f251 + wrap-up commits; ask, never assume)
+2. Move the 7 stories from 11-05b and the 9 from 11-07 to Done (the owner's call).
 3. Wipe the pre-fix Mimir series? (local only)
 4. Gemini Flash list price changes 2027-01-01 (pricing.yaml commit that day).
 
