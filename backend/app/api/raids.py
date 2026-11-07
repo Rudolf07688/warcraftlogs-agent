@@ -1,6 +1,9 @@
-"""REST: tracked raids — list + one-click investigate (US1)."""
+"""REST: tracked raids — list + one-click investigate (US1) + stored summary (072)."""
 
 from __future__ import annotations
+
+import re
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,20 +11,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from wcl_agent.agent import RAID_KICKOFF_OPENING
 
 from ..auth.dependencies import get_tenant_db, require_csrf, require_session
-from ..auth.rate_limit import investigate_limiter
+from ..auth.rate_limit import InProcessRateLimiter, investigate_limiter
 from ..db import repository as repo
 from ..model_state import get_model_state, is_valid_model
-from ..services import kickoff_prefetch
-from ..services.raids import _build_label
 from ..schemas import (
     InvestigateRequest,
     InvestigateResponse,
     RaidListResponse,
     RaidOut,
 )
+from ..services import kickoff_prefetch, raid_summary
+from ..services.raids import _build_label
 from ..tenancy.context import RequestIdentity, commit_and_rescope
 
 router = APIRouter(prefix="/api/raids", tags=["raids"])
+
+SUMMARY_PER_MINUTE = 60  # per user: tab clicks on the Raids page, with room to spare
+summary_limiter = InProcessRateLimiter(per_minute=SUMMARY_PER_MINUTE)
+_REPORT_CODE = re.compile(r"[A-Za-z0-9]{1,32}")  # WCL report codes; ASCII only, at most MAX_CODE
 
 
 def kickoff_prompt_for(report_code: str) -> str:
@@ -125,3 +132,37 @@ async def investigate_raid(
         model=model,
         kickoff_prompt=kickoff_prompt_for(report_code),
     )
+
+
+def valid_report_code(report_code: str) -> str:
+    """072: a malformed code is a 404 like an unknown raid, decided before the service opens any
+    transaction, so it reaches no query."""
+    if not _REPORT_CODE.fullmatch(report_code):
+        raise HTTPException(status_code=404, detail="not_found")
+    return report_code
+
+
+async def within_summary_limit(identity: RequestIdentity = Depends(require_session)) -> RequestIdentity:
+    """072 review SEC-002: per user, before any transaction, like ``within_investigate_limit``."""
+    if not summary_limiter.allow_request(str(identity.user_id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "rate_limited", "message": "Too many raid summaries. Slow down."},
+            headers={"Retry-After": "60"},
+        )
+    return identity
+
+
+@router.get("/{report_code}/summary", response_model=raid_summary.RaidSummary)
+async def get_raid_summary(
+    identity: RequestIdentity = Depends(within_summary_limit),
+    report_code: str = Depends(valid_report_code),
+) -> raid_summary.RaidSummary:
+    """What the app stored about a raid tracked in the caller's workspace (contract:raid-summary):
+    participants, duration, the caller's own characters' parses. At most one report-summary
+    request to re-verify stored data (decision:072-reverify), sent with no transaction open; the
+    service opens its own short tenant transactions. 404 for any other code."""
+    summary = await raid_summary.summarize(report_code, identity=identity, now=datetime.now(UTC))
+    if summary is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return summary
