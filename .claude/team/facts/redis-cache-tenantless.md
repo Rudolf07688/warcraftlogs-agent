@@ -3,7 +3,7 @@ id: redis-cache-tenantless
 anchors: [sym:wcl_agent/cache/cache.py::mark_unshareable, file:wcl_agent/cache/cache.py, comp:redis]
 by: dev-1 Ansel
 source: meta/team/dev-1.md L15; meta/sprints/2026-11-01/board.jsonl #36
-verified: b9cf9a3 2026-11-05
+verified: 03a3982 2026-11-07
 ---
 The shared Redis cache is tenant-less: keys never hold a user, tenant or conversation id,
 every workspace reads the same entry, and loaders back-fill it on a miss. A load that served

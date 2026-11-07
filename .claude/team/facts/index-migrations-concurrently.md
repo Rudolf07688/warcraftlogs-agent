@@ -3,7 +3,7 @@ id: index-migrations-concurrently
 anchors: [file:backend/migrations/versions/, comp:postgres]
 by: dev-1 Ansel
 source: meta/team/dev-1.md L18
-verified: b9cf9a3 2026-11-05
+verified: 03a3982 2026-11-07
 ---
 Index migrations run `create_index`/`drop_index` with `postgresql_concurrently=True`
 inside `op.get_context().autocommit_block()` (see 0020 and 0021), so they don't lock
