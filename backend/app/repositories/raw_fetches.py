@@ -541,6 +541,65 @@ async def read_visible_fetch(
     return probe.body
 
 
+# --- Raid summary (feature 072, sc-142) ------------------------------------------------
+
+
+async def read_visible_summary(
+    session: AsyncSession, code: str, *, tenant_id: uuid.UUID | None, since: datetime
+) -> tuple[bytes, datetime] | None:
+    """The newest stored own report summary (single or batch, ``own_summary``) naming ``code``
+    that the tenant may see (:func:`fetch_visible_clause`), as (JSON bytes, ``fetched_at``), or
+    None. No freshness rule: the caller shows what was stored and when. The caller's transaction
+    carries the tenant scope."""
+    found = (
+        await session.execute(
+            select(_payload_bytes(session.bind.dialect.name), RawFetch.fetched_at)
+            .where(
+                RawFetch.own_summary,
+                _names_report(session, code),
+                fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since),
+            )
+            .order_by(RawFetch.fetched_at.desc())
+            .limit(1)
+        )
+    ).first()
+    return None if found is None else (bytes(found[0]), _aware(found[1]))
+
+
+def _json_at(dialect: str, path: Sequence[str]) -> ColumnElement[bytes]:
+    """The stored JSON at ``path`` as bytes (NULL where absent), cut out in the database."""
+    if dialect == "postgresql":
+        part = RawFetch.payload.op("#>", return_type=JSONB)(literal(list(path), ARRAY(Text)))
+        return func.convert_to(cast(part, Text), "UTF8", type_=LargeBinary)
+    return cast(func.json_extract(RawFetch.payload, "$" + "".join(f'."{p}"' for p in path)), LargeBinary)
+
+
+async def read_visible_parts(
+    session: AsyncSession,
+    query_keys: Sequence[str],
+    paths: Sequence[Sequence[str]],
+    *,
+    tenant_id: uuid.UUID | None,
+    since: datetime,
+) -> dict[str, tuple[datetime, list[bytes | None]]]:
+    """For each stored row among ``query_keys`` that the tenant may see
+    (:func:`fetch_visible_clause`): its ``fetched_at`` and the JSON at each of ``paths`` (bytes,
+    None where absent), so a multi-MB table body never leaves the database whole. One statement.
+    No freshness rule; the caller's transaction carries the tenant scope."""
+    if not query_keys:
+        return {}
+    dialect = session.bind.dialect.name
+    rows = await session.execute(
+        select(RawFetch.query_key, RawFetch.fetched_at, *(_json_at(dialect, p) for p in paths)).where(
+            RawFetch.query_key.in_(list(query_keys)),
+            fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since),
+        )
+    )
+    return {
+        row[0]: (_aware(row[1]), [None if part is None else bytes(part) for part in row[2:]]) for row in rows
+    }
+
+
 # --- Knowledge base backfill (feature 043, sc-113) -------------------------------------
 
 SUMMARY_OPERATIONS = ("ReportSummary", "ReportsBatch")  # our report summary queries' names

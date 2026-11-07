@@ -1,6 +1,9 @@
-"""REST: tracked raids — list + one-click investigate (US1)."""
+"""REST: tracked raids — list + one-click investigate (US1) + stored summary (072)."""
 
 from __future__ import annotations
+
+import re
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +14,7 @@ from ..auth.dependencies import get_tenant_db, require_csrf, require_session
 from ..auth.rate_limit import investigate_limiter
 from ..db import repository as repo
 from ..model_state import get_model_state, is_valid_model
-from ..services import kickoff_prefetch
+from ..services import kickoff_prefetch, raid_summary
 from ..services.raids import _build_label
 from ..schemas import (
     InvestigateRequest,
@@ -22,6 +25,8 @@ from ..schemas import (
 from ..tenancy.context import RequestIdentity, commit_and_rescope
 
 router = APIRouter(prefix="/api/raids", tags=["raids"])
+
+_REPORT_CODE = re.compile(r"[A-Za-z0-9]{1,32}")  # WCL report codes; ASCII only, at most MAX_CODE
 
 
 def kickoff_prompt_for(report_code: str) -> str:
@@ -125,3 +130,26 @@ async def investigate_raid(
         model=model,
         kickoff_prompt=kickoff_prompt_for(report_code),
     )
+
+
+def valid_report_code(report_code: str) -> str:
+    """072: a malformed code is a 404 like an unknown raid, decided before the tenant transaction
+    opens (declared before ``get_tenant_db``), so it reaches no query."""
+    if not _REPORT_CODE.fullmatch(report_code):
+        raise HTTPException(status_code=404, detail="not_found")
+    return report_code
+
+
+@router.get("/{report_code}/summary", response_model=raid_summary.RaidSummary)
+async def get_raid_summary(
+    identity: RequestIdentity = Depends(require_session),
+    report_code: str = Depends(valid_report_code),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> raid_summary.RaidSummary:
+    """What the app stored about a raid tracked in the caller's workspace (contract:raid-summary):
+    participants, duration, the caller's own characters' parses. Never calls Warcraft Logs; 404
+    for any other code."""
+    summary = await raid_summary.summarize(db, report_code, tenant_id=identity.tenant_id, now=datetime.now(UTC))
+    if summary is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return summary
