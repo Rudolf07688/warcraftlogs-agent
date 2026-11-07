@@ -27,6 +27,7 @@ import fcntl
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -130,6 +131,7 @@ def cmd_post(a, r):
     if a.kind not in KINDS:
         sys.exit(f"team-board: kind must be one of {', '.join(KINDS)}")
     text = a.text if a.text != "-" else sys.stdin.read().strip()
+    to = addressees(r, a.to) if a.to else None
     with open(board_path(r, name), "a+") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         f.seek(0)
@@ -139,8 +141,8 @@ def cmd_post(a, r):
                 last = json.loads(line)["id"]
         e = {"id": last + 1, "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
              "author": a.as_, "kind": a.kind, "text": " ".join(text.split())}
-        if a.to:
-            e["to"] = a.to
+        if to:
+            e["to"] = to
         if a.key:
             e["key"] = a.key
         if a.supersedes:
@@ -257,46 +259,115 @@ def cmd_status(a, r):
     print(f"team-board: {name}, {len(entries)} entries, {board_path(r, name)}")
 
 
+def board_as(cmd):
+    """The --as NAME of a board.py post/read invocation in a shell command, else None.
+
+    Only real argv counts (069): the command is split with shlex, a segment must run board.py
+    itself (`python3 .../board.py post ...` or `.../board.py read`), and the first --as after
+    the subcommand wins. Quoted text, echo, other tools' --as and
+    heredoc bodies never name the reader."""
+    lines, kept, end = cmd.replace("\\\n", " ").split("\n"), [], None
+    for line in lines:  # drop heredoc bodies: their text is data, and may not even lex
+        if end is not None:
+            end = None if line.strip() == end else end
+            continue
+        kept.append(line)
+        m = re.search(r"(?<!<)<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", line)
+        end = m.group(2) if m else None
+    try:
+        lex = shlex.shlex("\n".join(kept), posix=True, punctuation_chars="();<>|&\n")
+        lex.whitespace, lex.whitespace_split = " \t\r", True
+        tokens = list(lex)
+    except ValueError:
+        return None
+    argv, target = [], False
+    for tok in tokens + [";"]:
+        if not (tok and set(tok) <= set("();<>|&\n")):
+            if not target:
+                argv.append(tok)
+            target = False
+            continue
+        if not set(tok) & set(";&|\n()"):  # a redirection: its target is not an argument
+            target = True
+            continue
+        while argv and (argv[0] in ("{", "!", "then", "do", "else", "time", "exec")
+                        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0], re.S)):
+            argv = argv[1:]  # keywords and VAR=value prefixes: B() { python3 board.py ...; }
+        if argv and os.path.basename(argv[0]).startswith("python"):
+            argv = argv[1:]
+        if len(argv) > 2 and os.path.basename(argv[0]) == "board.py" and argv[1] in ("post", "read"):
+            for i, x in enumerate(argv[2:], 2):
+                if x.startswith("--as="):
+                    return x[5:]
+                if x == "--as" and i + 1 < len(argv):
+                    return argv[i + 1]
+        argv = []
+    return None
+
+
 def reader_from_hook(d, r):
     """Resolve who is reading. Named teammates have agent ids like 'adev-a-032-<16 hex>'.
-    Unnamed sub-agents ('a<hex>') are learned from the --as of their first board command."""
+    Unnamed sub-agents ('a<hex>') are learned from the --as of their first board.py post/read
+    (board_as); the name must be on the roster and is never re-bound, so text in a later command
+    can't move another member's cursor. ('reader--' files: the older 'alias--' ones were learned
+    from any text and are ignored.)"""
     aid = d.get("agent_id")
     if not aid:
         return "team-lead"
-    alias = os.path.join(r, "cursors", f"alias--{re.sub(r'[^A-Za-z0-9_.-]', '_', aid)}")
-    cmd = (d.get("tool_input") or {}).get("command", "") if d.get("tool_name") == "Bash" else ""
-    # Board names are lower case, so documentation such as "--as NAME" in a heredoc that merely
-    # mentions board.py doesn't rename the reader (and move someone else's cursor).
-    m = re.search(r"board\.py\b.*--as[ =]['\"]?([a-z][a-z0-9_.-]*)(?![A-Za-z0-9_.-])", cmd)
-    if m:
-        open(alias, "w").write(m.group(1))
-        return m.group(1)
+    alias = os.path.join(r, "cursors", f"reader--{re.sub(r'[^A-Za-z0-9_.-]', '_', aid)}")
     try:
         return open(alias).read().strip()
     except FileNotFoundError:
         pass
+    cmd = (d.get("tool_input") or {}).get("command", "") if d.get("tool_name") == "Bash" else ""
+    roster = seats(r)
+    name = board_as(cmd) if cmd else None
+    name = roster.get(name, name)
+    if name in roster.values():
+        open(alias, "w").write(name)
+        return name
     m = re.fullmatch(r"a(.+)-[0-9a-f]{16}", aid)
     return m.group(1) if m else aid
 
 
-def developers(r):
-    """Lower-case names of the dev-<n> seats in meta/team/ (member.py's files, next to the git
-    common dir). Unreadable or missing files just mean fewer developers: a reader that isn't
-    found here keeps the full feed."""
+def seats(r):
+    """{seat id: lower-case name} from the seat files in meta/team/ (member.py's files, next to
+    the git common dir). Unreadable or missing files just mean a smaller roster."""
     team = os.path.join(os.path.dirname(os.path.dirname(r)), "meta", "team")
-    names = set()
+    out = {}
     try:
-        files = [f for f in os.listdir(team) if re.fullmatch(r"dev-[0-9]+\.md", f)]
+        files = [f for f in os.listdir(team) if re.fullmatch(r"[a-z0-9-]+\.md", f)]
     except OSError:
-        return names
+        return out
     for f in files:
         try:
             m = re.search(r"^- \*\*name:\*\* (\S+)", open(os.path.join(team, f)).read(), re.M)
         except OSError:
             continue
-        if m:
-            names.add(m.group(1).lower())
-    return names
+        if m and re.fullmatch(r"[a-z][a-z0-9_-]*", m.group(1).lower()):
+            out[f[:-3]] = m.group(1).lower()
+    return out
+
+
+def developers(r):
+    """Lower-case names of the dev-<n> seats: a reader that isn't one keeps the full feed."""
+    return {n for s, n in seats(r).items() if re.fullmatch(r"dev-[0-9]+", s)}
+
+
+def addressees(r, to):
+    """contract:board-to: --to takes roster names, seat ids (mapped to the name) and 'all'.
+    Anything else would reach nobody while every cursor moves past it, so it is refused; the
+    stored list therefore holds clean names only (no forged lines through --to)."""
+    roster = seats(r)
+    out = []
+    for t in to:
+        t = roster.get(t, t)
+        if t != "all" and t not in roster.values():
+            sys.exit(f"team-board: --to {t!r} is not on the roster; use 'all', a seat id or one of: "
+                     + ", ".join(sorted(roster.values())))
+        if t not in out:
+            out.append(t)
+    return out
 
 
 def relevant(reader, entries):
@@ -332,23 +403,29 @@ def cmd_hook(a, r):
     filtered = reader.lower() in developers(r)
     if filtered:
         new = list(filter(relevant(reader.lower(), entries), new))
-    if entries:  # past every entry, delivered or filtered out: none comes back later as new
-        set_cursor(r, name, reader, entries[-1]["id"])
     if not new:
+        if entries:  # past every entry filtered out: none comes back later as new
+            set_cursor(r, name, reader, entries[-1]["id"])
         return
+    # Oldest first within the budget, at least one entry. The cursor moves only past what was
+    # shown (BUG-001, 069), so whatever didn't fit arrives on the next tool call.
     shown, size = [], 0
-    for e in new[-HOOK_MAX_ENTRIES:]:
+    for e in new[:HOOK_MAX_ENTRIES]:
         line = fmt(e)
-        if size + len(line) > HOOK_MAX_CHARS:
+        if shown and size + len(line) > HOOK_MAX_CHARS:
             break
+        if len(line) > HOOK_MAX_CHARS:
+            line = line[:HOOK_MAX_CHARS] + f" ... (cut; full text: `board.py log --since {e['id'] - 1}`)"
         shown.append(line)
         size += len(line)
     more = len(new) - len(shown)
+    set_cursor(r, name, reader, new[len(shown) - 1]["id"] if more else entries[-1]["id"])
     head = (f"[team-board] {len(new)} new entr{'y' if len(new) == 1 else 'ies'} for {reader} "
             "(chronological; a later entry on the same key overrides earlier ones"
             + ("; filtered to what concerns you, `board.py log` has everything" if filtered else "")
             + "):")
-    tail = f"\n... {more} older not shown: run `board.py log --since {seen}`" if more else ""
+    tail = (f"\n... {more} newer not shown yet: they arrive with your next tool call "
+            f"(or `board.py log --since {new[len(shown) - 1]['id']}`)" if more else "")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": d.get("hook_event_name", "PostToolUse"),
                                              "additionalContext": head + "\n" + "\n".join(shown) + tail}}))
 
