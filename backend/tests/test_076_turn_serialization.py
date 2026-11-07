@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextlib import asynccontextmanager
 
 from backend.app.api import ws as ws_mod
 from backend.app.db import repository as repo
@@ -110,16 +111,30 @@ async def test_a_turn_that_will_not_end_delays_the_next_one_only_boundedly(
 ):
     # Liveness: T1's clean-up hangs (as when a tool ignores cancellation and the stream's
     # producer can't be reaped). T2 waits SUPERSEDE_WAIT_S, then answers; T1, no longer holding
-    # the chat, saves nothing when it finally ends.
+    # the chat, saves nothing when it finally ends. T2 waits with no DB connection held
+    # (076 review SEC-001).
     monkeypatch.setattr(ws_mod, "SUPERSEDE_WAIT_S", 0.5)
     stuck, release = asyncio.Event(), asyncio.Event()
+    open_scopes = [0]
+    open_while_waiting: list[int] = []
+    real_scope = ws_mod.tenant_scope
+
+    @asynccontextmanager
+    async def counted_scope(*args, **kwargs):
+        open_scopes[0] += 1
+        try:
+            async with real_scope(*args, **kwargs) as session:
+                yield session
+        finally:
+            open_scopes[0] -= 1
 
     async def t1():
         yield {"type": "token", "text": "partial one"}
         try:
             stuck.set()
             await asyncio.Event().wait()
-        except asyncio.CancelledError:
+        except asyncio.CancelledError:  # T2 cancelled us and is waiting now
+            open_while_waiting.append(open_scopes[0])
             await release.wait()
             raise
         yield {"type": "token", "text": "never"}
@@ -128,12 +143,14 @@ async def test_a_turn_that_will_not_end_delays_the_next_one_only_boundedly(
         yield {"type": "token", "text": "Answer two"}
 
     _quiet(monkeypatch, _scripted({"Q1": t1, "Q2": t2}))
+    monkeypatch.setattr(ws_mod, "tenant_scope", counted_scope)
     old = _sock()
     first = await _start(old, as_user, "Q1")
     await asyncio.wait_for(stuck.wait(), BOUND_S)
     conv_id = uuid.UUID(_frames(old)[0]["conversation_id"])
 
     await asyncio.wait_for(await _start(_sock(), as_user, "Q2", conv_id), BOUND_S)
+    assert open_while_waiting == [0]
     assert not first.done()
     release.set()
     await asyncio.wait_for(first, BOUND_S)
@@ -143,6 +160,80 @@ async def test_a_turn_that_will_not_end_delays_the_next_one_only_boundedly(
         ("user", "Q2", "complete"),
         ("agent", "Answer two", "complete"),
     ]
+    assert ws_mod._ChatTurn.turns == {}
+
+
+async def test_a_save_that_outlasts_the_wait_writes_nothing(as_user, patched_db, monkeypatch):
+    # 076 review SEC-002: T1 has finished streaming and is saving (not cancellable) when T2
+    # arrives; its save outlasts SUPERSEDE_WAIT_S, so T2 goes on. T1 then finds the chat taken
+    # over inside its save transaction and rolls back: no A1 after Q2.
+    monkeypatch.setattr(ws_mod, "SUPERSEDE_WAIT_S", 0.5)
+    saving, finish_save = asyncio.Event(), asyncio.Event()
+    real_add = repo.add_message
+
+    async def slow_answer_one(session, conv_id, role, content, *args, **kwargs):
+        if content == "Answer one":
+            saving.set()
+            await finish_save.wait()
+        return await real_add(session, conv_id, role, content, *args, **kwargs)
+
+    async def t1():
+        yield {"type": "token", "text": "Answer one"}
+
+    async def t2():
+        yield {"type": "token", "text": "Answer two"}
+
+    _quiet(monkeypatch, _scripted({"Q1": t1, "Q2": t2}))
+    monkeypatch.setattr(repo, "add_message", slow_answer_one)
+    old = _sock()
+    first = await _start(old, as_user, "Q1")
+    await asyncio.wait_for(saving.wait(), BOUND_S)
+    conv_id = uuid.UUID(_frames(old)[0]["conversation_id"])
+
+    await asyncio.wait_for(await _start(_sock(), as_user, "Q2", conv_id), BOUND_S)
+    finish_save.set()
+    await asyncio.wait_for(first, BOUND_S)
+
+    assert await _messages(patched_db, conv_id, as_user.tenant_id) == [
+        ("user", "Q1", "complete"),
+        ("user", "Q2", "complete"),
+        ("agent", "Answer two", "complete"),
+    ]
+    assert [(f["type"], f.get("code")) for f in _frames(old)][-1] == ("error", "superseded")
+    assert ws_mod._ChatTurn.turns == {}
+
+
+async def test_a_failing_partial_save_does_not_close_the_superseded_socket(
+    as_user, patched_db, monkeypatch
+):
+    # 076 review SEC-003: the superseded turn's partial save raises; the cancel still ends the
+    # turn, the old socket's receive loop goes on and is told, and T2 answers.
+    in_tool_round = asyncio.Event()
+
+    async def t1():
+        yield {"type": "token", "text": "partial one"}
+        in_tool_round.set()
+        await asyncio.Event().wait()
+        yield {"type": "token", "text": "never"}
+
+    async def t2():
+        yield {"type": "token", "text": "Answer two"}
+
+    async def partial_fails(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    _quiet(monkeypatch, _scripted({"Q1": t1, "Q2": t2}))
+    monkeypatch.setattr(ws_mod, "_persist_partial", partial_fails)
+    old, new = _sock(), _sock()
+    first = await _start(old, as_user, "Q1")
+    await asyncio.wait_for(in_tool_round.wait(), BOUND_S)
+    conv_id = uuid.UUID(_frames(old)[0]["conversation_id"])
+
+    second = await _start(new, as_user, "Q2", conv_id)
+    await asyncio.wait_for(asyncio.gather(first, second), BOUND_S)
+    assert first.result() is None  # nothing escaped into the receive loop
+    assert _frames(old)[-1]["code"] == "superseded"
+    assert [f["type"] for f in _frames(new)][-1] == "done"
     assert ws_mod._ChatTurn.turns == {}
 
 
