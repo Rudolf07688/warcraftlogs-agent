@@ -31,6 +31,7 @@ from .models import (
     KnownEncounter,
     KnownPlayer,
     Message,
+    ProfileSettings,
     RecentMplusRun,
     RecentMplusRunCharacter,
     RecentRaid,
@@ -1266,6 +1267,67 @@ async def delete_guild(session: AsyncSession, *, tenant_id: uuid.UUID) -> bool:
         delete(GuildProfile).where(GuildProfile.tenant_id == tenant_id)
     )
     return result.rowcount > 0
+
+
+# --- Profile settings: main class/spec/content, onboarding skip (feature 074) ----------
+
+
+async def get_profile_settings(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> tuple[ProfileSettings | None, bool]:
+    """Return ``(settings row or None, onboarding pending)``.
+
+    Pending: never skipped (no row, or no skip time) and no own character yet.
+    """
+    row = (
+        await session.execute(select(ProfileSettings).where(ProfileSettings.tenant_id == tenant_id))
+    ).scalar_one_or_none()
+    if row is not None and row.onboarding_dismissed_at is not None:
+        return row, False
+    has_own = (
+        await session.execute(
+            select(UserCharacter.id)
+            .where(UserCharacter.tenant_id == tenant_id, UserCharacter.role == "self")
+            .limit(1)
+        )
+    ).first() is not None
+    return row, not has_own
+
+
+async def set_main_selection(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    main_class: str | None,
+    main_spec: str | None,
+    main_content: str | None,
+) -> None:
+    """Replace the tenant's main class, spec and content (``None`` clears). Validated by the caller."""
+    values = {"main_class": main_class, "main_spec": main_spec, "main_content": main_content}
+    stmt = _insert(session, ProfileSettings).values(tenant_id=tenant_id, **values)
+    await session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[ProfileSettings.tenant_id],
+            set_={**values, "updated_at": func.now()},
+        )
+    )
+
+
+async def skip_onboarding(session: AsyncSession, *, tenant_id: uuid.UUID) -> None:
+    """Record that the tenant skipped the welcome prompt; the first skip time is kept."""
+    now = datetime.now(timezone.utc)
+    stmt = _insert(session, ProfileSettings).values(tenant_id=tenant_id, onboarding_dismissed_at=now)
+    await session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[ProfileSettings.tenant_id],
+            set_={
+                "onboarding_dismissed_at": func.coalesce(
+                    ProfileSettings.onboarding_dismissed_at, stmt.excluded.onboarding_dismissed_at
+                ),
+                "updated_at": func.now(),
+            },
+        )
+    )
 
 
 async def get_character(

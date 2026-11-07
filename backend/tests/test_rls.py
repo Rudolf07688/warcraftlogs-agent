@@ -78,3 +78,37 @@ async def test_write_outside_tenant_rejected(pg_sessionmaker):
             )
             await s.flush()
         await s.rollback()
+
+
+async def test_profile_settings_are_invisible_and_unwritable_across_tenants(pg_sessionmaker):
+    # Feature 074: profile_settings carries the same policy as the other tenant tables.
+    tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+    async with pg_sessionmaker() as s:
+        for t in (tenant_a, tenant_b):
+            await s.execute(text("INSERT INTO tenants (id, name) VALUES (:id, :name)"), {"id": t, "name": t})
+        await _set_tenant(s, tenant_a)
+        await s.execute(
+            text("INSERT INTO profile_settings (tenant_id, main_class) VALUES (:t, 'Paladin')"),
+            {"t": tenant_a},
+        )
+        await s.commit()
+
+    async with pg_sessionmaker() as s:
+        await _set_tenant(s, tenant_b)
+        seen = await s.execute(text("SELECT count(*) FROM profile_settings WHERE tenant_id = :t"), {"t": tenant_a})
+        assert seen.scalar() == 0
+        changed = await s.execute(
+            text("UPDATE profile_settings SET main_class = 'Mage' WHERE tenant_id = :t"), {"t": tenant_a}
+        )
+        assert changed.rowcount == 0
+        with pytest.raises(Exception):
+            await s.execute(
+                text("INSERT INTO profile_settings (tenant_id, main_class) VALUES (:t, 'Mage')"),
+                {"t": tenant_a},
+            )
+        await s.rollback()
+
+    async with pg_sessionmaker() as s:
+        await _set_tenant(s, tenant_a)
+        mine = await s.execute(text("SELECT main_class FROM profile_settings WHERE tenant_id = :t"), {"t": tenant_a})
+        assert mine.scalar() == "Paladin"
