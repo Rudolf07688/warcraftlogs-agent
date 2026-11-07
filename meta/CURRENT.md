@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-07 late (P14 done + retro; P16 agreed, start fresh)
+Updated: 2026-11-07 late (retro + card round done; session cleaned for /clear)
 
 ## Topic
 
@@ -24,22 +24,29 @@ Merged 23c73aa and pushed (c732dd5 and later). All 16 stories (11-05b + 11-07) D
 iteration is renamed 2026-11-07. QA prompts and the qa-sweep skill installed as project copies
 (source of truth) and in ~/.claude. Full-team retro round 1: `meta/sprints/2026-11-07/retro.md`.
 
-## Next: P16 (owner go 2026-11-07, "I agree"), start in a fresh session
+## Next session: the owner kicks off a sprint ("so I can cleanly kick off the sprint after")
 
-Read P16 in `meta/team-optimisation.md`. Step 1 first, on main, as lead (agent files are mine):
-- Hostile inputs in briefs (product-owner.md).
-- The developer.md hard rule for security-core work and trusted artefacts.
-- Agreeing shared formats before launch, as a standard PO step.
-- Ilse's three scrum-master.md gaps, plus two rituals cut.
-- Take back the blanket D18 team-tool rule I added on 11-07 (product-owner.md, D18 paragraph).
-- One backlog ticket for the five tool gaps, deduplicated against sc-538..542.
+Session cleaned 2026-11-07: tree clean, no worktrees, stacks or active board, all agents done.
 
-Also fold in the members' agent-file proposals from the card round (retro.md, last section: consumer-side
-test, point of effect, replay real data, PO wait watches Ilse). Per P16 step 5, the affected
-seats review the agent-file diff read-only before I commit. Cards stay small (owner).
-Then steps 2–4 (hazards fired by a hook, about 5 entry points, stream types) as designs. Ask
-the owner whether they become a small meta sprint or reserve stories; the next app sprint
-stays a clean P14 test.
+1. **Pre-flight:** start through `bin/claude-otel`, run `git status` and reindex GitNexus (stale
+   at 23c73aa after meta-only commits), then check `context stream_response`.
+2. **P16 step 1 before launch** (small, mine, so the sprint runs on the new rules). Read P16 in
+   `meta/team-optimisation.md`.
+   - Hostile inputs in briefs, and agreeing shared formats before launch as a standard step
+     (product-owner.md).
+   - The developer.md hard rule for security-core work and trusted artefacts, plus the
+     card-round proposals in the last section of retro.md: consumer-side test, point of
+     effect, replay real data.
+   - Maren's wait also watches Ilse's questions.
+   - Ilse's three scrum-master.md gaps, and cut its two rituals.
+   - Take back the blanket D18 team-tool rule I added on 11-07 (D18 paragraph).
+   - The affected seats review the diff read-only first (P16 step 5).
+   - One backlog ticket for the tool gaps plus the `member.py lint` false matches,
+     deduplicated against sc-538..542.
+3. **Which sprint:** take the owner's steer. If none is given, recommend the **next app sprint**:
+   about 23 pts of app work, with sc-538..542 as P15 reserve stories. Measure it like 11-05b,
+   with cost per point by stream type, as the clean test of P14. P16 steps 2–4 (hook-injected
+   hazards, about 5 entry points, stream types) wait for their own meta sprint. Cards stay small.
 
 ## Open with the owner
 
