@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-07 Plan</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+/* Text containers are block flow, not grid: a grid makes every inline child (<b>, <code>, a bare word run) its own row. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flow-root}
+.card>*+*{margin-top:8px}
+.card>:first-child{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:flow-root;margin:10px 0}
+.callout>*{margin:0}
+.callout>*+*{margin-top:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;display:flex}
+.bar .fill{display:block;flex:none;height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:flow-root;background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;margin:0}
+.checks li.ok{border-left-color:var(--ok)}
+.checks li.no{border-left-color:var(--warn)}
+.checks span.no{float:left;margin-right:10px;min-width:24px;padding:0 4px;font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted);margin-left:6px;white-space:nowrap}
+.checks ul{margin:6px 0 0;padding-left:20px}
+[role=tabpanel]>*+*{margin-top:16px}
+[role=tabpanel]>h3{margin-bottom:0}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint plan · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-07: the team builds its own retro</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-07</b></span><span>Base <b class="mono">9ff8602</b></span><span>PO Maren</span><span>Epic: Agent team, ways of working and tools</span></div>
+  <p>The team adopts the ways of working agreed at the 2026-11-05b retro (test the building blocks, then the whole, once; GitNexus only for code; a lighter PO process; a quieter board) and builds the tools it asked for. Four developers work in parallel on disjoint files. This plan does not wait for approval.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Planned</span><span class="v">20<small> pts</small></span><span class="s">9 stories (one split)</span></div>
+  <div class="kpi"><span class="eyebrow">Streams</span><span class="v">4</span><span class="s">all tier S, opus medium</span></div>
+  <div class="kpi"><span class="eyebrow">Scrum master</span><span class="v">0</span><span class="s">no shared files</span></div>
+  <div class="kpi"><span class="eyebrow">Live checks</span><span class="v">2</span><span class="s">stack helper, browser</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-goal" aria-controls="p-goal" aria-selected="true">Goal and flow</button>
+  <button class="tab" role="tab" id="tab-feat" aria-controls="p-feat" aria-selected="false" tabindex="-1">Features <span class="count">4</span></button>
+  <button class="tab" role="tab" id="tab-dec" aria-controls="p-dec" aria-selected="false" tabindex="-1">Decisions</button>
+  <button class="tab" role="tab" id="tab-risk" aria-controls="p-risk" aria-selected="false" tabindex="-1">Risks</button>
+</div></nav>
+
+<div role="tabpanel" id="p-goal" aria-labelledby="tab-goal" tabindex="0">
+  <h2 class="panel-title">Goal and flow</h2>
+  <div class="card">
+    <p><b>Goal:</b> after this sprint, a developer tests only its own building block, the PO merges all streams and runs one full suite at the tip, the QA sweep reads only the sprint's diff and fixes only broken criteria, security holes and data loss, and each agent sees only the board entries that concern it.</p>
+  </div>
+  <h3>How a sprint will run afterwards</h3>
+  <div class="flow"><span>Brief with facts for written and run paths</span><i>→</i><span>Developer: targeted tests, receipt for its area</span><i>→</i><span>PO: check receipts, merge all</span><i>→</i><span>One full suite at the tip</span><i>→</i><span>QA sweep of the sprint diff</span><i>→</i><span>Live pass once</span></div>
+  <h3>This sprint's order</h3>
+  <div class="flow"><span>Launch 4 in parallel</span><i>→</i><span>Merge as hand-offs land</span><i>→</i><span>One full suite at the tip</span><i>→</i><span>Live checks: stack helper, browser</span><i>→</i><span>QA sweep (diff only)</span><i>→</i><span>Docs and facts pass</span><i>→</i><span>Review</span></div>
+  <p class="muted small">The agent-file changes only take effect after the merge to main, so their effect is measured on the next sprint.</p>
+</div>
+
+<div role="tabpanel" id="p-feat" aria-labelledby="tab-feat" tabindex="0" hidden>
+  <h2 class="panel-title">Features</h2>
+  <div class="stack">
+    <div class="card">
+      <h3>065 Agent files: Vera <span class="tag t-acc">tier S</span> <span class="tag">opus medium</span></h3>
+      <p class="muted small">developer.md, product-owner.md, scrum-master.md, team-launch, a local GitNexus section in CLAUDE.md, proposed QA-sweep files for team-lead.</p>
+      <ul class="checks">
+        <li><span class="pts p3">3</span> Testing shape: building blocks, then the whole, once (sc-526). Old rules cut, not left alongside.</li>
+        <li><span class="pts p1">1</span> GitNexus gates only for code-symbol diffs (sc-527); change detection once before hand-off.</li>
+        <li><span class="pts p2">2</span> PO process (sc-528): developers never make live calls, live pre-check slot, live checks pin facts, spikes briefed as spikes, model per stream, no re-reading hand-offs.</li>
+        <li><span class="pts p1">1</span> Scrum master (sc-532): grants per path, two gates, a clear rule for when to seat one.</li>
+        <li>Board-noise agent-file part (sc-531): no ritual notices, leaner files, the rules that bite marked, lighter hand-off.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>066 Test tools and facts: Tomas <span class="tag t-acc">tier S</span> <span class="tag">opus medium</span></h3>
+      <ul class="checks">
+        <li><span class="pts p3">3</span> Test tools (sc-530): mutation checks for frontend tests, <code>npm ci</code> on a fresh worktree, receipts scoped to the area touched.</li>
+        <li><span class="pts p2">2</span> Briefs carry facts for the paths a developer runs (sc-529), two new facts, the directory-anchor stale gap fixed.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>067 Quieter board and triage tools: Nils <span class="tag t-acc">tier S</span> <span class="tag">opus medium</span></h3>
+      <ul class="checks">
+        <li><span class="pts p3">3</span> Board entries reach only the agents they concern (sc-531); measured by replaying past boards through the old and new rule.</li>
+        <li><span class="pts p2">2</span> Read-only trace and log query, and "is this finding in this sprint's diff?" (sc-537, split from sc-533).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>068 Stack, browser and token tools: Ansel <span class="tag t-acc">tier S</span> <span class="tag">opus medium</span></h3>
+      <ul class="checks">
+        <li><span class="pts p3">3</span> Free-port stack helper, headless browser on the developer's own port, offline token counter (sc-533).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-dec" aria-labelledby="tab-dec" tabindex="0" hidden>
+  <h2 class="panel-title">Key decisions</h2>
+  <ul class="checks">
+    <li class="ok"><b>Four streams, no scrum master.</b> The steer's grouping gives disjoint files; all agent-file stories go to one developer so nobody shares developer.md or product-owner.md.</li>
+    <li class="ok"><b>All tier S.</b> Team tooling has no data model, tenant data or security core; Spec Kit specs would cost more than they give.</li>
+    <li class="ok"><b>New-tools story split</b> into the stack/browser/token part (3 pts, Ansel) and the trace-query/finding-in-diff part (2 pts, Nils), so both build in parallel. Total stays 20.</li>
+    <li class="ok"><b>Interfaces fixed up front</b> as board contracts (board addressing, check.py receipts by area, facts for run paths, tool names), so Vera documents them while they are built.</li>
+    <li class="ok"><b>User-level QA files</b> (the QA-sweep skill and QA agent prompts live outside git) are proposed as files on the sprint branch; team-lead applies them.</li>
+    <li class="ok"><b>No security review at hand-off:</b> nothing is security-core under the hand-off review rule. The end sweep reads the sprint diff.</li>
+    <li class="ok"><b>Merge the new way already:</b> check each stream's receipt, merge all, one full suite at the tip, bisect only on red.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-risk" aria-labelledby="tab-risk" tabindex="0" hidden>
+  <h2 class="panel-title">Risks and what I'd drop first</h2>
+  <ul class="checks">
+    <li class="no"><b>A board filter hides a blocker or answer.</b> The PO, SM and team-lead keep the full feed; developers always get entries addressed to them and replies on their keys; tested only in throwaway repos.</li>
+    <li class="no"><b>Agent files drift from the tools built in parallel.</b> Contracts on the board; a change supersedes the key and Vera follows the latest.</li>
+    <li class="no"><b>Agent files grow instead of shrinking.</b> Vera reports word counts per file; every new rule must cut the one it replaces.</li>
+    <li class="no"><b>Browser tool needs a new dependency.</b> Allowed once (a dev dependency driving the system Chrome) after a board decision; prefer none.</li>
+  </ul>
+  <div class="callout warn"><p><b>Drop first:</b> the offline token counter, then the finding-in-diff check.</p></div>
+</div>
+
+<footer>Written by Maren (product owner), 2026-11-07. Plan source: <span class="mono">sprints/2026-11-07/plan.md</span>.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>
