@@ -116,48 +116,6 @@ body.resizing {
   margin-top: 4px;
 }
 
-.raid-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-  max-height: 32vh;
-  flex-shrink: 0;
-}
-
-.raid-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 8px 10px;
-  border: none;
-  background: none;
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--text-dim);
-  text-align: left;
-  width: 100%;
-}
-
-.raid-item:hover {
-  background: var(--bg-elev-2);
-  color: var(--text);
-}
-
-.raid-label {
-  font-size: 0.875rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
-.raid-when {
-  font-size: 0.6875rem;
-  color: var(--text-dim);
-}
-
 .partial-note {
   margin-top: 6px;
   font-size: 0.75rem;

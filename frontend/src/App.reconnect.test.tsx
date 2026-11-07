@@ -46,7 +46,7 @@ vi.mock("./api/restClient", () => ({
 }));
 
 vi.mock("./auth/useAuth", () => ({ useAuth: () => ({ identity: null, logout: vi.fn() }) }));
-vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn(), useMatch: () => null }));
 vi.mock("./components/Sidebar", () => ({
   Sidebar: (p: { onSelect: (id: string) => void }) => (
     <div>
