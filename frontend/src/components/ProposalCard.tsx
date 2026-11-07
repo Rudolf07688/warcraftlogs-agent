@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ApiError, approveProposal, cancelProposal } from "../api/restClient";
 import { notifyProfileChanged, useProfileChanged } from "../lib/profileEvents";
+import { usePortraits } from "../hooks/usePortraits";
 import { classColor, classDisplayName } from "../lib/classColors";
 import type { Message, ProfileProposal, ProposalItem, ProposalStatus } from "../types";
 import { Alert, AlertDescription } from "./ui/alert";
@@ -125,7 +126,10 @@ function RefusedRow({ item }: { item: ProposalItem }) {
   );
 }
 
-function ItemRow({ item }: { item: ProposalItem }) {
+// Feature 075: the profile character a row is about (an added one once applied), for its portrait.
+const characterId = (it: ProposalItem) => it.character_id ?? it.result?.character_id ?? null;
+
+function ItemRow({ item, portraitUrl }: { item: ProposalItem; portraitUrl?: string | null }) {
   if (!item.validation.ok && IDENTITY_REFUSED.has(item.validation.code ?? "")) return <RefusedRow item={item} />;
   const badge = rowBadge(item);
   const skipped = badge.variant === "warning";
@@ -139,7 +143,7 @@ function ItemRow({ item }: { item: ProposalItem }) {
   return (
     <Item role="listitem" variant="outline" size="sm" className={skipped ? "opacity-60" : undefined}>
       <ItemMedia>
-        <ClassAvatar char={item} className="size-9" />
+        <ClassAvatar char={{ ...item, portrait_url: portraitUrl }} className="size-9" />
       </ItemMedia>
       <ItemContent className="min-w-0">
         <ItemTitle className="flex-wrap">
@@ -188,6 +192,8 @@ export function ProposalCard({ proposal, onFollowUp }: Props) {
     if (change.proposal.id === proposal.id) setCurrent(change.proposal);
   });
 
+  // Portraits only for rows about a character in the profile; a pending add keeps its initials.
+  const portraits = usePortraits({ enabled: current.items.some((it) => characterId(it) !== null) });
   const status = shownStatus(current);
   const valid = current.items.filter((it) => it.validation.ok).length;
   const expires = new Date(current.expires_at).toLocaleTimeString([], {
@@ -246,7 +252,7 @@ export function ProposalCard({ proposal, onFollowUp }: Props) {
       <CardContent className="flex flex-col gap-3 px-4">
         <ItemGroup role="list" className="gap-2">
           {current.items.map((it) => (
-            <ItemRow key={it.index} item={it} />
+            <ItemRow key={it.index} item={it} portraitUrl={portraits.byId(characterId(it))?.portrait_url} />
           ))}
         </ItemGroup>
         {status === "expired" && (

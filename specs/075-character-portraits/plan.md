@@ -29,7 +29,7 @@ page's recent raids and runs. Board decisions: `scope:075:endpoint-shape`, `scop
 - IV Typed: Pydantic response models in the router; a Pydantic cache value; a frozen dataclass for the character identity. PASS
 - V Async: httpx.AsyncClient; endpoint `async def`. PASS
 - VI GitNexus: impact on `ClassAvatar`, `CacheFamily`, `keys`, `Settings` before editing. PASS
-- VII shadcn: `AvatarImage` is already generated in `ui/avatar.tsx`; no new registry item needed. PASS
+- VII shadcn: the avatar stays the registry `Avatar`/`AvatarFallback`; the portrait is a plain lazy `<img>` inside it, because the registry's `AvatarImage` preloads eagerly with `new Image()` (no `loading="lazy"`). Hand-built exception, named here. PASS
 
 ## Project Structure (files touched)
 
@@ -47,7 +47,7 @@ frontend/src/components/profile/CharactersTab.tsx # pass portraits
 frontend/src/components/ProposalCard.tsx          # pass portraits by character id
 frontend/src/components/ProposalCard.test.tsx     # mock portraits; one portrait row test
 frontend/src/components/WelcomePanel.tsx          # avatars beside character names
-frontend/src/components/profile/ClassAvatar.test.tsx, frontend/src/hooks/usePortraits.test.tsx  # new
+frontend/src/components/profile/ClassAvatar.test.tsx, CharactersTab.test.tsx, WelcomePanel.test.tsx, hooks/usePortraits.test.tsx  # new
 ```
 
 ## Complexity Tracking
