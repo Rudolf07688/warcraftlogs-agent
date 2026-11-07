@@ -4,7 +4,7 @@
 Agent-facing. Entries are numbered; a later entry with the same --key overrides earlier
 ones. Storage lives in the git common dir, so every worktree of the repo sees one board.
 
-  board.py post <kind> "text" --as NAME [--key K] [--supersedes N] [--ref R ...]
+  board.py post <kind> "text" --as NAME [--to N[,N...]] [--key K] [--supersedes N] [--ref R ...]
   board.py read --as NAME          unread entries from others, then marks them read
   board.py current [--key PREFIX]  effective state: latest entry per key + open items
   board.py log [--since N] [--last N] [--key PREFIX]
@@ -16,7 +16,9 @@ ones. Storage lives in the git common dir, so every worktree of the repo sees on
                                    the identical command. After --warm-for minutes (default 25)
                                    it exits 2.
   board.py init NAME | close [--export PATH] | status
-  board.py hook                    PostToolUse hook: injects unread entries as context
+  board.py hook                    PostToolUse hook: injects unread entries as context. A
+                                   developer (a dev-<n> seat in meta/team/) gets only what
+                                   concerns it (see relevant()); everyone else the full feed.
 
 Kinds: decision change notice question answer handoff merge blocker
 """
@@ -93,9 +95,10 @@ def set_cursor(r, name, reader, value):
 def fmt(e):
     t = e["ts"][11:16] + "Z"
     key = f" [{e['key']}]" if e.get("key") else ""
+    to = f" (to {','.join(e['to'])})" if e.get("to") else ""
     sup = f" (supersedes #{e['supersedes']})" if e.get("supersedes") else ""
     refs = f" refs: {', '.join(e['refs'])}" if e.get("refs") else ""
-    return f"#{e['id']} {t} {e['author']} {e['kind'].upper()}{key}: {e['text']}{sup}{refs}"
+    return f"#{e['id']} {t} {e['author']} {e['kind'].upper()}{key}{to}: {e['text']}{sup}{refs}"
 
 
 def effective(entries):
@@ -136,6 +139,8 @@ def cmd_post(a, r):
                 last = json.loads(line)["id"]
         e = {"id": last + 1, "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
              "author": a.as_, "kind": a.kind, "text": " ".join(text.split())}
+        if a.to:
+            e["to"] = a.to
         if a.key:
             e["key"] = a.key
         if a.supersedes:
@@ -260,7 +265,9 @@ def reader_from_hook(d, r):
         return "team-lead"
     alias = os.path.join(r, "cursors", f"alias--{re.sub(r'[^A-Za-z0-9_.-]', '_', aid)}")
     cmd = (d.get("tool_input") or {}).get("command", "") if d.get("tool_name") == "Bash" else ""
-    m = re.search(r"board\.py\b.*--as[ =]['\"]?([A-Za-z0-9_.-]+)", cmd)
+    # Board names are lower case, so documentation such as "--as NAME" in a heredoc that merely
+    # mentions board.py doesn't rename the reader (and move someone else's cursor).
+    m = re.search(r"board\.py\b.*--as[ =]['\"]?([a-z][a-z0-9_.-]*)(?![A-Za-z0-9_.-])", cmd)
     if m:
         open(alias, "w").write(m.group(1))
         return m.group(1)
@@ -270,6 +277,44 @@ def reader_from_hook(d, r):
         pass
     m = re.fullmatch(r"a(.+)-[0-9a-f]{16}", aid)
     return m.group(1) if m else aid
+
+
+def developers(r):
+    """Lower-case names of the dev-<n> seats in meta/team/ (member.py's files, next to the git
+    common dir). Unreadable or missing files just mean fewer developers: a reader that isn't
+    found here keeps the full feed."""
+    team = os.path.join(os.path.dirname(os.path.dirname(r)), "meta", "team")
+    names = set()
+    try:
+        files = [f for f in os.listdir(team) if re.fullmatch(r"dev-[0-9]+\.md", f)]
+    except OSError:
+        return names
+    for f in files:
+        try:
+            m = re.search(r"^- \*\*name:\*\* (\S+)", open(os.path.join(team, f)).read(), re.M)
+        except OSError:
+            continue
+        if m:
+            names.add(m.group(1).lower())
+    return names
+
+
+def relevant(reader, entries):
+    """contract:board-to: what a developer's hook delivers, as a predicate on an entry. Addressed
+    to it or to all; the steer and contracts; replies on a key it has posted on; entries that
+    supersede one of its own (an answer to its question); entries that name it ("Nils: ...").
+    The last rule only adds entries, so a forgotten --to still reaches the developer named.
+    In a replay of the 2026-11-05b board it caught the grants and the live-check answer."""
+    named = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(reader)}(?![A-Za-z0-9_-])", re.I)
+    mine = [x for x in entries if x["author"].lower() == reader]
+    keys = {x["key"] for x in mine if x.get("key")}
+    ids = {x["id"] for x in mine}
+
+    def wanted(e):
+        to, key = e.get("to") or [], e.get("key") or ""
+        return (reader in to or "all" in to or key == "steer" or key.startswith("contract:")
+                or key in keys or e.get("supersedes") in ids or bool(named.search(e["text"])))
+    return wanted
 
 
 def cmd_hook(a, r):
@@ -284,7 +329,10 @@ def cmd_hook(a, r):
     entries = load(r, name)
     seen = get_cursor(r, name, reader)
     new = [e for e in entries if e["id"] > seen and e["author"] != reader]
-    if entries:
+    filtered = reader.lower() in developers(r)
+    if filtered:
+        new = list(filter(relevant(reader.lower(), entries), new))
+    if entries:  # past every entry, delivered or filtered out: none comes back later as new
         set_cursor(r, name, reader, entries[-1]["id"])
     if not new:
         return
@@ -297,7 +345,9 @@ def cmd_hook(a, r):
         size += len(line)
     more = len(new) - len(shown)
     head = (f"[team-board] {len(new)} new entr{'y' if len(new) == 1 else 'ies'} for {reader} "
-            "(chronological; a later entry on the same key overrides earlier ones):")
+            "(chronological; a later entry on the same key overrides earlier ones"
+            + ("; filtered to what concerns you, `board.py log` has everything" if filtered else "")
+            + "):")
     tail = f"\n... {more} older not shown: run `board.py log --since {seen}`" if more else ""
     print(json.dumps({"hookSpecificOutput": {"hookEventName": d.get("hook_event_name", "PostToolUse"),
                                              "additionalContext": head + "\n" + "\n".join(shown) + tail}}))
@@ -311,6 +361,9 @@ def main():
     q.add_argument("kind")
     q.add_argument("text", help='entry text, or "-" to read it from stdin')
     q.add_argument("--as", dest="as_", required=True, help="your agent name, e.g. dev-a-032")
+    q.add_argument("--to", type=lambda v: [n.strip().lower() for n in v.split(",") if n.strip()],
+                   help="name[,name...] or 'all': who must see it (developers' hooks deliver only "
+                        "what concerns them)")
     q.add_argument("--key", help="topic key; the latest entry per key is the effective one")
     q.add_argument("--supersedes", type=int, help="id of the entry this one replaces or answers")
     q.add_argument("--ref", action="append", help="commit, ticket or path (repeatable)")
