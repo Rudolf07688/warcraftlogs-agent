@@ -1,0 +1,76 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            146    68941    26104699     243778      1
+D18 security review 076                      16    26896      754837      80009      0
+product-owner                               235   145006    62713675     412531      4
+Vera reviews developer rules                  2     1187       46392      53571      0
+D18 security review 074                      19    20569      924127      78186      0
+077 team CLI bugs reserve                    38    36634     4055431     119690      0
+QA spec conformance sweep                    42    35310     4667653     184826      0
+QA performance sweep                         21    24374     1562849     141250      0
+075-fix welcome portraits                    23    10951     1524537      61209      0
+Shortcut board sync                          10     6309      800629     110819      0
+D18 security review 072                      20    29187     1388226     113519      0
+073-fix raids page                           16    12551     1140962      91149      0
+QA security sweep                            22    17199     1474013     112279      0
+Docs and facts close-out                     78    43981    14280077     244516      0
+D18 security review 075                      20    23371     1072403      81328      0
+072-fix raid summary                         25    11446     1984037      80135      0
+074 onboarding profile setup                139    86342    24321502     240771      0
+Maren reviews rule diff                       4     1397      156247      55169      0
+QA bug hunt sweep                            41    54840     4750332     183214      0
+076 turn serialization                       73    75572     9936585     315974      1
+072 raid summary API                        123   113177    23138501     485717      1
+073 raids page frontend                      50    43063     5782268     157756      0
+Ilse reviews rule diff                        3     2113       92593      52366      0
+075 character portraits                     125    92080    23225297     250762      1
+TOTAL {'calls': 1291, 'out': 982496, 'cr': 215897872, 'cc': 3950524, 'inp': 2822, 'sends': 8}
+main (team-lead) [('Bash', 102), ('Edit', 11), ('Read', 10), ('Monitor', 6), ('Agent', 4), ('ToolSearch', 3)]
+D18 security review 076 [('Bash', 15), ('Write', 1), ('SubagentHandback', 1)]
+product-owner [('Bash', 160), ('Agent', 19), ('mcp__shortcut__update_story', 13), ('mcp__shortcut__create_story', 7), ('mcp__shortcut__get_story', 6), ('mcp__shortcut__create_story_comment', 6)]
+Vera reviews developer rules [('Bash', 1), ('SubagentHandback', 1)]
+D18 security review 074 [('Bash', 18), ('Write', 1), ('SubagentHandback', 1)]
+077 team CLI bugs reserve [('Bash', 37), ('SubagentHandback', 2), ('Monitor', 1)]
+QA spec conformance sweep [('Bash', 41), ('Write', 1), ('SubagentHandback', 1)]
+QA performance sweep [('Bash', 19), ('Read', 1), ('Write', 1), ('SubagentHandback', 1)]
+075-fix welcome portraits [('Bash', 22), ('SubagentHandback', 1)]
+Shortcut board sync [('mcp__shortcut__search_stories', 6), ('Bash', 3), ('ToolSearch', 1), ('Read', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1)]
+D18 security review 072 [('Bash', 20), ('Write', 1), ('SubagentHandback', 1)]
+073-fix raids page [('Bash', 15), ('bash', 1), ('SubagentHandback', 1)]
+QA security sweep [('Bash', 21), ('Write', 1), ('SubagentHandback', 1)]
+Docs and facts close-out [('Bash', 79), ('Read', 3), ('SubagentHandback', 1)]
+D18 security review 075 [('Bash', 19), ('Write', 1), ('SubagentHandback', 1)]
+072-fix raid summary [('Bash', 21), ('ToolSearch', 1), ('Monitor', 1), ('TaskStop', 1), ('SubagentHandback', 1)]
+074 onboarding profile setup [('Bash', 110), ('Write', 18), ('Read', 7), ('mcp__shortcut__update_story', 6), ('Edit', 6), ('ToolSearch', 4)]
+Maren reviews rule diff [('Bash', 3), ('SubagentHandback', 1)]
+QA bug hunt sweep [('Bash', 40), ('Write', 1), ('SubagentHandback', 1)]
+076 turn serialization [('Bash', 60), ('ToolSearch', 3), ('mcp__shortcut__update_story', 2), ('SubagentHandback', 2), ('Read', 1), ('mcp__shortcut__get_story', 1)]
+072 raid summary API [('Bash', 101), ('Write', 4), ('ToolSearch', 3), ('Edit', 3), ('Read', 2), ('TaskStop', 2)]
+073 raids page frontend [('Bash', 46), ('mcp__shortcut__update_story', 3), ('Read', 2), ('Skill', 1), ('ToolSearch', 1), ('SubagentHandback', 1)]
+Ilse reviews rule diff [('Bash', 2), ('SubagentHandback', 1)]
+075 character portraits [('Bash', 108), ('mcp__shortcut__update_story', 4), ('Write', 3), ('Skill', 2), ('Edit', 2), ('TaskStop', 2)]
+
+new context by kind (tool-result chars, share):
+main (team-lead)                          1023047 Read 84%, other bash 6%, shortcut 3%, source reads 2%, check/pg 1%
+D18 security review 076                     67462 source reads 70%, git 20%, other bash 9%, Write 0%, SubagentHandback 0%
+product-owner                              258375 other bash 24%, source reads 18%, shortcut 16%, board 13%, git 10%
+Vera reviews developer rules                 8401 other bash 99%, SubagentHandback 1%
+D18 security review 074                     73261 git 49%, source reads 42%, check/pg 9%, Write 0%, SubagentHandback 0%
+077 team CLI bugs reserve                  103229 check/pg 46%, source reads 27%, git 10%, board 8%, other bash 6%
+QA spec conformance sweep                  291723 source reads 53%, other bash 23%, git 19%, check/pg 3%, html reports 1%
+QA performance sweep                       203947 source reads 41%, git 33%, Read 17%, check/pg 7%, other bash 1%
+075-fix welcome portraits                   41483 source reads 49%, git 18%, board 17%, other bash 14%, html reports 1%
+Shortcut board sync                        109853 shortcut 78%, other bash 15%, Read 6%, ToolSearch 1%, git 0%
+D18 security review 072                    146010 source reads 67%, other bash 18%, check/pg 9%, git 5%, Write 0%
+073-fix raids page                          63728 source reads 58%, board 25%, git 11%, other bash 3%, check/pg 2%
+QA security sweep                          144325 git 67%, check/pg 27%, source reads 4%, html reports 1%, other bash 1%
+Docs and facts close-out                   868322 Read 53%, html reports 30%, source reads 12%, other bash 2%, git 2%
+D18 security review 075                     78447 source reads 70%, git 28%, other bash 2%, Write 0%, SubagentHandback 0%
+072-fix raid summary                        64917 source reads 56%, git 30%, other bash 5%, check/pg 4%, board 3%
+074 onboarding profile setup               215349 source reads 56%, other bash 15%, Read 9%, board 7%, check/pg 4%
+Maren reviews rule diff                      7662 other bash 99%, SubagentHandback 1%
+QA bug hunt sweep                          236293 source reads 69%, git 24%, check/pg 6%, other bash 1%, Write 0%
+076 turn serialization                     151657 source reads 35%, Read 20%, git 16%, board 13%, other bash 8%
+072 raid summary API                       247522 source reads 61%, other bash 12%, check/pg 12%, Read 5%, board 5%
+073 raids page frontend                    432873 Read 74%, source reads 14%, other bash 4%, git 4%, board 3%
+Ilse reviews rule diff                      15675 board 66%, check/pg 33%, SubagentHandback 1%
+075 character portraits                    237824 source reads 66%, other bash 17%, board 10%, git 2%, shortcut 2%

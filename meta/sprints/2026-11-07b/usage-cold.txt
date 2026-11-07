@@ -1,0 +1,69 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            146    68941    26104699     243778      1
+D18 security review 076                      16    26896      754837      80009      0
+product-owner                               235   145006    62713675     412531      4
+Vera reviews developer rules                  2     1187       46392      53571      0
+D18 security review 074                      19    20569      924127      78186      0
+077 team CLI bugs reserve                    38    36634     4055431     119690      0
+QA spec conformance sweep                    42    35310     4667653     184826      0
+QA performance sweep                         21    24374     1562849     141250      0
+075-fix welcome portraits                    23    10951     1524537      61209      0
+Shortcut board sync                          10     6309      800629     110819      0
+D18 security review 072                      20    29187     1388226     113519      0
+073-fix raids page                           16    12551     1140962      91149      0
+QA security sweep                            22    17199     1474013     112279      0
+Docs and facts close-out                     78    43981    14280077     244516      0
+D18 security review 075                      20    23371     1072403      81328      0
+072-fix raid summary                         25    11446     1984037      80135      0
+074 onboarding profile setup                139    86342    24321502     240771      0
+Maren reviews rule diff                       4     1397      156247      55169      0
+QA bug hunt sweep                            41    54840     4750332     183214      0
+076 turn serialization                       73    75572     9936585     315974      1
+072 raid summary API                        123   113177    23138501     485717      1
+073 raids page frontend                      50    43063     5782268     157756      0
+Ilse reviews rule diff                        3     2113       92593      52366      0
+075 character portraits                     125    92080    23225297     250762      1
+TOTAL {'calls': 1291, 'out': 982496, 'cr': 215897872, 'cc': 3950524, 'inp': 2822, 'sends': 8}
+main (team-lead) [('Bash', 102), ('Edit', 11), ('Read', 10), ('Monitor', 6), ('Agent', 4), ('ToolSearch', 3)]
+D18 security review 076 [('Bash', 15), ('Write', 1), ('SubagentHandback', 1)]
+product-owner [('Bash', 160), ('Agent', 19), ('mcp__shortcut__update_story', 13), ('mcp__shortcut__create_story', 7), ('mcp__shortcut__get_story', 6), ('mcp__shortcut__create_story_comment', 6)]
+Vera reviews developer rules [('Bash', 1), ('SubagentHandback', 1)]
+D18 security review 074 [('Bash', 18), ('Write', 1), ('SubagentHandback', 1)]
+077 team CLI bugs reserve [('Bash', 37), ('SubagentHandback', 2), ('Monitor', 1)]
+QA spec conformance sweep [('Bash', 41), ('Write', 1), ('SubagentHandback', 1)]
+QA performance sweep [('Bash', 19), ('Read', 1), ('Write', 1), ('SubagentHandback', 1)]
+075-fix welcome portraits [('Bash', 22), ('SubagentHandback', 1)]
+Shortcut board sync [('mcp__shortcut__search_stories', 6), ('Bash', 3), ('ToolSearch', 1), ('Read', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1)]
+D18 security review 072 [('Bash', 20), ('Write', 1), ('SubagentHandback', 1)]
+073-fix raids page [('Bash', 15), ('bash', 1), ('SubagentHandback', 1)]
+QA security sweep [('Bash', 21), ('Write', 1), ('SubagentHandback', 1)]
+Docs and facts close-out [('Bash', 79), ('Read', 3), ('SubagentHandback', 1)]
+D18 security review 075 [('Bash', 19), ('Write', 1), ('SubagentHandback', 1)]
+072-fix raid summary [('Bash', 21), ('ToolSearch', 1), ('Monitor', 1), ('TaskStop', 1), ('SubagentHandback', 1)]
+074 onboarding profile setup [('Bash', 110), ('Write', 18), ('Read', 7), ('mcp__shortcut__update_story', 6), ('Edit', 6), ('ToolSearch', 4)]
+Maren reviews rule diff [('Bash', 3), ('SubagentHandback', 1)]
+QA bug hunt sweep [('Bash', 40), ('Write', 1), ('SubagentHandback', 1)]
+076 turn serialization [('Bash', 60), ('ToolSearch', 3), ('mcp__shortcut__update_story', 2), ('SubagentHandback', 2), ('Read', 1), ('mcp__shortcut__get_story', 1)]
+072 raid summary API [('Bash', 101), ('Write', 4), ('ToolSearch', 3), ('Edit', 3), ('Read', 2), ('TaskStop', 2)]
+073 raids page frontend [('Bash', 46), ('mcp__shortcut__update_story', 3), ('Read', 2), ('Skill', 1), ('ToolSearch', 1), ('SubagentHandback', 1)]
+Ilse reviews rule diff [('Bash', 2), ('SubagentHandback', 1)]
+075 character portraits [('Bash', 108), ('mcp__shortcut__update_story', 4), ('Write', 3), ('Skill', 2), ('Edit', 2), ('TaskStop', 2)]
+
+cold-cache calls (weighted at 1.25x the rewrite):
+main (team-lead)                           1 calls   0.03
+product-owner                              1 calls   0.06
+Vera reviews developer rules               1 calls   0.06
+077 team CLI bugs reserve                  1 calls   0.04
+075-fix welcome portraits                  1 calls   0.04
+Shortcut board sync                        1 calls   0.03
+073-fix raids page                         1 calls   0.06
+Docs and facts close-out                   1 calls   0.03
+072-fix raid summary                       1 calls   0.04
+074 onboarding profile setup               1 calls   0.03
+Maren reviews rule diff                    1 calls   0.06
+076 turn serialization                     2 calls   0.20
+072 raid summary API                       2 calls   0.31
+073 raids page frontend                    1 calls   0.06
+Ilse reviews rule diff                     1 calls   0.05
+075 character portraits                    1 calls   0.03
+TOTAL cold weight                                    1.13

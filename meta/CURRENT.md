@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-07 evening (sprint 2026-11-07b launched)
+Updated: 2026-11-07 late (sprint 2026-11-07b wrapped, merge question open)
 
 ## Topic
 
@@ -24,14 +24,13 @@ Merged 23c73aa and pushed (c732dd5 and later). All 16 stories (11-05b + 11-07) D
 iteration is renamed 2026-11-07. QA prompts and the qa-sweep skill installed as project copies
 (source of truth) and in ~/.claude. Full-team retro round 1: `meta/sprints/2026-11-07/retro.md`.
 
-## Sprint 2026-11-07b: running (launched 2026-11-07 ~19:30Z)
+## Sprint 2026-11-07b: done on its branch, merge question open
 
-- P16 step 1 landed on main 516aa0d (seat-reviewed by Maren, Ilse, Vera); tool gaps in sc-552.
-- App sprint ~23 pts: Raids page rework, onboarding to profile setup, character portraits,
-  chat dropped-turn bug (sc-511), cheaper prompts (sc-514/515); reserves sc-538..542.
-- Board `sprint-2026-11-07b`; branch base 516aa0d; worktrees in /home/rudolf/dev/wcl-worktrees.
-  PO (Maren) launched as named teammate `product-owner`. Measure like 11-05b, by stream type.
-- P16 steps 2-4 wait for their own meta sprint. Main has 10 local commits (unpushed).
+- 25/25 pts on `sprint-2026-11-07b` (tip ca61166), suites green, live pass PASS after one fix
+  round; docs + facts gate clean. Not merged to main, not pushed. Stories Under Review.
+- 1.26 M/pt (11-05b 1.19), PO 24%; team report `meta/sprints/2026-11-07b/team-report.html`.
+- Retro proposals (Maren's two hostile-input classes, Vera, Ansel, Edda, Tomas, Nils) wait for
+  the next meta session, reviewed by the seats first (P16 step 5). P16 steps 2-4 still open.
 
 ## Open with the owner
 

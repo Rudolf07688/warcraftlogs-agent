@@ -1,0 +1,102 @@
+<header>
+  <div class="eyebrow">Team report · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-07b: the first app sprint on the P14–P16 rules</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-07b</b></span><span>Base <b class="mono">516aa0d</b></span><span>Tip <b class="mono">ca61166</b></span><span>Board open 1 h 29 min</span></div>
+  <p>25 of 25 points merged: five app streams and one reserve, all in parallel, with zero merge conflicts. The cost per point (1.26) matches the last app sprint (1.19) at 2.5 times the size. The live pass on real data found the two bugs that mattered, which every suite had missed.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">25<small> / 25 pts</small></span><span class="s">10 stories + 1 reserve</span></div>
+  <div class="kpi"><span class="eyebrow">Cost per point</span><span class="v">1.26<small> M/pt</small></span><span class="s">31.4 M · 11-05b: 1.19</span></div>
+  <div class="kpi"><span class="eyebrow">Build per point</span><span class="v">0.53<small> M/pt</small></span><span class="s">11-05b: 0.50</span></div>
+  <div class="kpi"><span class="eyebrow">Coordination</span><span class="v">35<small> %</small></span><span class="s">0.44/pt · 11-05b 0.42/pt</span></div>
+  <div class="kpi"><span class="eyebrow">Cold wakes</span><span class="v">1.13</span><span class="s">target &lt; 1.5</span></div>
+  <div class="kpi"><span class="eyebrow">Live FAILs</span><span class="v">2<small> real</small></span><span class="s">+1 my harness artefact</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-cost" aria-controls="p-cost" aria-selected="true">Cost</button>
+  <button class="tab" role="tab" id="tab-rules" aria-controls="p-rules" aria-selected="false" tabindex="-1">New rules</button>
+  <button class="tab" role="tab" id="tab-quality" aria-controls="p-quality" aria-selected="false" tabindex="-1">Quality</button>
+  <button class="tab" role="tab" id="tab-retro" aria-controls="p-retro" aria-selected="false" tabindex="-1">Retro <span class="count">11</span></button>
+</div></nav>
+
+<div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
+  <h2 class="panel-title">Cost per point, by stream type</h2>
+  <p class="muted small">Weighted M = cacheRd × 0.1 + cacheWr × 1.25 + out × 5, per million; each stream includes its fix round.</p>
+  <table class="tbl">
+    <tr><th>Stream</th><th>Type</th><th>Pts</th><th>M</th><th>M/pt</th><th>Calls</th></tr>
+    <tr><td>072 raid data endpoint (Nils)</td><td>app backend, security-core</td><td class="num">3</td><td class="num">3.85</td><td class="num"><b>1.28</b></td><td class="num">148</td></tr>
+    <tr><td>076 one turn per chat (Vera)</td><td>app backend, security-core</td><td class="num">3</td><td class="num">1.77</td><td class="num">0.59</td><td class="num">73</td></tr>
+    <tr><td>073 Raids page (Tomas)</td><td>app frontend</td><td class="num">5</td><td class="num">1.28</td><td class="num">0.26</td><td class="num">66</td></tr>
+    <tr><td>074 onboarding (Edda, new)</td><td>app full-stack + migration</td><td class="num">6</td><td class="num">3.16</td><td class="num">0.53</td><td class="num">139</td></tr>
+    <tr><td>075 portraits (Ansel)</td><td>app full-stack, security-core</td><td class="num">6</td><td class="num">3.38</td><td class="num">0.56</td><td class="num">148</td></tr>
+    <tr><td>077 team CLI bugs (reserve, Tomas)</td><td>team tooling</td><td class="num">2</td><td class="num">0.74</td><td class="num">0.37</td><td class="num">38</td></tr>
+  </table>
+  <div class="grid2">
+    <div class="card"><h3>Where the 31.4 M went</h3>
+      <div class="bars">
+        <div class="bar"><span>Build + fixes + docs</span><span class="track"><span class="fill" style="width:51%"></span></span><span class="n">51%</span></div>
+        <div class="bar"><span>Coordination (PO, lead, sync)</span><span class="track"><span class="fill" style="width:35%"></span></span><span class="n">35%</span></div>
+        <div class="bar"><span>QA (4 D18 reviews + sweep)</span><span class="track"><span class="fill" style="width:13%"></span></span><span class="n">13%</span></div>
+        <div class="bar"><span>Pre-launch rule reviews</span><span class="track"><span class="fill" style="width:1%"></span></span><span class="n">1%</span></div>
+      </div>
+    </div>
+    <div class="card"><h3>Against the baseline</h3>
+      <table class="tbl">
+        <tr><th>Sprint</th><th>Pts</th><th>M/pt</th><th>Coord.</th></tr>
+        <tr><td>11-05b (app)</td><td class="num">10</td><td class="num">1.19</td><td class="num">35%</td></tr>
+        <tr><td>11-07 (tooling)</td><td class="num">20</td><td class="num">0.56</td><td class="num">42%</td></tr>
+        <tr><td><b>11-07b (app)</b></td><td class="num">25</td><td class="num"><b>1.26</b></td><td class="num">35%</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="callout warn"><p><b>The fixed size didn't lower the cost per point this time.</b> The PO line grew with the work: 7.51 M (24%), against 2.77 at 11-05b. That covers six briefs, two contracts, 40-odd grants, four D18 prompts, triage and the review. Per point the PO is flat (0.30 vs 0.28), so coordination still scales with streams, not with sprints. Build per point held (0.53 vs 0.50). The one expensive stream was 072 (1.28/pt): a security window it had to design around, plus a re-verify path added mid-build.</p></div>
+</div>
+
+<div role="tabpanel" id="p-rules" aria-labelledby="tab-rules" tabindex="0" hidden>
+  <h2 class="panel-title">The new rules on their first run</h2>
+  <ul class="checks">
+    <li class="ok"><b>Contracts before launch (P16 step 1).</b> Raid summary and class avatar, each with a producer, consumers, an example and a pinning test, plus "as built" updates. Tomas built the Raids page against the example and merged first. 5 streams, zero conflicts.</li>
+    <li class="ok"><b>One owner per shared file</b> plus a one-line prep commit (export <code>send</code>). Maren's retro line keeps it.</li>
+    <li class="ok"><b>Hostile inputs in briefs, developer rule 10.</b> Every security-core stream wrote hostile-input tests and posted its <code>mutate.py</code> bites. Still, 3 of 4 D18 reviews found Mediums, in two classes the list didn't name: a pooled DB connection held across an external wait, and no rate bound on a new endpoint that calls out. Maren proposes adding both to the list.</li>
+    <li class="ok"><b>Reserve backfill (P15).</b> One reserve launched at 23 pts and the cap held at 25. The second reserve went back to the backlog.</li>
+    <li class="ok"><b>Live pre-check.</b> Ansel's Battle.net probe was answered in a minute and narrowed his allow-list to the one real render host.</li>
+    <li class="no"><b>Docs pass then late commits.</b> Maren committed a <code>.env.example</code> comment after the docs pass, and the fix round moved code under 7 facts' anchors. I closed both at wrap-up (ca61166). The close-out step should run after the last commit, PO's own included.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-quality" aria-labelledby="tab-quality" tabindex="0" hidden>
+  <h2 class="panel-title">What found what</h2>
+  <table class="tbl">
+    <tr><th>Gate</th><th>Found</th><th>Cost</th></tr>
+    <tr><td>Developer tests + receipts</td><td>Everything in each block's own brief</td><td class="num">in build</td></tr>
+    <tr><td>D18 reviews at hand-off (4)</td><td>5 Mediums (072 ×2, 075, 076 ×2), no High; 074 Lows only</td><td class="num">1.36</td></tr>
+    <tr><td>QA sweep (4 agents)</td><td>Confirmed the live findings and found PERF-001 (tab refetch); the rest deferred to sc-556..561</td><td class="num">2.67</td></tr>
+    <tr><td><b>Live pass on real data</b></td><td><b>F1: 100 "participants" in a ≤30-player raid (bystanders). F2: "Frost null" for your character.</b> 38 other checks passed.</td><td class="num">in lead</td></tr>
+    <tr><td>Full suite at the tip ×2</td><td>Green both times (2637 → 2639 pytest)</td><td class="num">in PO</td></tr>
+  </table>
+  <div class="callout ok"><p>The live pass again earned its place. Both real bugs needed real data: synthetic fixtures had neither bystander actors nor a ranking without a class. Ansel's fix-round line says the same as Nils's card-round proposal: replay real data.</p></div>
+  <div class="callout warn"><p><b>My slip:</b> I reported the welcome-page portraits as a FAIL from a count of <code>&lt;img&gt;</code> elements, but browse.py blocks external hosts and the avatar drops a failed image. Ansel proved it in minutes (0.28 M, no code change). Next time I count the image requests the page made, not the elements left on it. Ansel added the fact <code>browse-blocked-image-timing</code>.</p></div>
+</div>
+
+<div role="tabpanel" id="p-retro" aria-labelledby="tab-retro" tabindex="0" hidden>
+  <h2 class="panel-title">The team's retro lines, next to mine</h2>
+  <table class="tbl">
+    <tr><th>Who</th><th>Keep / change</th><th>My view</th></tr>
+    <tr><td>Maren</td><td>Keep single owners, the prep commit and contracts. Change: put "pooled connection across an external wait" and "no rate bound on a new outbound endpoint" into every brief's hostile inputs.</td><td>Agree. It's the cheapest fix for 3 of 4 reviews. Into <code>product-owner.md</code>'s start-from list.</td></tr>
+    <tr><td>Vera</td><td>A guard in two layers needs a bite with both removed.</td><td>Agree: one line under developer rule 10.</td></tr>
+    <tr><td>Ansel</td><td>Change: a sub-agent should re-run <code>jobwait.py wait</code> instead of ending its turn when the harness backgrounds a long command.</td><td>Agree; developer.md, Workspace and tools.</td></tr>
+    <tr><td>Ansel (fix)</td><td>UI checks count image requests, not &lt;img&gt; elements, when external hosts are blocked.</td><td>Mine to apply (team-launch live pass).</td></tr>
+    <tr><td>Nils</td><td>Check a security window's real value before designing on it.</td><td>Agree; a fact, not a rule.</td></tr>
+    <tr><td>Nils (fix)</td><td>Fix briefs name the test helpers the fix changes the meaning of.</td><td>PO brief template, fix-round section.</td></tr>
+    <tr><td>Edda</td><td>Finish comments and facts before the receipt run (it's keyed to the tree).</td><td>Agree; one line in developer.md hand-off.</td></tr>
+    <tr><td>Tomas (073)</td><td>The brief says Spec Kit or hand-written for a small tier-M frontend stream.</td><td>Agree; tier table.</td></tr>
+    <tr><td>Tomas (077)</td><td>Name the tests that share a precondition the fix changes.</td><td>Same as Nils (fix): one line.</td></tr>
+    <tr><td>Tomas (073-fix)</td><td>A fix needing a response header gets <code>restClient.ts</code> or "skip".</td><td>Folded into the same fix-brief line.</td></tr>
+    <tr><td>Tomas (docs)</td><td><code>archdocs.py changed</code> should flag prose counts ("14 routers").</td><td>Backlog, next to sc-552.</td></tr>
+  </table>
+  <div class="callout ok"><p>These are proposals. By P16 step 5 they land after the affected seats review them read-only, in the next meta session, not mid-wrap-up.</p></div>
+</div>
+
+<footer>Written by team-lead from <code>usage.py</code> (incl. --cold), the board export (192 entries), git and <code>facts.py stats</code> (9 facts added, Edda's first). Team memories committed on main: Ansel, Nils, Maren, Edda (new).</footer>
