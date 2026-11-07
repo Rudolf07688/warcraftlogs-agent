@@ -2,7 +2,7 @@
 id: check-receipt-keeps-stronger
 anchors: [file:.claude/team/check.py]
 by: dev-2 Tomas
-verified: d4d875d 2026-11-07
+verified: d8ac4bf 2026-11-07
 ---
 A passing check.py run replaces the tree's receipt only if it proves a superset (backend,
 frontend, full, pg); else it prints RECEIPT kept. Strength is derived from the recorded

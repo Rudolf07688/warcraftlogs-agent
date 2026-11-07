@@ -2,7 +2,7 @@
 id: tokens-wrapper-reruns-itself
 anchors: [file:.claude/team/tokens.py]
 by: dev-2 Tomas
-verified: d4d875d 2026-11-07
+verified: d8ac4bf 2026-11-07
 ---
 tokens.py re-runs itself under uv in the repo root (cwd=REPO), so the wrapper hands the inner
 run the caller's --history as an absolute path in WCL_TOKENS_HISTORY, not by rewriting argv:
