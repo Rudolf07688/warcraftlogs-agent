@@ -614,6 +614,40 @@
       "panels": []
     },
     {
+      "id": 15,
+      "type": "logs",
+      "title": "Decisions: who chose what (newest first)",
+      "description": "Board entries of kind decision, one line each: seat, board key, what was decided (and the alternative, when the agent wrote one). File grants, tier picks, reserves, the steer and model notes are left out: they are bookkeeping, not choices. Filter one seat by adding | author=\"edda\" in Explore. Expand a line and use 'View trace' to open the post in Tempo.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "queryType": "range",
+          "expr": "{service_namespace=\"wcl-agent\", service_name=\"team-board\", content!=\"true\"} | kind=\"decision\" | key!~\"(owner|tier|reserve|steer|model|live-check):.*\" | line_format \"{{ title .author }} · {{ .key }} · {{ __line__ }}\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    },
+    {
       "id": 12,
       "type": "logs",
       "title": "Board: hand-offs, blockers and questions (open a trace from trace_id)",
@@ -624,7 +658,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 43,
         "w": 12,
         "h": 10
       },
@@ -658,7 +692,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 31,
+        "y": 43,
         "w": 12,
         "h": 10
       },
@@ -692,7 +726,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 53,
         "w": 24,
         "h": 9
       },
