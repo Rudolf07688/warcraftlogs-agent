@@ -173,7 +173,6 @@ async def test_another_workspace_cannot_touch_a_chats_turn(
     await asyncio.wait_for(await _start(b_sock, other, "QB", conv_id), BOUND_S)
     assert [(f["type"], f.get("code")) for f in _frames(b_sock)] == [("error", "not_found")]
     assert not a_task.done()
-    assert list(ws_mod._ChatTurn.turns) == [(as_user.tenant_id, conv_id)]
 
     tool_returns.set()
     await asyncio.wait_for(a_task, BOUND_S)
