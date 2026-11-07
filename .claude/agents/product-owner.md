@@ -161,7 +161,7 @@ work. Open a new seat only when every existing one is busy.
   the exact command while building; team-lead runs it at once"
 - for a spike: the read-only data sources and the verification scripts
 - **Known facts:** paste the output of
-  `python3 .claude/team/facts.py brief <paths the developer writes> --runs <paths the developer runs>`
+  `python3 .claude/team/facts.py brief <paths the developer writes> --runs <path> [--runs <path> ...]`
   (stack scripts, test libs, files they source or import in tests). Leave the section out
   if it prints nothing.
 

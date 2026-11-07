@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit be6c5c5 · 2026-11-07">
+<meta name="verified-at" content="commit 0a394c5 · 2026-11-07">
 <title>Database &amp; migrations · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -50,7 +50,7 @@
   <figure class="diagram">
     <svg class="dg" viewBox="0 0 960 580" role="img" aria-labelledby="db-roles-title db-roles-desc">
       <title id="db-roles-title">Who connects to Postgres, and as which role</title>
-      <desc id="db-roles-desc">The FastAPI app connects as the runtime role. It sets app.tenant_id and app.user_id for each transaction and reaches the 17 tenant tables under forced row-level security, and the 12 global tables, which have no RLS. ADK's DatabaseSessionService shares the app's engine and writes its own tables. Alembic and the init_db command connect as the owner role and run DDL, RLS policies, grants and CREATE EXTENSION. Alloy's Postgres exporter connects as the monitoring role, which can read only the statistics views.</desc>
+      <desc id="db-roles-desc">The FastAPI app connects as the runtime role. It sets app.tenant_id and app.user_id for each transaction and reaches the 18 tenant tables under forced row-level security, and the 12 global tables, which have no RLS. ADK's DatabaseSessionService shares the app's engine and writes its own tables. Alembic and the init_db command connect as the owner role and run DDL, RLS policies, grants and CREATE EXTENSION. Alloy's Postgres exporter connects as the monitoring role, which can read only the statistics views.</desc>
       <defs>
         <marker id="db-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
         <marker id="db-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
@@ -72,7 +72,7 @@
       <text class="sub" x="170" y="400" text-anchor="middle">owner role</text>
 
       <rect class="node store" x="500" y="60" width="420" height="90" rx="10"/>
-      <text class="t" x="710" y="96" text-anchor="middle">17 tenant tables</text>
+      <text class="t" x="710" y="96" text-anchor="middle">18 tenant tables</text>
       <text class="sub" x="710" y="120" text-anchor="middle">RLS enabled + forced</text>
 
       <rect class="node store" x="500" y="190" width="420" height="90" rx="10"/>
@@ -143,10 +143,10 @@
 <!-- ============================================================ TABLES -->
 <section class="layer" id="tables">
   <h2>Tables</h2>
-  <div class="chips"><span class="eyebrow">Source</span><span class="chip">backend/app/db/models.py</span><span class="chip">29 ORM tables</span></div>
+  <div class="chips"><span class="eyebrow">Source</span><span class="chip">backend/app/db/models.py</span><span class="chip">30 ORM tables</span></div>
 
   <h3>What it does, and where it lives</h3>
-  <p><code>backend/app/db/models.py</code> declares 29 tables on one <code>Base</code>: 17 are tenant-scoped under RLS and 12 are global. ADK's tables come on top. The raw store's behaviour is on <a href="wcl-data.html">WCL client, cache &amp; store</a>, and the knowledge base's on <a href="knowledge-base.html">Knowledge base</a>.</p>
+  <p><code>backend/app/db/models.py</code> declares 30 tables on one <code>Base</code>: 18 are tenant-scoped under RLS and 12 are global. ADK's tables come on top. The raw store's behaviour is on <a href="wcl-data.html">WCL client, cache &amp; store</a>, and the knowledge base's on <a href="knowledge-base.html">Knowledge base</a>.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Area</th><th>Table</th><th>What a row is</th><th>Scope</th></tr></thead>
     <tbody>
@@ -163,8 +163,9 @@
       <tr><td><code>artifacts</code></td><td>A chart spec the agent declared, linked to its message by <code>message_seq</code></td><td>Tenant RLS</td></tr>
       <tr><td><code>captured_graphs</code></td><td>WCL graph JSON fetched during a chat, kept for the PDF</td><td>Tenant RLS</td></tr>
 
-      <tr><td rowspan="3">Profile &amp; proposals</td><td><code>user_characters</code></td><td>An own character (<code>role='self'</code>) or a friend, with class, active spec and an optional <code>raid_role</code></td><td>Tenant RLS</td></tr>
+      <tr><td rowspan="4">Profile &amp; proposals</td><td><code>user_characters</code></td><td>An own character (<code>role='self'</code>) or a friend, with class, active spec and an optional <code>raid_role</code></td><td>Tenant RLS</td></tr>
       <tr><td><code>guild_profile</code></td><td>The workspace's main guild and its generated summary</td><td>Tenant RLS</td></tr>
+      <tr><td><code>profile_settings</code></td><td>One row per workspace: the main class, spec and content (<code>raid</code>, <code>mplus</code> or <code>both</code>, a CHECK) and when the welcome prompt was skipped. Created on the first save or skip. Class and spec are checked against the roster by the API, not here</td><td>Tenant RLS</td></tr>
       <tr><td><code>profile_proposals</code></td><td>A profile change the agent proposed: items as JSON, status, expiry, applied only on approval</td><td>Tenant + user RLS</td></tr>
 
       <tr><td rowspan="2">Agent memory</td><td><code>known_players</code></td><td>A player seen in tool results, so a bare name resolves later</td><td>Tenant RLS</td></tr>
@@ -204,7 +205,7 @@
 
   <h3>What it does, and where it lives</h3>
   <ul>
-    <li>Each of the 17 tenant tables has RLS <b>enabled and forced</b>, so the table owner is bound too. Each has one policy, applied with <code>USING</code> and <code>WITH CHECK</code>:
+    <li>Each of the 18 tenant tables has RLS <b>enabled and forced</b>, so the table owner is bound too. Each has one policy, applied with <code>USING</code> and <code>WITH CHECK</code>:
       <pre>tenant_isolation:       tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
 tenant_user_isolation:  the tenant predicate AND
                         user_id = NULLIF(current_setting('app.user_id', true), '')::uuid</pre>
@@ -257,7 +258,7 @@ tenant_user_isolation:  the tenant predicate AND
 <!-- ============================================================ MIGRATIONS -->
 <section class="layer" id="migrations">
   <h2>Migrations</h2>
-  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">alembic&gt;=1.13.0</span><span class="chip">22 revisions, linear</span></div>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">alembic&gt;=1.13.0</span><span class="chip">23 revisions, linear</span></div>
 
   <h3>What it does, and where it lives</h3>
   <ul>
@@ -290,6 +291,7 @@ tenant_user_isolation:  the tenant predicate AND
       <tr><td>0020</td><td><code>0020_raw_fetch_summary_index</code> · 047, 051</td><td>Partial index <code>ix_raw_fetches_summaries</code>, built concurrently. Superseded by 0021.</td></tr>
       <tr><td>0021</td><td><code>0021_raw_fetch_own_summary</code> · 051</td><td><code>raw_fetches.own_summary</code> with a constant default, a backfill in committed chunks of 1000 rows, three indexes built concurrently, and 0020's index dropped. Everything runs outside the migration transaction. It imports the query text and key function from <code>wcl_agent.client</code> to apply the old rule.</td></tr>
       <tr><td>0022</td><td><code>0022_pg_stat_statements</code> · 058</td><td>Postgres only. <code>CREATE EXTENSION pg_stat_statements</code> (the db service preloads the library). With <code>PG_MONITOR_PASSWORD</code> set, also the monitoring role: <code>LOGIN</code>, no other attributes, <code>pg_monitor</code> and <code>CONNECT</code>. Downgrade drops the role (only if it is monitor-only) and the extension.</td></tr>
+      <tr><td>0023</td><td><code>0023_profile_main_spec</code> · 074</td><td><code>profile_settings</code> (one row per workspace, <code>tenant_id</code> is the key), with tenant RLS enabled and forced and a DML grant. Every workspace that exists at migration time gets a row marked as having skipped the welcome prompt, so only later accounts see it. A table of its own, not columns on <code>tenants</code>, because <code>bootstrap_admin</code> inserts a tenant through the ORM between <code>upgrade 0002_auth_tenancy</code> and <code>upgrade head</code>.</td></tr>
     </tbody>
   </table></div>
 
@@ -335,7 +337,7 @@ tenant_user_isolation:  the tenant predicate AND
     <li><code>docker-compose.yml</code>, <code>pyproject.toml</code>, <code>backend/app/config.py</code>, <code>.env.example</code>, <code>README.md</code> (database setup)</li>
     <li><code>backend/app/db/session.py</code>, <code>models.py</code>, <code>repository.py</code>, <code>timestamps.py</code></li>
     <li><code>backend/app/tenancy/context.py</code>, <code>backend/app/repositories/*.py</code>, <code>backend/app/kb/search.py</code>, <code>backend/app/api/ws.py</code>, <code>backend/app/main.py</code></li>
-    <li><code>backend/alembic.ini</code>, <code>backend/migrations/env.py</code>, <code>script.py.mako</code>, <code>versions/0001…0022</code></li>
+    <li><code>backend/alembic.ini</code>, <code>backend/migrations/env.py</code>, <code>script.py.mako</code>, <code>versions/0001…0023</code></li>
     <li><code>backend/cli/init_db.py</code>, <code>backend/tests/conftest.py</code>, <code>backend/tests/test_rls.py</code>, <code>backend/tests/test_047_card_lock_pg.py</code></li>
     <li><code>specs/001-streaming-chat-frontend/</code>, <code>specs/006-multi-tenancy/research.md</code>, <code>specs/013-welcome-recent-raids/research.md</code>, <code>specs/020-fetch-persistence/research.md</code>, <code>specs/043-kb-store-embed/research.md</code>, <code>specs/051-raw-store-hardening/research.md</code></li>
   </ul>

@@ -1,18 +1,5 @@
 #!/bin/bash
 
-# ------------------ Functions ------------------ #
-alb_upgrade_head() {
-    echo " -- Alembic upgrade head --"
-    uv run alembic -c backend/alembic.ini upgrade head               # tenant_id backfill + RLS
-}
-
-
-alb_bootstrap() {
-    echo " | Attemping fresh bootstrap"
-    uv run alembic -c backend/alembic.ini upgrade 0002_auth_tenancy   # auth/tenant tables
-    uv run python -m backend.cli.bootstrap_admin                      # create the founder
-}
-
 # ------------------ Start ------------------ #
 echo " -- Initializing and Migrating Database -- "
 
@@ -41,11 +28,23 @@ if [ $? != 0 ]; then
 fi
 
 # ------------------ Alembic Migration ------------------ #
-alb_upgrade_head
-if [ $? != 0 ]; then
-    echo "-! Upgrade failed !-"
-    alb_bootstrap || exit $?
-    alb_upgrade_head || exit $?
+# One idempotent command: upgrade to 0002, create the founder only if none exists, upgrade to
+# head. It never re-bootstraps an existing database.
+out=$(uv run python -m backend.cli.init_db 2>&1)
+rc=$?
+echo "$out"
+if [ $rc != 0 ]; then
+    rev=$(echo "$out" | sed -n "s/.*Can't locate revision identified by '\([^']*\)'.*/\1/p" | head -1)
+    if [ -n "$rev" ]; then
+        echo ""
+        echo "ERROR: the database is at migration '$rev', which this checkout doesn't have."
+        echo "  It was migrated from a newer branch (usually a sprint branch that isn't merged yet)."
+        echo "  Branches that have it:"
+        git branch --format='%(refname:short)' --contains "$(git log --all --format=%H -1 -- "backend/migrations/versions/${rev}.py")" 2>/dev/null | grep -E '^(main|sprint-)' | sed 's/^/    /'
+        echo "  Fix: check out one of them (git checkout --detach <branch>), or restore a backup:"
+        ls -t "$(git rev-parse --git-common-dir)"/db-backups/*.dump 2>/dev/null | head -3 | sed 's/^/    /'
+    fi
+    exit 1
 fi
 
 echo " -- Migration Complete -- "

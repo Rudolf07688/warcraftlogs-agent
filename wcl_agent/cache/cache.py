@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import logging
 import os
 import random
@@ -75,6 +76,8 @@ class CacheFamily(StrEnum):
     HOTFIX_FEED = "hotfix_feed"
     # feature 016: the startup model discovery result
     MODEL_CATALOG = "model_catalog"
+    # feature 075: a character's Blizzard portrait (avatar URL or a none/unavailable outcome)
+    CHAR_PORTRAIT = "char_portrait"
 
 
 class Outcome(StrEnum):
@@ -112,6 +115,7 @@ FAMILIES: dict[CacheFamily, FamilyConfig] = {
     CacheFamily.LIVE_VERSION: FamilyConfig(900, 0.50),  # Blizzard's live build (research R1)
     CacheFamily.HOTFIX_FEED: FamilyConfig(1800, 0.50),  # newest "Hotfixes:" article (R2)
     CacheFamily.MODEL_CATALOG: FamilyConfig(21600, 0.50),  # discovered chat models (016 R6)
+    CacheFamily.CHAR_PORTRAIT: FamilyConfig(86400, 0.80),  # found portraits; shorter TTLs per outcome (075)
 }
 
 
@@ -229,6 +233,13 @@ class keys:  # noqa: N801 - a namespace: every cache key is built here, nowhere 
     @staticmethod
     def model_catalog(provider: str, project: str, location: str, sig: str) -> str:
         return f"ext:models:v2:{provider}:{project}:{location}:{sig}"
+
+    @staticmethod
+    def char_portrait(region: str, realm_slug: str, name: str) -> str:
+        # Hashed (075): a realm or name holding ":" or "*" can't reach another key or a pattern,
+        # and the key length is fixed. Callers pass the normalised, validated identity.
+        digest = hashlib.sha256(f"{region}\0{realm_slug}\0{name}".encode()).hexdigest()[:32]
+        return f"ext:portrait:v1:{digest}"
 
     @staticmethod
     def lock(key: str) -> str:

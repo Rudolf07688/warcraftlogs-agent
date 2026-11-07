@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LuPin } from "react-icons/lu";
-import { useNavigate } from "react-router-dom";
+import { useMatch, useNavigate } from "react-router-dom";
 import {
   deleteConversation,
   downloadMessageReport,
@@ -39,6 +39,10 @@ import type {
 import { clampSidebarWidth, getSidebarWidth, setSidebarWidth } from "./uiPrefs";
 import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 
+// 073: the Raids page is its own chunk (PERF-011); it renders inside this shell so the chat
+// socket and the investigate flow stay here.
+const RaidsPage = lazy(() => import("./pages/RaidsPage"));
+
 const CONNECTION_LOST = "Connection lost, the answer may be incomplete.";
 // Frames that only make sense while a turn is streaming here.
 const TURN_FRAMES = new Set<Frame["type"]>(["token", "tool_start", "tool_end", "done"]);
@@ -50,11 +54,15 @@ export default function App() {
   const [model, setModel] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [raids, setRaids] = useState<Raid[]>([]);
+  const [raidsStatus, setRaidsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [connected, setConnected] = useState(false);
   const { identity, logout } = useAuth();
   const navigate = useNavigate();
+  // 073: /app/raids/:reportCode? shows the Raids page in place of the chat body.
+  const raidsMatch = useMatch("/app/raids/:reportCode?");
+  const onRaidsPage = raidsMatch !== null;
 
   const [streaming, setStreamingState] = useState(false);
   // PERF-010: the streaming text lives in `streamStore`, not here, so a token never
@@ -114,8 +122,13 @@ export default function App() {
   }, []);
 
   const refreshRaids = useCallback(async () => {
-    const { raids } = await getRaids();
-    setRaids(raids);
+    try {
+      const { raids } = await getRaids();
+      setRaids(raids);
+      setRaidsStatus("ready");
+    } catch {
+      setRaidsStatus("error");
+    }
   }, []);
 
   const handleFrame = useCallback(
@@ -644,6 +657,34 @@ export default function App() {
   );
 
   const openProfile = useCallback(() => navigate("/profile"), [navigate]);
+  const openRaids = useCallback(() => {
+    if (!streamingRef.current) setError(null); // a stale chat error is not the page's
+    navigate("/app/raids");
+  }, [navigate]);
+
+  // 073: opening or starting a chat from the sidebar leaves the Raids page.
+  const openConversation = useCallback(
+    async (id: string) => {
+      if (onRaidsPage) navigate("/app");
+      await selectConversation(id);
+    },
+    [onRaidsPage, navigate, selectConversation],
+  );
+  const startNewChat = useCallback(() => {
+    if (onRaidsPage) navigate("/app");
+    newChat();
+  }, [onRaidsPage, navigate, newChat]);
+
+  // 073: "Analyze this raid" is the sidebar's old click: the same investigate + send flow,
+  // then the chat replaces the page (only if a chat actually started).
+  const analyzeRaid = useCallback(
+    async (reportCode: string) => {
+      const before = activeIdRef.current;
+      await handleInvestigateRaid(reportCode);
+      if (activeIdRef.current !== before) navigate("/app");
+    },
+    [handleInvestigateRaid, navigate],
+  );
 
   return (
     <div className="app">
@@ -651,13 +692,14 @@ export default function App() {
       <TelemetryBoundary name="sidebar" resetKey={activeId}>
         <Sidebar
           conversations={conversations}
-          raids={raids}
+          raidCount={raids.length}
+          raidsActive={onRaidsPage}
           activeId={activeId}
-          onSelect={selectConversation}
-          onNew={newChat}
+          onSelect={openConversation}
+          onNew={startNewChat}
           onDelete={removeConversation}
           onTogglePin={togglePin}
-          onInvestigateRaid={handleInvestigateRaid}
+          onOpenRaids={openRaids}
           onOpenProfile={openProfile}
         />
       </TelemetryBoundary>
@@ -679,7 +721,7 @@ export default function App() {
             degraded={modelsDegraded}
             provider={modelsProvider}
           />
-          {activeConversation && (
+          {activeConversation && !onRaidsPage && (
             // FR-004a: keyboard reachable, named, and its pressed state is exposed.
             <Toggle
               variant="outline"
@@ -692,7 +734,7 @@ export default function App() {
               <LuPin />
             </Toggle>
           )}
-          {activeId && messages.length > 0 && (
+          {activeId && messages.length > 0 && !onRaidsPage && (
             <Button
               variant="secondary"
               size="sm"
@@ -717,25 +759,43 @@ export default function App() {
             Sign out
           </Button>
         </header>
-        <TelemetryBoundary name="messages" resetKey={activeId}>
-          <MessageList
-            messages={messages}
-            streaming={streaming}
-            status={status}
-            error={error}
-            streamCards={streamCards}
-            selectedBosses={selectedBosses}
-            onSelectBosses={setSelectedBosses}
-            onPickSuggestion={send}
-            onDownloadMessage={handleDownloadMessage}
-            looseProposals={looseProposals}
-            onFollowUp={appendFollowUp}
-            footer={welcome}
-          />
-        </TelemetryBoundary>
-        <TelemetryBoundary name="composer" resetKey={activeId}>
-          <Composer disabled={streaming || !connected} onSend={send} />
-        </TelemetryBoundary>
+        {onRaidsPage ? (
+          <TelemetryBoundary name="raids" resetKey={raidsMatch?.params.reportCode}>
+            <Suspense fallback={null}>
+              <RaidsPage
+                raids={raids}
+                status={raidsStatus}
+                reportCode={raidsMatch?.params.reportCode}
+                streaming={streaming}
+                connected={connected}
+                error={error}
+                onAnalyze={analyzeRaid}
+              />
+            </Suspense>
+          </TelemetryBoundary>
+        ) : (
+          <>
+            <TelemetryBoundary name="messages" resetKey={activeId}>
+              <MessageList
+                messages={messages}
+                streaming={streaming}
+                status={status}
+                error={error}
+                streamCards={streamCards}
+                selectedBosses={selectedBosses}
+                onSelectBosses={setSelectedBosses}
+                onPickSuggestion={send}
+                onDownloadMessage={handleDownloadMessage}
+                looseProposals={looseProposals}
+                onFollowUp={appendFollowUp}
+                footer={welcome}
+              />
+            </TelemetryBoundary>
+            <TelemetryBoundary name="composer" resetKey={activeId}>
+              <Composer disabled={streaming || !connected} onSend={send} />
+            </TelemetryBoundary>
+          </>
+        )}
         <div className="attribution">
           Icons by{" "}
           <a href="https://game-icons.net" target="_blank" rel="noopener noreferrer">

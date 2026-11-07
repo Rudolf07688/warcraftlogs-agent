@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from backend.tests.test_team_check import TEAM, calls, make_repo, run_tool, write
+from backend.tests.test_team_check import TEAM, calls, install_node_modules, make_repo, run_tool, write
 
 MUTATE = TEAM / "mutate.py"
 SRC, TEST = "frontend/src/x.ts", "frontend/src/x.test.tsx"
@@ -26,7 +26,7 @@ def sha(p: Path) -> str:
 
 def setup(tmp_path: Path) -> Path:
     repo = make_repo(tmp_path)
-    (repo / "frontend" / "node_modules").mkdir()
+    install_node_modules(repo)
     return repo
 
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit be6c5c5 · 2026-11-07">
+<meta name="verified-at" content="commit 0a394c5 · 2026-11-07">
 <title>WCL client, cache &amp; store · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -49,7 +49,7 @@
     <thead><tr><th>Part</th><th>Module</th><th>Job</th></tr></thead>
     <tbody>
       <tr><td>API client</td><td><code>wcl_agent/client/wcl_client.py</code>, <code>queries.py</code>, <code>aio.py</code></td><td>OAuth, single-flight, lanes, retries, cost logging, the sink and source hooks.</td></tr>
-      <tr><td>Redis cache</td><td><code>wcl_agent/cache/cache.py</code>, <code>cache_models.py</code>, <code>normalize.py</code></td><td><code>get_or_load</code>, 15 key families, locks, memo, counters, report eviction.</td></tr>
+      <tr><td>Redis cache</td><td><code>wcl_agent/cache/cache.py</code>, <code>cache_models.py</code>, <code>normalize.py</code></td><td><code>get_or_load</code>, 16 key families, locks, memo, counters, report eviction.</td></tr>
       <tr><td>Store writer</td><td><code>backend/app/services/fetch_persistence.py</code></td><td><code>FetchWriter</code>: queue, batches, grants, report statuses, gone handling, tombstones.</td></tr>
       <tr><td>Store reads</td><td><code>backend/app/services/raw_fetch_reads.py</code></td><td><code>StoreSource</code> (the fetch source), freshness rule, breaker, probe counters.</td></tr>
       <tr><td>Store SQL</td><td><code>backend/app/repositories/raw_fetches.py</code></td><td>The only module that reads <code>raw_fetches</code> (a guard test, <code>test_only_the_repository_reads_the_raw_store</code>, enforces it). Holds the one visibility rule.</td></tr>
@@ -57,6 +57,8 @@
       <tr><td>Kickoff pre-fetch</td><td><code>backend/app/services/kickoff_prefetch.py</code></td><td>Warms a recent raid's data before its first chat turn.</td></tr>
       <tr><td>Stats endpoint</td><td><code>backend/app/api/cache_stats.py</code></td><td><code>GET /api/admin/cache-stats</code>.</td></tr>
       <tr><td>Blizzard sources</td><td><code>backend/app/services/guide_pipeline/briefing.py</code></td><td>Live game build and hotfix news for the guide pipeline.</td></tr>
+<tr><td>Raid summary</td><td><code>backend/app/services/raid_summary.py</code></td><td>The Raids page's summary of a tracked raid, read from the store; at most one re-verify request to WCL.</td></tr>
+<tr><td>Character portraits</td><td><code>backend/app/services/portraits.py</code></td><td>Blizzard Profile API avatars, cached in the <code>char_portrait</code> family.</td></tr>
     </tbody>
   </table></div>
   <ul>
@@ -180,8 +182,8 @@
     <li><b>Compose</b> (<code>docker-compose.yml</code>): <code>redis:8-alpine</code> with <code>maxmemory 256mb</code>, <code>allkeys-lru</code>, no persistence, port bound to 127.0.0.1 only (it has no auth). The backend container gets <code>REDIS_URL=redis://redis:6379/0</code>.</li>
   </ul>
 
-  <h3>The 15 cache families</h3>
-  <p>Eight hold Warcraft Logs data or its OAuth token; six (the code's feature-015 group) cache guide-pipeline inputs, from the WCL class roster to Blizzard's live build; one holds the model catalog. Every TTL can be overridden with <code>WCL_CACHE_TTL_&lt;FAMILY&gt;</code>. "Review below" is the hit rate under which the stats endpoint says <code>review</code>.</p>
+  <h3>The 16 cache families</h3>
+  <p>Eight hold Warcraft Logs data or its OAuth token; six (the code's feature-015 group) cache guide-pipeline inputs, from the WCL class roster to Blizzard's live build; one holds the model catalog; one holds character portraits. Every TTL can be overridden with <code>WCL_CACHE_TTL_&lt;FAMILY&gt;</code>. "Review below" is the hit rate under which the stats endpoint says <code>review</code>.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Family</th><th>Key</th><th>TTL</th><th>Memo</th><th>Review below</th><th>Used by</th></tr></thead>
     <tbody>
@@ -200,6 +202,7 @@
       <tr><td><code>live_version</code></td><td><code>ext:wow_version:v1:{region}</code></td><td>15 min</td><td>–</td><td>0.50</td><td><code>guide_pipeline/briefing.py</code></td></tr>
       <tr><td><code>hotfix_feed</code></td><td><code>ext:hotfix:v1</code></td><td>30 min</td><td>–</td><td>0.50</td><td><code>guide_pipeline/briefing.py</code></td></tr>
       <tr><td><code>model_catalog</code></td><td><code>ext:models:v2:{provider}:{project}:{location}:{sig}</code></td><td>6 h</td><td>–</td><td>0.50</td><td>Model discovery at start-up, <code>backend/app/main.py</code> (see <a href="models.html">Models &amp; providers</a>)</td></tr>
+      <tr><td><code>char_portrait</code></td><td><code>ext:portrait:v1:{sha256 of region, realm slug, name, first 32 hex}</code></td><td>24 h found; 6 h none; 5 min unavailable</td><td>–</td><td>0.80</td><td><code>backend/app/services/portraits.py</code> (see <a href="backend-api.html#routers">Backend API</a>). Hashed so a name holding <code>:</code> or <code>*</code> can't reach another key or a pattern</td></tr>
     </tbody>
   </table></div>
   <p class="muted">Not cached in Redis: whole-raid tables, events, graphs, master data, arbitrary rankings and hand-written GraphQL. Those still pass through the client, so the store keeps and can serve the report-scoped ones.</p>
@@ -305,6 +308,7 @@ FROM pg_class c WHERE relname IN ('raw_fetches', 'raw_reports', 'raw_fetch_grant
     <li><b>Freshness</b> (<code>is_fresh</code>): a row younger than <code>WCL_CACHE_UNFINISHED_TTL</code> (120 s) is fresh. Otherwise it is fresh only when every report it names was seen finished and the row was fetched after that report finished: then it is served for good. Rows naming no report are never served; Redis TTLs govern them.</li>
     <li><b>The probe</b> (<code>probe_visible_fetch</code>) uses at most four statements: the row's codes and <code>fetched_at</code>; the codes' statuses for the freshness check; the tenant scope, only when a code isn't publicly confirmed; then the visibility clause (for the tenant and for public-only) and the payload as bytes, pinned to the <code>fetched_at</code> of step one, so a row replaced meanwhile is a miss. Outcomes: <code>hit</code>, <code>miss</code>, <code>not_visible</code>. A hidden row answers exactly like a missing one.</li>
     <li><b>Fail-fast.</b> The probe runs in the lane slot of the flight's first attempt (so a fan-out holds at most that many DB connections), before the token and before the spent-budget check, with a <code>RAW_STORE_PROBE_TIMEOUT_MS</code> (400 ms) timeout. A timeout, a connection error or any other error is a miss: a turn never fails because of the store.</li>
+    <li><b>Raid summary reads.</b> The Raids page's summary (<code>services/raid_summary.py</code>) does not go through the source. It reads the newest own report summary (<code>read_visible_summary</code>) and the player-detail, boss-table and ranking rows the tools would have stored (<code>read_visible_parts</code>, which cuts the needed JSON paths out in the database), both through the same <code>fetch_visible_clause</code> and the same re-verify window, with no freshness rule: it shows what was stored and when. <code>stored_summary_exists</code> only tells it whether a re-verify could help. The one re-verify request is sent as the asking workspace through the normal client path (Redis, lanes, single-flight), and the status and grant it records let the second read succeed.</li>
     <li><b>Back-fill.</b> A hit whose reports are all public back-fills the shared Redis entry through the unchanged loader. A grant-only hit does not (see <a href="#cache">Redis cache</a>). A report made private can therefore stay reachable by code for at most the re-verify window plus the Redis TTL (about 48 h).</li>
   </ul>
 
@@ -425,7 +429,7 @@ FROM pg_class c WHERE relname IN ('raw_fetches', 'raw_reports', 'raw_fetch_grant
   <h3>Why</h3>
   <p class="why">The versions endpoint is the only source of the exact build; it needs no credentials but is undocumented, hence the 15-minute cache and the WCL floor. <b>Alternatives:</b> WCL partitions only (too coarse); scraping patch notes.<cite>specs/015-grounded-class-guides/research.md R1</cite></p>
   <p class="why">The news "Hotfixes:" articles are the official source and give per-spec detail, so only touched specs go stale; the parse needs only the stdlib.<cite>specs/015-grounded-class-guides/research.md R2</cite></p>
-  <p class="why inferred"><span class="badge inf">Inferred</span><code>.env.example</code> declares <code>BLIZZARD_CLIENT_ID</code> and <code>BLIZZARD_CLIENT_SECRET</code>, but no code reads them. They look reserved for a future Game Data API client; both sources above are public and unauthenticated.<cite>.env.example; text search of backend/ and wcl_agent/</cite></p>
+  <p class="why inferred"><span class="badge inf">Inferred</span>The two sources above are public and unauthenticated. The Blizzard keys in <code>.env.example</code> are used only by character portraits (<code>backend/app/services/portraits.py</code>, Profile API, client credentials), which are described on <a href="backend-api.html#routers">Backend API</a>; no guide code reads them.<cite>text search of backend/ and wcl_agent/ for BLIZZARD_CLIENT_ID</cite></p>
 </section>
 
 <!-- ============================================================ CONFIG -->
@@ -453,6 +457,7 @@ FROM pg_class c WHERE relname IN ('raw_fetches', 'raw_reports', 'raw_fetch_grant
       <tr><td><code>RAW_STORE_REVERIFY_DAYS</code></td><td>1</td><td>How long "public" and grants count.</td></tr>
       <tr><td><code>RAW_STORE_PROBE_TIMEOUT_MS</code></td><td>400</td><td>One store probe.</td></tr>
       <tr><td><code>WCL_INVESTIGATE_PER_MINUTE</code></td><td>5</td><td>Recent-raid investigations per user (each may start a pre-fetch).</td></tr>
+      <tr><td><code>BLIZZARD_CLIENT_ID</code>, <code>BLIZZARD_CLIENT_SECRET</code></td><td>empty</td><td>Blizzard Profile API client for character portraits. Either empty: no portraits and no request. The secret is a <code>SecretStr</code>, so no repr or log line prints it.</td></tr>
       <tr><td><code>WOW_VERSION_URL</code>, <code>WOW_NEWS_URL</code></td><td>Blizzard URLs above</td><td>Guide briefing sources.</td></tr>
     </tbody>
   </table></div>
@@ -475,6 +480,8 @@ FROM pg_class c WHERE relname IN ('raw_fetches', 'raw_reports', 'raw_fetch_grant
     <li><code>backend/app/repositories/raw_fetches.py</code></li>
     <li><code>backend/app/agent_tools/stored_data_tools.py</code></li>
     <li><code>backend/app/services/kickoff_prefetch.py</code></li>
+    <li><code>backend/app/services/raid_summary.py</code></li>
+    <li><code>backend/app/services/portraits.py</code></li>
     <li><code>backend/app/services/background.py</code></li>
     <li><code>backend/app/services/recent_raids.py</code></li>
     <li><code>backend/app/services/guide_pipeline/briefing.py</code></li>

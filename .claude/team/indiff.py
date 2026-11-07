@@ -24,8 +24,8 @@ FINDING = re.compile(r"(?<![\w./-])(/?(?:[\w.-]+/)*[\w.-]+\.\w+):(\d+)(?:-(\d+))
 ZERO = "0" * 40
 
 
-def git(*args, check=True):
-    r = subprocess.run(["git", *args], capture_output=True, text=True)
+def git(*args, check=True, cwd=None):
+    r = subprocess.run(["git", *args], capture_output=True, text=True, cwd=cwd)
     if check and r.returncode:
         sys.exit(f"indiff: git {' '.join(args)}: {r.stderr.strip()}")
     return r
@@ -40,9 +40,10 @@ def default_base():
     return base, f"merge base with {other}"
 
 
-def blame(path, first, last):
-    """{line: (sha, unix time, summary)} for the working-tree file, or an error string."""
-    r = git("blame", "--porcelain", "-L", f"{first},{last}", "--", path, check=False)
+def blame(path, first, last, top):
+    """{line: (sha, unix time, summary)} for the working-tree file, or an error string.
+    Findings are repo-relative, so blame runs from the repo root, not the caller's directory."""
+    r = git("blame", "--porcelain", "-L", f"{first},{last}", "--", path, check=False, cwd=top)
     if r.returncode:
         return r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "blame failed"
     info, lines, sha, line = {}, {}, None, None
@@ -90,7 +91,7 @@ def main():
         if label in seen:
             continue
         seen.add(label)
-        got = blame(path, first, last)
+        got = blame(path, first, last, top)
         if isinstance(got, str):
             counts["?"] += 1
             print(f"{label}  ?        {got}")

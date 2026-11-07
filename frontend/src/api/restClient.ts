@@ -19,6 +19,8 @@ import type {
   RecentRaidsResponse,
   Profile,
   ProfileProposal,
+  ProfileSettings,
+  ProfileSettingsInput,
   ProposalDecision,
   RaidRole,
   Raid,
@@ -73,7 +75,8 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 // Credentialed JSON request (sends the session cookie; attaches CSRF on unsafe methods).
-async function send<T>(
+// Exported so a feature can keep its own endpoints in its own api/ module (sprint 2026-11-07b).
+export async function send<T>(
   method: string,
   url: string,
   body?: unknown,
@@ -314,6 +317,19 @@ export async function downloadMessageReport(convId: string, messageId: string): 
 
 export async function getProfile(): Promise<Profile> {
   return send("GET", "/api/profile");
+}
+
+// Feature 074: main class/spec/content and the onboarding prompt's skip.
+export async function getProfileSettings(): Promise<ProfileSettings> {
+  return send("GET", "/api/profile/settings");
+}
+
+export async function saveProfileSettings(body: ProfileSettingsInput): Promise<ProfileSettings> {
+  return send("PUT", "/api/profile/settings", body, { csrf: true });
+}
+
+export async function skipOnboarding(): Promise<ProfileSettings> {
+  return send("POST", "/api/profile/onboarding/skip", undefined, { csrf: true });
 }
 
 // Feature 012: own characters are managed like friends (add, set role, remove).

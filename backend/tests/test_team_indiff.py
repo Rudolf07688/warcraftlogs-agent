@@ -66,6 +66,17 @@ def test_default_base_is_the_stream_diff_on_a_stream_and_the_sprint_diff_on_the_
     assert "merge base with main" in indiff(repo, "a.py:2").stdout
 
 
+def test_run_from_a_subdirectory_resolves_repo_relative_paths(repo: Path) -> None:
+    """BUG-009: git blame ran in the cwd, so every repo-relative finding was unresolved."""
+    sub = repo / "pkg" / "deep"
+    sub.mkdir(parents=True)
+    r = subprocess.run([sys.executable, str(INDIFF), "a.py:1", "a.py:4", "--base", "main"], cwd=sub,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert verdicts(r.stdout) == {"a.py:1": "OLDER", "a.py:4": "IN"}
+    assert "0 unresolved" in r.stderr
+
+
 def test_a_pasted_report_ranges_uncommitted_and_missing_lines(repo: Path) -> None:
     (repo / "a.py").write_text("one\nTWO\nthree\nFOUR\nfive\n")
     report = ("- **BUG-001** `a.py:5`: new line\n- **BUG-002** a.py:1-2 range\n"

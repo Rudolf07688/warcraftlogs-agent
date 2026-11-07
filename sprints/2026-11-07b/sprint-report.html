@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-07b Review</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+/* Text containers are block flow, not grid: a grid makes every inline child (<b>, <code>, a bare word run) its own row. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flow-root}
+.card>*+*{margin-top:8px}
+.card>:first-child{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:flow-root;margin:10px 0}
+.callout>*{margin:0}
+.callout>*+*{margin-top:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;display:flex}
+.bar .fill{display:block;flex:none;height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:flow-root;background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;margin:0}
+.checks li.ok{border-left-color:var(--ok)}
+.checks li.no{border-left-color:var(--warn)}
+.checks span.no{float:left;margin-right:10px;min-width:24px;padding:0 4px;font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted);margin-left:6px;white-space:nowrap}
+.checks ul{margin:6px 0 0;padding-left:20px}
+[role=tabpanel]>*+*{margin-top:16px}
+[role=tabpanel]>h3{margin-bottom:0}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint review · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-07b: raids you can review, a guided first login, faces for your characters</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-07b</b></span> <span>Base <b class="mono">516aa0d</b></span> <span>Tip <b class="mono">4cf3eea</b></span> <span>Iteration <b>2026-11-07b</b></span> <span>PO Maren</span></div>
+  <p>All planned work and one reserve landed: 25 of 25 points. The Raids page is now a page with a tab per raid, the stored data and an analyze button; new accounts land in profile setup; characters show their Battle.net portraits; a chat turn cut off by a network drop no longer runs alongside the next question. Four security reviews and one QA sweep led to one rework round per stream and one fix round. Not merged to main and not pushed: that is the owner's call.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">25<small> / 25 pts</small></span><span class="s">10 stories Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Live pass (final)</span><span class="v">PASS</span><span class="s">3 first-pass FAILs fixed and re-checked</span></div>
+  <div class="kpi"><span class="eyebrow">Full suite at tip</span><span class="v">PASS</span><span class="s">pytest 2639, vitest 203, build</span></div>
+  <div class="kpi"><span class="eyebrow">Deferred</span><span class="v">7</span><span class="s">tickets, sc-556 to sc-562</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-work" aria-controls="p-work" aria-selected="true">Delivered <span class="count">6</span></button>
+  <button class="tab" role="tab" id="tab-qa" aria-controls="p-qa" aria-selected="false" tabindex="-1">QA and fixes</button>
+  <button class="tab" role="tab" id="tab-def" aria-controls="p-def" aria-selected="false" tabindex="-1">Deferred <span class="count">7</span></button>
+  <button class="tab" role="tab" id="tab-dec" aria-controls="p-dec" aria-selected="false" tabindex="-1">Decisions and risks</button>
+  <button class="tab" role="tab" id="tab-live" aria-controls="p-live" aria-selected="false" tabindex="-1">Your live checks</button>
+</div></nav>
+
+<div role="tabpanel" id="p-work" aria-labelledby="tab-work" tabindex="0">
+  <h2 class="panel-title">Delivered against plan</h2>
+  <table class="tbl">
+    <tr><th>Stream and stories</th><th>Pts</th><th>State</th></tr>
+    <tr><td><b>Raids page</b> (Tomas, app frontend): tabs instead of dropdown (sc-141), Analyze this raid button (sc-143), raid data on screen (sc-142, UI half)<br><span class="small muted">merged d4d875d, fix 68d2b8c</span></td><td class="num">5</td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Raid data endpoint</b> (Nils, app backend): stored participants, duration, my parses (sc-142, backend half)<br><span class="small muted">merged 539d21a after security rework, fix 263f34b</span></td><td class="num">3</td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Onboarding to profile setup</b> (Edda, new seat, app full-stack): new accounts to profile setup (sc-166), main class/spec and content (sc-167), schema notes out of the prompt (sc-514, 67 tokens per request)<br><span class="small muted">merged 910d600, migration 0023</span></td><td class="num">6</td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Character portraits</b> (Ansel, app full-stack): fetch and cache (sc-363), show on profile, chat card, welcome page (sc-364)<br><span class="small muted">merged 7556043 after security rework</span></td><td class="num">6</td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>One turn at a time per chat</b> (Vera, app backend): dropped turn ran alongside the next one (sc-511)<br><span class="small muted">merged b0fda87 after security rework</span></td><td class="num">3</td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Reserve: team-tool CLI bugs</b> (Tomas, team tooling): receipt overwrite, stale node_modules, three CLI bugs (sc-541)<br><span class="small muted">merged f76721a</span></td><td class="num">2</td><td><span class="tag t-ok">Under Review</span></td></tr>
+  </table>
+  <div class="callout ok"><p><b>Left out on purpose:</b> inline coaching briefs (sc-515, needs a live A/B of two turns) and background guides for the chosen spec (sc-168, the next onboarding slice). The unlaunched reserve, browse and stack hardening (sc-538, sc-540), goes back to the backlog.</p></div>
+  <p class="small muted">Stream types for cost per point (team-lead measures): app backend 072, 076; app frontend 073; app full-stack 074, 075; team tooling 077; docs close-out (Tomas).</p>
+</div>
+
+<div role="tabpanel" id="p-qa" aria-labelledby="tab-qa" tabindex="0" hidden>
+  <h2 class="panel-title">Security reviews, QA sweep, live pass, fixes</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">D18</span> One security review per security-core stream, prompted from the diff. No High anywhere. Mediums fixed in one rework round each: turn fix (connection held while waiting, late writes), portraits (slow Battle.net asked on every load), raid data (connection held across the Warcraft Logs call, no rate bound). Onboarding: Lows only.</div>
+    <div class="tl ok"><span class="t">Suite</span> Full suite at the tip with Postgres before the sweep and again after the fix round: PASS both times.</div>
+    <div class="tl warn"><span class="t">Live</span> 38 PASS, 3 FAIL: raid participants padded with bystanders, "my characters" printed "null" and missed the class, welcome page without portraits.</div>
+    <div class="tl ok"><span class="t">Sweep</span> Spec, bugs, performance, security over the sprint diff. Liveness of the turn fix re-checked: no unbounded or cyclic wait. Fix bar met only by the two live FAILs and one Raids page Medium (refetch per tab switch).</div>
+    <div class="tl ok"><span class="t">Fixes</span> Participants are the fights' roster; class from stored data; nulls render as nothing; a 60 s summary cache; a 429 message; Analyze disabled while offline. The welcome-page portraits were a test-browser artefact (team-lead confirmed), no app change. Live re-check: the padded raid now lists 19 participants, none without a class, "Traecie Mage Frost": all sprint checks PASS.</div>
+  </div>
+  <p>Architecture docs brought to the tip in one pass (Tomas): <b>backend-api, database, deployment, frontend, streaming, wcl-data</b>, plus index, auth-tenancy, agent and open-points. 16 team facts re-verified, 2 edited.</p>
+  <p class="small muted">Triage: sprints/2026-11-07b/qa-triage.md. Reports: qa-reports/2026-11-07b-sweep/ and qa-reports/2026-11-07b-d18/ in the sprint worktree (gitignored).</p>
+</div>
+
+<div role="tabpanel" id="p-def" aria-labelledby="tab-def" tabindex="0" hidden>
+  <h2 class="panel-title">Deferred, grouped by root cause</h2>
+  <ul class="checks">
+    <li class="no">Raid summary and Raids page hardening <span class="ref">sc-556</span></li>
+    <li class="no">Raid summary query cost <span class="ref">sc-557</span></li>
+    <li class="no">Portraits hardening <span class="ref">sc-558</span></li>
+    <li class="no">Chat turn follow-ups: link charts by turn, release the claim sooner <span class="ref">sc-559</span></li>
+    <li class="no">Onboarding follow-ups, incl. the founder never seeing the prompt <span class="ref">sc-560</span></li>
+    <li class="no">Team test gate: verify trusts receipt fields (older code) <span class="ref">sc-561</span></li>
+    <li class="no">My character's portrait on the Raids page <span class="ref">sc-562</span></li>
+  </ul>
+  <p class="small muted">The app shell at 390 px stays on the existing ticket sc-175.</p>
+</div>
+
+<div role="tabpanel" id="p-dec" aria-labelledby="tab-dec" tabindex="0" hidden>
+  <h2 class="panel-title">Decisions and risks</h2>
+  <ul class="checks">
+    <li><span class="no">1</span>23 planned plus one 2-point reserve, to finish at 25; coaching briefs and background guides wait.</li>
+    <li><span class="no">2</span>The Raids page is new, inside the app shell; clicking a raid in the sidebar opens it instead of starting a chat.</li>
+    <li><span class="no">3</span>Raid data split into endpoint and screen with an agreed response format; both built at once.</li>
+    <li><span class="no">4</span>Stored raid data is only shown after a recent access check. Older raids get one Warcraft Logs summary request to re-check, bounded per user and workspace; the access rule itself stays.</li>
+    <li><span class="no">5</span>Portraits on their own endpoint, cached in Redis; only Blizzard's render host is ever served.</li>
+    <li><span class="no">6</span>A second window on the same chat takes the chat over; the first shows "This chat continued in another window".</li>
+    <li><span class="no">7</span>Onboarding settings in a new table with row-level security (columns on the workspace table broke first-admin setup).</li>
+  </ul>
+  <div class="callout warn"><p><b>Risks for the owner:</b> migration 0023 runs on deploy and marks existing workspaces as past onboarding; portraits need the Blizzard keys in .env (without them everything shows initials); the per-chat turn registry and re-verify cooldown live in one backend process (fine while there is one).</p></div>
+</div>
+
+<div role="tabpanel" id="p-live" aria-labelledby="tab-live" tabindex="0" hidden>
+  <h2 class="panel-title">Your live checks (stories are Under Review)</h2>
+  <ul class="checks">
+    <li><span class="no">1</span>Raids page: open Raids in the sidebar; one tab per raid, newest first; a raid shows duration, players by role and your parses (your class, no "null"); "Analyze this raid" opens a new chat with the analyze message.</li>
+    <li><span class="no">2</span>Onboarding (not run live, it would add a test account): invite a new email, accept, land on the profile with the welcome card; pick class, spec, content, save, reload; sign out and in lands on the profile again; "Skip for now" and the card stays gone.</li>
+    <li><span class="no">3</span>Portraits in a normal browser: profile page, welcome page cards and a chat confirmation card show portraits; characters without one show initials.</li>
+    <li><span class="no">4</span>Chat: open one chat in two tabs and ask in both; the first says the chat continued elsewhere; reload shows the questions and answers in order.</li>
+  </ul>
+  <p><b>Your decision:</b> merge <span class="mono">sprint-2026-11-07b</span> to main and push.</p>
+</div>
+
+<footer>Written by Maren (product owner), 2026-11-07. Plan: sprints/2026-11-07b/plan.html.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit be6c5c5 · 2026-11-07">
+<meta name="verified-at" content="commit 0a394c5 · 2026-11-07">
 <title>Frontend · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -50,13 +50,13 @@
       <tr><td><code>main.tsx</code></td><td>entry: <code>BackendBootGate</code> → <code>AuthProvider</code> → the app-shell error boundary → router; starts browser telemetry (<code>initTelemetry</code>) before the first render</td></tr>
       <tr><td><code>routes.tsx</code></td><td>the route tree (<code>appRoutes</code>): public auth pages, the guarded chat, profile and admin pages, every page but the chat as a lazy chunk; a root route owns the <code>errorElement</code></td></tr>
       <tr><td><code>App.tsx</code></td><td>the chat shell: conversation state, the frame handler, sends, PDF downloads; the sidebar, message list and composer each sit in their own error boundary</td></tr>
-      <tr><td><code>api/</code></td><td><code>wsClient.ts</code> (<code>ChatSocket</code>, the <code>Frame</code> union) and <code>restClient.ts</code> (every REST call, CSRF, <code>ApiError</code>)</td></tr>
+      <tr><td><code>api/</code></td><td><code>wsClient.ts</code> (<code>ChatSocket</code>, the <code>Frame</code> union) and <code>restClient.ts</code> (the shared REST calls, CSRF, <code>ApiError</code>; <code>send</code> is exported so a feature can keep its own endpoints in its own module). <code>raidSummary.ts</code> and <code>portraits.ts</code> are such modules, with their own types</td></tr>
       <tr><td><code>telemetry/</code></td><td>Grafana Faro setup (<code>faro.ts</code>), what the rest of the app may ask of it (<code>context.ts</code>), the URL scrubber (<code>scrub.ts</code>), the error boundary (<code>ErrorBoundary.tsx</code>) and the chat events (<code>chatEvents.ts</code>); see <a href="#telemetry">Browser telemetry</a></td></tr>
-      <tr><td><code>auth/</code></td><td><code>AuthProvider</code>, <code>useAuth</code>, the <code>RequireAuth</code> route guard</td></tr>
-      <tr><td><code>pages/</code></td><td>the routed screens other than the chat (profile, admin, sign-in flows)</td></tr>
-      <tr><td><code>components/</code></td><td>chat components (message list, spell cards, charts, sidebar, welcome page, proposal card); <code>profile/</code> tabs and dialogs</td></tr>
+      <tr><td><code>auth/</code></td><td><code>AuthProvider</code>, <code>useAuth</code>, the <code>RequireAuth</code> route guard, and <code>redirect.ts</code> (where a player lands after login or invitation accept; only fixed or in-app paths)</td></tr>
+      <tr><td><code>pages/</code></td><td>the routed screens other than the chat (profile, admin, sign-in flows), plus <code>RaidsPage.tsx</code>, which <code>App.tsx</code> renders inside the chat shell</td></tr>
+      <tr><td><code>components/</code></td><td>chat components (message list, spell cards, charts, sidebar, welcome page, proposal card); <code>profile/</code> tabs, dialogs and <code>ClassAvatar</code>; <code>raids/</code> (the Raids page's tab body, summary panel and a short-lived summary cache); <code>onboarding/</code> (welcome prompt, main selector)</td></tr>
       <tr><td><code>components/ui/</code></td><td>23 shadcn/ui components (new-york style, CSS variables, <code>react-icons</code> as icon library, per <code>frontend/components.json</code>)</td></tr>
-      <tr><td><code>lib/</code>, <code>hooks/</code></td><td><code>streamStore</code>, <code>spells</code>, markdown plugins, <code>profileEvents</code>, <code>useSmoothText</code></td></tr>
+      <tr><td><code>lib/</code>, <code>hooks/</code></td><td><code>streamStore</code>, <code>spells</code>, markdown plugins, <code>profileEvents</code>, <code>useSmoothText</code>, <code>usePortraits</code></td></tr>
       <tr><td><code>toolLabels.ts</code>, <code>uiPrefs.ts</code>, <code>types.ts</code></td><td>tool status labels, local UI preferences, shared types</td></tr>
       <tr><td><code>index.css</code>, <code>styles.css</code></td><td>theme tokens and Tailwind entry; hand-written app rules</td></tr>
     </tbody>
@@ -65,7 +65,7 @@
   <figure class="diagram">
     <svg class="dg" viewBox="0 0 1000 560" role="img" aria-labelledby="fe-map-t fe-map-d">
       <title id="fe-map-t">Frontend component map</title>
-      <desc id="fe-map-d">main.tsx wraps everything in the boot gate, the auth provider and the router. The router leads to the public pages, the chat shell App, the profile page and the admin users page. App renders the sidebar, the chat header, the ambient background, and either the welcome panel or the message list, plus the composer; the composer sends through ChatSocket, which feeds frames back into App and the message list. Shared shadcn components are used by every screen.</desc>
+      <desc id="fe-map-d">main.tsx wraps everything in the boot gate, the auth provider and the router. The router leads to the public pages, the chat shell App, the profile page and the admin users page. App renders the sidebar, the chat header, the ambient background, and either the welcome panel or the message list, plus the composer; on the Raids route it renders the Raids page in place of the message list and composer; the composer sends through ChatSocket, which feeds frames back into App and the message list. Shared shadcn components are used by every screen.</desc>
       <defs><marker id="fe-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs>
 
       <rect class="node ext" x="290" y="14" width="420" height="56" rx="10"/>
@@ -104,7 +104,7 @@
       <text x="32" y="228" class="t" style="font-size:14px">Sidebar</text>
       <text x="32" y="248" class="sub" style="font-size:12px">New chat · Profile</text>
       <text x="32" y="266" class="sub" style="font-size:12px">Pinned group + chats</text>
-      <text x="32" y="284" class="sub" style="font-size:12px">Raids (tracked, investigate)</text>
+      <text x="32" y="284" class="sub" style="font-size:12px">Raids entry (opens the page)</text>
       <rect class="node" x="270" y="206" width="220" height="96" rx="10"/>
       <text x="282" y="228" class="t" style="font-size:14px">Chat header</text>
       <text x="282" y="248" class="sub" style="font-size:12px">ModelSelect · pin Toggle</text>
@@ -129,6 +129,11 @@
       <text x="282" y="428" class="sub" style="font-size:12px">FollowUps · per-reply PDF · web-search, fallback notes</text>
       <text x="282" y="446" class="sub" style="font-size:12px">LiveMessage: the only subscriber to streamStore</text>
 
+      <rect class="node" x="20" y="456" width="230" height="86" rx="10"/>
+      <text x="32" y="478" class="t" style="font-size:14px">RaidsPage (lazy)</text>
+      <text x="32" y="498" class="sub" style="font-size:12px">/app/raids/:reportCode?</text>
+      <text x="32" y="516" class="sub" style="font-size:12px">tab per raid · stored summary</text>
+      <text x="32" y="534" class="sub" style="font-size:12px">replaces list + composer</text>
       <rect class="node" x="270" y="486" width="210" height="56" rx="10"/>
       <text x="375" y="509" text-anchor="middle" class="t" style="font-size:14px">Composer</text>
       <text x="375" y="528" text-anchor="middle" class="sub" style="font-size:12px">sends ChatTurn</text>
@@ -160,11 +165,11 @@
 
   <h3>What it does, and where it lives</h3>
   <ul>
-    <li><b>Scripts</b> (<code>frontend/package.json</code>): <code>dev</code> runs Vite, <code>build</code> runs <code>tsc -b &amp;&amp; vite build</code>, <code>test</code> runs Vitest. Tests (14 <code>*.test.tsx</code> files) run in jsdom from <code>frontend/vitest.config.ts</code>, kept apart from the build config.</li>
+    <li><b>Scripts</b> (<code>frontend/package.json</code>): <code>dev</code> runs Vite, <code>build</code> runs <code>tsc -b &amp;&amp; vite build</code>, <code>test</code> runs Vitest. Tests (26 <code>*.test.tsx</code> files) run in jsdom from <code>frontend/vitest.config.ts</code>, kept apart from the build config.</li>
     <li><b>Dev server</b> (<code>frontend/vite.config.ts</code>): port 5173, plugins <code>@vitejs/plugin-react</code> and <code>@tailwindcss/vite</code>. It proxies <code>/api</code> and <code>/ws</code> (with WebSocket upgrade) to <code>VITE_BACKEND_URL</code>, default <code>http://localhost:8000</code>, so the browser sees one origin.</li>
     <li><b>Image</b> (<code>frontend/Dockerfile</code>): a <code>deps</code> stage on <code>node:22-slim</code> (glibc, because Tailwind v4's native binaries crash on musl), a <code>dev</code> target running the Vite dev server (what docker compose uses locally), and a <code>prod</code> target that serves the built files with <code>nginx:1.27-alpine</code>.</li>
     <li><b>Production proxy</b> (<code>frontend/nginx.conf</code>): the same paths as the dev proxy, to <code>backend:8000</code>. <code>/api/</code> has a 300 s read timeout (PDF generation can take a while); <code>/ws</code> upgrades the connection and allows 3600 s, as a chat socket stays open across many turns. Hashed <code>/assets/</code> are cached for a year; every other path falls back to <code>index.html</code>.</li>
-    <li><b>Code splitting.</b> The chat (<code>App</code>) loads eagerly. Every other page, KaTeX (with its CSS and fonts), Plotly and the particle engine are separate chunks loaded on first use.</li>
+    <li><b>Code splitting.</b> The chat (<code>App</code>) loads eagerly. Every other page (including the Raids page, which <code>App</code> loads on first visit), KaTeX (with its CSS and fonts), Plotly and the particle engine are separate chunks loaded on first use.</li>
   </ul>
 </section>
 
@@ -180,13 +185,17 @@
       <tr><td><code>/reset-password</code></td><td><code>pages/ResetPasswordPage.tsx</code>: token from the fragment, as above</td><td>public</td><td>lazy</td></tr>
       <tr><td><code>/forbidden</code></td><td><code>pages/ForbiddenPage.tsx</code></td><td>public</td><td>lazy</td></tr>
       <tr><td><code>/app/*</code></td><td><code>App.tsx</code>, the chat</td><td>signed in</td><td>eager</td></tr>
-      <tr><td><code>/profile</code></td><td><code>pages/ProfilePage.tsx</code>: Characters tab (own characters, friends, guild) and Class guides tab (guide viewer, report-a-problem dialog)</td><td>signed in</td><td>lazy</td></tr>
+      <tr><td><code>/app/raids/:reportCode?</code></td><td><code>pages/RaidsPage.tsx</code>, shown by <code>App.tsx</code> in place of the message list and composer (see below)</td><td>signed in</td><td>lazy, inside the eager <code>App</code></td></tr>
+<tr><td><code>/profile</code></td><td><code>pages/ProfilePage.tsx</code>: above the tabs the welcome prompt (while onboarding is pending) or the "Your main" card; Characters tab (own characters, friends, guild; portraits) and Class guides tab (guide viewer, report-a-problem dialog)</td><td>signed in</td><td>lazy</td></tr>
       <tr><td><code>/admin/users</code></td><td><code>pages/AdminUsersPage.tsx</code>: users and invitations (invite, resend, revoke, enable/disable, reset link)</td><td>platform admin</td><td>lazy</td></tr>
       <tr><td><code>*</code></td><td>redirect to <code>/app</code></td><td>n/a</td><td>n/a</td></tr>
     </tbody>
   </table></div>
   <ul>
-    <li><b>Inside the chat.</b> The sidebar (<code>components/Sidebar.tsx</code>) has New chat, a Pinned group (most recently pinned first), the other chats in server activity order, a pin toggle per row, and the Raids section of tracked raids with one-click investigate. It is resizable; its width is kept in <code>localStorage</code> (200 to 480 px, <code>uiPrefs.ts</code>). The welcome page (<code>components/WelcomePanel.tsx</code>) is the no-conversation state, not a route: under Barnaby's greeting it lists recent raids and Mythic+ runs, polled every 3 s while a refresh runs (giving up after 3 minutes).</li>
+    <li><b>Inside the chat.</b> The sidebar (<code>components/Sidebar.tsx</code>) has New chat, a Pinned group (most recently pinned first), the other chats in server activity order, a pin toggle per row, and one Raids entry (with the tracked-raid count) that opens the Raids page. It is resizable; its width is kept in <code>localStorage</code> (200 to 480 px, <code>uiPrefs.ts</code>). The welcome page (<code>components/WelcomePanel.tsx</code>) is the no-conversation state, not a route: under Barnaby's greeting it lists recent raids and Mythic+ runs, polled every 3 s while a refresh runs (giving up after 3 minutes). Each card shows the characters who played as small class avatars with their Battle.net portrait once it has loaded (see the portraits bullet below).</li>
+<li><b>Raids page.</b> <code>/app/raids/:reportCode?</code> is a view of the chat shell, not a separate route: <code>App.tsx</code> matches it with <code>useMatch</code> and renders <code>pages/RaidsPage.tsx</code> (a lazy chunk) where the message list and composer would be, so the socket and the investigate flow stay in the shell. The page has one tab per tracked raid (shadcn <code>Tabs</code>, newest first, scrolling sideways when they don't fit); the address selects the tab, and with no code the newest raid is shown. A code that is not in the player's list shows "Raid not found" and makes no summary call. Each tab shows the raid's header, an <b>Analyze this raid</b> button and the stored data from <code>GET /api/raids/{code}/summary</code> (participants by role, duration, the player's own characters' parses, when it was stored; "no data yet" when nothing is stored). Analyze runs the old sidebar click: <code>POST …/investigate</code>, then the kickoff text as a normal first turn, then the chat replaces the page. It is disabled while a reply streams or the socket is down. Summaries are held for 60 s per raid in <code>components/raids/summaryCache.ts</code> (the tabs unmount when inactive, and the backend allows 60 a minute); a failure is never kept, and Analyze clears the raid's entry because it stores new data. A 404 and a 429 get their own messages, with Retry on all but a 404.</li>
+<li><b>Onboarding.</b> A new account lands on <code>/profile</code> (<code>AcceptInvitePage</code> goes there after activation; <code>LoginPage</code> asks <code>GET /api/profile/settings</code> and sends a player headed for the chat home to the profile page while <code>onboarding_pending</code>). There the welcome prompt (<code>components/onboarding/OnboardingPrompt.tsx</code>) asks for at least one character and offers the main selector; "Skip for now" is stored on the server, so the prompt never comes back. Afterwards the same selector sits in a "Your main" card. <code>MainSelector.tsx</code> takes classes and specs from the Class Guides list (the app's one roster) and saves with <code>PUT /api/profile/settings</code>; the server checks the values again. <code>auth/redirect.ts</code> only ever returns a fixed path or an in-app path, rejecting <code>//host</code>, backslashes, schemes and control characters.</li>
+<li><b>Portraits.</b> <code>hooks/usePortraits.ts</code> is the one shared request for <code>GET /api/profile/portraits</code>: callers share one in-flight request and reuse its answer for 60 s, an approved profile change in any tab refreshes it, and a failure means no portraits. Callers look a portrait up by character id (profile list, confirmation card) or by name, realm and region (welcome page). <code>components/profile/ClassAvatar.tsx</code> draws the initials, and over them a lazy <code>&lt;img&gt;</code> once it has loaded, in the same box so nothing shifts; only a URL on <code>https://render.worldofwarcraft.com/</code> is ever put in <code>src</code> (the server checks too), with <code>referrerPolicy="no-referrer"</code>. A failed image keeps the initials.</li>
     <li><b>Confirmation cards.</b> <code>components/ProposalCard.tsx</code> shows an agent's proposed profile changes with approve and cancel. An approval is broadcast to every open tab through <code>lib/profileEvents.ts</code> (a <code>BroadcastChannel</code> plus a window event), so an open profile page refreshes.</li>
     <li><b>Admin screens.</b> Only the users page has a screen. The backend's <code>GET /api/admin/guide-reports</code> and <code>GET /api/admin/cache-stats</code> have no frontend; they are read with API tools.</li>
     <li><b>Boot gate.</b> <code>components/BackendBootGate.tsx</code> polls <code>GET /api/health</code> every second and shows the startup steps until the backend reports them done; nothing else (not even the session check) talks to the API before that.</li>
@@ -331,13 +340,13 @@
     <li><code>frontend/vite.config.ts</code>, <code>frontend/vitest.config.ts</code></li>
     <li><code>frontend/Dockerfile</code>, <code>frontend/nginx.conf</code>, <code>frontend/index.html</code></li>
     <li><code>frontend/src/main.tsx</code>, <code>routes.tsx</code>, <code>App.tsx</code></li>
-    <li><code>frontend/src/api/restClient.ts</code>, <code>wsClient.ts</code></li>
+    <li><code>frontend/src/api/restClient.ts</code>, <code>wsClient.ts</code>, <code>raidSummary.ts</code>, <code>portraits.ts</code></li>
     <li><code>frontend/src/telemetry/</code> (<code>faro.ts</code>, <code>context.ts</code>, <code>scrub.ts</code>, <code>ErrorBoundary.tsx</code>, <code>chatEvents.ts</code>), <code>frontend/src/routes.tsx</code></li>
     <li><code>frontend/src/auth/</code></li>
     <li><code>frontend/src/components/StreamMarkdown.tsx</code>, <code>MessageList.tsx</code>, <code>PlotlyArtifact.tsx</code>, <code>SpellCard.tsx</code>, <code>Ambient.tsx</code>, <code>AmbientParticles.tsx</code>, <code>BackendBootGate.tsx</code>, <code>WelcomePanel.tsx</code>, <code>Sidebar.tsx</code>, <code>ProposalCard.tsx</code>, <code>ModelSelect.tsx</code>, <code>Composer.tsx</code></li>
-    <li><code>frontend/src/components/ui/</code>, <code>components/profile/</code></li>
+    <li><code>frontend/src/components/ui/</code>, <code>components/profile/</code>, <code>components/raids/</code>, <code>components/onboarding/</code></li>
     <li><code>frontend/src/pages/</code></li>
-    <li><code>frontend/src/lib/</code>, <code>hooks/useSmoothText.ts</code></li>
+    <li><code>frontend/src/lib/</code>, <code>hooks/useSmoothText.ts</code>, <code>hooks/usePortraits.ts</code></li>
     <li><code>frontend/src/toolLabels.ts</code>, <code>uiPrefs.ts</code>, <code>index.css</code></li>
     <li><code>wcl_agent/agent.py</code> (tool list)</li>
     <li><code>backend/app/api/admin_guides.py</code>, <code>cache_stats.py</code></li>

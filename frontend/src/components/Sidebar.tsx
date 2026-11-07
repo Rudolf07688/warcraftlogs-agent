@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import { LuPin } from "react-icons/lu";
-import type { Conversation, Raid } from "../types";
+import type { Conversation } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
@@ -8,27 +8,15 @@ import { Toggle } from "./ui/toggle";
 
 interface Props {
   conversations: Conversation[];
-  raids: Raid[];
+  raidCount: number;
+  raidsActive: boolean;
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void | Promise<void>;
   onTogglePin: (id: string, pinned: boolean) => void;
-  onInvestigateRaid: (reportCode: string) => void;
+  onOpenRaids: () => void;
   onOpenProfile: () => void;
-}
-
-function formatWhen(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 // Feature 019: pinned chats, most recently pinned first (FR-006).
@@ -36,33 +24,18 @@ function byPinnedDesc(a: Conversation, b: Conversation): number {
   return Date.parse(b.pinned_at ?? "") - Date.parse(a.pinned_at ?? "");
 }
 
-// US2: show the raid's own date/time, falling back when the report start is unknown
-// (older rows predating the column, or raids captured via a non-fight tool).
-function raidWhen(r: Raid): string {
-  return formatWhen(r.report_started_at ?? r.first_seen_at ?? r.last_asked_at);
-}
-
-// US2: a compact boss summary (kills marked), truncated for the narrow sidebar.
-function bossSummary(r: Raid): string {
-  const bosses = r.encounters ?? [];
-  if (bosses.length === 0) return "";
-  const names = bosses.map((e) => (e.kill ? `${e.name} ✓` : e.name));
-  const shown = names.slice(0, 3).join(", ");
-  return names.length > 3 ? `${shown} +${names.length - 3}` : shown;
-}
-
 function SidebarImpl({
   conversations,
-  raids,
+  raidCount,
+  raidsActive,
   activeId,
   onSelect,
   onNew,
   onDelete,
   onTogglePin,
-  onInvestigateRaid,
+  onOpenRaids,
   onOpenProfile,
 }: Props) {
-  const [raidsOpen, setRaidsOpen] = useState(true);
   const [convsOpen, setConvsOpen] = useState(true);
   // Feature 010 / FR-006: the conversation awaiting the in-app delete confirmation.
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
@@ -134,6 +107,16 @@ function SidebarImpl({
       <Button variant="secondary" onClick={onOpenProfile} title="Edit your profile">
         ⚑ Profile
       </Button>
+      {/* 073: one entry opens the Raids page (a tab per raid); it no longer starts a chat. */}
+      <Button
+        variant={raidsActive ? "default" : "secondary"}
+        onClick={onOpenRaids}
+        aria-current={raidsActive ? "page" : undefined}
+        title="Your tracked raids"
+      >
+        ⚔ Raids
+        <span className="section-count">{raidCount}</span>
+      </Button>
 
       <button
         className="sidebar-section-label"
@@ -159,33 +142,6 @@ function SidebarImpl({
             </div>
           )}
           {unpinned.map(renderConversation)}
-        </div>
-      )}
-
-      <button
-        className="sidebar-section-label"
-        onClick={() => setRaidsOpen((o) => !o)}
-        aria-expanded={raidsOpen}
-      >
-        <span className="section-chevron">{raidsOpen ? "▾" : "▸"}</span>
-        Raids
-        <span className="section-count">{raids.length}</span>
-      </button>
-      {raidsOpen && (
-        <div className="raid-list">
-          {raids.length === 0 && <div className="sidebar-empty">No raids tracked yet</div>}
-          {raids.map((r) => (
-            <button
-              key={r.report_code}
-              className="raid-item"
-              title={`Investigate ${r.label}`}
-              onClick={() => onInvestigateRaid(r.report_code)}
-            >
-              <span className="raid-label">{r.label}</span>
-              <span className="raid-when">{raidWhen(r)}</span>
-              {bossSummary(r) && <span className="raid-bosses">{bossSummary(r)}</span>}
-            </button>
-          ))}
         </div>
       )}
 

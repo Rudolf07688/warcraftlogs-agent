@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit be6c5c5 · 2026-11-07">
+<meta name="verified-at" content="commit 0a394c5 · 2026-11-07">
 <title>Deployment &amp; config · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -58,7 +58,7 @@
   <figure class="diagram">
     <svg class="dg" viewBox="0 0 1000 790" role="img" aria-labelledby="ct-title ct-desc">
       <title id="ct-title">Container and deployment diagram</title>
-      <desc id="ct-desc">On the developer host, Docker Compose runs four app containers: frontend, backend, db and redis, plus the always-on alloy collector. The browser reaches the frontend on port 5173, which proxies /api and /ws to the backend. The backend uses db and redis on the compose network, sends telemetry to alloy, and reads the host .env and the mounted gcloud credentials file. Alloy forwards telemetry to the observability stack (Loki, Tempo, Mimir, Grafana, Pyroscope and cAdvisor), which only runs under the observability compose profile. Alloy also reads Postgres's log files from a shared volume. Host tools reach db and redis on loopback ports. The backend calls Vertex AI, the Anthropic API when that provider is selected, the Warcraft Logs API and public Blizzard pages over HTTPS.</desc>
+      <desc id="ct-desc">On the developer host, Docker Compose runs four app containers: frontend, backend, db and redis, plus the always-on alloy collector. The browser reaches the frontend on port 5173, which proxies /api and /ws to the backend. The backend uses db and redis on the compose network, sends telemetry to alloy, and reads the host .env and the mounted gcloud credentials file. Alloy forwards telemetry to the observability stack (Loki, Tempo, Mimir, Grafana, Pyroscope and cAdvisor), which only runs under the observability compose profile. Alloy also reads Postgres's log files from a shared volume. Host tools reach db and redis on loopback ports. The backend calls Vertex AI, the Anthropic API when that provider is selected, the Warcraft Logs API, public Blizzard pages and, for character portraits, the Blizzard Profile API over HTTPS.</desc>
       <defs>
         <marker id="ct-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
         <marker id="ct-ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah2" d="M0,0 L10,5 L0,10 z"/></marker>
@@ -136,9 +136,10 @@
       <text class="sub" x="855" y="390" text-anchor="middle">OAuth + GraphQL v2</text>
 
       <rect class="node ext" x="735" y="445" width="240" height="95" rx="10"/>
-      <text class="t" x="855" y="475" text-anchor="middle">Blizzard (public)</text>
-      <text class="sub" x="855" y="498" text-anchor="middle">WoW build version,</text>
-      <text class="sub" x="855" y="520" text-anchor="middle">hotfix news (guides)</text>
+      <text class="t" x="855" y="470" text-anchor="middle">Blizzard</text>
+      <text class="sub" x="855" y="492" text-anchor="middle">build version, hotfix news</text>
+      <text class="sub" x="855" y="510" text-anchor="middle">(guides, public) and</text>
+      <text class="sub" x="855" y="528" text-anchor="middle">portraits (Profile API)</text>
 
       <path class="flow" marker-end="url(#ct-ah)" d="M415,200 H382"/>
       <text class="lbl" x="398" y="153" text-anchor="middle">:5173</text>
@@ -215,6 +216,7 @@
       <tr><td>Auth &amp; sessions</td><td><code>SITE_URL</code> (<code>http://localhost:5173</code>), <code>SECRET_KEY</code>, <code>SESSION_COOKIE_NAME</code> (<code>__Host-session</code>), <code>SESSION_COOKIE_SECURE</code> (true), <code>TRUSTED_PROXIES</code> (empty), lifetimes, password policy and limiter thresholds, <code>CORS_ORIGINS</code>, <code>BOOTSTRAP_ADMIN_EMAIL/PASSWORD</code> (CLIs only)</td><td><code>backend/app/auth/</code>; see <a href="auth-tenancy.html">Auth &amp; multi-tenancy</a></td></tr>
       <tr><td>Providers &amp; models</td><td><code>WCL_LLM_PROVIDER</code> (vertex), <code>ANTHROPIC_API_KEY</code>, <code>GOOGLE_GENAI_USE_VERTEXAI</code>, <code>GOOGLE_CLOUD_PROJECT</code>, <code>GOOGLE_CLOUD_LOCATION</code>, <code>WCL_MODEL_LOCATION</code> (global), <code>WCL_MODEL_DISCOVERY</code> (catalog), class lists, model role overrides, retry budget</td><td><code>wcl_agent/llm/</code>; see <a href="models.html">Models &amp; providers</a></td></tr>
       <tr><td>Warcraft Logs</td><td><code>WCL_CLIENT_ID</code>, <code>WCL_CLIENT_SECRET</code>, <code>WCL_MAX_CONCURRENCY</code> (6), <code>WCL_BACKGROUND_CONCURRENCY</code> (2), <code>WCL_QUERY_TIMEOUT_S</code> (75)</td><td><code>wcl_agent/client/wcl_client.py</code>; see <a href="wcl-data.html">WCL client, cache &amp; store</a></td></tr>
+      <tr><td>Blizzard</td><td><code>BLIZZARD_CLIENT_ID</code>, <code>BLIZZARD_CLIENT_SECRET</code> (both empty by default; the secret is a <code>SecretStr</code>). Either empty: no character portraits and no request to Blizzard</td><td><code>services/portraits.py</code>; see <a href="backend-api.html#routers">Backend API</a></td></tr>
       <tr><td>Cache &amp; raw store</td><td><code>REDIS_URL</code> (empty means no cache), <code>WCL_CACHE_ENABLED</code>, per-family TTLs, <code>WCL_FETCH_PERSIST_*</code>, <code>WCL_STORE_READS_ENABLED</code>, <code>RAW_STORE_REVERIFY_DAYS</code> (1), <code>RAW_STORE_PROBE_TIMEOUT_MS</code> (400)</td><td><code>wcl_agent/cache/</code>, <code>services/fetch_persistence.py</code>, <code>services/raw_fetch_reads.py</code></td></tr>
       <tr><td>Knowledge base</td><td><code>KB_INDEX_ENABLED</code>, <code>KB_EMBED_ENABLED</code>, <code>KB_EMBED_MODEL</code> (<code>gemini-embedding-001</code>), <code>KB_EMBED_LOCATION</code> (<code>europe-west1</code>), queue and batch sizes, <code>KB_EMBED_SWEEP_S</code> (600)</td><td><code>backend/app/kb/</code>; see <a href="knowledge-base.html">Knowledge base</a></td></tr>
       <tr><td>Guides</td><td><code>WCL_GUIDE_*</code> (concurrency 2, review rounds 3, per-minute caps), <code>WOW_VERSION_URL</code>, <code>WOW_NEWS_URL</code></td><td><code>services/guide.py</code>, <code>services/guide_pipeline/</code></td></tr>
@@ -260,7 +262,7 @@
 
   <h3>What it does, and where it lives</h3>
   <ul>
-    <li><code>bin/00_init_migrate_db.sh</code>: sources <code>.env</code>, runs <code>uv sync --all-extras</code> (creating <code>.venv</code> if that fails, then syncing again), starts only <code>db</code>, then runs <code>alembic -c backend/alembic.ini upgrade head</code>. If that upgrade fails, it tries the fresh-database path: upgrade to <code>0002_auth_tenancy</code>, run <code>backend.cli.bootstrap_admin</code>, then upgrade to head.</li>
+    <li><code>bin/00_init_migrate_db.sh</code>: sources <code>.env</code>, runs <code>uv sync --all-extras</code> (creating <code>.venv</code> if that fails, then syncing again), starts only <code>db</code>, then runs <code>python -m backend.cli.init_db</code> (below). If that fails because the database is at a migration this checkout doesn't have (it was migrated from an unmerged branch), it names the <code>main</code>/<code>sprint-*</code> branches that have that migration and the three newest dumps in <code>db-backups/</code>, and exits 1.</li>
     <li><code>bin/01_start_app.sh [--build]</code>: runs the init script, exports <code>WCL_GIT_SHA</code> (the short commit, the backend's <code>service.version</code>, since the image has no <code>.git</code>), then <code>docker compose up -d</code> (passing the flag through), prints <code>docker compose ps</code> and follows the logs. Ctrl+C or exit runs <code>docker compose down</code>, so the stack stops with the script.</li>
     <li><code>bin/claude-otel [claude arguments...]</code>: starts Claude Code with OpenTelemetry pointed at the local Alloy. It is not part of the app's start-up; see <a href="observability.html#build">Observability</a>.</li>
     <li><code>backend/cli/init_db.py</code> does the same migrate → founder → migrate sequence as one idempotent Python command: upgrade to <code>0002_auth_tenancy</code>, create the founder only if no active platform admin exists, then upgrade to head. Safe to run on every deploy.</li>
@@ -269,7 +271,7 @@
 
   <h3>Why</h3>
   <p class="why">The founder must exist before <code>0003_tenant_columns</code> backfills existing rows to the founder's tenant, which is why init is a three-step sequence.<cite>backend/cli/init_db.py (docstring) · specs/006-multi-tenancy/research.md R8</cite></p>
-  <p class="why inferred"><span class="badge inf">Inferred</span>No recorded reason for the <code>bin/</code> scripts (added without a spec). They wrap the quickstart steps into one command for local bring-up. They duplicate the logic of <code>backend/cli/init_db.py</code> in shell, and any failure of the first <code>upgrade head</code> (not only a fresh database) sends them down the bootstrap path, which stops with an error when the <code>BOOTSTRAP_ADMIN_EMAIL</code> user already exists. <code>init_db</code> checks for an admin first instead.</p>
+  <p class="why">The scripts wrap the quickstart steps into one command for local bring-up, which is how the owner live-tests a sprint: <code>docker compose down</code>, then <code>./bin/01_start_app.sh</code> in the main checkout. They used to retry a failed <code>upgrade head</code> with the founder bootstrap, which broke on a database ahead of the checkout; since 2026-11-07 they call <code>init_db</code>, which checks for an admin first.<cite>sprint 2026-11-07b (owner's live test) · bin/00_init_migrate_db.sh</cite></p>
 </section>
 
 <!-- ============================================================ CLI -->
@@ -304,7 +306,7 @@
     <li>A Redis, or none: without <code>REDIS_URL</code> every WCL lookup goes to the store or WCL. No managed Redis is planned yet.</li>
     <li>One backend instance, or shared state for what is per process today (see <a href="#images">Images</a>, Why).</li>
   </ul>
-  <p class="note"><b>Drift:</b> parts of <code>documentation/deployment.md</code> are out of date. It still says access is "public + unauthenticated for v1" and that tables are made by <code>create_all</code>; feature 006 replaced both with invite-only login and Alembic. It also predates Redis, pgvector, the Anthropic provider and the raw store. In <code>.env.example</code>, <code>BLIZZARD_CLIENT_ID</code>/<code>BLIZZARD_CLIENT_SECRET</code> are listed but no code reads them, and the provider comment still says suggestions, titles, reports and guides call Gemini "until feature 035", which has shipped.</p>
+  <p class="note"><b>Drift:</b> parts of <code>documentation/deployment.md</code> are out of date. It still says access is "public + unauthenticated for v1" and that tables are made by <code>create_all</code>; feature 006 replaced both with invite-only login and Alembic. It also predates Redis, pgvector, the Anthropic provider and the raw store. In <code>.env.example</code>, the provider comment still says suggestions, titles, reports and guides call Gemini "until feature 035", which has shipped.</p>
 </section>
 
 <footer>

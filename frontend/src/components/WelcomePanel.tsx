@@ -1,9 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { LuCalendarClock, LuRefreshCw, LuSkull, LuSwords, LuTimer, LuUsers } from "react-icons/lu";
+import { LuCalendarClock, LuRefreshCw, LuSkull, LuSwords, LuTimer } from "react-icons/lu";
 import { getRecentRaids, refreshRecentRaids } from "../api/restClient";
+import { type PortraitLookup, usePortraits } from "../hooks/usePortraits";
 import { useProfileChanged } from "../lib/profileEvents";
-import type { RecentMplusRun, RecentRaid, RecentRaidsResponse } from "../types";
+import type { RecentMplusRun, RecentRaid, RecentRaidCharacter, RecentRaidsResponse } from "../types";
+import { ClassAvatar } from "./profile/ClassAvatar";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -64,12 +66,35 @@ interface Props {
   disabled: boolean;
 }
 
+// Feature 075: who played, each with their portrait (initials until it loads, or without one).
+function CharacterNames({ chars, portraits }: { chars: RecentRaidCharacter[]; portraits: PortraitLookup }) {
+  return (
+    <span>
+      <span className="flex -space-x-1">
+        {chars.map((c) => {
+          const p = portraits.byIdentity(c.name, c.server, c.region);
+          return (
+            <ClassAvatar
+              key={`${c.name}-${c.server}-${c.region}`}
+              char={{ name: c.name, class_name: p?.class_name ?? null, portrait_url: p?.portrait_url }}
+              className="size-5 border text-[0.6rem]"
+            />
+          );
+        })}
+      </span>
+      {chars.map((c) => c.name).join(", ")}
+    </span>
+  );
+}
+
 const RaidCard = memo(function RaidCard({
   raid,
+  portraits,
   disabled,
   onInvestigate,
 }: {
   raid: RecentRaid;
+  portraits: PortraitLookup;
   disabled: boolean;
   onInvestigate: (reportCode: string) => void;
 }) {
@@ -92,9 +117,7 @@ const RaidCard = memo(function RaidCard({
             <span>
               <LuCalendarClock aria-hidden /> {whenText(raid.started_at)}
             </span>
-            <span>
-              <LuUsers aria-hidden /> {raid.characters.map((c) => c.name).join(", ")}
-            </span>
+            <CharacterNames chars={raid.characters} portraits={portraits} />
             {pulled > 0 && (
               <span>
                 <LuSkull aria-hidden /> {raid.bosses_killed ?? 0}/{pulled} bosses
@@ -109,10 +132,12 @@ const RaidCard = memo(function RaidCard({
 
 const MplusCard = memo(function MplusCard({
   run,
+  portraits,
   disabled,
   onInvestigate,
 }: {
   run: RecentMplusRun;
+  portraits: PortraitLookup;
   disabled: boolean;
   onInvestigate: (reportCode: string, fightId: number) => void;
 }) {
@@ -137,9 +162,7 @@ const MplusCard = memo(function MplusCard({
             <span>
               <LuCalendarClock aria-hidden /> {whenText(run.started_at)}
             </span>
-            <span>
-              <LuUsers aria-hidden /> {run.characters.map((c) => c.name).join(", ")}
-            </span>
+            <CharacterNames chars={run.characters} portraits={portraits} />
           </ItemDescription>
         </ItemContent>
       </button>
@@ -149,10 +172,12 @@ const MplusCard = memo(function MplusCard({
 
 function MplusSection({
   runs,
+  portraits,
   disabled,
   onInvestigate,
 }: {
   runs: RecentMplusRun[];
+  portraits: PortraitLookup;
   disabled: boolean;
   onInvestigate: (reportCode: string, fightId: number) => void;
 }) {
@@ -169,6 +194,7 @@ function MplusSection({
           <MplusCard
             key={`${run.report_code}-${run.fight_id}`}
             run={run}
+            portraits={portraits}
             disabled={disabled}
             onInvestigate={onInvestigate}
           />
@@ -184,6 +210,8 @@ function WelcomePanelImpl({ onInvestigate, onInvestigateMplus, disabled }: Props
   const [retrying, setRetrying] = useState(false);
   const alive = useRef(true);
   const pollStart = useRef<number | null>(null);
+  // Feature 075: asked only once there are characters to show (none on a new account).
+  const portraits = usePortraits({ enabled: Boolean(data?.has_characters) });
 
   const load = useCallback(async () => {
     try {
@@ -324,7 +352,7 @@ function WelcomePanelImpl({ onInvestigate, onInvestigateMplus, disabled }: Props
             </EmptyHeader>
           </Empty>
         )}
-        <MplusSection runs={mplusRuns} disabled={disabled} onInvestigate={onInvestigateMplus} />
+        <MplusSection runs={mplusRuns} portraits={portraits} disabled={disabled} onInvestigate={onInvestigateMplus} />
       </section>
     );
   }
@@ -360,12 +388,13 @@ function WelcomePanelImpl({ onInvestigate, onInvestigateMplus, disabled }: Props
           <RaidCard
             key={raid.report_code}
             raid={raid}
+            portraits={portraits}
             disabled={disabled}
             onInvestigate={onInvestigate}
           />
         ))}
       </div>
-      <MplusSection runs={mplusRuns} disabled={disabled} onInvestigate={onInvestigateMplus} />
+      <MplusSection runs={mplusRuns} portraits={portraits} disabled={disabled} onInvestigate={onInvestigateMplus} />
     </section>
   );
 }
