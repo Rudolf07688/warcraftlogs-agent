@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getPortraits } from "../api/portraits";
 import { ApiError, approveProposal, cancelProposal } from "../api/restClient";
+import { resetPortraitsCache } from "../hooks/usePortraits";
 import { notifyProfileChanged } from "../lib/profileEvents";
 import type { Message, ProfileProposal, ProposalItem } from "../types";
 import { ProposalCard } from "./ProposalCard";
@@ -13,7 +15,9 @@ vi.mock("../api/restClient", async (importOriginal) => ({
   approveProposal: vi.fn(),
   cancelProposal: vi.fn(),
 }));
+vi.mock("../api/portraits", () => ({ getPortraits: vi.fn() }));
 const approve = vi.mocked(approveProposal);
+const portraits = vi.mocked(getPortraits);
 const cancel = vi.mocked(cancelProposal);
 
 const MINUTE = 60_000;
@@ -82,6 +86,9 @@ const followUp: Message = {
 beforeEach(() => {
   approve.mockReset();
   cancel.mockReset();
+  portraits.mockReset();
+  portraits.mockResolvedValue({ portraits: [] });
+  resetPortraitsCache();
 });
 afterEach(cleanup);
 
@@ -262,5 +269,32 @@ describe("ProposalCard: real state", () => {
     act(() => notifyProfileChanged({ proposal: applied(p), targets: ["friend"] }));
     expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
     expect(shows("Applied: 4 added, 1 skipped")).toBe(true);
+  });
+});
+
+describe("ProposalCard: portraits (feature 075)", () => {
+  const AVATAR = "https://render.worldofwarcraft.com/eu/character/tarren-mill/1/2-avatar.jpg";
+
+  it("shows the portrait of a character already in the profile", async () => {
+    portraits.mockResolvedValue({
+      portraits: [
+        { character_id: "char-7", name: "Kazrok", server: "Tarren Mill", region: "eu", class_name: "Druid", portrait_url: AVATAR },
+      ],
+    });
+    const p = proposal({
+      items: [
+        item(0, "Kazrok", { action: "update", character_id: "char-7", raid_role: "tank" }),
+        item(1, "Brightmane"),
+      ],
+    });
+    const { container } = render(<ProposalCard proposal={p} />);
+    await waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(1));
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(AVATAR);
+    expect(portraits).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for no portraits while every row is a pending add", () => {
+    render(<ProposalCard proposal={proposal()} />);
+    expect(portraits).not.toHaveBeenCalled();
   });
 });

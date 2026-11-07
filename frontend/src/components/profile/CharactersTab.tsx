@@ -20,6 +20,7 @@ import {
 } from "../../api/restClient";
 import { classColor, classDisplayName } from "../../lib/classColors";
 import { useProfileChanged } from "../../lib/profileEvents";
+import { type PortraitLookup, usePortraits } from "../../hooks/usePortraits";
 import type { Character, GuideStatus, Guild, Profile, RaidRole } from "../../types";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ClassAvatar } from "./ClassAvatar";
@@ -134,12 +135,14 @@ function RoleSelect({
 // status, realm and spec, raid role, and a remove button per character.
 function CharacterList({
   chars,
+  portraits,
   busy,
   removeLabel,
   onRoleChange,
   onRemove,
 }: {
   chars: Character[];
+  portraits: PortraitLookup;
   busy: boolean;
   removeLabel: string;
   onRoleChange: (c: Character, role: RaidRole | null) => void;
@@ -150,7 +153,7 @@ function CharacterList({
       {chars.map((c) => (
         <Item key={c.id} role="listitem" variant="outline" size="sm" className="bg-background/30">
           <ItemMedia>
-            <ClassAvatar char={c} className="size-10" />
+            <ClassAvatar char={{ ...c, portrait_url: portraits.byId(c.id)?.portrait_url }} className="size-10" />
           </ItemMedia>
           <ItemContent className="min-w-0">
             <ItemTitle className="flex-wrap">
@@ -403,6 +406,11 @@ export function CharactersTab() {
   const ownFull = own.length >= ownLimit;
   const guild: Guild | null = profile?.guild ?? null;
   const friends = profile?.friends ?? [];
+  // Feature 075: portraits come from their own request; a changed character list asks again.
+  const portraits = usePortraits({
+    version: [...own, ...friends].map((c) => c.id).join(","),
+    enabled: own.length + friends.length > 0,
+  });
 
   const openDialog = (kind: DialogKind) => {
     setDialogErr(null);
@@ -499,6 +507,7 @@ export function CharactersTab() {
             {own.length > 0 ? (
               <CharacterList
                 chars={own}
+                portraits={portraits}
                 busy={busy}
                 removeLabel="Remove character"
                 onRoleChange={(c, role) => void runInline(() => updateOwnCharacter(c.id, role))}
@@ -600,6 +609,7 @@ export function CharactersTab() {
             {friends.length > 0 ? (
               <CharacterList
                 chars={friends}
+                portraits={portraits}
                 busy={busy}
                 removeLabel="Remove friend"
                 onRoleChange={(c, role) => void runInline(() => updateFriend(c.id, role))}

@@ -47,6 +47,7 @@ from .api import (
     greeting,
     guides,
     models,
+    portraits,
     profile,
     proposals,
     raids,
@@ -371,6 +372,7 @@ app.include_router(cache_stats.router)
 app.include_router(models.router)
 app.include_router(conversations.router)
 app.include_router(profile.router)
+app.include_router(portraits.router)
 app.include_router(proposals.router)
 app.include_router(guides.router)
 app.include_router(raids.router)

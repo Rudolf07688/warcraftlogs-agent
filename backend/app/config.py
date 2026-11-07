@@ -15,7 +15,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
-from pydantic import field_validator, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from wcl_agent.llm import provider
@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # Warcraft Logs (also consumed by wcl_agent.client.wcl_client via os.getenv)
     wcl_client_id: str = ""
     wcl_client_secret: str = ""
+
+    # Feature 075: Blizzard Profile API client (character portraits). Both empty: no portraits,
+    # no request. The secret is a SecretStr so a repr or a log line never prints it.
+    blizzard_client_id: str = ""
+    blizzard_client_secret: SecretStr = SecretStr("")
 
     # Fallback allow-list + default (comma-separated env: WCL_MODELS / WCL_DEFAULT_MODEL).
     # The live dropdown is the startup-validated set (US4); these are the documented
