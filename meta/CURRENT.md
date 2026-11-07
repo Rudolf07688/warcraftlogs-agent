@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-07 late (retro + card round done; session cleaned for /clear)
+Updated: 2026-11-07 evening (sprint 2026-11-07b launched)
 
 ## Topic
 
@@ -24,29 +24,14 @@ Merged 23c73aa and pushed (c732dd5 and later). All 16 stories (11-05b + 11-07) D
 iteration is renamed 2026-11-07. QA prompts and the qa-sweep skill installed as project copies
 (source of truth) and in ~/.claude. Full-team retro round 1: `meta/sprints/2026-11-07/retro.md`.
 
-## Next session: the owner kicks off a sprint ("so I can cleanly kick off the sprint after")
+## Sprint 2026-11-07b: running (launched 2026-11-07 ~19:30Z)
 
-Session cleaned 2026-11-07: tree clean, no worktrees, stacks or active board, all agents done.
-
-1. **Pre-flight:** start through `bin/claude-otel`, run `git status` and reindex GitNexus (stale
-   at 23c73aa after meta-only commits), then check `context stream_response`.
-2. **P16 step 1 before launch** (small, mine, so the sprint runs on the new rules). Read P16 in
-   `meta/team-optimisation.md`.
-   - Hostile inputs in briefs, and agreeing shared formats before launch as a standard step
-     (product-owner.md).
-   - The developer.md hard rule for security-core work and trusted artefacts, plus the
-     card-round proposals in the last section of retro.md: consumer-side test, point of
-     effect, replay real data.
-   - Maren's wait also watches Ilse's questions.
-   - Ilse's three scrum-master.md gaps, and cut its two rituals.
-   - Take back the blanket D18 team-tool rule I added on 11-07 (D18 paragraph).
-   - The affected seats review the diff read-only first (P16 step 5).
-   - One backlog ticket for the tool gaps plus the `member.py lint` false matches,
-     deduplicated against sc-538..542.
-3. **Which sprint:** take the owner's steer. If none is given, recommend the **next app sprint**:
-   about 23 pts of app work, with sc-538..542 as P15 reserve stories. Measure it like 11-05b,
-   with cost per point by stream type, as the clean test of P14. P16 steps 2–4 (hook-injected
-   hazards, about 5 entry points, stream types) wait for their own meta sprint. Cards stay small.
+- P16 step 1 landed on main 516aa0d (seat-reviewed by Maren, Ilse, Vera); tool gaps in sc-552.
+- App sprint ~23 pts: Raids page rework, onboarding to profile setup, character portraits,
+  chat dropped-turn bug (sc-511), cheaper prompts (sc-514/515); reserves sc-538..542.
+- Board `sprint-2026-11-07b`; branch base 516aa0d; worktrees in /home/rudolf/dev/wcl-worktrees.
+  PO (Maren) launched as named teammate `product-owner`. Measure like 11-05b, by stream type.
+- P16 steps 2-4 wait for their own meta sprint. Main has 10 local commits (unpushed).
 
 ## Open with the owner
 
