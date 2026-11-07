@@ -270,6 +270,20 @@ export interface CharacterInput {
   raid_role?: RaidRole | null;
 }
 
+// Feature 074: the workspace's main class/spec/content (roster filter values, e.g. "Paladin" /
+// "Holy") and whether the welcome prompt shows (never skipped and no own character yet).
+export type MainContent = "raid" | "mplus" | "both";
+
+export interface ProfileSettingsInput {
+  main_class: string | null;
+  main_spec: string | null;
+  main_content: MainContent | null;
+}
+
+export interface ProfileSettings extends ProfileSettingsInput {
+  onboarding_pending: boolean;
+}
+
 // --- Class guides (features 008, 015) — the shared, global spec-guide library ---
 
 // Feature 015: every guide is one content type of one spec.

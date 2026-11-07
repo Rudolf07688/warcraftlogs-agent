@@ -7,9 +7,17 @@ from datetime import date as date_
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from wcl_agent.game.constants import role_for_spec
+from wcl_agent.game.roster import roster_snapshot
 
 # --- WebSocket: client -> server ---------------------------------------------
 
@@ -392,6 +400,41 @@ class ProfileOut(BaseModel):
     guild: GuildOut | None = None
 
 
+# --- Profile settings: main class/spec/content, onboarding (feature 074) ---------
+
+MainContent = Literal["raid", "mplus", "both"]
+
+
+class ProfileSettingsIn(BaseModel):
+    """PUT body: all three keys are required and nullable (``null`` clears). The workspace
+    comes from the session; any other key is rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+    main_class: str | None = Field(max_length=40)
+    main_spec: str | None = Field(max_length=40)
+    main_content: MainContent | None
+
+    @model_validator(mode="after")
+    def _in_roster(self) -> ProfileSettingsIn:
+        # Exact roster values only (the one class/spec SSOT, as api/guides.py checks).
+        roster = roster_snapshot()
+        if self.main_class is not None and self.main_class not in roster.classes():
+            raise ValueError("main_class is not a known class")
+        if self.main_spec is not None and (
+            self.main_class is None or not roster.has(self.main_class, self.main_spec)
+        ):
+            raise ValueError("main_spec is not a spec of main_class")
+        return self
+
+
+class ProfileSettingsOut(BaseModel):
+    main_class: str | None = None
+    main_spec: str | None = None
+    main_content: MainContent | None = None
+    # True while the workspace never skipped the welcome prompt and has no own character.
+    onboarding_pending: bool
+
+
 # --- Profile change proposals (feature 029 / sc-205) ---------------------------
 # The single definition of the proposal shape is the design's #proposal-contract
 # (documentation/designs/self-aware-agent/capabilities-and-tools.html); 031 mirrors it in
@@ -416,13 +459,12 @@ ValidationCode = Literal[
 ProposalStatus = Literal["pending", "applied", "cancelled", "expired"]
 
 
+# One change the agent proposes. Addressed by identity, never by id (C5).
+# The strings carry no length limits on purpose: one bad item (e.g. a hostile character
+# name from a log) is shown as skipped instead of failing the whole tool call (D4, C14).
+# No class docstring: Pydantic would send it to the model as the schema's description on
+# every request (sc-514).
 class ProfileChangeIn(BaseModel):
-    """One change the agent proposes. Addressed by identity, never by id (C5).
-
-    The strings carry no length limits on purpose: one bad item (e.g. a hostile character
-    name from a log) is shown as skipped instead of failing the whole tool call (D4, C14).
-    """
-
     action: Literal["add", "update", "remove"]
     target: Literal["own", "friend"]
     name: str

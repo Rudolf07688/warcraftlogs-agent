@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ApiError } from "../api/restClient";
+import { ApiError, getProfileSettings } from "../api/restClient";
+import { afterLoginPath } from "../auth/redirect";
 import { useAuth } from "../auth/useAuth";
 import { AuthShell } from "../components/AuthShell";
 import { Button } from "../components/ui/button";
@@ -12,7 +13,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? "/app";
+  const from = (location.state as { from?: unknown } | null)?.from;
   const ids = { email: useId(), password: useId() };
 
   const [email, setEmail] = useState("");
@@ -28,7 +29,13 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      navigate(from, { replace: true });
+      // Feature 074: with no own character and the welcome prompt never skipped, the
+      // player lands on the profile page (when headed for the chat home).
+      const pending = await getProfileSettings().then(
+        (s) => s.onboarding_pending,
+        () => false, // can't tell: go where the player was going
+      );
+      navigate(afterLoginPath(from, pending), { replace: true });
     } catch (err) {
       // Generic message regardless of cause (no account enumeration).
       setError(

@@ -6,6 +6,9 @@ managed exactly like friends (``/friends``) through the same repository function
 Feature 029: character writes go through ``services/profile_service`` (the one write path,
 shared with agent proposals); these handlers keep only the HTTP mapping.
 
+Feature 074: the workspace's main class/spec/content and the onboarding prompt's skip
+(``/settings``, ``/onboarding/skip``); the workspace comes from the session only.
+
 Locking a character or guild schedules a non-blocking background guide task (US6, scoped to
 the tenant) and returns immediately with a ``pending`` status.
 """
@@ -26,6 +29,8 @@ from ..schemas import (
     GuildIn,
     GuildOut,
     ProfileOut,
+    ProfileSettingsIn,
+    ProfileSettingsOut,
 )
 from ..services import profile_service
 from ..services.guide import schedule_character_guide, schedule_guild_summary
@@ -193,3 +198,48 @@ async def delete_guild(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> None:
     await repo.delete_guild(db, tenant_id=identity.tenant_id)
+
+
+async def _settings_out(db: AsyncSession, identity: RequestIdentity) -> ProfileSettingsOut:
+    row, pending = await repo.get_profile_settings(db, tenant_id=identity.tenant_id)
+    return ProfileSettingsOut(
+        main_class=row.main_class if row else None,
+        main_spec=row.main_spec if row else None,
+        main_content=row.main_content if row else None,
+        onboarding_pending=pending,
+    )
+
+
+@router.get("/settings", response_model=ProfileSettingsOut)
+async def get_settings(
+    identity: RequestIdentity = Depends(require_session),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> ProfileSettingsOut:
+    return await _settings_out(db, identity)
+
+
+@router.put("/settings", response_model=ProfileSettingsOut)
+async def put_settings(
+    body: ProfileSettingsIn,
+    identity: RequestIdentity = Depends(require_csrf),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> ProfileSettingsOut:
+    """Replace the main class, spec and content (roster-checked by ``ProfileSettingsIn``)."""
+    await repo.set_main_selection(
+        db,
+        tenant_id=identity.tenant_id,
+        main_class=body.main_class,
+        main_spec=body.main_spec,
+        main_content=body.main_content,
+    )
+    return await _settings_out(db, identity)
+
+
+@router.post("/onboarding/skip", response_model=ProfileSettingsOut)
+async def skip_onboarding(
+    identity: RequestIdentity = Depends(require_csrf),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> ProfileSettingsOut:
+    """Skip the welcome prompt for good (idempotent; the first skip time is kept)."""
+    await repo.skip_onboarding(db, tenant_id=identity.tenant_id)
+    return await _settings_out(db, identity)

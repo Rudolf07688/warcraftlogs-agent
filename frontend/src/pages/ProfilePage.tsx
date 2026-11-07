@@ -1,21 +1,41 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LuArrowLeft, LuBookOpen, LuUsers } from "react-icons/lu";
 import { Link } from "react-router-dom";
+import { getProfileSettings } from "../api/restClient";
+import { MainSelector } from "../components/onboarding/MainSelector";
+import { OnboardingPrompt } from "../components/onboarding/OnboardingPrompt";
 import { CharactersTab } from "../components/profile/CharactersTab";
 import { ClassGuidesTab } from "../components/profile/ClassGuidesTab";
 import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import type { ProfileSettings } from "../types";
 
 // Dedicated, Warcraft-themed profile page (feature 008 / US1): promotes the former in-chat
 // profile modal to a routed page with two tabs — Characters and Class Guides. Feature 010:
 // the tabs are the shared Radix-based Tabs (arrow keys, aria-selected); both panels are
 // `forceMount`ed and hidden via data-state so switching preserves in-progress state (FR-007).
 // Profile revamp: card-based layout; the tabs use the underline ("line") variant.
+// Feature 074: above the tabs, the welcome prompt while onboarding is pending (new accounts
+// land here), else the main class/spec/content card. Neither shows until settings load; a
+// failed load leaves the rest of the page as it was.
 
 type Tab = "characters" | "guides";
 
 export default function ProfilePage() {
   const [tab, setTab] = useState<Tab>("characters");
+  const [settings, setSettings] = useState<ProfileSettings | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getProfileSettings().then(
+      (s) => live && setSettings(s),
+      () => {}, // optional extra: the profile works without it
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
 
   return (
     <div className="profile-page">
@@ -34,6 +54,19 @@ export default function ProfilePage() {
             </p>
           </div>
         </header>
+
+        {settings?.onboarding_pending && <OnboardingPrompt settings={settings} onChange={setSettings} />}
+        {settings && !settings.onboarding_pending && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Your main</CardTitle>
+              <CardDescription>The class, spec and content you mostly play.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MainSelector value={settings} onSaved={setSettings} />
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-6">
           <TabsList

@@ -526,6 +526,37 @@ class GuildProfile(Base):
     )
 
 
+class ProfileSettings(Base):
+    """The workspace's main class/spec/content and the onboarding skip (feature 074).
+
+    One row per tenant, created on the first save or skip. Onboarding is pending while there
+    is no row or ``onboarding_dismissed_at`` is NULL, and the workspace has no own character.
+    Class and spec are checked against the live roster by the API, not here. Its own table
+    rather than ``tenants`` columns: ``bootstrap_admin`` inserts a ``Tenant`` through the ORM
+    before ``upgrade head``. Added by 0023 (RLS as ``profile_proposals``).
+    """
+
+    __tablename__ = "profile_settings"
+    __table_args__ = (
+        CheckConstraint(
+            "main_content IN ('raid', 'mplus', 'both')", name="ck_profile_settings_main_content"
+        ),
+    )
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    main_class: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    main_spec: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    main_content: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    onboarding_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ProfileProposal(Base):
     """A profile change the agent proposed; nothing is written until the user approves it
     (feature 029, design C9). Bound to its tenant, user and conversation; also the audit

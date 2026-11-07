@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { acceptInvitation, ApiError } from "../api/restClient";
+import { PROFILE_PATH } from "../auth/redirect";
 import { AuthShell } from "../components/AuthShell";
 import { Button } from "../components/ui/button";
 import { Field, FieldError, FieldLabel } from "../components/ui/field";
@@ -50,8 +51,9 @@ export default function AcceptInvitePage() {
     setSubmitting(true);
     try {
       await acceptInvitation(tokenRef.current, password, confirm);
-      // Full navigation so the AuthProvider re-bootstraps from the new session cookie.
-      window.location.assign("/app");
+      // Full navigation so the AuthProvider re-bootstraps from the new session cookie. A new
+      // account starts on profile setup (feature 074); always this fixed path.
+      window.location.assign(PROFILE_PATH);
     } catch (err) {
       const msg =
         err instanceof ApiError
