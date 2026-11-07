@@ -256,6 +256,22 @@ def test_brief_prints_a_markdown_section(repo: Path) -> None:
     assert "- **a-direct-file** (direct: file:backend/app/db/svc.py; verified" in r.stdout
 
 
+
+def test_brief_runs_adds_facts_for_paths_the_developer_runs(repo: Path) -> None:
+    write(repo, "observability/test/lib.sh", "PORT=12347\n")
+    commit(repo, "lib")
+    fact(repo, "lib-ports", ["file:observability/test/lib.sh"], "lib.sh keeps the Faro port at 12347.")
+    commit(repo, "fact")
+    written_only = run(repo, "brief", "backend/app/db/svc.py")
+    assert "lib-ports" not in written_only.stdout
+    r = run(repo, "brief", "backend/app/db/svc.py", "--runs", "observability/test/lib.sh")
+    assert r.returncode == 0
+    assert "the paths you run: `observability/test/lib.sh`" in r.stdout
+    assert "- **lib-ports** (direct: file:observability/test/lib.sh (you run it);" in r.stdout
+    only_runs = run(repo, "brief", "--runs", "observability/test/lib.sh")
+    assert only_runs.returncode == 0 and "lib-ports" in only_runs.stdout
+    assert run(repo, "brief").returncode == 2
+
 # ---------------------------------------------------------------- graph health fallback
 
 def test_unhealthy_index_warns_once_and_falls_back(repo: Path, stub: str) -> None:
@@ -407,6 +423,23 @@ def test_for_marks_stale_facts(repo: Path) -> None:
     commit(repo, "change")
     assert "STALE: re-check it, then facts.py verify file-fact" in run(repo, "for", "comp:mimir").stdout
 
+
+
+def test_a_fact_edit_does_not_stale_a_directory_anchor_above_the_facts(repo: Path) -> None:
+    write(repo, ".claude/team/tool.py", "X = 1\n")
+    commit(repo, "tool")
+    fact(repo, "team-dir", ["file:.claude/team/"], "Team tools are stdlib-only scripts.")
+    fact(repo, "facts-dir", ["file:.claude/team/facts/"], "Facts are markdown files with front matter.")
+    commit(repo, "facts")
+    fact(repo, "other", ["comp:redis"], "Redis is optional; the cache degrades to memory.")
+    commit(repo, "a fact edit only")
+    def stale_ids() -> list[str]:
+        return re.findall(r"^  (\S+)  \(verified", run(repo, "stale").stdout, re.M)
+
+    assert stale_ids() == ["facts-dir"]
+    write(repo, ".claude/team/tool.py", "X = 2\n")
+    commit(repo, "a tool edit")
+    assert stale_ids() == ["facts-dir", "team-dir"]
 
 # ---------------------------------------------------------------- stats and member lint
 
