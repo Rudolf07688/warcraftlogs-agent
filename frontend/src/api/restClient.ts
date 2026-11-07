@@ -73,7 +73,8 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 // Credentialed JSON request (sends the session cookie; attaches CSRF on unsafe methods).
-async function send<T>(
+// Exported so a feature can keep its own endpoints in its own api/ module (sprint 2026-11-07b).
+export async function send<T>(
   method: string,
   url: string,
   body?: unknown,
