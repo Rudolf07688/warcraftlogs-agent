@@ -33,6 +33,7 @@ REPO = Path(__file__).resolve().parents[2]
 GEMINI = "gemini-2.5-flash"
 CLAUDE = "claude-sonnet-4@20250514"
 INNER = "WCL_TOKENS_INNER"
+HISTORY = "WCL_TOKENS_HISTORY"   # the caller's --history file as an absolute path, set by the wrapper
 
 
 def _contents(history, message):
@@ -86,7 +87,8 @@ def report(results, per_token):
 
 
 def inner(a):
-    history = json.loads(Path(a.history).read_text()) if a.history else []
+    path = os.environ.get(HISTORY) or a.history
+    history = json.loads(Path(path).read_text()) if path else []
     results = {m: asyncio.run(measure(m, history, a.message)) for m in a.model or [GEMINI, CLAUDE]}
     if a.json:
         print(json.dumps({"estimate": f"chars/{a.chars_per_token:g}", "models": {
@@ -107,9 +109,9 @@ def main(argv=None):
     if os.environ.get(INNER) == "1":
         return inner(a)
     args = list(sys.argv[1:] if argv is None else argv)
-    if a.history:  # the inner run starts in the repo root
-        args[args.index(a.history)] = str(Path(a.history).resolve())
     env = {"HOME": os.environ["HOME"], "PATH": os.environ["PATH"], "WCL_LOAD_DOTENV": "0", INNER: "1"}
+    if a.history:  # the inner run starts in the repo root, so it gets the path from here (any spelling)
+        env[HISTORY] = str(Path(a.history).resolve())
     cmd = ["uv", "run", "--quiet", "--project", str(REPO), "python", "-W", "ignore::UserWarning", str(Path(__file__).resolve()), *args]
     return subprocess.run(cmd, cwd=REPO, env=env).returncode
 

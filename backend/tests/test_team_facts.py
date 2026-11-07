@@ -272,6 +272,22 @@ def test_brief_runs_adds_facts_for_paths_the_developer_runs(repo: Path) -> None:
     assert only_runs.returncode == 0 and "lib-ports" in only_runs.stdout
     assert run(repo, "brief").returncode == 2
 
+
+def test_brief_runs_before_the_written_paths_does_not_swallow_them(repo: Path) -> None:
+    """BUG-014: `--runs` used to take every path after it, so `--runs LIB WRITTEN` lost WRITTEN."""
+    write(repo, "observability/test/lib.sh", "PORT=12347\n")
+    commit(repo, "lib")
+    ranking_facts(repo)
+    fact(repo, "lib-ports", ["file:observability/test/lib.sh"], "lib.sh keeps the Faro port at 12347.")
+    commit(repo, "fact")
+    r = run(repo, "brief", "--runs", "observability/test/lib.sh", "backend/app/db/svc.py")
+    assert r.returncode == 0, r.stderr
+    assert "a-direct-file" in r.stdout and "lib-ports" in r.stdout        # written and run both used
+    assert "the paths you run: `observability/test/lib.sh`" in r.stdout
+    assert "(direct: file:backend/app/db/svc.py; verified" in r.stdout       # not labelled "you run it"
+    two = run(repo, "brief", "--runs", "observability/test/lib.sh", "--runs", "backend/app/db/svc.py")
+    assert "`observability/test/lib.sh`, `backend/app/db/svc.py`" in two.stdout
+
 # ---------------------------------------------------------------- graph health fallback
 
 def test_unhealthy_index_warns_once_and_falls_back(repo: Path, stub: str) -> None:
