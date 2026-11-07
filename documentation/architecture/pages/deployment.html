@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit 20d4197 · 2026-11-07">
+<meta name="verified-at" content="commit 0a394c5 · 2026-11-07">
 <title>Deployment &amp; config · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -262,7 +262,7 @@
 
   <h3>What it does, and where it lives</h3>
   <ul>
-    <li><code>bin/00_init_migrate_db.sh</code>: sources <code>.env</code>, runs <code>uv sync --all-extras</code> (creating <code>.venv</code> if that fails, then syncing again), starts only <code>db</code>, then runs <code>alembic -c backend/alembic.ini upgrade head</code>. If that upgrade fails, it tries the fresh-database path: upgrade to <code>0002_auth_tenancy</code>, run <code>backend.cli.bootstrap_admin</code>, then upgrade to head.</li>
+    <li><code>bin/00_init_migrate_db.sh</code>: sources <code>.env</code>, runs <code>uv sync --all-extras</code> (creating <code>.venv</code> if that fails, then syncing again), starts only <code>db</code>, then runs <code>python -m backend.cli.init_db</code> (below). If that fails because the database is at a migration this checkout doesn't have (it was migrated from an unmerged branch), it names the <code>main</code>/<code>sprint-*</code> branches that have that migration and the three newest dumps in <code>db-backups/</code>, and exits 1.</li>
     <li><code>bin/01_start_app.sh [--build]</code>: runs the init script, exports <code>WCL_GIT_SHA</code> (the short commit, the backend's <code>service.version</code>, since the image has no <code>.git</code>), then <code>docker compose up -d</code> (passing the flag through), prints <code>docker compose ps</code> and follows the logs. Ctrl+C or exit runs <code>docker compose down</code>, so the stack stops with the script.</li>
     <li><code>bin/claude-otel [claude arguments...]</code>: starts Claude Code with OpenTelemetry pointed at the local Alloy. It is not part of the app's start-up; see <a href="observability.html#build">Observability</a>.</li>
     <li><code>backend/cli/init_db.py</code> does the same migrate → founder → migrate sequence as one idempotent Python command: upgrade to <code>0002_auth_tenancy</code>, create the founder only if no active platform admin exists, then upgrade to head. Safe to run on every deploy.</li>
@@ -271,7 +271,7 @@
 
   <h3>Why</h3>
   <p class="why">The founder must exist before <code>0003_tenant_columns</code> backfills existing rows to the founder's tenant, which is why init is a three-step sequence.<cite>backend/cli/init_db.py (docstring) · specs/006-multi-tenancy/research.md R8</cite></p>
-  <p class="why inferred"><span class="badge inf">Inferred</span>No recorded reason for the <code>bin/</code> scripts (added without a spec). They wrap the quickstart steps into one command for local bring-up. They duplicate the logic of <code>backend/cli/init_db.py</code> in shell, and any failure of the first <code>upgrade head</code> (not only a fresh database) sends them down the bootstrap path, which stops with an error when the <code>BOOTSTRAP_ADMIN_EMAIL</code> user already exists. <code>init_db</code> checks for an admin first instead.</p>
+  <p class="why">The scripts wrap the quickstart steps into one command for local bring-up, which is how the owner live-tests a sprint: <code>docker compose down</code>, then <code>./bin/01_start_app.sh</code> in the main checkout. They used to retry a failed <code>upgrade head</code> with the founder bootstrap, which broke on a database ahead of the checkout; since 2026-11-07 they call <code>init_db</code>, which checks for an admin first.<cite>sprint 2026-11-07b (owner's live test) · bin/00_init_migrate_db.sh</cite></p>
 </section>
 
 <!-- ============================================================ CLI -->
