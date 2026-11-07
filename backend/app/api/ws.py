@@ -2,7 +2,7 @@
 
 One turn is processed at a time per socket (the receive loop awaits each turn to
 completion), so turns on a single socket are naturally serialized rather than
-racing.
+racing. Across sockets, one turn at a time per chat (sc-511, :class:`_ChatTurn`).
 """
 
 from __future__ import annotations
@@ -71,6 +71,10 @@ RATE_LIMITED_MESSAGE = (
 BOTH_RATE_LIMITED_MESSAGE = (
     "Both {label} models are rate-limited right now. Please try again in about a minute."
 )
+# sc-511 / decision scope:076:two-tabs: a newer turn on the same chat ended this one.
+SUPERSEDED_MESSAGE = "This chat continued in another window. The answer so far is saved."
+# sc-511: how long a newer turn waits for the one it superseded to save its partial and end.
+SUPERSEDE_WAIT_S = 5.0
 # QA SEC-001: any other failure. Provider, database and WCL errors can carry internal
 # details (project ids, SQL), so the player gets this plus a reference to the log line.
 AGENT_ERROR_MESSAGE = (
@@ -100,6 +104,51 @@ class _TurnSocket:
         if self.suggestions is not None and not self.suggestions.done():
             self.suggestions.cancel()
         self.suggestions = None
+
+
+class _ChatTurn:
+    """sc-511: the turn in flight on one chat, across all sockets.
+
+    A dropped socket is noticed only when a send fails, so its turn can still be in a tool
+    round when the player asks again on a new socket. The newer turn supersedes it: it cancels
+    the old turn while that one is in setup or streaming (its save is short and is awaited),
+    then waits at most :data:`SUPERSEDE_WAIT_S` for it to end. The old turn saves its partial
+    first, so a chat's messages stay in turn order and each turn's charts stay with its answer.
+    Past the wait the newer turn goes on, and the old one, no longer holding the chat, saves no
+    partial when it ends.
+
+    The key is (tenant, conversation) from the row the ownership check returned, never the id
+    in the frame, so another workspace can't touch a chat's turn.
+    """
+
+    turns: dict[tuple[uuid.UUID, uuid.UUID], _ChatTurn] = {}
+
+    def __init__(self) -> None:
+        self.key: tuple[uuid.UUID, uuid.UUID] | None = None
+        self.task = asyncio.current_task()
+        self.cancellable = True
+        self.superseded = False
+
+    async def claim(self, tenant_id: uuid.UUID, conv_id: uuid.UUID) -> None:
+        """Become the chat's turn; call only after the chat's ownership is verified."""
+        key = (tenant_id, conv_id)
+        while (old := self.turns.get(key)) is not None:
+            old.superseded = True
+            if old.cancellable:
+                old.task.cancel()
+            await asyncio.wait({old.task}, timeout=SUPERSEDE_WAIT_S)
+            if self.turns.get(key) is old:
+                logger.warning("superseded turn still running after %ss", SUPERSEDE_WAIT_S)
+                break
+        self.key = key
+        self.turns[key] = self
+
+    def holds_chat(self) -> bool:
+        return self.key is not None and self.turns.get(self.key) is self
+
+    def release(self) -> None:
+        if self.holds_chat():
+            del self.turns[self.key]
 
 
 async def _send(ws: WebSocket, frame) -> None:
@@ -274,6 +323,29 @@ async def _handle_turn(
     *,
     fallback_model: str | None = None,
 ) -> asyncio.Task | None:
+    """Run one chat turn, holding its chat from the ownership check to the end (sc-511)."""
+    chat_turn = _ChatTurn()
+    try:
+        return await _run_chat_turn(ws, turn, identity, chat_turn, fallback_model=fallback_model)
+    except asyncio.CancelledError:
+        if chat_turn.superseded:  # tell this socket, if it is still there (scope:076:two-tabs)
+            try:
+                await _send(ws, ErrorFrame(code="superseded", message=SUPERSEDED_MESSAGE))
+            except Exception:  # noqa: BLE001 - socket may already be gone
+                pass
+        raise
+    finally:
+        chat_turn.release()
+
+
+async def _run_chat_turn(
+    ws: WebSocket,
+    turn: ChatTurn,
+    identity: RequestIdentity,
+    chat_turn: _ChatTurn,
+    *,
+    fallback_model: str | None = None,
+) -> asyncio.Task | None:
     """Run one chat turn. Returns the follow-up suggestions task when the turn finished with
     an answer, else ``None``; the caller owns it (and cancels it when the next turn starts).
 
@@ -299,6 +371,9 @@ async def _handle_turn(
                     session, model=turn.model, tenant_id=tenant_id
                 )
             conv_id = conv.id
+            # sc-511: wait for (and cut short) a turn still running on this chat before this
+            # turn writes anything.
+            await chat_turn.claim(tenant_id, conv_id)
             # Feature 019 / sc-155: only a default-named chat gets a generated title.
             title_eligible = conv.title_source == "auto"
 
@@ -337,36 +412,45 @@ async def _handle_turn(
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)
     try:
-        async for record in stream_response(
-            turn.model,
-            str(conv_id),
-            turn.content,
-            scratch,
-            context_preamble=preamble or None,
-            # ADK session state is isolated per tenant (feature 006, websocket.md).
-            user_id=str(identity.tenant_id),
-            fallback_model=fallback_model,
-        ):
-            kind = record.get("type")
-            if kind == "token":
-                empty = record.pop("empty", False) or empty
-                tokens.append(record["text"])
-                await ws.send_json(record)
-            elif kind == "tool_start":
-                await _forward_tool_start(ws, record)
-            elif kind == "tool_end":
-                proposal_id = await _handle_tool_end(ws, record, conv_id, identity)
-                if proposal_id is not None:
-                    proposal_ids.append(proposal_id)
-            elif kind == "grounding":
-                await ws.send_json(record)
-            elif kind == "model_retry":
-                # Feature 011 / FR-003: the model is rate-limited; show "retrying".
-                await _send(ws, ModelRetryFrame(**record))
-            elif kind == "model_fallback":
-                # Feature 021: the turn moved to the same-class sibling; show which.
-                switched = True
-                await _send(ws, ModelFallbackFrame(**record))
+        try:
+            async for record in stream_response(
+                turn.model,
+                str(conv_id),
+                turn.content,
+                scratch,
+                context_preamble=preamble or None,
+                # ADK session state is isolated per tenant (feature 006, websocket.md).
+                user_id=str(identity.tenant_id),
+                fallback_model=fallback_model,
+            ):
+                kind = record.get("type")
+                if kind == "token":
+                    empty = record.pop("empty", False) or empty
+                    tokens.append(record["text"])
+                    await ws.send_json(record)
+                elif kind == "tool_start":
+                    await _forward_tool_start(ws, record)
+                elif kind == "tool_end":
+                    proposal_id = await _handle_tool_end(ws, record, conv_id, identity)
+                    if proposal_id is not None:
+                        proposal_ids.append(proposal_id)
+                elif kind == "grounding":
+                    await ws.send_json(record)
+                elif kind == "model_retry":
+                    # Feature 011 / FR-003: the model is rate-limited; show "retrying".
+                    await _send(ws, ModelRetryFrame(**record))
+                elif kind == "model_fallback":
+                    # Feature 021: the turn moved to the same-class sibling; show which.
+                    switched = True
+                    await _send(ws, ModelFallbackFrame(**record))
+        finally:
+            chat_turn.cancellable = False  # from here the turn only saves: a newer one waits
+    except asyncio.CancelledError:
+        # sc-511: a newer turn on this chat superseded this one (a drop not noticed yet, or a
+        # second tab). Its partial goes right after its own question, before the newer one's.
+        if chat_turn.superseded and chat_turn.holds_chat():
+            await _persist_partial(conv_id, tokens, identity, user_seq)
+        raise
     except WebSocketDisconnect:
         # Client vanished mid-reply: keep what we have, can't send anything.
         await _persist_partial(conv_id, tokens, identity, user_seq)
@@ -468,9 +552,19 @@ async def _start_turn(
     *,
     fallback_model: str | None = None,
 ) -> None:
-    """Start a turn on this socket: drop the previous turn's pending suggestions first."""
+    """Start a turn on this socket: drop the previous turn's pending suggestions first.
+
+    The turn runs as its own task, so a newer turn on the same chat can cancel it (sc-511)
+    without closing this socket.
+    """
     sock.cancel_suggestions()
-    sock.suggestions = await _handle_turn(sock, turn, identity, fallback_model=fallback_model)
+    task = asyncio.create_task(_handle_turn(sock, turn, identity, fallback_model=fallback_model))
+    try:
+        sock.suggestions = await task
+    except asyncio.CancelledError:
+        if asyncio.current_task().cancelling():
+            raise  # this socket is closing
+        sock.suggestions = None  # superseded by a newer turn on the same chat
 
 
 async def _save_answer(
