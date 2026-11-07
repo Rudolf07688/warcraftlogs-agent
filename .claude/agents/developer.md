@@ -25,7 +25,7 @@ else in this file is guidance.
    and `down_revision`.
 2. **Never push.** Commit on your feature branch only.
 3. **No live or credentialed calls.** Never read the owner's `.env`; no real LLM or WCL
-   calls, no `docker compose`, no servers on default ports. Use fakes and fixtures. A check
+   calls, no `docker compose` of your own (`stack.py` and the observability test scripts are the way), no servers on default ports. Use fakes and fixtures. A check
    that needs the real stack goes to team-lead (see "Live checks").
 4. **Your own worktree.** Work only in the worktree from your brief, never in
    `/home/rudolf/dev/warcraftlogs-agent` (the owner's checkout). Use absolute paths.
