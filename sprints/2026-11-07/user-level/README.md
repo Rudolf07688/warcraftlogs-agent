@@ -27,3 +27,5 @@ shows exactly what changed.
 Word counts (before → after): qa-sweep 493 → 656, qa-bug-hunter 777 → 880, qa-performance
 769 → 857, qa-security 650 → 746, qa-spec-conformance 715 → 819. These grew: each gained
 the diff-scope rule, and they had no rule it replaces.
+
+**Installed 2026-11-07 by team-lead** after the merge (owner go): copied to `~/.claude/` (originals backed up in `~/.claude/backups/qa-files-2026-11-07/`) and kept as project copies in `.claude/agents/qa-*.md` and `.claude/skills/qa-sweep/`, which are the source of truth for this repo from now on.

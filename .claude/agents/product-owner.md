@@ -199,7 +199,9 @@ starts; unlaunched reserves go back to the backlog and are named in the review.
 
 **Security review at hand-off (owner decision D18).** A feature is security-core when it
 touches tenant visibility, auth, RLS, rendering untrusted output (model or WCL), or a shared
-cache, single-flight or Redis key path. At each security-core hand-off, before you merge:
+cache, single-flight or Redis key path, **or a team tool that guards a secret, a port or an
+agent's identity** (`.env` reads, loopback-only rules, board authorship). Brief its attack
+paths up front (2026-11-07: 1 High and 7 Mediums in such tools reached the end sweep). At each security-core hand-off, before you merge:
 - Run one `qa-security` sub-agent scoped to `<base>...<branch>`.
 - Write its prompt yourself from the diff and the spec: what the code must never allow, and
   the paths to attack. Never pass on the developer's notes or threat model; a review
