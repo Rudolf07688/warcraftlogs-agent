@@ -41,13 +41,15 @@ REGIONS = frozenset({"eu", "us", "kr", "tw"})  # cn is a different service: no p
 RENDER_HOSTS = frozenset({"render.worldofwarcraft.com"})  # live-check:075-pre (#94)
 TOKEN_URL = "https://oauth.battle.net/token"
 
-HTTP_TIMEOUT_S = 3.0
+HTTP_TIMEOUT_S = 3.0  # per phase (connect, each read): httpx has no total
+FETCH_DEADLINE_S = 3.0  # token + media together, so a slow answer is a cached "unavailable"
 MAX_BODY_BYTES = 64 * 1024  # a media answer is ~1 KiB; anything bigger is not one
-BUDGET_S = 4.0  # the endpoint waits at most this; unfinished lookups are null this time
+BUDGET_S = 4.0  # the endpoint waits at most this; always longer than FETCH_DEADLINE_S
 CONCURRENCY = 6
 NONE_TTL_S = 6 * 3600  # not found, private, or no avatar asset
 UNAVAILABLE_TTL_S = 300  # Blizzard down, rate limiting, slow, or an answer we can't read
 _TOKEN_MARGIN_S = 60
+TOKEN_BACKOFF_S = 60  # after a failed token fetch, no new one for this long (QA SEC-002)
 _MAX_NAME = 24
 _MAX_SLUG = 64
 _MAX_URL = 512
@@ -128,13 +130,21 @@ def safe_image_url(raw: object) -> str | None:
 # --- Blizzard calls --------------------------------------------------------------------------
 
 
+# Asked for unencoded bodies, so the size cap counts the bytes that arrive (QA SEC-005).
+_HEADERS = {"Accept-Encoding": "identity"}
+
+
 def _http_client() -> httpx.AsyncClient:
     # Tests replace this to inject a fake transport. Redirects are never followed.
     return httpx.AsyncClient(timeout=HTTP_TIMEOUT_S, follow_redirects=False)
 
 
 async def _read_json(response: httpx.Response) -> object:
-    """The body as JSON, read at most :data:`MAX_BODY_BYTES`; ValueError when bigger or bad."""
+    """The body as JSON, read at most :data:`MAX_BODY_BYTES`; ValueError when bigger, bad, or
+    compressed anyway (a small compressed chunk can decode to megabytes before any check). With
+    no content encoding the bytes counted are the bytes received."""
+    if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
+        raise ValueError("response body is encoded")
     body = bytearray()
     async for chunk in response.aiter_bytes():
         body += chunk
@@ -149,40 +159,63 @@ class _Unavailable(Exception):
 
 _tokens: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, tuple[str, float]] = weakref.WeakKeyDictionary()
 _token_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+_token_backoff: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, float] = weakref.WeakKeyDictionary()
 
 
 def configured() -> bool:
     return bool(settings.blizzard_client_id and settings.blizzard_client_secret.get_secret_value())
 
 
+def _drop_token(token: str) -> None:
+    """Forget ``token`` (Blizzard refused it), unless another lookup already replaced it."""
+    loop = asyncio.get_running_loop()
+    cached = _tokens.get(loop)
+    if cached is not None and cached[0] == token:
+        del _tokens[loop]
+
+
 async def _access_token(client: httpx.AsyncClient) -> str:
-    """The client-credentials token, fetched once per loop and reused until near its expiry."""
+    """The client-credentials token, fetched once per loop and reused until near its expiry.
+    After a failed fetch none is tried for :data:`TOKEN_BACKOFF_S` (bad or rotated credentials
+    must not cost a refused request per cache miss)."""
     loop = asyncio.get_running_loop()
     lock = _token_locks.setdefault(loop, asyncio.Lock())
     async with lock:
         cached = _tokens.get(loop)
         if cached is not None and time.monotonic() < cached[1]:
             return cached[0]
-        secret = settings.blizzard_client_secret.get_secret_value()
-        async with client.stream(
-            "POST",
-            TOKEN_URL,
-            data={"grant_type": "client_credentials"},
-            auth=(settings.blizzard_client_id, secret),
-        ) as response:
-            if response.status_code != 200:
-                raise _Unavailable(f"token status {response.status_code}")
-            try:
-                body = await _read_json(response)
-            except ValueError:
-                raise _Unavailable("token answer unreadable") from None
-        token = body.get("access_token") if isinstance(body, dict) else None
-        expires = body.get("expires_in") if isinstance(body, dict) else None
-        if not isinstance(token, str) or not token:
-            raise _Unavailable("token answer without a token")
-        ttl = expires if isinstance(expires, int) and expires > 0 else 3600
+        if time.monotonic() < _token_backoff.get(loop, 0.0):
+            raise _Unavailable("token backing off")
+        try:
+            token, ttl = await _new_token(client)
+        except (_Unavailable, httpx.HTTPError, TimeoutError, asyncio.CancelledError):
+            _token_backoff[loop] = time.monotonic() + TOKEN_BACKOFF_S
+            raise
         _tokens[loop] = (token, time.monotonic() + max(ttl - _TOKEN_MARGIN_S, 1))
         return token
+
+
+async def _new_token(client: httpx.AsyncClient) -> tuple[str, int]:
+    """A fresh token and its lifetime in seconds from the OAuth endpoint."""
+    secret = settings.blizzard_client_secret.get_secret_value()
+    async with client.stream(
+        "POST",
+        TOKEN_URL,
+        data={"grant_type": "client_credentials"},
+        headers=_HEADERS,
+        auth=(settings.blizzard_client_id, secret),
+    ) as response:
+        if response.status_code != 200:
+            raise _Unavailable(f"token status {response.status_code}")
+        try:
+            body = await _read_json(response)
+        except ValueError:
+            raise _Unavailable("token answer unreadable") from None
+    token = body.get("access_token") if isinstance(body, dict) else None
+    expires = body.get("expires_in") if isinstance(body, dict) else None
+    if not isinstance(token, str) or not token:
+        raise _Unavailable("token answer without a token")
+    return token, expires if isinstance(expires, int) and expires > 0 else 3600
 
 
 def _avatar(body: object) -> str | None:
@@ -195,25 +228,44 @@ def _avatar(body: object) -> str | None:
     return None
 
 
+async def _media(client: httpx.AsyncClient, region: str, slug: str, name: str) -> object | None:
+    """The character-media JSON, or None for no such (or a private) character. A token Blizzard
+    refuses (401) is dropped and the request made once more with a fresh one (QA SEC-002)."""
+    for attempt in (1, 2):
+        token = await _access_token(client)
+        async with client.stream(
+            "GET",
+            media_url(region, slug, name),
+            params={"namespace": f"profile-{region}", "locale": "en_US"},
+            headers={**_HEADERS, "Authorization": f"Bearer {token}"},
+        ) as response:
+            if response.status_code == 401 and attempt == 1:
+                _drop_token(token)
+                continue
+            if response.status_code in (403, 404):
+                return None
+            if response.status_code != 200:
+                raise _Unavailable(f"media status {response.status_code}")
+            try:
+                return await _read_json(response)
+            except ValueError:
+                raise _Unavailable("media answer unreadable") from None
+    raise AssertionError("unreachable")  # pragma: no cover - the second attempt always returns
+
+
 async def _fetch(region: str, slug: str, name: str) -> PortraitCache:
-    """One character-media lookup. Never raises: failures are an "unavailable" outcome."""
+    """One character-media lookup, token included, within :data:`FETCH_DEADLINE_S` (httpx's
+    timeout is per phase, so a slow or trickling answer could otherwise outlast the endpoint's
+    budget, be cancelled and leave nothing cached: QA SEC-001). Never raises: failures are an
+    "unavailable" outcome, which is cached."""
     try:
-        async with _http_client() as client:
-            token = await _access_token(client)
-            async with client.stream(
-                "GET",
-                media_url(region, slug, name),
-                params={"namespace": f"profile-{region}", "locale": "en_US"},
-                headers={"Authorization": f"Bearer {token}"},
-            ) as response:
-                if response.status_code in (403, 404):
-                    return PortraitCache(status="none")
-                if response.status_code != 200:
-                    raise _Unavailable(f"media status {response.status_code}")
-                try:
-                    body = await _read_json(response)
-                except ValueError:
-                    raise _Unavailable("media answer unreadable") from None
+        async with asyncio.timeout(FETCH_DEADLINE_S), _http_client() as client:
+            body = await _media(client, region, slug, name)
+        if body is None:
+            return PortraitCache(status="none")
+    except TimeoutError:
+        logger.info("portrait lookup unavailable: no answer within %.0fs", FETCH_DEADLINE_S)
+        return PortraitCache(status="unavailable")
     except _Unavailable as exc:
         logger.info("portrait lookup unavailable: %s", exc)
         return PortraitCache(status="unavailable")

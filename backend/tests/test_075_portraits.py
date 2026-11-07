@@ -83,8 +83,10 @@ def blizzard(monkeypatch):
         ),
     )
     portraits._tokens.clear()
+    portraits._token_backoff.clear()
     yield fake
     portraits._tokens.clear()
+    portraits._token_backoff.clear()
 
 
 async def _seed(session_factory, tenant_id, *chars: tuple[str, str, str, str]) -> None:
@@ -361,6 +363,7 @@ async def test_token_and_secret_never_leak(as_user, session_factory, blizzard, f
     )
     resp = await as_user.client.get("/api/profile/portraits")
     portraits._tokens.clear()
+    portraits._token_backoff.clear()
     blizzard.token_status = 401
     await portraits.portrait_url(CharacterRef("us", "Area 52", "Fresh"))
     stored = [await fake_redis.get(k) async for k in fake_redis.scan_iter("*")]
@@ -373,3 +376,70 @@ async def test_token_and_secret_never_leak(as_user, session_factory, blizzard, f
     token_req = next(r for r in blizzard.requests if r.url.host == "oauth.battle.net")
     assert token_req.headers["authorization"].startswith("Basic ")
     assert all(SECRET not in str(r.url) and TOKEN not in str(r.url) for r in blizzard.requests)
+
+
+# --- QA rework (D18 review:075) ---------------------------------------------------------------
+
+
+async def test_slow_blizzard_becomes_a_cached_unavailable(as_user, session_factory, blizzard, fake_redis, monkeypatch):
+    """SEC-001: one deadline over token + media, shorter than the endpoint's budget, so a slow
+    answer is stored as "unavailable" (5 min) instead of being cancelled and asked again on
+    every load."""
+    monkeypatch.setattr(portraits, "FETCH_DEADLINE_S", 0.3)
+
+    async def slow(request):
+        await asyncio.sleep(5.0)
+        return media_json()
+
+    blizzard.media["slowpoke"] = slow
+    await _seed(session_factory, as_user.tenant_id, ("self", "Slowpoke", "Draenor", "EU"))
+    started = time.monotonic()
+    assert await _portraits(as_user.client) == {"Slowpoke": None}
+    assert time.monotonic() - started < 1.5  # the deadline, not the budget or the 5 s answer
+    assert await _portraits(as_user.client) == {"Slowpoke": None}
+    assert len(blizzard.media_requests) == 1  # the second load asked nobody
+    ttl = await fake_redis.ttl(keys.char_portrait("eu", "draenor", "slowpoke"))
+    assert 0 < ttl <= portraits.UNAVAILABLE_TTL_S * 1.1 + 1
+
+
+def test_fetch_deadline_is_inside_the_budget():
+    assert portraits.FETCH_DEADLINE_S < portraits.BUDGET_S
+
+
+async def test_failed_token_fetch_backs_off(blizzard):
+    """SEC-002: bad credentials cost one refused token request, not one per character."""
+    blizzard.token_status = 401
+    for name in ("Alpha", "Bravo", "Charlie"):
+        assert await portraits.portrait_url(CharacterRef("eu", "Draenor", name)) is None
+    assert [r.url.host for r in blizzard.requests] == ["oauth.battle.net"]
+
+
+async def test_refused_token_is_replaced_once(blizzard):
+    """SEC-002: a media 401 drops the token and retries once with a fresh one."""
+    answers = [httpx.Response(401), media_json()]
+
+    async def refuse_then_answer(request):
+        return answers.pop(0)
+
+    blizzard.media["traecie"] = refuse_then_answer
+    assert await portraits.portrait_url(CharacterRef("eu", "Draenor", "Traecie")) == AVATAR
+    hosts = [r.url.host for r in blizzard.requests]
+    assert hosts == ["oauth.battle.net", "eu.api.blizzard.com", "oauth.battle.net", "eu.api.blizzard.com"]
+
+
+async def test_token_refused_twice_is_unavailable(blizzard):
+    blizzard.media["traecie"] = httpx.Response(401)
+    assert await portraits.portrait_url(CharacterRef("eu", "Draenor", "Traecie")) is None
+    assert len(blizzard.media_requests) == 2  # one retry, no loop
+
+
+async def test_compressed_body_is_refused_and_identity_asked(blizzard):
+    """SEC-005: the size cap counts raw bytes, so an encoded body (which could expand far past
+    the cap) is refused, and both requests ask for an unencoded one."""
+    import gzip
+
+    blizzard.media["traecie"] = httpx.Response(
+        200, content=gzip.compress(media_json().content), headers={"content-encoding": "gzip"}
+    )
+    assert await portraits.portrait_url(CharacterRef("eu", "Draenor", "Traecie")) is None
+    assert all(r.headers["accept-encoding"] == "identity" for r in blizzard.requests)
