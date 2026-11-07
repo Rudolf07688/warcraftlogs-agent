@@ -162,7 +162,15 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    mode, the lead does the step from `documentation/architecture/pages/maintaining.html`.
    The `.githooks/pre-merge-commit` hook refuses the `--no-ff` merge into `main` otherwise;
    never bypass it (`ARCHDOCS_SKIP=1`) unless the owner says so for that merge.
-5. **Report to the owner:**
+5. **Hand the stack to the owner** before you say it's ready. The owner tests from the main
+   checkout: `docker compose down`, then `./bin/01_start_app.sh` (owner, 2026-11-07). The
+   images are built from that checkout, so detach it at the sprint tip first (`git checkout
+   --detach sprint-<date>`, after checking `git status`) and run `bin/00_init_migrate_db.sh`
+   there once. After the merge, `git switch main`. On 11-07b I said "ready" with the main
+   checkout on main and the database at the sprint's migration, so the owner's start failed.
+   Run host-side `uv` in a worktree with `VIRTUAL_ENV` unset: otherwise it re-points the main
+   `.venv`'s editable install at the worktree.
+6. **Report to the owner:**
    - the paths to the plan, the sprint review and the team report
    - the points delivered
    - the owner's live checks
@@ -176,20 +184,20 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    `node .gitnexus/run.cjs context stream_response --repo .` must return `"status": "found"`.
    On 2026-11-05 an incremental run left a nameless index (every name and path empty, a
    crash WAL); `analyze --index-only --force --no-parse-cache` rebuilt it.
-6. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,
+7. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,
    apply the sprint's `skill:<name>` board notices and any lesson of your own that every agent
    doing that task should know. Rewrite or cut rather than append. In tool-generated skills
    (`speckit-*`, `gitnexus-*`), put changes in a marked "Local learnings" section. List the
    skill changes in the team report and commit them with the memories.
-7. **Team facts** (owner preference 25: the team writes them, I curate). On main after the
+8. **Team facts** (owner preference 25: the team writes them, I curate). On main after the
    merge: read the facts added this sprint (`facts.py stats --since <base>`), retire or merge
    any that are wrong, vague or repeat documentation without being a gotcha, and run
    `facts.py lint`. Don't touch members' memories; `member.py lint` tells each member which
    of their lines a fact now covers.
-8. **Retro.** The owner may bring the full team (first asked for 2026-11-05). Then relaunch
+9. **Retro.** The owner may bring the full team (first asked for 2026-11-05). Then relaunch
    each member by seat with the sprint's numbers, the team report and their own `Retro:`
    line, read-only, and relay their views side by side with mine.
-9. **Memory:**
+10. **Memory:**
    - Update the sprint status memory note.
    - Update your lead memory (`member.py remember --seat lead -`) whenever a lasting lesson
      about how you lead comes up, not only at wrap-up. It's capped at 1000 words, so cut
