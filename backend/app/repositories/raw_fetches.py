@@ -566,6 +566,12 @@ async def read_visible_summary(
     return None if found is None else (bytes(found[0]), _aware(found[1]))
 
 
+async def stored_summary_exists(session: AsyncSession, code: str) -> bool:
+    """Whether any own report summary naming ``code`` is stored, visible or not. Serves nothing:
+    it only decides whether a tracked raid's visibility is worth re-verifying (072)."""
+    return bool(await session.scalar(select(exists().where(RawFetch.own_summary, _names_report(session, code)))))
+
+
 def _json_at(dialect: str, path: Sequence[str]) -> ColumnElement[bytes]:
     """The stored JSON at ``path`` as bytes (NULL where absent), cut out in the database."""
     if dialect == "postgresql":

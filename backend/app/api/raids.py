@@ -14,14 +14,14 @@ from ..auth.dependencies import get_tenant_db, require_csrf, require_session
 from ..auth.rate_limit import investigate_limiter
 from ..db import repository as repo
 from ..model_state import get_model_state, is_valid_model
-from ..services import kickoff_prefetch, raid_summary
-from ..services.raids import _build_label
 from ..schemas import (
     InvestigateRequest,
     InvestigateResponse,
     RaidListResponse,
     RaidOut,
 )
+from ..services import kickoff_prefetch, raid_summary
+from ..services.raids import _build_label
 from ..tenancy.context import RequestIdentity, commit_and_rescope
 
 router = APIRouter(prefix="/api/raids", tags=["raids"])
@@ -147,9 +147,9 @@ async def get_raid_summary(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> raid_summary.RaidSummary:
     """What the app stored about a raid tracked in the caller's workspace (contract:raid-summary):
-    participants, duration, the caller's own characters' parses. Never calls Warcraft Logs; 404
-    for any other code."""
-    summary = await raid_summary.summarize(db, report_code, tenant_id=identity.tenant_id, now=datetime.now(UTC))
+    participants, duration, the caller's own characters' parses. At most one report-summary
+    request to re-verify stored data (decision:072-reverify); 404 for any other code."""
+    summary = await raid_summary.summarize(db, report_code, identity=identity, now=datetime.now(UTC))
     if summary is None:
         raise HTTPException(status_code=404, detail="not_found")
     return summary

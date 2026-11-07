@@ -31,7 +31,9 @@ summary endpoint as that workspace, and compare the answer with the contract exa
    the time it was fetched, in the contract's shape.
 2. **Given** a raid tracked in my workspace with nothing usable stored, **When** I ask for its
    summary, **Then** I get `has_data: false`, null duration and fetch time, and empty lists.
-3. **Given** any request, **Then** no Warcraft Logs request is made.
+3. **Given** a raid whose stored data is visible, **Then** no Warcraft Logs request is made.
+4. **Given** a raid whose stored summary is outside the visibility window, **When** I ask for its
+   summary, **Then** one report-summary request re-verifies it and the stored data is served.
 
 ---
 
@@ -90,7 +92,10 @@ up in my summary.
 
 - **FR-001**: The system MUST answer a summary request only for a report tracked in the caller's
   workspace; any other code gets 404 with the app's usual error body.
-- **FR-002**: The system MUST NOT call Warcraft Logs (no live fetch, no back-fill) to answer.
+- **FR-002**: The system MUST NOT fetch participants, tables or rankings from Warcraft Logs. Only
+  when a summary of the raid is stored but its visibility isn't confirmed inside the window, it
+  MAY send ONE report-summary request to re-verify it (PO `decision:072-reverify`), bounded by a
+  short timeout and a per-workspace, per-raid cooldown; failure means `has_data: false`.
 - **FR-003**: The system MUST read stored WCL data only through the existing stored-data
   visibility rule (every report a row names is public or granted to the caller's workspace,
   confirmed within the re-verify window).
@@ -121,7 +126,8 @@ up in my summary.
 
 - **SC-001**: For a seeded raid, the summary equals the contract's shape (keys and types).
 - **SC-002**: Every hostile input in Edge Cases and User Story 3 has a test that passes.
-- **SC-003**: Zero Warcraft Logs requests are made while answering a summary.
+- **SC-003**: Zero Warcraft Logs requests for a raid whose stored data is visible or absent; at
+  most one report-summary request per raid and cooldown otherwise.
 - **SC-004**: A summary needs a fixed small number of database round trips, independent of the
   number of fights or players.
 

@@ -1,8 +1,8 @@
 """What the app already stored about a tracked raid (feature 072, backend half of sc-142).
 
 ``summarize`` answers ``GET /api/raids/{report_code}/summary`` (board ``contract:raid-summary``):
-participants, duration and the caller's own characters' parses, read from the raw WCL store and
-never from Warcraft Logs. Rules:
+participants, duration and the caller's own characters' parses, read from the raw WCL store.
+Rules:
 
 * Only a raid tracked in the caller's workspace is answered (None → the route's 404).
 * Stored rows are read only through the 039 visibility rule (``read_visible_summary`` and
@@ -14,12 +14,20 @@ never from Warcraft Logs. Rules:
 * "My characters" are the workspace's own profile characters, matched to stored players by name
   and, where the stored data has them, realm and region; never from request input.
 * Uploader-controlled text is neutralised, stripped of control characters and capped.
+* Re-verify (board ``decision:072-reverify``): when a summary of the raid is stored but none is
+  visible, ONE report-summary query (our tools' own) is sent through the WCL client as the
+  caller's workspace, at most once per workspace and raid per :data:`REVERIFY_COOLDOWN_S`, within
+  :data:`REVERIFY_TIMEOUT_S`. When WCL returned that report, its status and the workspace's grant
+  are written in this transaction (the fetch sink writes them too, but later), and the rows are
+  read again under the unchanged rule. Participants, tables and rankings are never fetched.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 import unicodedata
 import uuid
 from collections.abc import Iterator
@@ -30,6 +38,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from wcl_agent.cache.normalize import server_slug
+from wcl_agent.client import wcl_client
+from wcl_agent.client.queries import REPORT_SUMMARY
 from wcl_agent.client.wcl_client import _flight_key
 from wcl_agent.game.constants import DIFFICULTY_NAMES, normalize_class_name
 from wcl_agent.game.roster import roster_snapshot
@@ -48,11 +58,26 @@ from wcl_agent.tools.report_tools import (
 from ..config import settings
 from ..db import repository as repo
 from ..db.models import UserCharacter
-from ..repositories.raw_fetches import read_visible_parts, read_visible_summary
+from ..repositories.raw_fetches import (
+    ReportStatus,
+    grant_codes,
+    read_visible_parts,
+    read_visible_summary,
+    record_report_status,
+    stored_summary_exists,
+)
+from ..tenancy.context import RequestIdentity, current_identity
 from .kickoff_prefetch import pick_boss_fights
+
+logger = logging.getLogger(__name__)
 
 MAX_PARTICIPANTS = 100
 MAX_PARSES = 50
+REVERIFY_TIMEOUT_S = 5.0
+REVERIFY_COOLDOWN_S = 600.0
+# (workspace, report) -> when its last re-verify started (monotonic); entries older than the
+# cooldown are dropped on the next attempt, so this holds at most one cooldown window's raids.
+_reverified: dict[tuple[uuid.UUID, str], float] = {}
 _OFF_LOOP_BYTES = 256_000  # bigger stored JSON is decoded in a thread
 _FIGHTS_DECL = ", $fightIDs: [Int]"
 # The rankings field get_report_rankings sends with its defaults (compare Rankings, timeframe
@@ -275,15 +300,61 @@ def _my_characters(
     return mine
 
 
+def _may_reverify(tenant_id: uuid.UUID, code: str) -> bool:
+    """At most one re-verify per workspace and raid per cooldown (in-process); claims the slot."""
+    now = time.monotonic()
+    for key, started in list(_reverified.items()):
+        if now - started >= REVERIFY_COOLDOWN_S:
+            del _reverified[key]
+    if (tenant_id, code) in _reverified:
+        return False
+    _reverified[(tenant_id, code)] = now
+    return True
+
+
+async def _reverify(session: AsyncSession, identity: RequestIdentity, code: str, now: datetime) -> bool:
+    """Ask WCL for the report summary once, as ``identity``'s workspace; when WCL returned that
+    report, record its status and grant it to the workspace in this transaction. True when it
+    did; any failure (timeout, error, gone, another code) is False."""
+    token = current_identity.set(identity)  # the client's store probe and fetch sink act for it
+    try:
+        async with asyncio.timeout(REVERIFY_TIMEOUT_S):
+            data = await wcl_client.get_async_client().query(REPORT_SUMMARY, {"code": code})
+    except Exception as exc:  # noqa: BLE001 - any failure leaves the raid unverified
+        logger.info("raid summary re-verify failed: %s", type(exc).__name__)
+        return False
+    finally:
+        current_identity.reset(token)
+    report = _report_object(data, code)
+    if report is None:
+        return False
+    visibility, end = report.get("visibility"), report.get("endTime")
+    status = ReportStatus(
+        code, visibility if isinstance(visibility, str) else None,
+        end if isinstance(end, int) and not isinstance(end, bool) else None, now,
+    )
+    await record_report_status(session, [status])
+    await grant_codes(session, identity.tenant_id, [code], now)
+    return True
+
+
 async def summarize(
-    session: AsyncSession, code: str, *, tenant_id: uuid.UUID, now: datetime
+    session: AsyncSession, code: str, *, identity: RequestIdentity, now: datetime
 ) -> RaidSummary | None:
-    """The stored summary of a raid tracked in ``tenant_id``'s workspace; None when it isn't one.
-    Two raw-store reads, both under the visibility rule; no Warcraft Logs request."""
+    """The stored summary of a raid tracked in the caller's workspace; None when it isn't one.
+    Raw-store reads only under the visibility rule; one re-verify request at most."""
+    tenant_id = identity.tenant_id
     if await repo.get_tracked_raid(session, code, tenant_id=tenant_id) is None:
         return None
     since = now - timedelta(days=settings.raw_store_reverify_days)
     found = await read_visible_summary(session, code, tenant_id=tenant_id, since=since)
+    if (
+        found is None
+        and await stored_summary_exists(session, code)
+        and _may_reverify(tenant_id, code)
+        and await _reverify(session, identity, code, now)
+    ):
+        found = await read_visible_summary(session, code, tenant_id=tenant_id, since=since)
     report = _report_object(await _loads(found[0]), code) if found else None
     names, bosses = _fight_names(report) if report else ({}, [])
     keys = part_keys(code, bosses)
