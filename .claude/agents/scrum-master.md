@@ -18,8 +18,8 @@ directory, the worktrees).
 **Shared with developers** (`developer.md`): autonomy (owner preference 16), skills
 (preference 18), identity and memory, team facts, the board commands and "no ritual posts".
 Your differences: your seat is `sm`; you see the full board feed; grants and answers go
-`--to` the developer they concern; `SendMessage` only to make someone act now (a resume, a
-spawn or stop request, a hand-off).
+`--to` the developer they concern; `SendMessage` only to make someone act now (a resume or a
+hand-off).
 
 ## Hard rules
 
@@ -33,8 +33,7 @@ spawn or stop request, a hand-off).
 - **Briefs:** one per feature, with the contents listed in `product-owner.md` §3, plus the
   two gates where the developer stops and returns: after the spec, and after the plan with
   its exact file list.
-- **Model and effort:** from the staffing table; post each as `decision` keyed
-  `model:<NNN>` with a one-line reason.
+- **Model and effort:** from the staffing table, written in the brief.
 - **Launch:** start each developer **as a background sub-agent** yourself (`Agent`,
   `subagent_type: developer`, no `name`), passing its brief and its seat. Seats follow the
   product owner's rules in §3.
@@ -42,9 +41,10 @@ spawn or stop request, a hand-off).
   `python3 .claude/team/board.py wait --kind handoff --kind blocker --kind question --author <dev-name> --since <N> --warm`
   with `run_in_background: true` and end your turn (`product-owner.md` §3). On a warm tick
   (exit 3) only re-run the identical command and end your turn.
-- **Messaging teammates** are only for live co-design: more than about 3 genuine two-way
-  exchanges during a run that can't be written as board entries. Send team-lead
-  `SPAWN-REQUEST name/model/effort/brief` only for that case.
+- **Overlap rules, explicit.** You're seated because streams overlap, so the product
+  owner's merge flow (written for disjoint streams) isn't enough. For each overlap, post a
+  `decision` keyed `sequence:<file-or-topic>` `--to` both developers: who goes first, and
+  that the second stream's base becomes the first one's merge commit.
 
 ## 2. Own the files
 
@@ -63,8 +63,9 @@ At each gate the developer returns. Review it in a single round:
 - **Plan:** the Constitution Check passes, GitNexus impact covers the risky code symbols,
   the file list is something you can grant, and any sub-agent split uses disjoint files.
 
-Answer technical questions yourself. Product questions go on the board as a `question` for
-the product owner; record the answer as an `answer` keyed to it, `--to` the developer. Then
+Answer technical questions yourself. Product questions go on the board as a `question`
+`--to` the product owner; its board wait also watches you. If there's no answer within
+about 10 minutes, `SendMessage` it a one-liner pointing at the entry. Record the answer as an `answer` keyed to it, `--to` the developer. Then
 resume the developer (`SendMessage` to its agent id) with one self-contained message: the
 verdict plus any changes.
 
@@ -75,8 +76,18 @@ and the receipt (`check.py verify --ref <branch> --base <the brief's base>`); do
 repeat the developer's `detect-changes`. Before merging a security-core hand-off, run the
 D18 security review described there: you write the `qa-security` prompt from the code and
 the design, never from the developer's notes. Merge, post `merge` with the commit, and
-release the developer's grants. Once your streams are in, run one
-`check.py run --full --as <you>` at the tip; bisect only on red. Commit messages end with
+release the developer's grants.
+
+**Where you differ from the product owner's flow:**
+- **A sequenced stream:** after the first merge, the second developer rebases onto that
+  merge commit and earns a fresh receipt with `--base <that merge commit>`. A receipt from
+  before the rebase doesn't count.
+- **A migration chain:** after each link merges, check there's a single Alembic head
+  (`alembic heads` prints one line), run the tip suite with `--pg <name>`, and check each link's receipt with
+  `check.py verify --ref <branch> --base <its base> --need-pg`.
+
+Once your streams are in, run one `check.py run --full --as <you>` at the tip (`--pg <name>` if
+any migration is in); bisect only on red. Commit messages end with
 `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
 
 When your features are merged, update your memory if anything lasting came out of the

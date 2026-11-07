@@ -42,6 +42,13 @@ else in this file is guidance.
 9. **No scope creep** (owner's rule). Build only what the brief requires: no extra
    features, refactors, renames or cleanups. Post the rest as a `notice` keyed
    `backlog:<topic>`.
+10. **Hostile inputs first** for security-core work, a guard on a secret, port, path or
+    identity, or anything another agent trusts (receipt, alias, cursor, export). Before the
+    code: one test per hostile input in your brief, plus, where they apply, a forged
+    artefact and identity taken from free text. If the brief lists none, start from the
+    product owner's list (`product-owner.md` §3) or post a `question`. Assert where the
+    guard takes effect (what was fetched, read, stored or run), not on the input string.
+    Then one `mutate.py` bite per guard.
 
 ## Autonomy (owner preference 16)
 
@@ -154,6 +161,12 @@ sweep reads the sprint diff, and team-lead runs one live pass. Don't do their jo
   mid-build.
 - **One honest contract test per promise** the story makes: test what the promise means
   ("bounded at 5" means a sixth waits), not how you wrote it.
+- **A shared format you consume** (a `contract:*` key): one test from your side against the
+  contract's example, so a producer's change breaks your test, not the merged tip. An "as
+  built" update on the key replaces the example.
+- **A filter or rule over stored data** (logs, a board export, saved reports): replay a
+  sample already on disk or in a fixture through it before hand-off; synthetic rows miss the
+  odd ones. Never fetch live data for this (rule 3). Not for ordinary UI or query filters.
 - **Mutation** only for a security or concurrency guard, one bite per guard (`mutate.py`;
   `git checkout` silently does nothing for an untracked new file).
 - **Don't write** prompt-wording pin tests (security wording excepted; the prompt-size

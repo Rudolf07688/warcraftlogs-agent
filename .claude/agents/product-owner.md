@@ -151,6 +151,12 @@ work. Open a new seat only when every existing one is busy.
 - any migration revision you assigned
 - the seat, and the names of the developers running in parallel
 - whether the feature is **security-core** (see the security review below)
+- **Hostile inputs**, when the feature is security-core, guards a secret, port, path or
+  identity, or produces anything another agent trusts (receipt, alias, cursor, export): list
+  the inputs to test, one per line. Start from (drop what doesn't apply): `\` and other URL parser differentials, a newline or leading `-`
+  in an argument, redirects and subresources, identity read from free text, config read
+  outside the selected scope, and a forged artefact (11-07: 5 of 8 fix-bar findings were on
+  this list).
 - **Live pre-check:** "if a question needs the real stack, post `live-check:<NNN>-pre` with
   the exact command while building; team-lead runs it at once"
 - for a spike: the read-only data sources and the verification scripts
@@ -158,6 +164,13 @@ work. Open a new seat only when every existing one is busy.
   `python3 .claude/team/facts.py brief <paths the developer writes> --runs <paths the developer runs>`
   (stack scripts, test libs, files they source or import in tests). Leave the section out
   if it prints nothing.
+
+**Shared formats (contracts), before launch.** Whenever two or more concurrent streams share a format, flag,
+file or API, post one `decision` keyed `contract:<topic>` `--to all` naming: the producer,
+the consumers, the exact format, the base ref it holds on (a flag the sender's base lacks
+is a wish, not a contract), one concrete example, and the test that pins it. The producer
+writes that test; each consumer writes one test from its own side. When the build differs,
+the producer posts the "as built" version on the same key.
 
 **Grants.** Before launch, post one `owner:<path-or-glob>` key per path or glob (for
 example `owner:backend/app/services/kb/**`), `--to` the developer it concerns. An added
@@ -168,7 +181,9 @@ to team-lead, not to you, and an idle agent sees no board entries. So right afte
 launch (and each resume), arm a background wait with Bash `run_in_background: true`:
 `python3 .claude/team/board.py wait --kind handoff --kind blocker --kind question --author <dev-name> --since <N> --warm`
 (`<N>`: the latest board id, e.g. from your launch `post`; questions too: on 2026-11-04 a
-developer's question waited 55 minutes unseen). Then end your turn: you are re-invoked when
+developer's question waited 55 minutes unseen). `--author` repeats: while a scrum master
+is seated, add `--author <the scrum master's name>` so its product questions reach you.
+Then end your turn: you are re-invoked when
 the entry lands, within seconds. Post a `notice` that you run your own watcher, so
 team-lead stops sending wake-ups.
 
@@ -199,9 +214,9 @@ starts; unlaunched reserves go back to the backlog and are named in the review.
 
 **Security review at hand-off (owner decision D18).** A feature is security-core when it
 touches tenant visibility, auth, RLS, rendering untrusted output (model or WCL), or a shared
-cache, single-flight or Redis key path, **or a team tool that guards a secret, a port or an
-agent's identity** (`.env` reads, loopback-only rules, board authorship). Brief its attack
-paths up front (2026-11-07: 1 High and 7 Mediums in such tools reached the end sweep). At each security-core hand-off, before you merge:
+cache, single-flight or Redis key path. Team tools that guard a secret, a port or an identity
+are not security-core: their brief lists the hostile inputs instead, and the developer's hard
+rule 10 covers them. At each security-core hand-off, before you merge:
 - Run one `qa-security` sub-agent scoped to `<base>...<branch>`.
 - Write its prompt yourself from the diff and the spec: what the code must never allow, and
   the paths to attack. Never pass on the developer's notes or threat model; a review

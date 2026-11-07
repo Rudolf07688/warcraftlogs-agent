@@ -204,7 +204,9 @@ across 37 files.
   merging, with a prompt written from the code and design, never from the developer's notes.
   Security-core now also covers any shared cache, single-flight or Redis key path. The
   developer fixes Highs and Mediums in its one rework round; the end sweep stays the gate.
-  In `product-owner.md` §3 and `scrum-master.md` §4.
+  In `product-owner.md` §3 and `scrum-master.md` §4. On 11-07 team-lead extended it to team
+  tools that guard a secret, port or identity; withdrawn in P16 step 1 (2026-11-07): those
+  get hostile inputs in the brief and the developer's hard rule 10 instead.
 - **D19. Team-lead owns the Shortcut board.** Owner, 2026-11-01: "You can own the shortcut
   board as well. Use it and change it as it makes sense. Use it to communicate or send
   messages around at a meta level - whatever helps the team evolve forward." Covers
@@ -667,7 +669,7 @@ footprint, never grant a file twice, one rework round.
 ### P16. Lessons that fire, fewer tools, like-for-like numbers (owner go 2026-11-07; next meta session)
 
 Source: the 2026-11-07 retro (`meta/sprints/2026-11-07/retro.md`) and the owner's reply.
-- **Step 1, retro fixes (do first):**
+- **Step 1, retro fixes (done 2026-11-07, reviewed read-only by Maren, Ilse and Vera; tool gaps in sc-552):**
   - Hostile inputs in briefs; Maren's checklist goes in `product-owner.md`.
   - A `developer.md` hard rule for security-core work and for anything another agent trusts: one test per hostile input or attack path, the forged-input test first, one `mutate.py` bite per guard.
   - Agree shared formats on the board before launch, as a standard PO step: producer, consumers, exact format, base ref, one example, the pinning test, and an "as built" update on the same key.
@@ -950,3 +952,4 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-11-07 (owner go on P15, narrowed):** "Add the reserve rule for the next app sprint." `product-owner.md` §1: target about 23 pts (21–25, was 19–23); in backlog sprints 1–2 reserve stories (≤ 3 pts, tier S, disjoint, briefed; board `reserve:<sc-id>`). §3: backfill one reserve in a fresh developer on an early hand-off while merged plus in-flight points are under 25; stop at the end sweep. Inactive in the P14 sprint (its steer names the work). Measure: reserves launched, idle-developer time, cost per point at the steady size.
 - **2026-11-07 (sprint 2026-11-07, P14):** the team built its own retro: 20/20 pts, 11.2 M, 0.56/pt (cheapest yet, tooling work), build 0.20/pt, coordination 42% (0.24/pt, down from 0.42), cold 0.48, 49 min launch to review. D21 first run: 2 full suites at the tip, none by developers. QA 1H+7M, all in team tools guarding .env, loopback or board identity; one fresh fix round 1.21. Merged 23c73aa (owner go). After the merge: QA prompts and qa-sweep installed as project copies (source of truth) and in ~/.claude; D18 security-core extended to such tools. Team report: `meta/sprints/2026-11-07/team-report.html`.
 - **2026-11-07 (full-team retro + owner):** round 1 with all six (retro.md). My take: lessons in memory don't fire at the moment of work; the next cost lever is catching findings in the build (QA + fix 22%); my own bias to add mandatory rules fast; cost per point needs stream types. Owner: memory must fire surely (recall tool? semantic?), 20 tools is too many (pref 29), agrees with the plan. Recorded as **P16**; next session starts with step 1.
+- **2026-11-07 (before sprint 2026-11-07b):** P16 step 1 landed. `product-owner.md`: hostile inputs in briefs, a contract step for concurrent streams, the wait also watches a seated scrum master, D18 back to app security-core only. `developer.md`: hard rule 10 (hostile inputs first, assert at the point of effect, one mutation bite per guard) and two testing bullets (consumer-side contract test, replay stored data). `scrum-master.md`: overlap rules, sequenced base and receipt, migration chain checks; `model:` posts and the SPAWN-REQUEST paragraph cut. Maren, Ilse and Vera reviewed read-only (about 55k each) and their wording fixes are in. Tool gaps and `member.py lint` false matches: sc-552.
