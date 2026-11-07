@@ -209,7 +209,7 @@ cache, single-flight or Redis key path. At each security-core hand-off, before y
 
 **Merging (D21: receipts per branch, one full suite at the tip).** In the sprint worktree:
 1. **Per branch, as it hands off:** every changed file is inside the footprint
-   (`git diff --name-only <base>...<branch>`), and `check.py verify --ref <branch>` shows a
+   (`git diff --name-only <base>...<branch>`), and `check.py verify --ref <branch> --base <the brief's base>` shows a
    passing receipt for the area the branch touched. No receipt or a red one: resume the
    developer (its rework round).
 2. **Merge each accepted branch** with `git merge --no-ff`, no suite per merge: the streams

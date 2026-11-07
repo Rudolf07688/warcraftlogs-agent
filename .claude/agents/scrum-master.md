@@ -71,7 +71,7 @@ verdict plus any changes.
 ## 4. Integrate
 
 Use the product owner's merge flow (`product-owner.md` §3): per branch, check the footprint
-and the receipt (`check.py verify --ref <branch>`); don't re-run what the receipt covers or
+and the receipt (`check.py verify --ref <branch> --base <the brief's base>`); don't re-run what the receipt covers or
 repeat the developer's `detect-changes`. Before merging a security-core hand-off, run the
 D18 security review described there: you write the `qa-security` prompt from the code and
 the design, never from the developer's notes. Merge, post `merge` with the commit, and

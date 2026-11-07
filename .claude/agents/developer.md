@@ -105,7 +105,7 @@ python3 .claude/team/board.py log --since <id>   # the raw, unfiltered history
   text names you (a fallback for a forgotten `--to`). Grants
   (`owner:*`) and answers reach you because they're posted `--to` you. The product owner,
   the scrum master and team-lead see everything, so your questions and blockers need no
-  `--to`. To reach another developer, post `--to <their name>`. `board.py log` has it all.
+  `--to`. To reach another developer, post `--to <their name>` (a seat id such as `dev-3` also works; anything else is refused). `board.py log` has it all.
 - **First post:** a `notice` when you start, so the board learns your name.
 - **No ritual posts.** Don't post a result that changes no decision: a GitNexus warning you
   confirmed as noise, a "still working", a restated plan.
