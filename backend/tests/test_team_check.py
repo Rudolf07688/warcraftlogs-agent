@@ -193,3 +193,40 @@ def test_full_runs_every_suite_whatever_the_diff(repo: Path) -> None:
     assert calls(repo) == ["pytest ", "npx vitest run", "npm run build"]
     assert receipt(repo)["area"] == "full"
     assert run_tool(repo, CHECK, "verify", "--need-full").returncode == 0
+
+
+def test_verify_refuses_a_receipt_whose_area_is_less_than_the_branch_touches(repo: Path) -> None:
+    write(repo, "backend/app/svc.py", "X = 2\n")
+    commit(repo, "backend change")
+    write(repo, "docs/notes.md", "more notes\n")
+    commit(repo, "docs")
+    # a base chosen after the backend commit sees a config-only diff and the run writes a receipt
+    out = run_tool(repo, CHECK, "run", "--base", "HEAD~1", "backend/tests/test_svc.py", "--as", "tomas")
+    assert out.returncode == 0 and "area=config" in out.stdout, out.stdout + out.stderr
+    assert receipt(repo)["area"] == "config"
+    v = run_tool(repo, CHECK, "verify")
+    assert v.returncode == 1 and "RUN NEEDED" in v.stdout and "area=config" in v.stdout
+    assert "touches backend" in v.stdout
+    # the receipt's own base is the merge target the caller names: then it is honest, and shown
+    ok = run_tool(repo, CHECK, "verify", "--base", "HEAD~1")
+    assert ok.returncode == 0 and "receipt base " + git(repo, "rev-parse", "HEAD~1")[:12] in ok.stdout
+
+
+def test_verify_accepts_a_receipt_that_covers_the_branch_and_shows_the_base(repo: Path) -> None:
+    write(repo, "backend/app/svc.py", "X = 2\n")
+    commit(repo)
+    assert run_tool(repo, CHECK, "run", "--as", "tomas").returncode == 0
+    v = run_tool(repo, CHECK, "verify")
+    assert v.returncode == 0 and f"receipt base {git(repo, 'rev-parse', 'main')[:12]}" in v.stdout
+
+
+@pytest.mark.parametrize("cmd", ["run", "verify"])
+def test_a_base_that_looks_like_a_git_option_is_refused_and_writes_nothing(
+    repo: Path, tmp_path: Path, cmd: str
+) -> None:
+    write(repo, "docs/notes.md", "more notes\n")
+    commit(repo)
+    target = tmp_path / "pwned"
+    out = run_tool(repo, CHECK, cmd, f"--base=--output={target}", *(["backend/tests/test_svc.py"] if cmd == "run" else []))
+    assert out.returncode in (1, 3) and "REFUSED" in out.stdout
+    assert not list(tmp_path.glob("pwned*")) and calls(repo) == []
