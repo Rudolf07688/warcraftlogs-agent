@@ -25,7 +25,6 @@ Teammates:
 
 Lessons:
 - Read the code while writing briefs: split shared files by hunk, post `contract:*` keys before launch (11-07: Vera documented four tools she never read).
-- I never ask a developer for a credentialed call, even a pre-check: it's team-lead's `live-check:*`.
 - Live-check EXPECT pins a fact from the stored report, not wording.
 - Small steers stay small: 10 pts beat padding with unrelated backlog.
 - Check the transport before accepting an AC (chat is a WebSocket).
@@ -33,12 +32,11 @@ Lessons:
 - Dashboard tests check query shape (precedence, increase vs rate, window = step, units, grouping), not only aliases.
 - Fix-round root causes often sit in another stream's file: grant the one hunk fast.
 - Prefer no Docker socket access; "GET-only" proxies still export files and env.
-- Tools that guard `.env`, loopback or an agent's identity are security work even when not D18 security-core: 11-07's sweep found 1 High + 7 Mediums there. Brief their attack paths.
+- Guard-code briefs name the hostile inputs to test: parser differentials (`\` in URLs), newlines and leading `-` in argv, redirects/subresources, identity read from free text, config parsed outside the selected scope (11-07: 5 of the 8 fix-bar findings).
 - When a contract changes mid-sprint, I patch the agent-file lines myself on the sprint branch.
 - QA fix round: fresh agents on the same seats, tier S briefs naming each finding, split by author.
 - Security over external data: trust what the server decided, never what the client sent.
 - A Low that regresses from this sprint's own code goes into the rework; a pre-existing race made easier to reach becomes a ticket.
-- Group deferred QA findings by root cause; merge duplicates into the oldest.
 - A live PASS with little margin becomes a headroom ticket, not a second round.
 
 Owner cares about: no scope creep, local HTML reports, never push, never Done, at most one rework round, ticket dedupe, plain ticket names, architecture docs current before merging to main.
