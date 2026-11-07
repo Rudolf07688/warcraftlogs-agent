@@ -158,7 +158,7 @@ sweep reads the sprint diff, and team-lead runs one live pass. Don't do their jo
   `git checkout` silently does nothing for an untracked new file).
 - **Don't write** prompt-wording pin tests (security wording excepted; the prompt-size
   budget test stays), or a second proof of a claim a test already proves.
-- **Hand-off receipt:** `check.py run --as <you>` on the committed head, for your area.
+- **Hand-off receipt:** `check.py run --as <you> --base <your brief's base>` on the committed head, for your area (the default base is the merge base with `main`, which would also count other streams already merged into the sprint branch).
 
 ## GitNexus (D22: code symbols only)
 
