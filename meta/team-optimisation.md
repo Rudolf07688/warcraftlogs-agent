@@ -690,6 +690,13 @@ Source: the 2026-11-07 retro (`meta/sprints/2026-11-07/retro.md`) and the owner'
   - Count real runs per tool per sprint (not transcript mentions) and retire a tool nobody runs for two sprints.
 - **Step 4, like-for-like numbers.** Each stream carries a type (app backend, app frontend, stack/infra, team tooling, docs). Teamstats and the dashboard compare cost per point by type. 11-07 (tooling, 0.56) can't be compared with 11-05b (app, 1.19).
 - **Step 5, rule changes reviewed before landing.** Before team-lead changes a rule, the affected seats review it read-only, at about 60k tokens each. On 11-07 the team corrected two of my calls within an hour.
+- **Decisions you can read (owner, 2026-11-07 late).** The owner asked whether agent decisions are
+  captured consistently ("Ansel did this", "Maren chose X instead of Y"). They are on the board and
+  in Loki for every seat, but no panel showed them and "decision" also carries file grants (82 of
+  133 on 11-07b); only about 1 in 9 names the rejected option. Built: a Decisions panel on D2
+  (11d364a, grants/tiers/reserves/steer left out). Proposal for seat review: an optional
+  `board.py post decision … --instead "<Y>"` field, asked for on real choices only, and I
+  post my own calls.
 - **Agent cards: keep them small (owner, 2026-11-07).** "I like the small identity cards we
   have now. We can slowly expand later if we must." The team's ideas for a richer card are
   parked in the card round section of `meta/sprints/2026-11-07/retro.md`. Only one small fix
@@ -954,3 +961,7 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-11-07 (sprint 2026-11-07, P14):** the team built its own retro: 20/20 pts, 11.2 M, 0.56/pt (cheapest yet, tooling work), build 0.20/pt, coordination 42% (0.24/pt, down from 0.42), cold 0.48, 49 min launch to review. D21 first run: 2 full suites at the tip, none by developers. QA 1H+7M, all in team tools guarding .env, loopback or board identity; one fresh fix round 1.21. Merged 23c73aa (owner go). After the merge: QA prompts and qa-sweep installed as project copies (source of truth) and in ~/.claude; D18 security-core extended to such tools. Team report: `meta/sprints/2026-11-07/team-report.html`.
 - **2026-11-07 (full-team retro + owner):** round 1 with all six (retro.md). My take: lessons in memory don't fire at the moment of work; the next cost lever is catching findings in the build (QA + fix 22%); my own bias to add mandatory rules fast; cost per point needs stream types. Owner: memory must fire surely (recall tool? semantic?), 20 tools is too many (pref 29), agrees with the plan. Recorded as **P16**; next session starts with step 1.
 - **2026-11-07 (before sprint 2026-11-07b):** P16 step 1 landed. `product-owner.md`: hostile inputs in briefs, a contract step for concurrent streams, the wait also watches a seated scrum master, D18 back to app security-core only. `developer.md`: hard rule 10 (hostile inputs first, assert at the point of effect, one mutation bite per guard) and two testing bullets (consumer-side contract test, replay stored data). `scrum-master.md`: overlap rules, sequenced base and receipt, migration chain checks; `model:` posts and the SPAWN-REQUEST paragraph cut. Maren, Ilse and Vera reviewed read-only (about 55k each) and their wording fixes are in. Tool gaps and `member.py lint` false matches: sc-552.
+- **2026-11-07 late (after the 11-07b merge):** D2 gets a Decisions panel (who chose what, from the
+  board); `--instead` field proposed for seat review (P16). Read the owner's live chat from the DB and
+  traces: one confirmed tool bug (event pulls with a start time come back empty) and five more
+  coach-quality tickets, sc-570..575.
