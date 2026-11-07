@@ -29,7 +29,8 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      // Feature 074: a workspace that never set up its profile (or skipped) lands on it.
+      // Feature 074: with no own character and the welcome prompt never skipped, the
+      // player lands on the profile page (when headed for the chat home).
       const pending = await getProfileSettings().then(
         (s) => s.onboarding_pending,
         () => false, // can't tell: go where the player was going
