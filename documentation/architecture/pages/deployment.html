@@ -306,7 +306,7 @@
     <li>A Redis, or none: without <code>REDIS_URL</code> every WCL lookup goes to the store or WCL. No managed Redis is planned yet.</li>
     <li>One backend instance, or shared state for what is per process today (see <a href="#images">Images</a>, Why).</li>
   </ul>
-  <p class="note"><b>Drift:</b> parts of <code>documentation/deployment.md</code> are out of date. It still says access is "public + unauthenticated for v1" and that tables are made by <code>create_all</code>; feature 006 replaced both with invite-only login and Alembic. It also predates Redis, pgvector, the Anthropic provider and the raw store. In <code>.env.example</code>, the comment above <code>BLIZZARD_CLIENT_ID</code>/<code>BLIZZARD_CLIENT_SECRET</code> says Game Data API, but the only code that reads them calls the Profile API (character portraits), and the provider comment still says suggestions, titles, reports and guides call Gemini "until feature 035", which has shipped.</p>
+  <p class="note"><b>Drift:</b> parts of <code>documentation/deployment.md</code> are out of date. It still says access is "public + unauthenticated for v1" and that tables are made by <code>create_all</code>; feature 006 replaced both with invite-only login and Alembic. It also predates Redis, pgvector, the Anthropic provider and the raw store. In <code>.env.example</code>, the provider comment still says suggestions, titles, reports and guides call Gemini "until feature 035", which has shipped.</p>
 </section>
 
 <footer>
