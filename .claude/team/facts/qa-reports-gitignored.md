@@ -1,6 +1,6 @@
 ---
 id: qa-reports-gitignored
-anchors: [file:.gitignore, comp:team]
+anchors: [file:.gitignore]
 by: po Maren
 source: meta/team/po.md L14
 verified: 32010a6 2026-11-05
