@@ -50,6 +50,17 @@ async def test_history_and_message_count_their_wire_size(model, no_network):
     assert long["message"] - short["message"] == len("why?") * 99
 
 
+@pytest.mark.parametrize("spelling", [["--history=h.json"], ["--hist=h.json"], ["--history", "h.json"]])
+def test_cli_history_option_spellings_reach_the_measurement(tmp_path: Path, spelling: list[str]) -> None:
+    """BUG-008: `--history=FILE` crashed the wrapper (it looked the bare path up in argv). The file
+    is relative to where the caller stands, but the measuring run starts in the repo root."""
+    (tmp_path / "h.json").write_text(json.dumps([{"role": "user", "text": "x" * 500}]))
+    r = subprocess.run([sys.executable, str(TOKENS), "--model", GEMINI, "--json", *spelling],
+                       cwd=tmp_path, capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["models"][GEMINI]["history"]["chars"] > 500
+
+
 def test_cli_labels_tokens_as_an_estimate(tmp_path: Path) -> None:
     r = subprocess.run([sys.executable, str(TOKENS), "--model", GEMINI, "--json"], cwd=tmp_path,
                        capture_output=True, text=True, timeout=300)

@@ -9,8 +9,12 @@ branch touched (its diff against --base, default the merge base with main):
   both       pytest, then vitest + build
   config     anything else (docs, YAML, JSON, agent files)    -> the targeted tests you name
 A passing area run on a clean, committed tree leaves a receipt keyed by the git tree that records
-the area and the commands run, so a frontend receipt never reads as a backend pass. `npm ci` runs
-first when the frontend runs and frontend/node_modules is missing.
+the area and the commands run, so a frontend receipt never reads as a backend pass. A later run on
+the same tree replaces the receipt only if it proves at least as much (area, --full, Postgres),
+judged from the commands and logs the receipts record, never from their area/pg claims; otherwise
+it prints "RECEIPT kept". A failing run never touches a receipt. `npm ci` runs first when the
+frontend runs and frontend/node_modules is missing or was not installed from the current
+package-lock.json and package.json (a stamp inside node_modules says which).
 
   check.py run [--base REF] [--pg NAME | --pg-url URL] --as YOU   the suite for the touched area
   check.py run PATHS... --as YOU        targeted tests: pytest paths and/or frontend/**/*.test.tsx
@@ -24,6 +28,7 @@ Exit codes: run = 0 pass / 1 fail (pytest's own code when it is not 0) / 3 refus
 git common dir (team-checks/), so every worktree sees them.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -39,6 +44,7 @@ VITEST_SUITES_RE = re.compile(r"Failed Suites (\d+)")
 VITEST_ERRORS_RE = re.compile(r"^\s*Errors\s+(\d+) errors?")
 BACKEND_PREFIXES = ("backend/", "wcl_agent/", ".githooks/", "pyproject.toml", "uv.lock")
 TSBUILDINFO = "frontend/tsconfig.tsbuildinfo"
+STAMP = ".wcl-npm-ci-stamp"   # inside node_modules: the hash of the manifests `npm ci` installed from
 
 
 def git(*args, cwd=None):
@@ -137,15 +143,40 @@ def run_pytest(paths, pg_url=None, cwd=None, log_name="run"):
     return proc.returncode, line, counts, log, out
 
 
+def deps_stamp(front):
+    """Hash of the manifests `npm ci` installs from: a changed or missing one means a stale install."""
+    h = hashlib.sha256()
+    for name in ("package-lock.json", "package.json"):
+        try:
+            h.update(open(os.path.join(front, name), "rb").read())
+        except OSError:
+            h.update(b"-")
+        h.update(b"\0")
+    return h.hexdigest()
+
+
 def ensure_node_modules(top, log_name="run"):
-    """`npm ci` in a fresh worktree. Returns (ok, note); note is "" when nothing ran."""
+    """`npm ci` unless frontend/node_modules was installed from the current manifests (its stamp
+    matches); a partial or older install has no matching stamp. Returns (ok, note); note is ""
+    when nothing ran."""
     front = os.path.join(top, "frontend")
-    if os.path.isdir(os.path.join(front, "node_modules")):
+    stamp_file = os.path.join(front, "node_modules", STAMP)
+    want = deps_stamp(front)
+    try:
+        have = open(stamp_file).read().strip()
+    except OSError:
+        have = None
+    if have == want:
         return True, ""
+    why = "no frontend/node_modules" if not os.path.isdir(os.path.join(front, "node_modules")) else \
+        "frontend/node_modules not installed from the current package-lock.json"
     cmd = clean_env() + ["npm", "ci", "--no-audit", "--no-fund"]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=front)
     log = write_log(f"{log_name}-npm-ci", cmd, proc.stdout + proc.stderr, front)
-    return proc.returncode == 0, f"npm ci (no frontend/node_modules) -> rc {proc.returncode}, log: {log}"
+    if proc.returncode == 0 and os.path.isdir(os.path.dirname(stamp_file)):
+        with open(stamp_file, "w") as f:
+            f.write(want + "\n")
+    return proc.returncode == 0, f"npm ci ({why}) -> rc {proc.returncode}, log: {log}"
 
 
 def run_vitest(paths, top=None, log_name="run"):
@@ -351,16 +382,55 @@ def cmd_run(a):
             print("no receipt: run used --allow-env")
         else:
             rec = {"tree": tree, "head": head, "area": area, "base": base,
-                   "commands": [r["cmd"] for r in results],
+                   "commands": [r["cmd"] for r in results], "logs": [r["log"] for r in results],
                    "summary": "; ".join(r["summary"] for r in results),
                    "counts": {r["cmd"]: r["counts"] for r in results}, "pg": bool(pg_url),
                    "by": a.as_ or "", "cwd": top,
                    "ts": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-            with open(os.path.join(checks_dir("receipts"), f"{tree}.json"), "w") as f:
-                json.dump(rec, f, indent=1)
-            print(f"RECEIPT tree={tree[:12]} head={head[:12]} area={area} "
-                  f"pg={'yes' if pg_url else 'no'} ran: {', '.join(rec['commands'])}")
+            old = proves(load_receipt(tree), tree)
+            new = proves(rec, tree)
+            if old is not None and not new >= old:
+                kept = load_receipt(tree)
+                print(f"RECEIPT kept: tree={tree[:12]} already has a receipt (area={kept.get('area')} "
+                      f"pg={'yes' if kept.get('pg') else 'no'}, by {kept.get('by') or '?'}) that proves "
+                      f"[{', '.join(sorted(old))}], which this run [{', '.join(sorted(new))}] does not "
+                      "cover. Re-run with the flags that cover both to replace it.")
+            else:
+                with open(os.path.join(checks_dir("receipts"), f"{tree}.json"), "w") as f:
+                    json.dump(rec, f, indent=1)
+                print(f"RECEIPT tree={tree[:12]} head={head[:12]} area={area} "
+                      f"pg={'yes' if pg_url else 'no'} ran: {', '.join(rec['commands'])}")
     sys.exit(rc_first if v == "FAIL" else 0)
+
+
+def proves(rec, tree):
+    """What a stored receipt demonstrates for `tree`, as a set of {"backend", "frontend", "full",
+    "pg"}, derived from the commands and logs it records: its own `area` and `pg` fields are
+    claims, and a hand-edited file may make them freely. None when it is not a receipt for `tree`.
+    "full" needs the three commands and no recorded base (a --full run has none); "pg" needs the
+    pytest log in the receipt dir to show a database URL on the command line."""
+    if not isinstance(rec, dict) or rec.get("tree") != tree:
+        return None
+    cmds = rec.get("commands", ["pytest"])   # receipts before 066 were full pytest runs
+    if not isinstance(cmds, list):
+        return None
+    caps = set()
+    if "pytest" in cmds:
+        caps.add("backend")
+    if "vitest run" in cmds and "npm run build" in cmds:
+        caps.add("frontend")
+    if caps == {"backend", "frontend"} and rec.get("base") is None:
+        caps.add("full")
+    logs = rec.get("logs")
+    if "backend" in caps and rec.get("pg") and isinstance(logs, list) and len(logs) == len(cmds):
+        try:
+            log = os.path.realpath(logs[cmds.index("pytest")])
+            if log.startswith(os.path.realpath(checks_dir("logs")) + os.sep):
+                if "TEST_DATABASE_URL=" in open(log).readline():
+                    caps.add("pg")
+        except (OSError, TypeError):
+            pass
+    return caps
 
 
 def target_tree(a):
@@ -372,7 +442,7 @@ def target_tree(a):
 def load_receipt(tree):
     try:
         return json.load(open(os.path.join(checks_dir("receipts"), f"{tree}.json")))
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         return None
 
 

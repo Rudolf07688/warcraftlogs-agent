@@ -10,10 +10,11 @@ Facts are committed with the code, so a fact added on a branch reaches the team 
 
   facts.py for TARGET... [--depth 0|1] [--all]   facts for paths, path::symbol or comp:name
   facts.py diff [--staged | --base REF] [--hook]  facts for the files and symbols a diff touches
-  facts.py brief TARGET... [--runs PATH...]       the same as `for`, as a markdown brief section;
-                                                  --runs adds the paths the developer runs but
-                                                  doesn't write (stack scripts, test libs, files
-                                                  their tests source or import)
+  facts.py brief TARGET... [--runs PATH]...       the same as `for`, as a markdown brief section;
+                                                  --runs PATH (repeat it, one path each) adds the
+                                                  paths the developer runs but doesn't write (stack
+                                                  scripts, test libs, files their tests source or
+                                                  import)
   facts.py add --id ID --anchor A [--anchor A...] --by "<seat> <Name>" [--source S] TEXT|-
   facts.py stale [--to REF]                       facts whose anchor moved since `verified`
   facts.py verify ID... [--ref REF]               re-stamp after re-checking a fact
@@ -1039,9 +1040,10 @@ def main(argv=None):
         q = s.add_parser(name)
         q.add_argument("targets", nargs="+" if name == "for" else "*", help="path, path::symbol or comp:name")
         if name == "brief":
-            q.add_argument("--runs", nargs="+", default=[], metavar="PATH",
-                           help="paths the developer runs but doesn't write: stack scripts, test "
-                                "libs, files their tests source or import")
+            q.add_argument("--runs", action="append", default=[], metavar="PATH",
+                           help="a path the developer runs but doesn't write (stack script, test "
+                                "lib, file their tests source or import); repeat it for more, so "
+                                "the written targets can follow")
         matching(q)
     q = s.add_parser("diff")
     g = q.add_mutually_exclusive_group()
