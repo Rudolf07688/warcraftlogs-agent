@@ -3,7 +3,9 @@
 
 Agent-facing. Drives /usr/bin/google-chrome over the DevTools protocol (stdlib only, no
 browser download). Loopback URLs only, and never a port docker-compose.yml publishes by
-default (the owner's app and telemetry). External host names don't resolve in this browser.
+default (the owner's app and telemetry). The same rule holds for every request the browser
+makes (redirects, scripts, frames, workers, fetches), checked on the URL Chrome reports; a
+blocked one is printed to stderr. WebSocket connections are not intercepted.
 
   browse.py URL [--step S ...] [--text] [--shot PNG] [--width 1600] [--height 900]
   browse.py /path --as NAME ...      URL on 127.0.0.1:APP_PORT from stack.py's env for NAME
@@ -29,6 +31,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import shutil
 import socket
 import struct
@@ -44,7 +47,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import stack  # same directory: env files and compose's default ports
 
 CHROME = "/usr/bin/google-chrome"
-LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+# Plain scheme://loopback[:port] then path, query, fragment or nothing; printable ASCII, no
+# backslash (Chrome reads one as '/', Python doesn't), so no userinfo can shift the host.
+SAFE_URL = re.compile(r"(https?)://(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?(?:[/?#][!-\[\]-~]*)?")
 MAX_HEIGHT = 16000
 KEYS = {"Enter": 13, "Tab": 9, "Escape": 27, "Backspace": 8}
 
@@ -53,14 +58,22 @@ class StepFailed(Exception):
     pass
 
 
+def refusal(url, default_ports):
+    """Why URL may not be loaded, or None if it is plain loopback http(s) on an allowed port."""
+    m = SAFE_URL.fullmatch(url)
+    if not m:
+        return f"refused {url!r}: only plain http(s)://127.0.0.1|localhost|[::1][:port]/..."
+    port = int(m.group(2) or (443 if m.group(1) == "https" else 80))
+    if port in default_ports:
+        return f"refused port {port}: a docker-compose.yml default (the owner's stack)"
+    return None
+
+
 def check_url(url):
-    """The URL if it is loopback http(s) on a non-default port; otherwise exit 2."""
-    u = urlsplit(url)
-    if u.scheme not in ("http", "https") or u.hostname not in LOOPBACK:
-        sys.exit(f"browse: refused {url!r}: only http(s) on 127.0.0.1/localhost")
-    port = u.port or (443 if u.scheme == "https" else 80)
-    if port in stack.compose_default_ports():
-        sys.exit(f"browse: refused port {port}: a docker-compose.yml default (the owner's stack)")
+    """The URL if refusal() has nothing against it; otherwise exit 2."""
+    reason = refusal(url, stack.compose_default_ports())
+    if reason:
+        sys.exit(f"browse: {reason}")
     return url
 
 
@@ -130,15 +143,26 @@ class WebSocket:
 
 
 class Page:
+    """The browser connection: browser-wide request guard, page commands on a flat session."""
+
     def __init__(self, ws):
-        self.ws, self.next_id, self.errors = ws, 0, []
+        self.ws, self.next_id, self.errors, self.session = ws, 0, [], None
+        self.default_ports = stack.compose_default_ports()
+
+    def send(self, method, session, **params):
+        self.next_id += 1
+        msg = {"id": self.next_id, "method": method, "params": params}
+        if session:
+            msg["sessionId"] = session
+        self.ws.send(json.dumps(msg))
+        return self.next_id
 
     def call(self, method, **params):
-        self.next_id += 1
-        self.ws.send(json.dumps({"id": self.next_id, "method": method, "params": params}))
+        """Send to the page session (the browser before attach) and wait for the reply."""
+        sent = self.send(method, self.session, **params)
         while True:
             msg = json.loads(self.ws.recv())
-            if msg.get("id") == self.next_id:
+            if msg.get("id") == sent:
                 if "error" in msg:
                     raise RuntimeError(f"{method}: {msg['error']}")
                 return msg.get("result", {})
@@ -146,7 +170,17 @@ class Page:
 
     def _event(self, msg):
         p = msg.get("params", {})
-        if msg.get("method") == "Runtime.exceptionThrown":
+        if msg.get("method") == "Fetch.requestPaused":
+            url = p["request"]["url"]
+            reason = refusal(url, self.default_ports)
+            if reason:
+                if not url.startswith("chrome-extension://"):  # Chrome's own, every run
+                    print(f"browse: blocked request {url}: {reason}", file=sys.stderr)
+                self.send("Fetch.failRequest", msg.get("sessionId"), requestId=p["requestId"],
+                          errorReason="BlockedByClient")
+            else:
+                self.send("Fetch.continueRequest", msg.get("sessionId"), requestId=p["requestId"])
+        elif msg.get("method") == "Runtime.exceptionThrown":
             d = p.get("exceptionDetails", {})
             self.errors.append("exception: " + (d.get("exception", {}).get("description") or d.get("text", "")))
         elif msg.get("method") == "Runtime.consoleAPICalled" and p.get("type") == "error":
@@ -230,24 +264,33 @@ def screenshot(page, path, width, min_height):
 
 
 def launch(width, height, profile):
-    proc = subprocess.Popen(
+    return subprocess.Popen(
         [CHROME, "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
          "--disable-background-networking", "--disable-component-update", "--disable-sync",
          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1",
-         f"--user-data-dir={profile}", "--remote-debugging-port=0",
+         "--no-proxy-server", f"--user-data-dir={profile}", "--remote-debugging-port=0",
          f"--window-size={width},{height}", "about:blank"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def connect(proc, profile):
+    """Page on Chrome's browser endpoint, every request held to refusal() before the page loads."""
     port_file = Path(profile) / "DevToolsActivePort"
     end = time.monotonic() + 30
     while not port_file.exists() or not port_file.read_text().strip():
         if proc.poll() is not None or time.monotonic() > end:
-            proc.kill()
             sys.exit("browse: Chrome did not start")
         time.sleep(0.1)
-    port = int(port_file.read_text().split()[0])
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=10) as r:
+    base = f"http://127.0.0.1:{int(port_file.read_text().split()[0])}"
+    with urllib.request.urlopen(f"{base}/json/version", timeout=10) as r:
+        browser_ws = json.load(r)["webSocketDebuggerUrl"]
+    with urllib.request.urlopen(f"{base}/json/list", timeout=10) as r:
         target = next(t for t in json.load(r) if t["type"] == "page")
-    return proc, WebSocket(target["webSocketDebuggerUrl"])
+    page = Page(WebSocket(browser_ws))
+    # Browser-wide, so out-of-process frames and workers are held to the rule too.
+    page.call("Fetch.enable", patterns=[{"urlPattern": "*"}])
+    page.session = page.call("Target.attachToTarget", targetId=target["id"], flatten=True)["sessionId"]
+    return page
 
 
 def main(argv=None):
@@ -272,8 +315,8 @@ def main(argv=None):
     profile = tempfile.mkdtemp(prefix="browse-")
     proc = None
     try:
-        proc, ws = launch(a.width, a.height, profile)
-        page = Page(ws)
+        proc = launch(a.width, a.height, profile)
+        page = connect(proc, profile)
         page.call("Runtime.enable")
         page.call("Page.enable")
         nav = page.call("Page.navigate", url=url)
