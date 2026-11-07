@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../../api/restClient";
 import {
-  getRaidSummary,
   type RaidSummary,
   type RaidSummaryCharacter,
   type RaidSummaryParticipant,
@@ -10,11 +9,12 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
 import { formatDuration, formatWhen } from "./raidFormat";
+import { loadRaidSummary } from "./summaryCache";
 
 type State =
   | { kind: "loading" }
   | { kind: "ready"; summary: RaidSummary }
-  | { kind: "error"; notFound: boolean };
+  | { kind: "error"; notFound: boolean; rateLimited: boolean };
 
 const ROLE_ORDER = ["tank", "healer", "dps", "other"] as const;
 const ROLE_LABEL: Record<(typeof ROLE_ORDER)[number], string> = {
@@ -35,8 +35,9 @@ function groupByRole(participants: RaidSummaryParticipant[]) {
   return groups;
 }
 
-function classLine(c: { class_name: string; spec: string | null }): string {
-  return c.spec ? `${c.spec} ${c.class_name}` : c.class_name;
+// Each part may be null (contract:raid-summary): a missing one is left out, never printed.
+function classLine(c: { class_name: string | null; spec: string | null }): string {
+  return [c.spec, c.class_name].filter(Boolean).join(" ");
 }
 
 function Participants({ participants }: { participants: RaidSummaryParticipant[] }) {
@@ -80,7 +81,7 @@ function MyCharacters({ characters }: { characters: RaidSummaryCharacter[] }) {
               {c.parses.map((p, j) => (
                 <li key={j} className="flex min-w-0 justify-between gap-3 text-sm">
                   <span className="truncate">
-                    {p.encounter}
+                    {p.encounter ?? "Unknown encounter"}
                     {p.difficulty ? ` (${p.difficulty})` : ""}
                   </span>
                   <span className="shrink-0 tabular-nums">
@@ -107,12 +108,14 @@ export function RaidSummaryPanel({ reportCode }: { reportCode: string }) {
   useEffect(() => {
     let cancelled = false;
     setState({ kind: "loading" });
-    getRaidSummary(reportCode).then(
+    loadRaidSummary(reportCode).then(
       (summary) => {
         if (!cancelled) setState({ kind: "ready", summary });
       },
       (err: unknown) => {
-        if (!cancelled) setState({ kind: "error", notFound: err instanceof ApiError && err.status === 404 });
+        if (cancelled) return;
+        const status = err instanceof ApiError ? err.status : 0;
+        setState({ kind: "error", notFound: status === 404, rateLimited: status === 429 });
       },
     );
     return () => {
@@ -136,7 +139,9 @@ export function RaidSummaryPanel({ reportCode }: { reportCode: string }) {
         <AlertDescription className="flex flex-wrap items-center gap-2">
           {state.notFound
             ? "Raid not found: it is not one of your tracked raids."
-            : "Could not load the stored data for this raid."}
+            : state.rateLimited
+              ? "Too many requests, try again in a minute."
+              : "Could not load the stored data for this raid."}
           {!state.notFound && (
             <Button size="sm" variant="secondary" onClick={retry}>
               Retry

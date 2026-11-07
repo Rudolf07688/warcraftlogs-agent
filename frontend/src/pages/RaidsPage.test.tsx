@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import RaidsPage from "./RaidsPage";
@@ -15,6 +15,7 @@ vi.mock("../api/raidSummary", () => ({
   })),
 }));
 import { getRaidSummary } from "../api/raidSummary";
+import { clearRaidSummaryCache } from "../components/raids/summaryCache";
 
 function raid(code: string, label: string, started: string): Raid {
   return {
@@ -45,6 +46,7 @@ function renderPage(over: Partial<React.ComponentProps<typeof RaidsPage>> = {}, 
     status: "ready" as const,
     reportCode: undefined,
     streaming: false,
+    connected: true,
     error: null,
     onAnalyze: vi.fn(),
     ...over,
@@ -57,6 +59,8 @@ function renderPage(over: Partial<React.ComponentProps<typeof RaidsPage>> = {}, 
   );
   return props;
 }
+
+beforeEach(() => clearRaidSummaryCache());
 
 afterEach(() => {
   cleanup();
@@ -96,6 +100,14 @@ describe("RaidsPage", () => {
 
   it("Analyze is disabled while an answer streams", () => {
     const props = renderPage({ streaming: true });
+    const btn = screen.getByRole("button", { name: "Analyze this raid" }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(props.onAnalyze).not.toHaveBeenCalled();
+  });
+
+  it("Analyze is disabled while the chat socket is disconnected, like the composer", () => {
+    const props = renderPage({ connected: false });
     const btn = screen.getByRole("button", { name: "Analyze this raid" }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     fireEvent.click(btn);

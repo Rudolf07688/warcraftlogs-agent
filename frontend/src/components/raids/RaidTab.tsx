@@ -2,15 +2,17 @@ import type { Raid } from "../../types";
 import { Button } from "../ui/button";
 import { RaidSummaryPanel } from "./RaidSummaryPanel";
 import { bossSummary, raidWhen } from "./raidFormat";
+import { clearRaidSummaryCache } from "./summaryCache";
 
 interface Props {
   raid: Raid;
-  analyzeDisabled: boolean;
+  streaming: boolean;
+  connected: boolean;
   onAnalyze: (reportCode: string) => void;
 }
 
 /** One raid's tab body: its header, the Analyze button and the stored data. */
-export function RaidTab({ raid, analyzeDisabled, onAnalyze }: Props) {
+export function RaidTab({ raid, streaming, connected, onAnalyze }: Props) {
   const meta = [raid.zone, raid.guild, raidWhen(raid)].filter(Boolean).join(" · ");
   const bosses = bossSummary(raid, 8);
   return (
@@ -24,9 +26,18 @@ export function RaidTab({ raid, analyzeDisabled, onAnalyze }: Props) {
           {bosses && <div className="truncate text-sm text-muted-foreground">{bosses}</div>}
         </div>
         <Button
-          onClick={() => onAnalyze(raid.report_code)}
-          disabled={analyzeDisabled}
-          title={analyzeDisabled ? "Wait for the current answer to finish" : undefined}
+          onClick={() => {
+            clearRaidSummaryCache(raid.report_code); // the analysis stores new data for this raid
+            onAnalyze(raid.report_code);
+          }}
+          disabled={streaming || !connected}
+          title={
+            !connected
+              ? "Not connected to the server"
+              : streaming
+                ? "Wait for the current answer to finish"
+                : undefined
+          }
         >
           Analyze this raid
         </Button>

@@ -767,6 +767,7 @@ export default function App() {
                 status={raidsStatus}
                 reportCode={raidsMatch?.params.reportCode}
                 streaming={streaming}
+                connected={connected}
                 error={error}
                 onAnalyze={analyzeRaid}
               />
