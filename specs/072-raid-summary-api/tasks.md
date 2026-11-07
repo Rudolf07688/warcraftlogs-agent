@@ -12,3 +12,4 @@
 - [X] T010 mutate.py bite on the visibility guard of each new read
 - [X] T012 Re-verify (decision:072-reverify): one summary request, in-band status + grant, timeout, cooldown; tests incl. Postgres RLS
 - [X] T011 detect-changes, check.py receipt, contract "as built" post, hand-off
+- [X] T013 D18 rework: SEC-001 (no transaction across the WCL wait), SEC-002 (per-user limiter, 2 re-verifies in flight per workspace), SEC-005 (name+realm+region required), SEC-007 (parts must name the code)

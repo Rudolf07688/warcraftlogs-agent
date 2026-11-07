@@ -16,8 +16,10 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import event
 
-from backend.app.auth import dependencies
+from backend.app.api import raids as raids_api
+from backend.app.auth.rate_limit import InProcessRateLimiter
 from backend.app.db import repository as repo
 from backend.app.db.models import UserCharacter
 from backend.app.services import raid_summary
@@ -185,7 +187,7 @@ async def test_each_part_may_be_missing_alone(as_user, patched_db, monkeypatch):
     a = (await get(as_user, only_summary)).json()
     assert a["has_data"] and a["duration_ms"] == 9_876_000
     assert a["participants"] == [{"name": "Thrall", "class_name": "Shaman", "spec": None, "role": None}]
-    assert a["my_characters"] == [{"name": "Thrall", "class_name": "Shaman", "spec": None, "parses": []}]
+    assert a["my_characters"] == []  # the summary names no realm or region: never mine (SEC-005)
 
     b = (await get(as_user, only_details)).json()
     assert b["has_data"] and b["duration_ms"] is None and b["fetched_at"] is not None
@@ -273,7 +275,7 @@ async def test_a_report_code_with_path_tricks_is_404_before_any_query(as_user, m
     async def no_summary(*args, **kwargs):
         raise AssertionError("summary read")
 
-    monkeypatch.setattr(dependencies, "tenant_session", no_transaction)
+    monkeypatch.setattr(raid_summary, "tenant_session", no_transaction)
     monkeypatch.setattr(raid_summary, "summarize", no_summary)
     resp = await as_user.client.get(f"/api/raids/{path_code}/summary")
     assert resp.status_code in (404, 422), resp.text
@@ -301,12 +303,13 @@ async def test_uploader_text_comes_back_cleaned_and_capped(as_user, patched_db, 
 
 async def test_my_characters_come_from_the_profile_matched_by_name_realm_and_region(as_user, patched_db,
                                                                                      monkeypatch):
-    """A namesake on another realm, or on the same realm name in another region, isn't mine; a
-    name in the query string changes nothing."""
+    """A namesake on another realm, on the same realm name in another region, or with no realm or
+    region at all (SEC-005) isn't mine; a name in the query string changes nothing."""
     code = new_code()
     dps = [player("Thrall", "Draenor", "Shaman", "Elemental"), player("Thrall", "Tarren Mill", "Shaman", "Enhancement"),
            player("Jaina", "Tarren Mill", "Mage", "Frost")]
     ranks = [ranked("Thrall", "Draenor", "EU", 99.0, "Elemental"), ranked("Thrall", "Tarren Mill", "US", 98.0),
+             {"name": "Thrall", "class": "Shaman", "spec": "Enhancement", "rankPercent": 97.0},  # no server
              ranked("Thrall", "Tarren Mill", "EU", 50.5)]
     rows = await stored_by_tools(monkeypatch, code, dps=dps, ranked_rows=ranks)
     await store_batch([PendingWrite(r, as_user.tenant_id) for r in [summary_row(code), *rows]])
@@ -378,3 +381,86 @@ async def test_a_slow_wcl_times_out_and_a_repeat_within_the_cooldown_sends_nothi
     assert time.monotonic() - started < 3
     assert (await get(as_user, code)).json()["has_data"] is False
     assert len(fake.calls) == 1
+
+
+
+# --- 072 review (D18): SEC-001, SEC-002, SEC-007 -------------------------------------------------
+
+
+def checkouts(factory) -> dict[str, int]:
+    """Live count of pooled connections checked out of the test engine."""
+    count = {"now": 0}
+    pool = factory.kw["bind"].sync_engine.pool
+    event.listen(pool, "checkout", lambda *a: count.__setitem__("now", count["now"] + 1))
+    event.listen(pool, "checkin", lambda *a: count.__setitem__("now", count["now"] - 1))
+    return count
+
+
+async def test_no_connection_is_held_while_waiting_on_wcl(as_user, patched_db, monkeypatch):
+    """SEC-001: the re-verify waits on WCL with no transaction open and no pooled connection held."""
+    code = await stale_raid(monkeypatch, patched_db, as_user.tenant_id)
+    held = checkouts(patched_db)
+    during: list[int] = []
+
+    def answer(query, variables):
+        during.append(held["now"])
+        return {"data": {"reportData": {"report": summary_report(code)}}}
+
+    install(monkeypatch, answer)
+    assert (await get(as_user, code)).json()["has_data"]
+    assert during == [0]
+
+
+async def test_a_workspace_reverifies_at_most_two_raids_at_once(as_user, patched_db, monkeypatch):
+    """SEC-002: a third stale raid asked while two re-verifies wait gets the stored answer at once,
+    with no WCL request; the two finish normally."""
+    codes = [await stale_raid(monkeypatch, patched_db, as_user.tenant_id) for _ in range(3)]
+    gates = {c: asyncio.Event() for c in codes}
+    waiting: list[str] = []
+
+    async def gated(query, variables):
+        waiting.append(variables["code"])
+        await gates[variables["code"]].wait()
+        return {"data": {"reportData": {"report": summary_report(variables["code"])}}}
+
+    fake = install(monkeypatch, gated)
+    first = [asyncio.create_task(get(as_user, c)) for c in codes[:2]]
+    async with asyncio.timeout(5):
+        while len(waiting) < 2:
+            await asyncio.sleep(0.01)
+
+    third = (await get(as_user, codes[2])).json()
+    assert third["has_data"] is False and len(fake.calls) == 2
+
+    for code, task in zip(codes[:2], first, strict=True):
+        gates[code].set()
+        assert (await task).json()["has_data"]
+
+
+async def test_summaries_are_rate_limited_per_user_before_any_query(as_user, patched_db, monkeypatch):
+    """SEC-002: over the per-user limit the request is a 429 and the service never runs."""
+    code = new_code()
+    await track(patched_db, as_user.tenant_id, code)
+    monkeypatch.setattr(raids_api, "summary_limiter", InProcessRateLimiter(per_minute=2))
+    assert [(await get(as_user, code)).status_code for _ in range(2)] == [200, 200]
+
+    async def no_summary(*args, **kwargs):
+        raise AssertionError("summary read")
+
+    monkeypatch.setattr(raid_summary, "summarize", no_summary)
+    resp = await get(as_user, code)
+    assert resp.status_code == 429 and resp.headers["retry-after"] == "60"
+
+
+async def test_a_row_under_a_computed_key_that_names_another_code_is_not_used(as_user, patched_db, monkeypatch):
+    """SEC-007: rows are read by key only when they also name the raid's code."""
+    code, other = new_code(), new_code()
+    foreign = [dataclasses.replace(r, query_key=_flight_key(r.query, {**r.variables, "code": code}))
+               for r in await stored_by_tools(monkeypatch, other)]  # names ``other``, filed under ``code``'s keys
+    await store_batch([PendingWrite(r, as_user.tenant_id) for r in [summary_row(code), summary_row(other), *foreign]])
+    await track(patched_db, as_user.tenant_id, code)
+    await own_character(patched_db, as_user.tenant_id)
+
+    body = (await get(as_user, code)).json()
+    assert body["participants"] == [{"name": "Thrall", "class_name": "Shaman", "spec": None, "role": None}]
+    assert body["my_characters"] == []

@@ -100,7 +100,7 @@ async def test_parts_are_cut_out_in_the_database_and_follow_the_visibility_rule(
 
     async with pg() as db:
         await set_scope(db, tenant_id=mine)
-        parts = await read_visible_parts(db, [table.query_key, "no-such-key"], paths, tenant_id=mine, since=since)
+        parts = await read_visible_parts(db, c, [table.query_key, "no-such-key"], paths, tenant_id=mine, since=since)
     assert list(parts) == [table.query_key]
     _, (cut, absent) = parts[table.query_key]
     assert json.loads(cut) == details and absent is None
@@ -108,7 +108,9 @@ async def test_parts_are_cut_out_in_the_database_and_follow_the_visibility_rule(
 
     async with pg() as db:
         await set_scope(db, tenant_id=other)
-        assert await read_visible_parts(db, [table.query_key], paths, tenant_id=other, since=since) == {}
+        assert await read_visible_parts(db, c, [table.query_key], paths, tenant_id=other, since=since) == {}
+        await set_scope(db, tenant_id=mine)
+        assert await read_visible_parts(db, code(), [table.query_key], paths, tenant_id=mine, since=since) == {}
 
 
 async def test_a_reverify_writes_status_and_grant_under_rls_and_serves_the_stored_rows(pg, monkeypatch):
@@ -130,8 +132,8 @@ async def test_a_reverify_writes_status_and_grant_under_rls_and_serves_the_store
     async with pg() as db:
         await set_scope(db, tenant_id=mine)
         await repo.upsert_tracked_raid(db, tenant_id=mine, report_code=c, label=c)
-        summary = await raid_summary.summarize(db, c, identity=identity, now=datetime.now(UTC))
         await db.commit()
+    summary = await raid_summary.summarize(c, identity=identity, now=datetime.now(UTC))
 
     assert summary is not None and summary.has_data and summary.duration_ms == 1
     assert len(fake.calls) == 1

@@ -12,3 +12,9 @@
 
 404 `{"detail":"not_found"}` for a code that is malformed or not a tracked raid of the caller's
 workspace. `has_data:false` → `duration_ms:null`, empty lists, `fetched_at:null`.
+
+Rework after the D18 review (board `review:072`): 429 `{"detail":{"code":"rate_limited",...}}`
+with `Retry-After: 60` over 60 summaries per user per minute. A stale raid answers
+`has_data:false` without a re-verify while its 10-minute cooldown runs or while two of the
+workspace's re-verifies are in flight; the page should not retry in a tight loop. "My characters"
+need name, realm and region in the stored data (no name-only match).

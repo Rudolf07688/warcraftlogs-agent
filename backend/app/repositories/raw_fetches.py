@@ -582,13 +582,14 @@ def _json_at(dialect: str, path: Sequence[str]) -> ColumnElement[bytes]:
 
 async def read_visible_parts(
     session: AsyncSession,
+    code: str,
     query_keys: Sequence[str],
     paths: Sequence[Sequence[str]],
     *,
     tenant_id: uuid.UUID | None,
     since: datetime,
 ) -> dict[str, tuple[datetime, list[bytes | None]]]:
-    """For each stored row among ``query_keys`` that the tenant may see
+    """For each stored row among ``query_keys`` that names ``code`` and that the tenant may see
     (:func:`fetch_visible_clause`): its ``fetched_at`` and the JSON at each of ``paths`` (bytes,
     None where absent), so a multi-MB table body never leaves the database whole. One statement.
     No freshness rule; the caller's transaction carries the tenant scope."""
@@ -598,6 +599,7 @@ async def read_visible_parts(
     rows = await session.execute(
         select(RawFetch.query_key, RawFetch.fetched_at, *(_json_at(dialect, p) for p in paths)).where(
             RawFetch.query_key.in_(list(query_keys)),
+            _names_report(session, code),
             fetch_visible_clause(RawFetch.query_key, tenant_id=tenant_id, since=since),
         )
     )
