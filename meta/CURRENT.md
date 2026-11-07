@@ -14,19 +14,9 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- Sprint 2026-11-05b (back to the app) merged to main bb22117 and pushed (with the meta
-  commits after it). 10/10 pts, 1.19/pt, cold 0.44, live 4/4 PASS. Stories Under Review.
-- **First full-team retro done** (all six by seat, two rounds). Record:
-  `meta/sprints/2026-11-05b/retro.md`. The owner's message on over-testing and the team's
-  answers became **D21** (test the building blocks, then the whole, once), **D22** (GitNexus
-  gates only for code-symbol diffs, owner approved) and **P14**. Owner preferences 26–28.
-- **2026-11-07 meta talk:** reviewed levers vs outcomes for 11-04b/11-05/11-05b (each lever hit
-  its target; the cost per point is confounded by the type of work). Owner floated kanban flow closed by a fixed number of points
-  → **P15**, narrowed with the owner to a fixed ~23-pt plan plus 1–2 reserve stories the PO
-  may backfill. Owner go: in `product-owner.md` now, first used in the next backlog sprint
-  (inactive in P14).
-- Owner: "implement all these things, but not now ... for tomorrow, we evolve." **Nothing in
-  P14 is built yet.**
+- Retro 11-05b gave D21 (test the blocks, then the whole, once), D22 (GitNexus for code only)
+  and P14; the team built P14 in sprint 2026-11-07. P15 (steady ~23 pts plus reserve stories)
+  is in `product-owner.md` and first applies in the next backlog sprint.
 
 ## Sprint 2026-11-07 (P14): merged, pushed, Done, retro held
 
