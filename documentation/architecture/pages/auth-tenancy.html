@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit be6c5c5 · 2026-11-07">
+<meta name="verified-at" content="commit 263f34b · 2026-11-07">
 <title>Auth &amp; multi-tenancy · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -148,7 +148,7 @@
   <div class="chips"><span class="eyebrow">Tech</span><span class="chip">in-process limiter</span><span class="chip">ipaddress (stdlib)</span></div>
 
   <h3>What it does, and where it lives</h3>
-  <p><code>backend/app/auth/rate_limit.py</code> has one <code>InProcessRateLimiter</code> class behind a <code>RateLimiter</code> protocol, and five process-wide instances.</p>
+  <p><code>backend/app/auth/rate_limit.py</code> has one <code>InProcessRateLimiter</code> class behind a <code>RateLimiter</code> protocol, and five process-wide instances (a sixth, for the raid summary, is in the table below).</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Instance</th><th>Key</th><th>Rule</th><th>Used by</th></tr></thead>
     <tbody>
@@ -157,6 +157,7 @@
       <tr><td><code>guide_limiter</code></td><td>user id</td><td>10 per minute</td><td>Generate a guide</td></tr>
       <tr><td><code>guide_report_limiter</code></td><td>user id</td><td>5 per minute</td><td>Report a guide inaccuracy</td></tr>
       <tr><td><code>investigate_limiter</code></td><td>user id</td><td>5 per minute, checked before the endpoint takes a DB connection (sc-352)</td><td><code>POST /api/raids/{code}/investigate</code></td></tr>
+      <tr><td><code>summary_limiter</code> (in <code>api/raids.py</code>)</td><td>user id</td><td>60 per minute, checked before any transaction</td><td><code>GET /api/raids/{code}/summary</code></td></tr>
     </tbody>
   </table></div>
   <p><b>Client source</b> (<code>client_source</code>): the direct peer address, unless that peer is in <code>TRUSTED_PROXIES</code> (IPs or CIDRs, parsed once per value). Then it walks <code>X-Forwarded-For</code> from the right and takes the nearest hop that isn't a trusted proxy. Ports are stripped and IPv4-mapped IPv6 counts as IPv4. A hop that isn't an address falls back to the peer (logged once). With no trusted proxies, forwarded headers are ignored, so behind a proxy every client shares the proxy's bucket.</p>
@@ -191,7 +192,7 @@
     <li><b>Two roles.</b> The app connects as the runtime role (<code>APP_DB_USER</code>, created by migration <code>0004_rls</code> as <code>NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS</code>, with DML on all tables and default privileges for later ones). Alembic runs as the owner. See <a href="deployment.html#config">Configuration</a>.</li>
     <li><b>Scope per transaction</b> (<code>backend/app/tenancy/context.py</code>): <code>set_scope</code> runs one statement, <code>SELECT set_config('app.tenant_id', …, true), set_config('app.user_id', …, true)</code> (one round trip since sc-270). The <code>true</code> makes both settings transaction-local, so they vanish at commit and never leak to the next user of a pooled connection. Entry points: <code>get_tenant_db</code> / <code>tenant_session(identity)</code> for requests, <code>tenant_scope(tenant_id, user_id=…)</code> for sockets, tools and jobs, and <code>commit_and_rescope</code> after a mid-handler commit (otherwise the next query would see no tenant and RLS would return nothing). On SQLite (tests) the call is skipped and the app-level filters are what the tests check.</li>
     <li><b>App-level filter.</b> Every tenant-owned repository function takes a keyword-only <code>tenant_id</code>, and lookups combine id and tenant in one predicate, so a foreign row is a 404.</li>
-    <li><b>RLS.</b> 17 tenant-owned tables have row-level security enabled and forced (migrations 0004, 0005, 0010, 0014, 0016, 0018, 0019). 16 use the policy <code>tenant_isolation</code>: <code>tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid</code> for both <code>USING</code> and <code>WITH CHECK</code>. <code>profile_proposals</code> uses <code>tenant_user_isolation</code>, which also requires <code>user_id</code> to match <code>app.user_id</code> (migration 0017, sc-222). Global tables (guides, the raw WCL store, <code>kb_chunks</code>) have no RLS by design; the table list is on <a href="database.html">Database &amp; migrations</a>.</li>
+    <li><b>RLS.</b> 18 tenant-owned tables have row-level security enabled and forced (migrations 0004, 0005, 0010, 0014, 0016, 0018, 0019, 0023). 17 use the policy <code>tenant_isolation</code>: <code>tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid</code> for both <code>USING</code> and <code>WITH CHECK</code>. <code>profile_proposals</code> uses <code>tenant_user_isolation</code>, which also requires <code>user_id</code> to match <code>app.user_id</code> (migration 0017, sc-222). Global tables (guides, the raw WCL store, <code>kb_chunks</code>) have no RLS by design; the table list is on <a href="database.html">Database &amp; migrations</a>.</li>
     <li><b>Global-data routes</b> such as <code>/api/guides</code> use the non-tenant <code>get_session</code> but still require a session, CSRF on writes and per-user caps.</li>
     <li><b>Outside Postgres tables:</b> ADK's session tables are isolated by ADK <code>user_id</code> = tenant id, not by RLS. The Redis WCL cache is shared by all tenants and its keys never hold a user or tenant id; a load answered from a report visible only through one tenant's grant is marked unshareable and kept out of the shared cache (045). The per-turn scratch store is per conversation.</li>
   </ul>

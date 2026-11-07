@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The commit the page was last checked against, line by line. Update it whenever the page is re-verified. -->
-<meta name="verified-at" content="commit be6c5c5 · 2026-11-07">
+<meta name="verified-at" content="commit 263f34b · 2026-11-07">
 <title>Agent runtime &amp; tools · WCL Agent architecture</title>
 <link rel="stylesheet" href="../assets/arch.css">
 <script src="../assets/nav.js" defer></script>
@@ -362,7 +362,7 @@
   <div class="tablewrap"><table>
     <thead><tr><th>Trigger tool</th><th>Write</th><th>Code</th></tr></thead>
     <tbody>
-      <tr><td>the 8 report-scoped tools (the <code>get_report_*</code> tools)</td><td>upsert a tracked raid (sidebar "Raids"); <code>raid_tracked</code> frame when new</td><td><code>backend/app/services/raids.py</code> (<code>REPORT_SCOPED_TOOLS</code>)</td></tr>
+      <tr><td>the 8 report-scoped tools (the <code>get_report_*</code> tools)</td><td>upsert a tracked raid (the Raids page); <code>raid_tracked</code> frame when new</td><td><code>backend/app/services/raids.py</code> (<code>REPORT_SCOPED_TOOLS</code>)</td></tr>
       <tr><td><code>get_report_graph</code></td><td>store the graph JSON for PDF reports</td><td><code>backend/app/services/graphs.py</code></td></tr>
       <tr><td><code>create_chart</code></td><td>persist a chart artifact; <code>artifact</code> frame</td><td><code>backend/app/services/artifacts.py</code>, <code>charts.py</code></td></tr>
       <tr><td><code>get_character_zone_rankings</code>, <code>get_character_encounter_rankings</code></td><td>record known players</td><td><code>backend/app/services/known_entities.py</code></td></tr>
