@@ -2,7 +2,7 @@
 
 One turn is processed at a time per socket (the receive loop awaits each turn to
 completion), so turns on a single socket are naturally serialized rather than
-racing.
+racing. Across sockets, one turn at a time per chat (sc-511, :class:`_ChatTurn`).
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -71,6 +72,12 @@ RATE_LIMITED_MESSAGE = (
 BOTH_RATE_LIMITED_MESSAGE = (
     "Both {label} models are rate-limited right now. Please try again in about a minute."
 )
+# sc-511 / decision scope:076:two-tabs: a newer turn on the same chat ended this one.
+SUPERSEDED_MESSAGE = "This chat continued in another window. The answer so far is saved."
+# sc-511: how long a newer turn waits for the one it superseded to save its partial and end.
+SUPERSEDE_WAIT_S = 5.0
+# 076 review SEC-004: the 'superseded' notice is best effort; a stalled socket can't hold it up.
+SUPERSEDED_SEND_S = 1.0
 # QA SEC-001: any other failure. Provider, database and WCL errors can carry internal
 # details (project ids, SQL), so the player gets this plus a reference to the log line.
 AGENT_ERROR_MESSAGE = (
@@ -100,6 +107,81 @@ class _TurnSocket:
         if self.suggestions is not None and not self.suggestions.done():
             self.suggestions.cancel()
         self.suggestions = None
+
+
+class _ChatTurn:
+    """sc-511: the turn in flight on one chat, across all sockets.
+
+    A dropped socket is noticed only when a send fails, so its turn can still be in a tool
+    round when the player asks again on a new socket. The newer turn supersedes it: it cancels
+    the old turn while that one is in setup or streaming (its save is short and is awaited),
+    then waits at most :data:`SUPERSEDE_WAIT_S` for it to end. The old turn saves its partial
+    first, so a chat's messages stay in turn order and each turn's charts stay with its answer.
+    Past the wait the newer turn goes on, and the old one, no longer holding the chat, saves
+    nothing (:func:`_ensure_holds_chat`).
+
+    The key is (tenant, conversation) from the row the ownership check returned, never the id
+    in the frame, so another workspace can't touch a chat's turn.
+    """
+
+    turns: dict[tuple[uuid.UUID, uuid.UUID], _ChatTurn] = {}
+
+    def __init__(self) -> None:
+        self.key: tuple[uuid.UUID, uuid.UUID] | None = None
+        self.task = asyncio.current_task()
+        self.cancellable = True
+        self.superseded = False
+
+    async def claim(self, tenant_id: uuid.UUID, conv_id: uuid.UUID) -> None:
+        """Become the chat's turn; call only after the chat's ownership is verified."""
+        key = (tenant_id, conv_id)
+        while (old := self.turns.get(key)) is not None:
+            old.superseded = True
+            if old.cancellable:
+                old.task.cancel()
+            await asyncio.wait({old.task}, timeout=SUPERSEDE_WAIT_S)
+            if self.turns.get(key) is old:
+                logger.warning("superseded turn still running after %ss", SUPERSEDE_WAIT_S)
+                break
+        self.key = key
+        self.turns[key] = self
+
+    def holds_chat(self) -> bool:
+        return self.key is not None and self.turns.get(self.key) is self
+
+    def release(self) -> None:
+        if self.holds_chat():
+            del self.turns[self.key]
+
+
+# The turn the current task runs (set by ``_handle_turn``), for the save paths' check below.
+_chat_turn: ContextVar[_ChatTurn | None] = ContextVar("chat_turn", default=None)
+
+
+class _LostChat(Exception):
+    """A newer turn took this turn's chat over while it was saving (076 review SEC-002)."""
+
+
+def _ensure_holds_chat() -> None:
+    """Raise :class:`_LostChat` when a newer turn took this turn's chat over.
+
+    Called inside a save transaction, after ``add_message`` when there is a message to save:
+    that locks the conversation row, and a newer turn writes its question only under that lock,
+    so a turn that passes the check saves before it, and one that fails rolls back and writes
+    and links nothing.
+    """
+    chat_turn = _chat_turn.get()
+    if chat_turn is not None and not chat_turn.holds_chat():
+        raise _LostChat
+
+
+async def _send_superseded(ws) -> None:
+    """Tell a superseded turn's socket, if it is still there (scope:076:two-tabs)."""
+    try:
+        frame = ErrorFrame(code="superseded", message=SUPERSEDED_MESSAGE)
+        await asyncio.wait_for(_send(ws, frame), SUPERSEDED_SEND_S)
+    except Exception:  # noqa: BLE001 - socket may already be gone or stalled
+        pass
 
 
 async def _send(ws: WebSocket, frame) -> None:
@@ -252,6 +334,13 @@ async def _persist_partial(
     (the chat shows a turn's charts only when its answer completes).
     """
     text = "".join(tokens)
+    try:
+        await _save_partial(conv_id, text, identity, user_seq)
+    except _LostChat:
+        logger.warning("partial answer not saved: a newer turn took the chat over")
+
+
+async def _save_partial(conv_id, text: str, identity: RequestIdentity, user_seq: int) -> None:
     async with tenant_scope(identity.tenant_id, user_id=identity.user_id) as session:
         seq = user_seq
         if text:
@@ -259,6 +348,7 @@ async def _persist_partial(
                 session, conv_id, "agent", text, status="partial", tenant_id=identity.tenant_id
             )
             seq = msg.seq
+        _ensure_holds_chat()  # sc-511: a turn that lost its chat writes and links nothing
         # Every way a turn ends links its charts and graphs (sc-213, SPEC-002): the repo call
         # takes all of a chat's unlinked ones, so one left behind would show up under a later
         # answer.
@@ -274,6 +364,29 @@ async def _handle_turn(
     *,
     fallback_model: str | None = None,
 ) -> asyncio.Task | None:
+    """Run one chat turn, holding its chat from the ownership check to the end (sc-511)."""
+    chat_turn = _ChatTurn()
+    token = _chat_turn.set(chat_turn)
+    try:
+        return await _run_chat_turn(ws, turn, identity, chat_turn, fallback_model=fallback_model)
+    except asyncio.CancelledError:
+        chat_turn.release()
+        if chat_turn.superseded:
+            await _send_superseded(ws)
+        raise
+    finally:
+        chat_turn.release()
+        _chat_turn.reset(token)
+
+
+async def _run_chat_turn(
+    ws: WebSocket,
+    turn: ChatTurn,
+    identity: RequestIdentity,
+    chat_turn: _ChatTurn,
+    *,
+    fallback_model: str | None = None,
+) -> asyncio.Task | None:
     """Run one chat turn. Returns the follow-up suggestions task when the turn finished with
     an answer, else ``None``; the caller owns it (and cancels it when the next turn starts).
 
@@ -285,12 +398,22 @@ async def _handle_turn(
     # and returns its connection to the pool) before the model streams; captures and the
     # final save open their own short transactions.
     try:
-        async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
-            # Resolve or create the conversation (scoped — a foreign id reads as not-found).
-            if turn.conversation_id is not None:
+        if turn.conversation_id is not None:
+            # sc-511: check the chat is this workspace's (scoped — a foreign id reads as
+            # not-found), then wait for (and cut short) a turn still running on it before this
+            # turn writes anything. The wait holds no DB connection (076 review SEC-001).
+            async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
                 conv = await repo.get_conversation_row(
                     session, turn.conversation_id, tenant_id=tenant_id
                 )
+            if conv is None:
+                await _send(ws, ErrorFrame(code="not_found", message="Conversation not found."))
+                return None
+            await chat_turn.claim(tenant_id, conv.id)
+        async with tenant_scope(tenant_id, user_id=identity.user_id) as session:
+            if turn.conversation_id is not None:
+                # Read again after the wait: the chat may have been deleted meanwhile.
+                conv = await repo.get_conversation_row(session, conv.id, tenant_id=tenant_id)
                 if conv is None:
                     await _send(ws, ErrorFrame(code="not_found", message="Conversation not found."))
                     return None
@@ -298,6 +421,7 @@ async def _handle_turn(
                 conv = await repo.create_conversation(
                     session, model=turn.model, tenant_id=tenant_id
                 )
+                await chat_turn.claim(tenant_id, conv.id)  # a new chat: no turn to wait for
             conv_id = conv.id
             # Feature 019 / sc-155: only a default-named chat gets a generated title.
             title_eligible = conv.title_source == "auto"
@@ -337,36 +461,48 @@ async def _handle_turn(
     # is reset when the stream ends, so later tasks on this socket never see the identity.
     identity_token = current_identity.set(identity)
     try:
-        async for record in stream_response(
-            turn.model,
-            str(conv_id),
-            turn.content,
-            scratch,
-            context_preamble=preamble or None,
-            # ADK session state is isolated per tenant (feature 006, websocket.md).
-            user_id=str(identity.tenant_id),
-            fallback_model=fallback_model,
-        ):
-            kind = record.get("type")
-            if kind == "token":
-                empty = record.pop("empty", False) or empty
-                tokens.append(record["text"])
-                await ws.send_json(record)
-            elif kind == "tool_start":
-                await _forward_tool_start(ws, record)
-            elif kind == "tool_end":
-                proposal_id = await _handle_tool_end(ws, record, conv_id, identity)
-                if proposal_id is not None:
-                    proposal_ids.append(proposal_id)
-            elif kind == "grounding":
-                await ws.send_json(record)
-            elif kind == "model_retry":
-                # Feature 011 / FR-003: the model is rate-limited; show "retrying".
-                await _send(ws, ModelRetryFrame(**record))
-            elif kind == "model_fallback":
-                # Feature 021: the turn moved to the same-class sibling; show which.
-                switched = True
-                await _send(ws, ModelFallbackFrame(**record))
+        try:
+            async for record in stream_response(
+                turn.model,
+                str(conv_id),
+                turn.content,
+                scratch,
+                context_preamble=preamble or None,
+                # ADK session state is isolated per tenant (feature 006, websocket.md).
+                user_id=str(identity.tenant_id),
+                fallback_model=fallback_model,
+            ):
+                kind = record.get("type")
+                if kind == "token":
+                    empty = record.pop("empty", False) or empty
+                    tokens.append(record["text"])
+                    await ws.send_json(record)
+                elif kind == "tool_start":
+                    await _forward_tool_start(ws, record)
+                elif kind == "tool_end":
+                    proposal_id = await _handle_tool_end(ws, record, conv_id, identity)
+                    if proposal_id is not None:
+                        proposal_ids.append(proposal_id)
+                elif kind == "grounding":
+                    await ws.send_json(record)
+                elif kind == "model_retry":
+                    # Feature 011 / FR-003: the model is rate-limited; show "retrying".
+                    await _send(ws, ModelRetryFrame(**record))
+                elif kind == "model_fallback":
+                    # Feature 021: the turn moved to the same-class sibling; show which.
+                    switched = True
+                    await _send(ws, ModelFallbackFrame(**record))
+        finally:
+            chat_turn.cancellable = False  # from here the turn only saves: a newer one waits
+    except asyncio.CancelledError:
+        # sc-511: a newer turn on this chat superseded this one (a drop not noticed yet, or a
+        # second tab). Its partial goes right after its own question, before the newer one's.
+        if chat_turn.superseded and chat_turn.holds_chat():
+            try:
+                await _persist_partial(conv_id, tokens, identity, user_seq)
+            except Exception:  # noqa: BLE001 - SEC-003: the cancel goes on, the socket stays
+                logger.exception("superseded turn: partial answer not saved")
+        raise
     except WebSocketDisconnect:
         # Client vanished mid-reply: keep what we have, can't send anything.
         await _persist_partial(conv_id, tokens, identity, user_seq)
@@ -402,6 +538,11 @@ async def _handle_turn(
     final_text = "".join(tokens) or "(no response)"
     try:
         agent_msg_id, agent_seq = await _save_answer(identity, conv_id, final_text, proposal_ids)
+    except _LostChat:
+        # sc-511: a newer turn took the chat over while this one saved; nothing of it was kept.
+        logger.warning("answer not saved: a newer turn took the chat over")
+        await _send_superseded(ws)
+        return None
     except Exception:  # noqa: BLE001 - a card lock or the DB: the turn still ends (052 sc-357)
         ref = uuid.uuid4().hex[:8]
         logger.exception("turn failed: answer not saved (ref %s)", ref)
@@ -468,9 +609,19 @@ async def _start_turn(
     *,
     fallback_model: str | None = None,
 ) -> None:
-    """Start a turn on this socket: drop the previous turn's pending suggestions first."""
+    """Start a turn on this socket: drop the previous turn's pending suggestions first.
+
+    The turn runs as its own task, so a newer turn on the same chat can cancel it (sc-511)
+    without closing this socket.
+    """
     sock.cancel_suggestions()
-    sock.suggestions = await _handle_turn(sock, turn, identity, fallback_model=fallback_model)
+    task = asyncio.create_task(_handle_turn(sock, turn, identity, fallback_model=fallback_model))
+    try:
+        sock.suggestions = await task
+    except asyncio.CancelledError:
+        if asyncio.current_task().cancelling():
+            raise  # this socket is closing
+        sock.suggestions = None  # superseded by a newer turn on the same chat
 
 
 async def _save_answer(
@@ -489,6 +640,7 @@ async def _save_answer(
         agent_msg = await repo.add_message(
             session, conv_id, "agent", final_text, tenant_id=tenant_id
         )
+        _ensure_holds_chat()  # sc-511: under the chat's row lock; a lost chat rolls back
         # US2/US5: link this turn's captures (artifacts + graphs) to the agent message
         # so per-message reports and reload-time rendering can scope them correctly.
         await repo.assign_message_seq_to_turn_captures(
