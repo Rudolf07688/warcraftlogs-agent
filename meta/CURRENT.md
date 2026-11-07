@@ -5,12 +5,12 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-07 (P14 merged to main, unpushed)
+Updated: 2026-11-07 late (P14 done + retro; P16 agreed, start fresh)
 
 ## Topic
 
 The agent-team redesign: persistence and autonomy. Full record in
-`meta/team-optimisation.md` (decisions D1–D22, proposals P1–P15, baseline, change log).
+`meta/team-optimisation.md` (decisions D1–D22, proposals P1–P16, baseline, change log).
 
 ## Where we are
 
@@ -28,21 +28,29 @@ The agent-team redesign: persistence and autonomy. Full record in
 - Owner: "implement all these things, but not now ... for tomorrow, we evolve." **Nothing in
   P14 is built yet.**
 
-## Sprint 2026-11-07 (P14) merged
+## Sprint 2026-11-07 (P14): merged, pushed, Done, retro held
 
-Merged to main 23c73aa (owner go), plus 236f251: QA prompts + qa-sweep skill installed (project
-copies in `.claude/agents/qa-*.md`, `.claude/skills/qa-sweep/` are the source of truth; also
-copied to `~/.claude`, originals in `~/.claude/backups/qa-files-2026-11-07/`), and D18
-security-core now covers team tools that guard secrets, ports or identity. Worktrees removed,
-QA reports copied, GitNexus reindexed and sound. 0.56 M/pt, build 0.20/pt, 2 full suites.
-**Next app sprint** = the real test of P14 and the first use of the P15 reserve rule; compare
-against 11-05b. In scope there: the prompt-pin helper (sc-534) and embeddings following a pinned
-location (sc-512).
+Merged 23c73aa and pushed (c732dd5 and later). All 16 stories (11-05b + 11-07) Done; the
+iteration is renamed 2026-11-07. QA prompts and the qa-sweep skill installed as project copies
+(source of truth) and in ~/.claude. Full-team retro round 1: `meta/sprints/2026-11-07/retro.md`.
+
+## Next: P16 (owner go 2026-11-07, "I agree"), start in a fresh session
+
+Read P16 in `meta/team-optimisation.md`. Step 1 first, on main, as lead (agent files are mine):
+- Hostile inputs in briefs (product-owner.md).
+- The developer.md hard rule for security-core work and trusted artefacts.
+- Agreeing shared formats before launch, as a standard PO step.
+- Ilse's three scrum-master.md gaps, plus two rituals cut.
+- Take back the blanket D18 team-tool rule I added on 11-07 (product-owner.md, D18 paragraph).
+- One backlog ticket for the five tool gaps, deduplicated against sc-538..542.
+
+Per P16 step 5, the affected seats review the agent-file diff read-only before I commit.
+Then steps 2–4 (hazards fired by a hook, about 5 entry points, stream types) as designs. Ask
+the owner whether they become a small meta sprint or reserve stories; the next app sprint
+stays a clean P14 test.
 
 ## Open with the owner
 
-1. Push main? (23c73aa + 236f251 + wrap-up commits; ask, never assume)
-2. Move the 7 stories from 11-05b and the 9 from 11-07 to Done (the owner's call).
 3. Wipe the pre-fix Mimir series? (local only)
 4. Gemini Flash list price changes 2027-01-01 (pricing.yaml commit that day).
 

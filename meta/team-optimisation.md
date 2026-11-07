@@ -664,6 +664,30 @@ footprint, never grant a file twice, one rework round.
   story, overwritten (latest entry wins) with "launched" when it starts. The existing kinds
   and hook carry it; no new board kind needed. Trial after P14.
 
+### P16. Lessons that fire, fewer tools, like-for-like numbers (owner go 2026-11-07; next meta session)
+
+Source: the 2026-11-07 retro (`meta/sprints/2026-11-07/retro.md`) and the owner's reply.
+- **Step 1, retro fixes (do first):**
+  - Hostile inputs in briefs; Maren's checklist goes in `product-owner.md`.
+  - A `developer.md` hard rule for security-core work and for anything another agent trusts: one test per hostile input or attack path, the forged-input test first, one `mutate.py` bite per guard.
+  - Agree shared formats on the board before launch, as a standard PO step: producer, consumers, exact format, base ref, one example, the pinning test, and an "as built" update on the same key.
+  - Ilse's three `scrum-master.md` gaps: a sequenced stream's base and receipt, `--pg` plus a single alembic head on migration chains, and her questions reaching the PO. Cut two rituals.
+  - Take back the blanket D18 rule for team tools that I added on 11-07. D18 stays for app security-core code.
+  - One backlog ticket for the five tool gaps, deduplicated against the deferred QA tool tickets (sc-538..542).
+- **Step 2, lessons that fire at the moment of work.** The owner, in effect: memory exists but isn't recalled when it matters. My view:
+  - A recall tool fails the same way, because the agent has to remember to call it.
+  - The trigger has to come from the event: push, not pull.
+  - A PreToolUse hook on the first Edit or Write of a file in an agent's run injects that file's facts and the matching **hazards**, once per file.
+  - A hazard library is matched by the kind of code: guard, trust artefact, concurrency, parser, prompt text. Seed it from the last five sprints' QA findings, so every finding class becomes one entry.
+  - Matching is structural first (path, symbol, component, GitNexus). Semantic retrieval comes in only if we measure misses: a QA finding whose hazard existed but didn't fire.
+  - Measure fix-bar findings per point; it should fall each sprint.
+- **Step 3, fewer tools (owner pref 29).** Twenty scripts in `.claude/team/`.
+  - Agents should see about five entry points: board, check (tests, receipts, mutation, guards), stack (stack, browse, obsq), facts (facts, hazards, memory lint) and report.
+  - Everything an agent needn't know moves into hooks or the back of those tools: facts injection, the footprint check at commit, cursors, `npm ci`.
+  - Count real runs per tool per sprint (not transcript mentions) and retire a tool nobody runs for two sprints.
+- **Step 4, like-for-like numbers.** Each stream carries a type (app backend, app frontend, stack/infra, team tooling, docs). Teamstats and the dashboard compare cost per point by type. 11-07 (tooling, 0.56) can't be compared with 11-05b (app, 1.19).
+- **Step 5, rule changes reviewed before landing.** Before team-lead changes a rule, the affected seats review it read-only, at about 60k tokens each. On 11-07 the team corrected two of my calls within an hour.
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -921,3 +945,4 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-11-07 (meta, owner question):** Reviewed the last three sprints' levers and outcomes for the owner. The owner asked about kanban flow closed by a fixed number of points: recorded as P15 (my view: flow inside the sprint, batch close-out; trial after P14).
 - **2026-11-07 (owner go on P15, narrowed):** "Add the reserve rule for the next app sprint." `product-owner.md` §1: target about 23 pts (21–25, was 19–23); in backlog sprints 1–2 reserve stories (≤ 3 pts, tier S, disjoint, briefed; board `reserve:<sc-id>`). §3: backfill one reserve in a fresh developer on an early hand-off while merged plus in-flight points are under 25; stop at the end sweep. Inactive in the P14 sprint (its steer names the work). Measure: reserves launched, idle-developer time, cost per point at the steady size.
 - **2026-11-07 (sprint 2026-11-07, P14):** the team built its own retro: 20/20 pts, 11.2 M, 0.56/pt (cheapest yet, tooling work), build 0.20/pt, coordination 42% (0.24/pt, down from 0.42), cold 0.48, 49 min launch to review. D21 first run: 2 full suites at the tip, none by developers. QA 1H+7M, all in team tools guarding .env, loopback or board identity; one fresh fix round 1.21. Merged 23c73aa (owner go). After the merge: QA prompts and qa-sweep installed as project copies (source of truth) and in ~/.claude; D18 security-core extended to such tools. Team report: `meta/sprints/2026-11-07/team-report.html`.
+- **2026-11-07 (full-team retro + owner):** round 1 with all six (retro.md). My take: lessons in memory don't fire at the moment of work; the next cost lever is catching findings in the build (QA + fix 22%); my own bias to add mandatory rules fast; cost per point needs stream types. Owner: memory must fire surely (recall tool? semantic?), 20 tools is too many (pref 29), agrees with the plan. Recorded as **P16**; next session starts with step 1.
