@@ -34,7 +34,9 @@ Read P16 in `meta/team-optimisation.md`. Step 1 first, on main, as lead (agent f
 - Take back the blanket D18 team-tool rule I added on 11-07 (product-owner.md, D18 paragraph).
 - One backlog ticket for the five tool gaps, deduplicated against sc-538..542.
 
-Per P16 step 5, the affected seats review the agent-file diff read-only before I commit.
+Also fold in the members' agent-file proposals from the card round (retro.md, last section: consumer-side
+test, point of effect, replay real data, PO wait watches Ilse). Per P16 step 5, the affected
+seats review the agent-file diff read-only before I commit. Cards stay small (owner).
 Then steps 2–4 (hazards fired by a hook, about 5 entry points, stream types) as designs. Ask
 the owner whether they become a small meta sprint or reserve stories; the next app sprint
 stays a clean P14 test.
