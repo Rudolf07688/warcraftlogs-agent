@@ -16,4 +16,4 @@
 - [X] T011 ProposalCard.test mock + one portrait test; usePortraits test
 
 ## Phase 3: Hand-off
-- [ ] T012 cache tests (test_wcl_cache, 047 local rate), detect-changes, check.py receipt, board handoff
+- [X] T012 cache tests (test_wcl_cache, 047 local rate), detect-changes, check.py receipt, board handoff
