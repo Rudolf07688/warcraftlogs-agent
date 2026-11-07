@@ -6,20 +6,20 @@ export type RaidSummaryRole = "tank" | "healer" | "dps" | null;
 
 export interface RaidSummaryParticipant {
   name: string;
-  class_name: string;
+  class_name: string | null;
   spec: string | null;
   role: RaidSummaryRole;
 }
 
 export interface RaidSummaryParse {
-  encounter: string;
+  encounter: string | null;
   difficulty: string | null;
   percentile: number | null;
 }
 
 export interface RaidSummaryCharacter {
   name: string;
-  class_name: string;
+  class_name: string | null;
   spec: string | null;
   parses: RaidSummaryParse[];
 }

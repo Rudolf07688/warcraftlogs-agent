@@ -10,6 +10,8 @@ interface Props {
   /** The report code from the address; undefined selects the newest raid. */
   reportCode: string | undefined;
   streaming: boolean;
+  /** The chat socket is up; Analyze needs it, like the composer. */
+  connected: boolean;
   /** The chat shell's current error (a failed "Analyze this raid" lands here). */
   error: string | null;
   onAnalyze: (reportCode: string) => void;
@@ -20,7 +22,7 @@ function raidTime(r: Raid): number {
   return Date.parse(r.report_started_at ?? r.first_seen_at ?? r.last_asked_at) || 0;
 }
 
-export default function RaidsPage({ raids, status, reportCode, streaming, error, onAnalyze }: Props) {
+export default function RaidsPage({ raids, status, reportCode, streaming, connected, error, onAnalyze }: Props) {
   const navigate = useNavigate();
   const sorted = [...raids].sort((a, b) => raidTime(b) - raidTime(a));
 
@@ -63,7 +65,7 @@ export default function RaidsPage({ raids, status, reportCode, streaming, error,
         )}
         {sorted.map((r) => (
           <TabsContent key={r.report_code} value={r.report_code}>
-            <RaidTab raid={r} analyzeDisabled={streaming} onAnalyze={onAnalyze} />
+            <RaidTab raid={r} streaming={streaming} connected={connected} onAnalyze={onAnalyze} />
           </TabsContent>
         ))}
       </Tabs>

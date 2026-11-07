@@ -19,6 +19,7 @@ import type { Raid } from "./types";
 // longer starts a chat); "Analyze this raid" reuses the investigate + send flow and leaves it.
 
 const sent: ChatTurn[] = [];
+let socketUp = true;
 
 vi.mock("./api/wsClient", () => ({
   ChatSocket: class {
@@ -27,7 +28,7 @@ vi.mock("./api/wsClient", () => ({
       this.onConnection = onConnection;
     }
     connect() {
-      this.onConnection(true);
+      this.onConnection(socketUp);
     }
     send(turn: ChatTurn) {
       sent.push(turn);
@@ -100,6 +101,7 @@ class NoopResizeObserver {
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", NoopResizeObserver);
   sent.length = 0;
+  socketUp = true;
   vi.mocked(getModels).mockResolvedValue({ models: ["m"], default: "m" });
   vi.mocked(listConversations).mockResolvedValue({ conversations: [] });
   vi.mocked(getConversation).mockResolvedValue({} as never);
@@ -152,6 +154,15 @@ describe("Raids page in the app shell", () => {
     expect(sent[0].conversation_id).toBe("c1");
     expect(sent[0].content).toBe("Analyze this raid please");
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
+  });
+
+  it("Analyze this raid is disabled while the socket is disconnected", async () => {
+    socketUp = false;
+    renderApp("/app/raids/RAIDONE");
+    const btn = (await screen.findByRole("button", { name: "Analyze this raid" })) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(investigateRaid).not.toHaveBeenCalled();
   });
 
   it("a failed investigation keeps the user on the page with the error shown", async () => {
