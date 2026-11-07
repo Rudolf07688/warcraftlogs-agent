@@ -208,18 +208,31 @@ def _detail_rows(details: Any, region: Any) -> list[dict[str, Any]]:
     return [r for r in rows if isinstance(r.get("name"), str)]
 
 
+def _class_display(value: Any) -> str | None:
+    """A stored class name as the roster displays it; None when it names no playable class."""
+    klass = normalize_class_name(value) if isinstance(value, str) else None
+    return roster_snapshot().class_display(klass) if klass else None
+
+
 def _actor_rows(report: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """The summary's players (name and class; no realm, spec or role)."""
+    """The summary's players who took part in one of its fights (a fight's ``friendlyPlayers``);
+    name and class only. The report's Player actors also list bystanders (072-fix BUG-001)."""
+    fights = (report or {}).get("fights")
+    roster = {
+        i for f in (fights if isinstance(fights, list) else []) if isinstance(f, dict)
+        for i in (f.get("friendlyPlayers") if isinstance(f.get("friendlyPlayers"), list) else [])
+        if isinstance(i, int) and not isinstance(i, bool)
+    }
     actors = (report or {}).get("masterData")
     actors = actors.get("actors") if isinstance(actors, dict) else None
     rows = []
     for actor in actors if isinstance(actors, list) else []:
-        if isinstance(actor, dict) and isinstance(actor.get("name"), str):
-            sub = actor.get("subType")
-            klass = normalize_class_name(sub) if isinstance(sub, str) else None
+        if not isinstance(actor, dict) or not isinstance(actor.get("name"), str):
+            continue
+        actor_id = actor.get("id")
+        if isinstance(actor_id, int) and not isinstance(actor_id, bool) and actor_id in roster:
             rows.append({"name": actor["name"], "realm": None, "region": None,
-                         "class": roster_snapshot().class_display(klass) if klass else None,
-                         "spec": None, "role": None})
+                         "class": _class_display(actor.get("subType")), "spec": None, "role": None})
     return rows
 
 
@@ -286,6 +299,7 @@ def _my_characters(
         parses: list[Parse] = []
         fights: set[int] = set()  # a fight seen in the whole-report and the per-boss rankings counts once
         spec = row.get("spec") if row else None
+        klass = row.get("class") if row else None
         for part in rankings:
             for fight_id, fight, ranked in _ranked(part):
                 server = ranked.get("server") if isinstance(ranked.get("server"), dict) else {}
@@ -295,11 +309,12 @@ def _my_characters(
                     fights.add(fight_id)
                 parses.append(_parse(fight, ranked, names))
                 spec = spec or ranked.get("spec")
+                klass = klass or _class_display(ranked.get("class"))
         if row is None and not parses:
             continue
         mine.append(MyCharacter(
             name=_text(char.name) or "?",
-            class_name=_text(row.get("class") if row else None) or _text(char.class_name),
+            class_name=_text(klass) or _text(char.class_name),
             spec=_text(spec),
             parses=parses[:MAX_PARSES],
         ))
