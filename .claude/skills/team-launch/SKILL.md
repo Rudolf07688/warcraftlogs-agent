@@ -40,8 +40,10 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
 5. **Launch the product owner** as a named teammate. First check `ListAgents` for a
    leftover agent with the same name from an earlier sprint and stop it (a stale one
    replayed its old final report at launch once). Then: `Agent`, `name: product-owner`,
-   `subagent_type: product-owner`. Use the same pattern, with seat `sm`, for a scrum master.
-   Its brief contains:
+   `subagent_type: product-owner`. Launch a scrum master (same pattern, seat `sm`) only on
+   the product owner's `SPAWN-REQUEST`, and only when two streams need the same file in the
+   same window, for a migration chain, or for several gated Spec Kit streams at once.
+   The product owner's brief contains:
    - **seat `po`.** The product owner's persistent name and memory come from
      `.claude/team/member.py`; check `member.py roster`.
    - the steer and the clarified answers
@@ -55,8 +57,9 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
      cacheWr × 1.25 + out × 5 (per million), divided by the stream's points from the board
      export. One line per stream (2026-11-05: data stores with a security core 0.99/pt,
      runtime profiles 0.46/pt)
-  - live-check requests go on the board as kind `question`, key `live-check:<feature>`
-    (there is no `livecheck` kind)
+   - live-check requests go on the board as kind `question`, key `live-check:<feature>`
+     (there is no `livecheck` kind); developers post `live-check:<feature>-pre` while
+     building, and I run those at once
 6. **Tell the owner in two or three lines** what's running. Mention that the plan report
    will appear at `sprints/<date>/plan.html` and won't block the team.
 
@@ -73,17 +76,18 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   minutes when something moved. Arm a `Monitor` with
   `tail -n0 -F .git/team-board/<board>.jsonl | python3 -u .claude/team/boardwatch.py`
   (handoff, merge, escalation) and a 30-minute timeout, and re-arm on expiry; the expiry is
-  the heartbeat. Don't relay idle notifications.
+  the heartbeat. Don't relay idle notifications. Arm a second `Monitor` for live
+  pre-checks: `tail -n0 -F .git/team-board/<board>.jsonl | grep --line-buffered -E
+  '"key": "live-check:[^"]*-pre"'`.
+- **Live pre-checks:** run a developer's `live-check:<feature>-pre` command at once (stack
+  rules as in the live pass below) and answer with the result on the same key, `--to` that
+  developer. Developers never make credentialed calls themselves.
 - **Name tickets for the owner (preference 23):** a short plain name, id in brackets at most,
   never a bare `sc-NNN`.
-- **The merger wakes itself.** The product owner and scrum master arm
-  `board.py wait --kind handoff --author <dev> --since <N> --warm` in the background after each launch
-  (tested 2026-11-01: a sub-agent's own background job re-invokes it within seconds).
-  `--warm` re-invokes them every 4.5 minutes to keep their 5-minute prompt cache warm (P12);
-  those ticks are expected, not activity to relay. Expect their `notice` saying so. Send a one-line wake-up (board number, branch, head, agent id) only
-  as a fallback: a `handoff` that no `merge` or reply follows within about 15 minutes. Check
-  the timestamps first. You'll also see their interim "waiting on background work"
-  notices: ignore them.
+- **The merger wakes itself** with a warm `board.py wait` (`product-owner.md` §3); its
+  4.5-minute ticks and "waiting on background work" notices are not activity to relay.
+  Send a one-line wake-up (board number, branch, head, agent id) only as a fallback: a
+  `handoff` that no `merge` or reply follows within about 15 minutes (check timestamps).
 - **Completion notices of developers come to you**, not to the merger. Use them only to
   catch a developer that stopped without posting a hand-off.
 - **Live pass** (`.claude/team/livecheck.py`, stack from the sprint worktree with
@@ -107,10 +111,13 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
     grafana/loki/mimir/tempo keep their sprint-worktree mounts), then check that no container
     mounts `wcl-worktrees` (`docker inspect … {{range .Mounts}}{{.Source}}`). Only then remove
     the worktrees. On 2026-11-05b I removed them first and had to recreate four services.
+  - **Once at the tip.** Re-check a path only when a fix touched it.
   - **Judge answers, not just arrival.** Add an `EXPECT` entry for every prompt whose answer
-    the stored report fixes. Take the facts from `livecheck.py --facts <code>`, never from a
-    model. The run prints PASS/FAIL per turn and a `LIVE RESULT` line, and exits 1 on any FAIL
-    or EMPTY. Report a FAIL as a finding with a ticket.
+    the stored report fixes. Pin facts from `livecheck.py --facts <code>` (e.g.
+    `mode=hybrid`), never a model's words or a regex over the answer's wording (11-05b: a
+    cooldown regex passed on wording alone). The run prints PASS/FAIL per turn and a
+    `LIVE RESULT` line, and exits 1 on any FAIL or EMPTY. Report a FAIL as a finding with a
+    ticket.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on

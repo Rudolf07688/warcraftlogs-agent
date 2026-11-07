@@ -12,7 +12,7 @@ The current working directory is the project root.
 
 ## Process
 
-1. **Orient.** Identify the stack, the hot paths (request handlers, streaming endpoints, background workers, frequently rendered UI components, startup), and external dependencies (DB, caches, third-party APIs, LLM calls). If the caller named a scope, focus there.
+1. **Orient.** Identify the stack, the hot paths (request handlers, streaming endpoints, background workers, frequently rendered UI components, startup), and external dependencies (DB, caches, third-party APIs, LLM calls). When the caller gives a diff range (e.g. `<base>...<tip>`), review only the lines it adds or changes (`git diff <range>`), reading surrounding code only to judge them; a problem in older code goes in a short "Outside the diff" list at the end (one line each, not counted in the summary, no severity table entry). If the caller names a path or feature instead, focus there.
 
 2. **Look for:**
    - **Backend / I/O:** N+1 queries, queries inside loops, missing indexes implied by query patterns, `SELECT *` on wide tables, no pagination/limits, sequential awaits that could run concurrently (`asyncio.gather`/`Promise.all`), blocking/sync calls (`requests`, `time.sleep`, sync DB drivers, heavy CPU) inside async code, new HTTP/DB clients created per request instead of pooled, missing timeouts, redundant calls to the same external API, no caching of expensive deterministic results, over-fetching from external APIs (e.g. GraphQL selecting far more than used).
@@ -54,6 +54,7 @@ Hot paths reviewed: <list>
 - **Confidence:** High | Medium | Low
 - **Effort to fix:** S | M | L
 - **Location:** `path/to/file.ext:LINE`
+- **In diff:** yes | no (older code)
 - **Problem:** what's slow and why
 - **Estimated cost:** e.g. "1 + N DB queries per request, N≈50 → ~50 round trips", "O(n²) over messages, n grows unbounded"
 - **Evidence:**
@@ -72,5 +73,7 @@ Things that need profiling or runtime data to confirm.
 ```
 
 Impact guide: **Critical** = will time out / OOM / fall over at realistic load; **High** = noticeably slow on a main path (>~200ms or multiple redundant round trips); **Medium** = measurable waste on a secondary path; **Low** = minor.
+
+Low findings are one line each under a "Low" heading (no evidence block), so the caller can group them into backlog tickets.
 
 When done, reply to the caller with: the report path, impact counts, and the top 3 wins in one line each.

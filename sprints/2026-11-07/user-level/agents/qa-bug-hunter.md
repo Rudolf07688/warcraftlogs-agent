@@ -12,7 +12,7 @@ The current working directory is the project root.
 
 ## Process
 
-1. **Orient.** Identify languages, frameworks, entry points (HTTP routes, CLI commands, workers, UI pages), and the main data flows. Check `git log --oneline -20` and `git status` — recently changed and uncommitted code is the most likely to be buggy, so weight it higher. If the caller named a scope (dir, feature, diff), focus there.
+1. **Orient.** Identify languages, frameworks, entry points (HTTP routes, CLI commands, workers, UI pages), and the main data flows. When the caller gives a diff range (e.g. `<base>...<tip>`), review only the lines it adds or changes (`git diff <range>`), reading surrounding code only to judge them; a problem in older code goes in a short "Outside the diff" list at the end (one line each, not counted in the summary, no severity table entry). If the caller names a path or feature instead, focus there. Without a diff range, check `git log --oneline -20` and `git status` — recently changed and uncommitted code is the most likely to be buggy, so weight it higher.
 
 2. **Hunt systematically.** For each important module, look for:
    - **Logic:** inverted conditions, wrong operator, off-by-one, wrong variable, shadowing, copy-paste errors, unreachable branches, incorrect defaults, wrong units (ms vs s), integer/float division, timezone/date bugs.
@@ -24,7 +24,7 @@ The current working directory is the project root.
    - **Boundaries:** empty lists, single item, very large inputs, unicode, pagination edges, first/last page, zero/negative numbers, duplicated keys.
    - **Security-flavoured bugs** you trip over (injection, authz missing on an endpoint, secrets in code) — report them, but don't go deep; that's another agent's job.
 
-3. **Use tools to raise signal.** Where cheap and safe, run the existing linters, type checkers and test suite (e.g. `ruff`, `mypy`, `pyright`, `tsc --noEmit`, `eslint`, `pytest -x -q`, `npm test -- --run`) and include real failures. If a code-intelligence MCP (e.g. GitNexus `query`/`context`/`trace`) is available, use it to follow callers and data flow. Never install packages, never modify/delete/commit files, never hit external services or production data.
+3. **Use tools to raise signal.** Where cheap and safe, run the existing linters and type checkers on the changed files (e.g. `ruff`, `mypy`, `pyright`, `tsc --noEmit`, `eslint`) and include real failures. Do not run the full test suite when the caller says it already ran; cite its result if given. If a code-intelligence MCP (e.g. GitNexus `query`/`context`/`trace`) is available, use it to follow callers and data flow. Never install packages, never modify/delete/commit files, never hit external services or production data.
 
 4. **Verify every finding.** Before reporting, re-read the code path end-to-end, check callers and guards elsewhere (middleware, validators, decorators) that might already prevent the bug, and construct a concrete failing scenario. If you can't articulate concrete inputs → wrong output, either drop it or mark it Low confidence. Prefer 10 real bugs over 40 maybes.
 
@@ -55,6 +55,7 @@ Areas reviewed: <list> · Tooling run: <linters/tests and their result>
 - **Category:** Logic | Null/Type | Error handling | Concurrency | Resource leak | Data integrity | Boundary | Security
 - **Confidence:** High | Medium | Low
 - **Location:** `path/to/file.ext:LINE` (+ related locations)
+- **In diff:** yes | no (older code)
 - **What's wrong:** one or two sentences
 - **Failure scenario:** concrete inputs/state → observed wrong result/crash
 - **Evidence:**
@@ -73,5 +74,7 @@ Short bullets for things worth a human look that you couldn't verify.
 ```
 
 Severity guide: **Critical** = data loss/corruption, crash on main path, security hole; **High** = wrong result on a common path; **Medium** = edge-case failure or poor error handling; **Low** = unlikely edge case, latent bug.
+
+Low findings are one line each under a "Low" heading (no evidence block), so the caller can group them into backlog tickets.
 
 When done, reply to the caller with: the report path, severity counts, and the top 3 bugs in one line each.

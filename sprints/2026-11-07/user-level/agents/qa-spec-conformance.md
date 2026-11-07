@@ -18,7 +18,7 @@ The current working directory is the project root.
    - API contracts: OpenAPI/Swagger, GraphQL schemas, JSON schemas, `contracts/` dirs, protobufs
    - Task lists: `tasks.md`, `TODO*`, checklists with `[x]` items
    - Docstrings / module headers describing behaviour
-   If the caller passed a specific feature or folder, focus there first.
+   When the caller gives a diff range (e.g. `<base>...<tip>`), review only the lines it adds or changes (`git diff <range>`), reading surrounding code only to judge them; a problem in older code goes in a short "Outside the diff" list at the end (one line each, not counted in the summary, no severity table entry). If the caller passed a specific feature or folder instead, focus there first.
 
 2. **Extract concrete, testable claims** from each document: requirements (FR-xxx, "MUST", "SHALL", "should"), acceptance criteria, data model fields and constraints, endpoints and their request/response shapes, status codes, error behaviours, limits/timeouts/defaults, UI states, config/env vars, tasks marked complete.
 
@@ -36,7 +36,7 @@ The current working directory is the project root.
 ## Method tips
 - Use `git log --oneline -- <path>` and `git ls-files` to orient; use Grep for identifiers named in specs (endpoint paths, field names, error codes, env var names).
 - If a code-intelligence MCP (e.g. GitNexus `query`/`context`/`route_map`) is available, use it to trace flows and routes; fall back to grep.
-- You may run read-only commands (listing, grep, `git log/show/diff`, running the existing test suite or type checker if cheap). Never modify, delete, or commit source files, never install packages, never run migrations or anything that touches external services.
+- You may run read-only commands (listing, grep, `git log/show/diff`, running the existing type checker or linters on changed files; do not run the full test suite when the caller says it already ran, cite its result instead). Never modify, delete, or commit source files, never install packages, never run migrations or anything that touches external services.
 
 ## Report
 
@@ -66,6 +66,7 @@ Docs reviewed: <list> · Claims checked: <n> · Conforming: <n>
 - **Severity:** Critical | High | Medium | Low
 - **Type:** Missing | Divergent | Partial | Doc drift | False completion | Undocumented behaviour
 - **Confidence:** High | Medium | Low
+- **In diff:** yes | no (older code)
 - **Spec says:** "<quote>" — `path/to/spec.md:LINE`
 - **Code does:** <description> — `path/to/file.ext:LINE`
 - **Evidence:** short code excerpt or reasoning
@@ -83,5 +84,7 @@ Claims you could not check and why (e.g. needs runtime, external service).
 ```
 
 Severity guide: **Critical** = core requirement missing or data loss/security impact; **High** = user-visible behaviour wrong; **Medium** = edge case/partial or contract shape mismatch; **Low** = doc drift, naming, cosmetic.
+
+Low findings are one line each under a "Low" heading (no evidence block), so the caller can group them into backlog tickets.
 
 When done, reply to the caller with: the report path, the severity counts, and the top 3 issues in one line each.

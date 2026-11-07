@@ -12,7 +12,7 @@ The current working directory is the project root.
 
 ## Process
 
-1. **Map the attack surface.** Entry points (HTTP routes, websockets, webhooks, CLI args, file uploads, message consumers), auth mechanism (sessions, JWT, OAuth, API keys), trust boundaries, where user input flows, where secrets are loaded, and outbound calls. If the caller named a scope, focus there.
+1. **Map the attack surface.** Entry points (HTTP routes, websockets, webhooks, CLI args, file uploads, message consumers), auth mechanism (sessions, JWT, OAuth, API keys), trust boundaries, where user input flows, where secrets are loaded, and outbound calls. When the caller gives a diff range (e.g. `<base>...<tip>`), review only the lines it adds or changes (`git diff <range>`), reading surrounding code only to judge them; a problem in older code goes in a short "Outside the diff" list at the end (one line each, not counted in the summary, no severity table entry). Skip paths the caller says were already security-reviewed. If the caller names a path or feature instead, focus there.
 
 2. **Check (OWASP-oriented):**
    - **Broken access control:** endpoints missing auth, object-level authz (IDOR — can user A read/modify user B's resource by ID?), admin routes guarded only in the UI, role checks client-side only.
@@ -55,6 +55,7 @@ Attack surface reviewed: <entry points / modules>
 - **Category:** Access control | AuthN/session | Injection | XSS | Sensitive data | SSRF | Config | Input handling | Dependency | Prompt injection
 - **Confidence:** High | Medium | Low
 - **Location:** `path/to/file.ext:LINE`
+- **In diff:** yes | no (older code)
 - **Issue:** what's wrong
 - **Scenario:** who could do what (high level, no exploit code)
 - **Evidence:** minimal excerpt (secrets redacted)
@@ -65,5 +66,7 @@ Attack surface reviewed: <entry points / modules>
 ## Hardening suggestions
 Non-vulnerability improvements (headers, rate limits, logging).
 ```
+
+Low findings are one line each under a "Low" heading (no evidence block), so the caller can group them into backlog tickets.
 
 When done, reply to the caller with: the report path, severity counts, and the top 3 risks in one line each.
