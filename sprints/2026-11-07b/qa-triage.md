@@ -37,3 +37,13 @@ Grouped by root cause; see the ticket list in the sprint review.
 - **Raids page leftovers (073):** SPEC Low (URL stays /app/raids), SEC-004 (`..` not encoded,
   unreachable), SPEC-005 = backlog app-shell-mobile (existing sc-175).
 - **Portrait on the raids page:** the follow-up promised on sc-364.
+
+## Tickets created (Backlog, label qa-deferred; no existing QA ticket matched)
+- raid summary and Raids page hardening: sc-556 (2)
+- raid summary query cost: sc-557 (3)
+- portraits hardening: sc-558 (2)
+- chat turn serialization follow-ups: sc-559 (3)
+- onboarding follow-ups: sc-560 (2)
+- team test gate: sc-561 (2)
+- feature follow-up, portrait on the Raids page: sc-562 (1)
+- app shell at 390px: existing sc-175 (not re-filed)
