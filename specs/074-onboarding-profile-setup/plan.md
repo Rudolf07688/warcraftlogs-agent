@@ -8,15 +8,15 @@
 
 New accounts land on `/profile` with a skippable welcome prompt; the profile page gets a main
 class/spec/content selector saved per workspace. "Onboarding pending" is server state (no own
-characters and never skipped), stored as four nullable columns on `tenants` (migration 0023,
-which marks existing workspaces as skipped). Three small endpoints under `/api/profile`; the
+characters and never skipped), stored in a new tenant-owned table `profile_settings` with the
+`profile_proposals` RLS shape (migration 0023, which marks existing workspaces as skipped). Three small endpoints under `/api/profile`; the
 roster check reuses `roster_snapshot()`; redirects only to fixed or safe internal paths.
 
 ## Technical Context
 
 **Language/Version**: Python 3.12 (FastAPI, async SQLAlchemy, Pydantic v2); TypeScript + React 19
 **Primary Dependencies**: existing only (no new package); shadcn `NativeSelect`, `ToggleGroup`, `Card`, `Button` already in `components/ui`
-**Storage**: Postgres (`tenants` + 4 columns); SQLite in tests via `create_all`
+**Storage**: Postgres (new `profile_settings`, RLS); SQLite in tests via `create_all`
 **Testing**: pytest (SQLite route tests with `as_user` / `make_authed_client`), vitest
 **Target Platform**: web app
 **Project Type**: web (backend + frontend)
@@ -28,7 +28,7 @@ roster check reuses `roster_snapshot()`; redirects only to fixed or safe interna
 
 - I Reuse: roster check via `wcl_agent.game.roster.roster_snapshot()` (the SSOT `api/guides.py` uses); the frontend selector lists classes/specs from the existing `listGuides()` roster; `NativeSelect`/`ToggleGroup`/`Card` reused. PASS
 - II Steps: backend (migration, model, repo, API, tests) → frontend (types/client, redirect helper, components, pages). PASS
-- III Simplicity: columns on an existing per-workspace row, no new table, no new service. PASS
+- III Simplicity: one small table (one row per tenant, upsert), no new service. Columns on `tenants` were tried first and rejected (research R1). PASS
 - IV Typed: `ProfileSettingsIn` (extra=forbid, roster validator) / `ProfileSettingsOut`. PASS
 - V Async FastAPI: async handlers on `get_tenant_db`. PASS
 - VI GitNexus: impact on `ProfileOut`-adjacent code, `AcceptInvitePage`, `LoginPage` before edits; detect-changes before hand-off. PASS
@@ -48,11 +48,11 @@ specs/074-onboarding-profile-setup/
 
 ```text
 backend/migrations/versions/0023_profile_main_spec.py   (new)
-backend/app/db/models.py          Tenant: main_class, main_spec, main_content, onboarding_dismissed_at
+backend/app/db/models.py          ProfileSettings (tenant_id PK, main_class, main_spec, main_content, onboarding_dismissed_at)
 backend/app/db/repository.py      get_profile_settings, set_main_selection, skip_onboarding
 backend/app/schemas.py            MainContent, ProfileSettingsIn, ProfileSettingsOut
 backend/app/api/profile.py        GET/PUT /api/profile/settings, POST /api/profile/onboarding/skip
-backend/tests/test_074_onboarding.py (new)
+backend/tests/test_074_onboarding.py, test_074_settings_pg.py (new); test_rls.py (+1 RLS test)
 frontend/src/types.ts             MainContent, ProfileSettings, ProfileSettingsInput
 frontend/src/api/restClient.ts    getProfileSettings, saveProfileSettings, skipOnboarding
 frontend/src/auth/redirect.ts (new) + redirect.test.tsx   safe internal paths, post-login target

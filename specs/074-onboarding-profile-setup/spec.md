@@ -25,8 +25,10 @@ Answered by the developer (autonomous team); each is a board decision `scope:074
   specs; content is independent. A save replaces all three values (null clears).
 - Q: Sign-in redirect? → A: Only when onboarding is pending AND the destination is the chat
   home; any other destination is honoured if it is a safe internal path, else the chat home.
-- Q: Where are the settings kept? → A: On the workspace's own record (one per workspace), read
-  and written only by the session's workspace id; no new table.
+- Q: Where are the settings kept? → A: One record per workspace in its own workspace-scoped
+  store, isolated like the other profile data, read and written only by the session's
+  workspace. (Revised during build: columns on the workspace record broke the operator's
+  first-admin setup order.)
 
 ## User Scenarios & Testing *(mandatory)*
 

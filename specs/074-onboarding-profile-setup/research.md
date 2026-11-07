@@ -1,18 +1,18 @@
 # Research: 074 onboarding
 
 ## R1 Where the settings live
-- Decision: four nullable columns on `tenants`, written only `WHERE id = <session tenant>`.
-- Rationale: one row per workspace already exists (no upsert), the profile is per workspace
-  (v1: one user each), and no new RLS surface. `tenants` has no RLS (it is the tenant itself);
-  every read/write keys on `identity.tenant_id` from the session, and the body can't carry it
-  (`extra="forbid"`).
-- Alternatives: a new `tenant_profile_settings` table with RLS (more surface, an RLS test, a
-  security review, and an upsert path, for one row per tenant); `guild_profile` (wrong
-  lifecycle: replaced/deleted with the guild); `users` (profile is per workspace elsewhere).
+- Decision: a new tenant-owned table `profile_settings` (PK `tenant_id`), RLS as
+  `profile_proposals` (ENABLE + FORCE, `tenant_isolation`, runtime grant); upserts with
+  `ON CONFLICT (tenant_id)`. The body can't name the tenant (`extra="forbid"`).
+- Rejected (tried first): four columns on `tenants`. `backend/cli/bootstrap_admin.py` inserts a
+  `Tenant` through the ORM between `upgrade 0002_auth_tenancy` and `upgrade head`, and the ORM
+  names every mapped column, so the documented first-admin setup (and `pg.py up`) failed.
+- Also rejected: `guild_profile` (replaced/deleted with the guild); `users` (same bootstrap
+  problem; the profile is per workspace elsewhere).
 
 ## R2 What "new account" means
-- Decision: state: pending = `onboarding_dismissed_at IS NULL` and no own character. 0023
-  sets `onboarding_dismissed_at = now()` on existing tenants.
+- Decision: state: pending = no `profile_settings` row or no skip time, and no own character.
+  0023 inserts a skipped row for every existing tenant.
 - Rationale: covers invitation activation, the bootstrap admin (`backend/cli/bootstrap_admin.py`,
   no invitation) and an invitee who closed the tab; existing workspaces are untouched.
 - Alternatives: a flag at invitation acceptance (misses the bootstrap admin; `auth.py` and
