@@ -687,6 +687,10 @@ Source: the 2026-11-07 retro (`meta/sprints/2026-11-07/retro.md`) and the owner'
   - Count real runs per tool per sprint (not transcript mentions) and retire a tool nobody runs for two sprints.
 - **Step 4, like-for-like numbers.** Each stream carries a type (app backend, app frontend, stack/infra, team tooling, docs). Teamstats and the dashboard compare cost per point by type. 11-07 (tooling, 0.56) can't be compared with 11-05b (app, 1.19).
 - **Step 5, rule changes reviewed before landing.** Before team-lead changes a rule, the affected seats review it read-only, at about 60k tokens each. On 11-07 the team corrected two of my calls within an hour.
+- **Agent cards: keep them small (owner, 2026-11-07).** "I like the small identity cards we
+  have now. We can slowly expand later if we must." The team's ideas for a richer card are
+  parked in the card round section of `meta/sprints/2026-11-07/retro.md`. Only one small fix
+  goes ahead: `member.py lint` flags lines that merely mention a tool name (four false flags).
 
 ## What changed in the agent setup (2026-10-31)
 

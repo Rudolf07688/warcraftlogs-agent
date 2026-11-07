@@ -43,3 +43,26 @@ her hostile-input checklist (466). Ilse cut 2 covered lines, added the sequenced
 migration-chain lessons (317). Nils, Ansel and Vera unchanged (Ansel keeps two lint-flagged
 lines because `mutate.py` doesn't yet cover them; Maren notes a lint false match on
 `guards.py`).
+
+## Card round (owner: "reflect on their agent card ... make changes as they please")
+
+Each member edited only their own card (`meta/team/<seat>.md`), with `retro.md` and P16 to hand.
+Mostly they moved codebase lines out of memory (now team facts, soon hook-injected) and put
+their retro lesson in. Ilse, Maren, Tomas and Ansel rewrote their `about` line; Nils and Vera
+kept theirs. Four members report `member.py lint` false matches: a line mentioning the words
+"mutation" or "guard" is flagged as covered by `mutate.py` or `guards.py`.
+
+**Proposals for `developer.md` and `product-owner.md` (feed P16 step 1, reviewed by the affected seats):**
+- Vera: the security-core and trust-artefact hard rule.
+- Tomas: one test from the consumer's side for each shared format a stream produces.
+- Ansel: assert a guard where it takes effect (what was fetched, read or executed), not the input string.
+- Nils: replay real data (logs, a board export) through any filter or rule before hand-off.
+- Maren: the hostile-input list, the contract step, and her wait also watching Ilse's questions when she's seated.
+- Ilse: the three `scrum-master.md` gaps.
+
+**Richer agent cards: the team's view, parked.** The owner, after seeing it: "I like the small identity
+cards we have now. We can slowly expand later if we must." Kept for later:
+- The most-wanted field is a generated "code I've worked in" (Ansel, Tomas, Nils, Maren).
+- Next: fix-bar findings by hazard class, per point and by stream type, with sample counts.
+- Cut: model and effort, and "the work you want".
+
