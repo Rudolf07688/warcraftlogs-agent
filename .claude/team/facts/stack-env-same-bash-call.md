@@ -3,7 +3,7 @@ id: stack-env-same-bash-call
 anchors: [file:observability/test/, comp:compose]
 by: dev-1 Ansel
 source: meta/team/dev-1.md L19
-verified: 32010a6 2026-11-05
+verified: 20d4197 2026-11-07
 ---
 Each Bash tool call starts a fresh shell, so the env you exported in one call is gone in the
 next. A stack script then silently falls back to `lib.sh` defaults: project `wcl-obs-test`

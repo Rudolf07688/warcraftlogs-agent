@@ -2,7 +2,7 @@
 id: ws-turn-single-flight-per-chat
 anchors: [sym:backend/app/api/ws.py::_ChatTurn, sym:backend/app/api/ws.py::_start_turn]
 by: dev-4 Vera
-verified: 04caa38 2026-11-07
+verified: 20d4197 2026-11-07
 ---
 One turn at a time per chat, across sockets (sc-511): _ChatTurn.turns is keyed (tenant,
 conversation), claimed after the ownership check, released in _handle_turn's finally. A newer
