@@ -48,7 +48,9 @@ def new_code() -> str:
     return uuid.uuid4().hex[:16]
 
 
-def summary_report(code: str, *, visibility: str = "unlisted", actors=(("Thrall", "Shaman"),), ended=None) -> dict:
+def summary_report(code: str, *, visibility: str = "unlisted", actors=(("Thrall", "Shaman"),), ended=None,
+                   roster=None, trash_roster=()) -> dict:
+    """``roster``/``trash_roster``: the actor ids in each fight's friendlyPlayers (boss: every actor)."""
     end = ended or int((datetime.now(UTC) - timedelta(days=2)).timestamp() * 1000)
     return {
         "code": code, "visibility": visibility, "title": "Raid", "startTime": end - 9_876_000, "endTime": end,
@@ -56,8 +58,9 @@ def summary_report(code: str, *, visibility: str = "unlisted", actors=(("Thrall"
         "masterData": {"actors": [{"id": i, "name": n, "subType": c} for i, (n, c) in enumerate(actors)]},
         "fights": [
             {"id": BOSS, "name": "Ulgrax the Devourer", "encounterID": 2902, "difficulty": 4, "kill": True,
-             "size": 20, "startTime": 10, "friendlyPlayers": [0]},
-            {"id": 2, "name": "Trash", "encounterID": 0, "difficulty": None, "kill": None, "startTime": 20},
+             "size": 20, "startTime": 10, "friendlyPlayers": list(range(len(actors)) if roster is None else roster)},
+            {"id": 2, "name": "Trash", "encounterID": 0, "difficulty": None, "kill": None, "startTime": 20,
+             "friendlyPlayers": list(trash_roster)},
         ],
     }
 
@@ -66,8 +69,8 @@ def player(name: str, realm: str, klass: str, spec: str) -> dict:
     return {"name": name, "server": realm, "type": klass, "specs": [{"spec": spec, "count": 1}]}
 
 
-def ranked(name: str, realm: str, region: str, percent, spec: str = "Enhancement") -> dict:
-    return {"name": name, "server": {"name": realm, "region": region}, "class": "Shaman", "spec": spec,
+def ranked(name: str, realm: str, region: str, percent, spec: str = "Enhancement", klass: str = "Shaman") -> dict:
+    return {"name": name, "server": {"name": realm, "region": region}, "class": klass, "spec": spec,
             "rankPercent": percent}
 
 
@@ -119,10 +122,11 @@ async def track(factory, tenant: uuid.UUID, code: str) -> None:
         await db.commit()
 
 
-async def own_character(factory, tenant: uuid.UUID, name="Thrall", server="tarren-mill", region="EU") -> None:
+async def own_character(factory, tenant: uuid.UUID, name="Thrall", server="tarren-mill", region="EU",
+                        class_name: str | None = "Shaman") -> None:
     async with factory() as db:
         db.add(UserCharacter(tenant_id=tenant, role="self", name=name, server=server, region=region,
-                             class_name="Shaman", active_spec="Enhancement"))
+                             class_name=class_name, active_spec="Enhancement"))
         await db.commit()
 
 
@@ -323,6 +327,35 @@ async def test_my_characters_come_from_the_profile_matched_by_name_realm_and_reg
         "parses": [{"encounter": "Ulgrax the Devourer", "difficulty": "Heroic", "percentile": 50.5}],
     }]
     assert len([p for p in body["participants"] if p["name"] == "Thrall"]) == 2
+
+
+async def test_participants_are_the_fights_roster_not_every_player_actor(as_user, patched_db, monkeypatch):
+    """BUG-001 (live F1): the report's Player actors also list bystanders WCL names with class
+    "Unknown"; only players in some fight's friendlyPlayers are participants."""
+    code = new_code()
+    actors = (("Thrall", "Shaman"), ("Løkke", "Unknown"), ("Jaina", "Mage"), ("Acidassault", "Warrior"))
+    await store_batch([PendingWrite(summary_row(code, actors=actors, roster=[0], trash_roster=[2]), as_user.tenant_id)])
+    await track(patched_db, as_user.tenant_id, code)
+
+    body = (await get(as_user, code)).json()
+
+    assert body["participants"] == [{"name": "Thrall", "class_name": "Shaman", "spec": None, "role": None},
+                                    {"name": "Jaina", "class_name": "Mage", "spec": None, "role": None}]
+
+
+async def test_my_characters_class_comes_from_the_stored_ranking_before_the_profile(as_user, patched_db,
+                                                                                    monkeypatch):
+    """BUG-002 (live F2): a profile character with no class gets the class its stored ranking names."""
+    code = new_code()
+    ranks = [ranked("Traecie", "Tarren Mill", "EU", 80.0, "Frost", klass="Mage")]
+    rows = await stored_by_tools(monkeypatch, code, ranked_rows=ranks)
+    await store_batch([PendingWrite(r, as_user.tenant_id) for r in [summary_row(code), *rows]])
+    await track(patched_db, as_user.tenant_id, code)
+    await own_character(patched_db, as_user.tenant_id, name="Traecie", class_name=None)
+
+    body = (await get(as_user, code)).json()
+
+    assert [(c["name"], c["class_name"], c["spec"]) for c in body["my_characters"]] == [("Traecie", "Mage", "Frost")]
 
 
 # --- Re-verify (decision:072-reverify) ----------------------------------------------------------
