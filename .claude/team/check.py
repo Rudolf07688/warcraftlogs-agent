@@ -207,6 +207,12 @@ def touched(base, top):
     return sorted(f for f in files if f)
 
 
+def changed_files(base, ref, tree):
+    """Files a tree differs in from the merge base of `base` and its commit `ref`."""
+    mb = git("merge-base", base, ref)
+    return [f for f in git("diff", "--name-only", mb, tree).splitlines() if f]
+
+
 def area_label(files):
     kinds = {area_of(f) for f in files}
     code = [k for k in ("backend", "frontend") if k in kinds]
@@ -215,15 +221,32 @@ def area_label(files):
     return "config" if kinds else "none"
 
 
-def default_base(top):
+def default_base(top, ref="HEAD"):
     try:
-        return git("merge-base", "HEAD", "main", cwd=top)
+        return git("merge-base", ref, "main", cwd=top)
     except subprocess.CalledProcessError:
         return None
 
 
 class Refused(Exception):
     """A run the tool will not start: printed, exit 3."""
+
+
+def resolve_base(base, top):
+    """The commit SHA of a user-given --base; a value git could read as an option is refused."""
+    try:
+        if base.startswith("-"):
+            raise ValueError
+        return git("rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}", cwd=top)
+    except (ValueError, subprocess.CalledProcessError):
+        raise Refused(f"REFUSED: --base {base!r} is not a commit (a base may not start with '-')")
+
+
+def covers(receipt_area, needed_area):
+    """Did a receipt of this area run everything the branch's real diff needs?"""
+    if receipt_area == "full":
+        return True
+    return {k for k in ("backend", "frontend") if k in needed_area} <= set(receipt_area.split("+"))
 
 
 def shown_cmd(a):
@@ -236,7 +259,7 @@ def plan_steps(a, top):
     """(area, steps, base); a step is ("pytest"|"vitest", paths) or ("build", None)."""
     if a.full:
         return "full", [("pytest", []), ("vitest", []), ("build", None)], None
-    base = a.base or default_base(top)
+    base = resolve_base(a.base, top) if a.base else default_base(top)
     if not base:
         raise Refused("REFUSED: no --base given and no main branch to take the merge base from")
     area = area_label(touched(base, top))
@@ -354,6 +377,12 @@ def load_receipt(tree):
 
 
 def cmd_verify(a):
+    ref = "HEAD" if a.index else a.ref
+    try:
+        base = resolve_base(a.base, toplevel()) if a.base else None
+    except Refused as e:
+        print(e)
+        sys.exit(1)
     tree = target_tree(a)
     rec = load_receipt(tree)
     if a.index and git("diff", "--name-only"):
@@ -367,12 +396,21 @@ def cmd_verify(a):
         print(f"RUN NEEDED: receipt for {tree[:12]} ran without Postgres (PG tests were skipped)")
         sys.exit(1)
     area = rec.get("area", "backend")   # receipts before 066 were full pytest runs
+    base = base or default_base(toplevel(), ref)
+    if not base:
+        print("RUN NEEDED: no --base given and no main branch to check the receipt's area against")
+        sys.exit(1)
+    needed = area_label(changed_files(base, ref, tree))
+    if not covers(area, needed):
+        print(f"RUN NEEDED: the receipt for {tree[:12]} covers area={area} (base "
+              f"{str(rec.get('base'))[:12]}), but the branch touches {needed} against {base[:12]}")
+        sys.exit(1)
     if a.need_full and area != "full":
         print(f"RUN NEEDED: the receipt for {tree[:12]} covers area={area} only, not the full run")
         sys.exit(1)
     ran = ", ".join(rec.get("commands", ["pytest"]))
-    print(f"REUSE: tree {tree[:12]} passed area={area} (ran: {ran}; {rec['summary']}), by "
-          f"{rec['by'] or '?'} at {rec['ts']}, pg={'yes' if rec['pg'] else 'no'}")
+    print(f"REUSE: tree {tree[:12]} passed area={area} (ran: {ran}; {rec['summary']}), receipt base "
+          f"{str(rec.get('base'))[:12]}, branch touches {needed}, by {rec['by'] or '?'} at {rec['ts']}, pg={'yes' if rec['pg'] else 'no'}")
 
 
 def cmd_show(a):
@@ -401,6 +439,8 @@ def main():
         if name == "verify":
             q.add_argument("--need-pg", action="store_true")
             q.add_argument("--need-full", action="store_true", help="only a --full receipt counts")
+            q.add_argument("--base", help="the merge target the receipt's area is checked against "
+                           "(default: merge base with main)")
     a = p.parse_args()
     if a.cmd == "run" and a.full and a.paths:
         p.error("--full runs everything; give no paths")
