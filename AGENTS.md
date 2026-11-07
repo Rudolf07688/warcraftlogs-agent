@@ -42,3 +42,15 @@ This project is indexed by GitNexus as **warcraftlogs-agent** (3432 symbols, 670
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+<!-- LOCAL GITNEXUS SCOPE START (hand-written, owner decision D22; GitNexus analyze/upgrade must not touch it: re-check it is still here after every upgrade) -->
+## GitNexus scope in this repo (D22)
+
+The "Always Do" and "Never Do" gates in the GitNexus block above apply only when a change
+edits a **code symbol** (a function, class, method or module constant):
+- `impact` before editing that symbol; `detect-changes` **once before hand-off**, not at
+  every commit.
+- Not required for config, YAML, dashboard JSON, docs, agent files and skills, docstring- or
+  comment-only edits, a single-component frontend file, or a new stand-alone file.
+- Don't post a GitNexus result that changes no decision.
+<!-- LOCAL GITNEXUS SCOPE END -->
