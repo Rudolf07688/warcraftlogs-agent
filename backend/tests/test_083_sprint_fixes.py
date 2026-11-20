@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from wcl_agent.agent import _INSTRUCTION_BODY
 
 
@@ -43,3 +45,15 @@ def test_class_fill_matches_a_stored_player_by_realm_slug():
     )
     out = build_preamble([own], [], None, known_players=[seen])
     assert "Traecie-Tarren Mill (EU) — Mage — Frost" in out
+
+
+# F4 (BUG-002): difficulty words around the boss name don't turn a hit into a miss.
+@pytest.mark.parametrize(
+    "encounter", ["Ula'tek (Mythic)", "Mythic Ula'tek", "[Heroic] Ula'tek", "Ula'tek - LFR"]
+)
+async def test_boss_mechanics_ignores_difficulty_words_in_the_encounter(encounter):
+    from backend.app.agent_tools.mechanics import get_boss_mechanics
+
+    hit = await get_boss_mechanics("Venomous Heart", encounter)
+    assert hit["found"] is True
+    assert (hit["encounter"], hit["ability"]) == ("Ula'tek", "Venomous Heart")
