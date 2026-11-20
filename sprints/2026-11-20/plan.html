@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-20 Plan</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+/* Text containers are block flow, not grid: a grid makes every inline child (<b>, <code>, a bare word run) its own row. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flow-root}
+.card>*+*{margin-top:8px}
+.card>:first-child{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:flow-root;margin:10px 0}
+.callout>*{margin:0}
+.callout>*+*{margin-top:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;display:flex}
+.bar .fill{display:block;flex:none;height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:flow-root;background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;margin:0}
+.checks li.ok{border-left-color:var(--ok)}
+.checks li.no{border-left-color:var(--warn)}
+.checks span.no{float:left;margin-right:10px;min-width:24px;padding:0 4px;font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted);margin-left:6px;white-space:nowrap}
+.checks ul{margin:6px 0 0;padding-left:20px}
+[role=tabpanel]>*+*{margin-top:16px}
+[role=tabpanel]>h3{margin-bottom:0}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint plan · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-20: fixes from your 7 November chat</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-20</b></span> <span>Base <b class="mono">d7dab27</b></span> <span>Iteration <b>2026-11-20</b></span> <span>PO Maren</span></div>
+  <p>Everything that went wrong in your live chat on 7 November, fixed in one sprint: event lookups that return data, Claude turns that are faster and always answer, a visible "thinking" line instead of silent gaps, and a coach that explains boss mechanics, keeps its tool housekeeping out of the answer and takes sensible defaults instead of asking.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Planned</span><span class="v">22<small> pts</small></span><span class="s">9 stories</span></div>
+  <div class="kpi"><span class="eyebrow">Streams</span><span class="v">5</span><span class="s">in parallel, no shared files</span></div>
+  <div class="kpi"><span class="eyebrow">Security review</span><span class="v">1</span><span class="s">status line + saved answer</span></div>
+  <div class="kpi"><span class="eyebrow">Migrations</span><span class="v">0</span><span class="s">no database change</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-goal" aria-controls="p-goal" aria-selected="true">Goal <span class="count">1</span></button>
+  <button class="tab" role="tab" id="tab-feat" aria-controls="p-feat" aria-selected="false" tabindex="-1">Features <span class="count">5</span></button>
+  <button class="tab" role="tab" id="tab-order" aria-controls="p-order" aria-selected="false" tabindex="-1">Order and risks</button>
+  <button class="tab" role="tab" id="tab-dec" aria-controls="p-dec" aria-selected="false" tabindex="-1">Decisions <span class="count">6</span></button>
+</div></nav>
+
+<div role="tabpanel" id="p-goal" aria-labelledby="tab-goal" tabindex="0">
+  <h2 class="panel-title">Goal and user flow</h2>
+  <div class="card">
+    <p>A raider asks a big question about a night's kills. Today the turn goes quiet for up to a minute between tool rounds, may end with "I couldn't put an answer together", opens its answer with paragraphs about server errors and source ids, gets windowed event lookups back empty, and can't say what a boss ability asks of the player. After this sprint:</p>
+    <div class="flow"><span>Question</span><i>→</i><span>Tools run (event windows and paging work)</span><i>→</i><span>"Thinking" line shows what the model is doing</span><i>→</i><span>Mechanic guide looked up when asked</span><i>→</i><span>Answer starts at the verdict, always arrives</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Speed and stability</h3><p>Claude calls reuse the cached prompt instead of re-reading 60–69k tokens each time; the final call keeps room for the answer after thinking, and retries once without thinking if it still runs out.</p></div>
+    <div class="card"><h3>Coach quality</h3><p>Boss-mechanic guides for the current raid tier with source and patch; one plain line when a tool fails; a sensible default with a one-line assumption instead of a list of questions.</p></div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-feat" aria-labelledby="tab-feat" tabindex="0" hidden>
+  <h2 class="panel-title">Features</h2>
+  <div class="stack">
+    <div class="card">
+      <h3>078 Event windows and player lists <span class="tag t-acc">Tomas</span></h3>
+      <p class="small muted">Tier S x3, in sequence · opus medium · 5 pts</p>
+      <ul class="checks">
+        <li class="no"><span class="pts p1">1</span> Event lookups with a start time come back empty (sc-570), first in the sprint: every windowed lookup also sends an end time; a test pins it; a live check fetches page 2 of your Gravebound report.</li>
+        <li class="no"><span class="pts p2">2</span> Wrong Gravebound damage figures (sc-574): find which field the 30.9M came from; if it was the empty lookups, it closes with the fix above, otherwise the damage fields get unambiguous labels.</li>
+        <li class="no"><span class="pts p2">2</span> Raid player list server error on Veritass's reports (sc-573): root cause on the ticket; if ours, fixed with a test; if Warcraft Logs', one retry then a short plain error.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>079 Claude prompt caching and output budget <span class="tag t-acc">Vera</span></h3>
+      <p class="small muted">Tier S x2, in sequence · opus high · 5 pts</p>
+      <ul class="checks">
+        <li class="no"><span class="pts p3">3</span> Prompt caching on the Claude chat path (sc-568): cache breakpoints on tools, system prompt and history; cached tokens show in turn stats from the second call; time to first token and turn cost measured before and after; Gemini unchanged.</li>
+        <li class="no"><span class="pts p2">2</span> "No answer" when thinking uses the whole output budget (sc-567): an explicit, tested output limit; a call that still ends with no text retries once without thinking, recorded in turn stats; your big multi-boss prompt answers live.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>080 Thinking status line and a clean saved answer <span class="tag t-acc">Edda</span> <span class="tag t-warn">security review</span></h3>
+      <p class="small muted">Tier M · opus high · 5 pts (sc-569 plus the structural half of sc-572)</p>
+      <ul class="checks">
+        <li class="no"><span class="pts p3">3</span> Live thinking line between tool rounds (sc-569): one transient line under the spell card from the model's thought summary (about 80 characters, plain text, at most one update a second), or "Thinking… 12 s" when the model sends none; never saved; Gemini and Claude.</li>
+        <li class="no"><span class="pts p2">2</span> Tool troubleshooting leaks into answers (sc-572), structural part: text written between tool rounds shows only as status while the turn runs; the saved answer is the final text; a reload shows what the live stream showed.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>081 Boss-mechanic guides <span class="tag t-acc">Ansel</span></h3>
+      <p class="small muted">Tier M · opus high · 5 pts</p>
+      <ul class="checks">
+        <li class="no"><span class="pts p3">5</span> Coach explains boss mechanics such as Gravebound and Ula'tek's heart (sc-571): curated notes for the current raid tier (what it does, what to do, source, patch) and a lookup tool; Gravebound on The Coiled Altar answers what removes a stack; an unknown ability gets "not in my guides"; your two questions are in the live pass.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>082 Sensible defaults and one plain line on failures <span class="tag t-acc">Nils</span></h3>
+      <p class="small muted">Tier S · sonnet high · 2 pts (sc-575 plus the prompt half of sc-572)</p>
+      <ul class="checks">
+        <li class="no"><span class="pts p2">2</span> Too many clarifying questions (sc-575): "help me improve", "The ulatek heart" and "is frost mage difficult?" each get an analysis with a one-line assumption; the stored class and spec are read before asking; no character data at all still gets one short question.</li>
+        <li class="no">Tool troubleshooting (sc-572), prompt part: a turn whose tools fail says so once, plainly, without ids or retries.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-order" aria-labelledby="tab-order" tabindex="0" hidden>
+  <h2 class="panel-title">Order, dependencies and risks</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">Start</span> All five streams launched together; each owns its files outright.</div>
+    <div class="tl ok"><span class="t">First</span> The empty event lookups fix (sc-570), then the Gravebound figures check, which may close with it.</div>
+    <div class="tl warn"><span class="t">During</span> Live pre-checks through team-lead: the player-list repro, caching before/after, whether Claude streams thought text, the raid tier's encounters and abilities.</div>
+    <div class="tl ok"><span class="t">Hand-offs</span> Per-branch receipts, the security review on 080, merge.</div>
+    <div class="tl ok"><span class="t">Tip</span> One full suite, the QA sweep in parallel with team-lead's live pass, one fix round if anything meets the bar, then architecture docs and the sprint review.</div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Dependencies</h3>
+      <ul class="checks">
+        <li class="ok">The Gravebound figures depend on the event fix: same developer, in order.</li>
+        <li class="ok">Caching and the output budget share one Claude request builder: same developer.</li>
+        <li class="ok">The status line needs Claude's thought text, which the caching stream's request provides: a written contract between Vera and Edda.</li>
+        <li class="ok">The prompt routes mechanic questions to the new guide tool: a written contract between Ansel and Nils.</li>
+      </ul>
+    </div>
+    <div class="card"><h3>Risks</h3>
+      <ul class="checks">
+        <li class="no">Mechanic guide content: the current tier's encounters aren't in the code, so Ansel sources them through a live check and public guides first. Bosses without good sources become a backlog ticket, never invented text.</li>
+        <li class="no">Caching vs the minute-by-minute time line in the system prompt: named in Vera's brief, to solve inside her file.</li>
+        <li class="no">Prompt size cap: five streams add text; the remaining room (about 1,150 tokens) is split per stream up front.</li>
+        <li class="no">Interim text is only known as interim after the model calls a tool: the live view, the saved answer and the reload must agree.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout warn"><p><b>Drop first:</b> the defaults stream (sc-575) and the generic "Thinking…" fallback; then the Gravebound figures ticket if it closes with the event fix.</p></div>
+</div>
+
+<div role="tabpanel" id="p-dec" aria-labelledby="tab-dec" tabindex="0" hidden>
+  <h2 class="panel-title">Key decisions</h2>
+  <table class="tbl">
+    <tr><th>Decision and reason</th></tr>
+    <tr><td><b>Five parallel streams, no scrum master.</b> Every file has one owner; there is no migration, so nothing needs sequencing.</td></tr>
+    <tr><td><b>Tool troubleshooting (sc-572) split by file owner.</b> The saved-answer change lives in the chat runtime (Edda); the "say it once, plainly" rule lives in the prompt (Nils). The story moves to Under Review when both are merged.</td></tr>
+    <tr><td><b>Mechanic guides as curated notes plus a lookup tool, not database rows.</b> The knowledge-base-first route at the lowest cost: a few dozen entries need no vector search or migration and work on Gemini and Claude alike. Web search stays its own ticket (sc-380).</td></tr>
+    <tr><td><b>Caching and output budget with one developer.</b> Both change the same Claude request builder; the thinking retry must not fight the cache layout.</td></tr>
+    <tr><td><b>Prompt budget split up front.</b> Guides +400, prompt +250, tool docs +100, status line +50 tokens of about 1,150 left; the cap is never raised.</td></tr>
+    <tr><td><b>Answer-quality checks pinned to stored facts.</b> The live pass checks tool results and stored values (a guide was found, Traecie is a Mage), not the model's wording.</td></tr>
+  </table>
+</div>
+
+<footer>Written by Maren (product owner) on 2026-11-20 at launch. Not a gate: delivery started straight away.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>
