@@ -27,3 +27,19 @@ def test_persona_settles_facts_first_and_unrelated_questions_stay_unnarrowed():
     assert "population-level or unrelated questions" in " ".join(
         _section("CONTEXT_RESOLUTION").split()
     )
+
+
+# F3 (BUG-001): the class fill compares realms by slug, so "Tarren Mill" finds "tarren-mill".
+def test_class_fill_matches_a_stored_player_by_realm_slug():
+    from backend.app.db.models import KnownPlayer, UserCharacter
+    from backend.app.services.profile_context import build_preamble
+
+    own = UserCharacter(
+        role="self", name="Traecie", server="Tarren Mill", region="EU",
+        class_name=None, active_spec="Frost",
+    )
+    seen = KnownPlayer(
+        name="Traecie", server="tarren-mill", region="EU", class_name="Mage", spec="Frost"
+    )
+    out = build_preamble([own], [], None, known_players=[seen])
+    assert "Traecie-Tarren Mill (EU) — Mage — Frost" in out

@@ -26,6 +26,7 @@ so behavior is identical to having no profile at all (FR-006, FR-011, SC-003, SC
 
 from __future__ import annotations
 
+from wcl_agent.cache.normalize import server_slug
 from wcl_agent.game.constants import DIFFICULTY_NAMES, role_for_spec
 from wcl_agent.guides.guide_meta import BriefRecord
 from wcl_agent.game.roster import roster_snapshot
@@ -64,7 +65,8 @@ _ROLE_LABELS = {"tank": "Tank", "healer": "Healer", "dps": "DPS"}
 
 
 def _identity_key(name: str, server: str, region: str) -> tuple[str, str, str]:
-    return (name.lower(), server.lower(), region.lower())
+    # Realms compare by slug: a profile's "Tarren Mill" is a stored player's "tarren-mill".
+    return (name.lower(), server_slug(server), region.lower())
 
 
 def _ident(c: UserCharacter, seen: dict[tuple[str, str, str], KnownPlayer] | None = None) -> str:
