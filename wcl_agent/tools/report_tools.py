@@ -190,6 +190,15 @@ TOO_LARGE_NOTE = (
     "Table too large to return, even compacted. Narrow the query (set fight_id, source_id or "
     "ability_id, or request a more specific data_type) and try again."
 )
+# sc-574: every damage field is a real number, and the model once quoted unmitigatedAmount and
+# overkill as "the hit". Deaths and DamageTaken results say which is which.
+DAMAGE_FIELDS_NOTE = (
+    "Damage fields of a hit: amount = damage to health; absorbed = taken by shields; overkill = "
+    "damage past the remaining health; the hit's size is amount + absorbed + overkill (a table's "
+    "damage.total). unmitigatedAmount is the hit before armor and damage reduction (mitigated is "
+    "what they removed), not what landed. Name the field when quoting a number."
+)
+DAMAGE_FIELD_TYPES = {"Deaths", "DamageTaken"}
 _SORT_KEYS = ("total", "totalUptime")
 _LEAD_KEYS = ("name", "id", "class", "spec", "total", "per_second")
 _ROW_LIST_KEYS = ("entries", "details")  # a row's own rows, not a per-row breakdown
@@ -493,9 +502,26 @@ def last_kill(summary: ReportSummary) -> dict[str, Any] | None:
     return {"fight_id": kills[-1].id, **_boss(kills[-1])} if kills else None
 
 
+OPEN_END_MS = 10**12  # report-relative ms; past any report's end
+
+
 def _fight_ids(fight_id: int) -> list[int] | None:
     """0 means 'all fights'; otherwise a single-fight filter list."""
     return [fight_id] if fight_id else None
+
+
+def player_details_query(fight_id: int) -> tuple[str, str, dict[str, Any]]:
+    """The ``playerDetails`` field call, its declarations and variables (the store's key).
+
+    WCL answers ``playerDetails(fightIDs: null)`` with an internal server error (sc-573), so
+    the whole report is asked for as a time window instead."""
+    if fight_id:
+        return "playerDetails(fightIDs: $fightIDs)", ", $fightIDs: [Int]", {"fightIDs": [fight_id]}
+    return (
+        "playerDetails(startTime: $startTime, endTime: $endTime)",
+        ", $startTime: Float, $endTime: Float",
+        {"startTime": 0, "endTime": OPEN_END_MS},
+    )
 
 
 # --- Report structure ---------------------------------------------------------
@@ -678,9 +704,14 @@ async def get_report_table(
             "status": "success",
             "data_type": data_type,
             "table": await (aoverview_table(table) if overview else acompact_table(table)),
+            **_damage_note(data_type),
         },
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
+
+
+def _damage_note(data_type: str) -> dict[str, str]:
+    return {"damage_fields": DAMAGE_FIELDS_NOTE} if data_type in DAMAGE_FIELD_TYPES else {}
 
 
 def _table_query(
@@ -776,18 +807,22 @@ async def get_report_events(
     field = (
         f"events(dataType: {data_type}, hostilityType: {hostility_type}, "
         "fightIDs: $fightIDs, sourceID: $sourceID, abilityID: $abilityID, "
-        "limit: $limit, startTime: $startTime) { data nextPageTimestamp }"
+        "limit: $limit, startTime: $startTime, endTime: $endTime) { data nextPageTimestamp }"
     )
     var_decls = (
         ", $fightIDs: [Int], $sourceID: Int, $abilityID: Float, "
-        "$limit: Int, $startTime: Float"
+        "$limit: Int, $startTime: Float, $endTime: Float"
     )
+    # WCL returns no events for a startTime without an endTime (sc-570), so a start always
+    # carries an open end: the report (or the fightIDs filter) still bounds the window.
+    start = max(0, int(start_time or 0)) or None
     variables = {
         "fightIDs": _fight_ids(fight_id),
         "sourceID": source_id or None,
         "abilityID": ability_id or None,
         "limit": limit,
-        "startTime": start_time or None,
+        "startTime": start,
+        "endTime": OPEN_END_MS if start else None,
     }
     try:
         events = await _report_field(report_code, field, var_decls, variables, "events")
@@ -797,7 +832,7 @@ async def get_report_events(
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     has_more = isinstance(events, dict) and events.get("nextPageTimestamp") is not None
     return with_envelope(
-        {"status": "success", "data_type": data_type, "events": await _acap(events)},
+        {"status": "success", "data_type": data_type, "events": await _acap(events), **_damage_note(data_type)},
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
         Completeness(has_more=has_more),
     )
@@ -906,12 +941,9 @@ async def get_report_player_details(report_code: str, fight_id: int = 0) -> dict
         report_code (str): The report code.
         fight_id (int): Single fight id (0 = all fights).
     """
-    field = "playerDetails(fightIDs: $fightIDs)"
-    var_decls = ", $fightIDs: [Int]"
+    field, var_decls, variables = player_details_query(fight_id)
     try:
-        details = await _report_field(
-            report_code, field, var_decls, {"fightIDs": _fight_ids(fight_id)}, "playerDetails"
-        )
+        details = await _report_field(report_code, field, var_decls, variables, "playerDetails")
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if details is None:
