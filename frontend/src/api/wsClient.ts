@@ -31,6 +31,10 @@ export type Frame =
   | { type: "model_retry"; attempt: number; max_attempts: number; wait_s: number }
   // Feature 021: the turn moved to the same-class sibling after a lasting rate limit.
   | { type: "model_fallback"; from_model: string; to_model: string }
+  // Feature 080: a transient status line from the model's thinking summary (never saved).
+  | { type: "thinking"; text: string }
+  // Feature 080: the answer text so far was progress, not answer: drop it, show `text` as status.
+  | { type: "interim"; text: string }
   | { type: "done"; message_id: string }
   | { type: "error"; code: string; message: string };
 

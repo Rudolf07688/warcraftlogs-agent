@@ -39,12 +39,14 @@ from ..schemas import (
     DoneFrame,
     EncountersFrame,
     ErrorFrame,
+    InterimFrame,
     MetaFrame,
     ModelFallbackFrame,
     ModelRetryFrame,
     ProposalFrame,
     RaidTrackedFrame,
     SuggestionsFrame,
+    ThinkingFrame,
 )
 from ..suggestions import generate_followups
 from ..telemetry import chat_turn_span
@@ -477,6 +479,16 @@ async def _run_chat_turn(
                     empty = record.pop("empty", False) or empty
                     tokens.append(record["text"])
                     await ws.send_json(record)
+                elif kind == "thinking":
+                    # 080 (sc-569): a transient status line; never part of the answer.
+                    await _send(ws, ThinkingFrame(text=record["text"]))
+                elif kind == "interim":
+                    # 080 (sc-572): the text so far was progress, not answer. The browser drops
+                    # it too, so what this turn saves equals what it shows (live = reload).
+                    # Sent first: if the socket is gone, the browser kept the text and so does
+                    # the partial saved for it (080 review SEC-002).
+                    await _send(ws, InterimFrame(text=record.get("text") or ""))
+                    tokens.clear()
                 elif kind == "tool_start":
                     await _forward_tool_start(ws, record)
                 elif kind == "tool_end":
@@ -672,6 +684,7 @@ async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
     # Feature 015 / US2: whole coaching briefs of the content type this turn is about,
     # for each profile character's resolved spec (published briefs only, never drafts).
     profile_chars = list(own) + list(friends)
+    profile_settings, _ = await repo.get_profile_settings(session, tenant_id=tenant_id)
     specs = [(c.class_name, c.active_spec) for c in profile_chars if c.class_name and c.active_spec]
     turn = None
     if specs:
@@ -694,6 +707,8 @@ async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
         available=turn.available if turn else {},
         content_type=turn.content_type if turn else "raid",
         content_type_note=turn.note if turn else None,
+        main_class=profile_settings.main_class if profile_settings else None,
+        main_spec=profile_settings.main_spec if profile_settings else None,
     )
 
 

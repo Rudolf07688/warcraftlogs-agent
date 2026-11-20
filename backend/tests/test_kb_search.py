@@ -14,6 +14,7 @@ import pytest
 
 from backend.app.agent_tools import kb_tools
 from backend.app.agent_tools.kb_tools import KB_TOOLS, search_knowledge
+from backend.app.agent_tools.mechanics import get_boss_mechanics
 from backend.app.kb import search as kb
 from backend.app.kb.search import (
     Candidate,
@@ -323,7 +324,7 @@ def test_tool_group_line_fits_the_capability_budget():
     line = _tool_line(search_knowledge)
     assert line.startswith("- search_knowledge: Search stored knowledge first")
     assert len(line) <= MAX_TOOL_LINE_CHARS
-    assert KB_TOOLS.tools == (search_knowledge,)
+    assert KB_TOOLS.tools == (search_knowledge, get_boss_mechanics)
 
 
 def _ctx(user_id: str | None = None):

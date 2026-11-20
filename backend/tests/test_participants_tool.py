@@ -79,7 +79,7 @@ async def test_raid_excludes_pets_and_npcs_within_budget(monkeypatch):
     assert all(len(json.dumps(r)) <= 120 for r in rows)
     assert len(json.dumps(out)) <= 6000
     assert "_truncated" not in json.dumps(out)
-    assert fake.calls[0][1]["fightIDs"] is None
+    assert "fightIDs" not in fake.calls[0][1]  # whole report: a time window (sc-573)
 
 
 async def test_missing_realm_is_null_and_row_kept(monkeypatch):
@@ -146,3 +146,35 @@ def test_participants_lookup_tracks_the_raid():
     from backend.app.services.raids import REPORT_SCOPED_TOOLS
 
     assert "get_report_participants" in REPORT_SCOPED_TOOLS
+
+
+# --- query shape (sc-573) -----------------------------------------------------------------
+# WCL answers playerDetails(fightIDs: null) with "Internal server error"; the whole report
+# goes as a time window instead, a single fight keeps its fightIDs filter.
+
+
+async def test_whole_report_sends_a_time_window_not_null_fight_ids(monkeypatch):
+    res, fake = await run(monkeypatch, mplus(), fight_id=0)
+    assert res["status"] == "success"
+    (query, sent), = fake.calls
+    assert "playerDetails(startTime: $startTime, endTime: $endTime)" in query
+    assert "fightIDs" not in query and "fightIDs" not in sent
+    assert sent["startTime"] == 0 and sent["endTime"] >= 10**12
+
+
+async def test_one_fight_keeps_the_fight_filter(monkeypatch):
+    _, fake = await run(monkeypatch, mplus(), fight_id=4)
+    (query, sent), = fake.calls
+    assert "playerDetails(fightIDs: $fightIDs)" in query
+    assert sent["fightIDs"] == [4] and "startTime" not in sent
+
+
+@pytest.mark.parametrize("fight_id", [0, 4])
+async def test_player_details_tool_sends_the_same_shape(monkeypatch, fight_id):
+    from wcl_agent.tools.report_tools import get_report_player_details
+
+    fake = wcl_fakes.install(monkeypatch, lambda q, v: mplus())
+    assert (await get_report_player_details("abc", fight_id))["status"] == "success"
+    (query, sent), = fake.calls
+    assert ("fightIDs" in sent) == bool(fight_id)
+    assert ("startTime: $startTime" in query) == (not fight_id)

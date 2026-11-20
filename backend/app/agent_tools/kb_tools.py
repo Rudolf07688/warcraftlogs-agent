@@ -33,6 +33,7 @@ from ..services.name_resolver import (
     spec_pairs,
 )
 from ..tenancy.context import current_identity, set_scope
+from .mechanics import get_boss_mechanics
 
 logger = logging.getLogger(__name__)
 
@@ -224,4 +225,4 @@ async def search_knowledge(
     return kb_search.payload(result)
 
 
-KB_TOOLS = ToolGroup("Stored knowledge", (search_knowledge,))
+KB_TOOLS = ToolGroup("Stored knowledge", (search_knowledge, get_boss_mechanics))

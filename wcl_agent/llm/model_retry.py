@@ -98,6 +98,11 @@ class TurnStats:
     fallback_model: str | None = None
     switched_to: str | None = None
     switch_index: int | None = None
+    # 079 sc-568: the instruction's time block as the turn's first Claude request sent it, so
+    # every later request of the turn repeats it and its cached prompt stays valid.
+    pinned_time: str | None = None
+    # 079 sc-567: Claude calls that ended on max_tokens with only thinking and were re-run.
+    budget_retries: int = 0
 
     def record_prompt_tokens(self, count: int | None, cached: int | None = None) -> None:
         if count is None:
@@ -450,12 +455,68 @@ class RetryingGemini(Gemini):
 # Lets a request set ``thinking.block_binding`` (Claude API and Vertex alike).
 THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01"
 
+# 079 sc-567: the chat's output limit. ADK's default (8,192) let adaptive thinking spend all of
+# it on a big analysis, leaving no answer. A non-streamed request (the CLI) gets less: the SDK
+# refuses one that could run past 10 minutes (above about 21k tokens).
+CLAUDE_MAX_TOKENS = 32_000
+CLAUDE_NONSTREAM_MAX_TOKENS = 16_000
+# The effort of the one re-run of a call that ended on max_tokens with only thinking.
+BUDGET_RETRY_EFFORT = "low"
+# 079 sc-568: the instruction's last section, the only part that changes during a session.
+_TIME_OPEN, _TIME_CLOSE = "<CURRENT_TIME>", "</CURRENT_TIME>"
+
+
+def _pin_time_block(system: Any, stats: TurnStats | None) -> Any:
+    """Split the cached system block before its time section and pin that section per turn.
+
+    ``system`` is ADK's cache-marked system (one text block with a breakpoint). The prefix
+    order is tools, system, messages, so a changed time (every minute) would void the cached
+    history behind it. The stable head keeps the breakpoint; the time block follows it,
+    repeated from the turn's first request, so all requests of a turn share one prefix.
+    Anything after the time block (the round cap's wrap-up) rides along uncached.
+    """
+    if not (isinstance(system, list) and len(system) == 1 and isinstance(system[0], dict)):
+        return system
+    head, sep, tail = system[0].get("text", "").rpartition(_TIME_OPEN)
+    if not sep or not head.strip():
+        return system
+    time_text, close, rest = tail.partition(_TIME_CLOSE)
+    block = sep + time_text + close
+    if stats is not None:
+        if stats.pinned_time is None:
+            stats.pinned_time = block
+        block = stats.pinned_time
+    return [{**system[0], "text": head}, {"type": "text", "text": block + rest}]
+
+
+def _thinking_only_cutoff(response: LlmResponse) -> bool:
+    """A final response cut off at max_tokens with no answer text and no tool call."""
+    if response.partial or response.finish_reason != genai_types.FinishReason.MAX_TOKENS:
+        return False
+    parts = response.content.parts if response.content else None
+    return not any((p.text and not p.thought) or p.function_call for p in parts or [])
+
+
 try:  # the Anthropic provider is optional at runtime
+    from google.adk.agents.context_cache_config import ContextCacheConfig
+    from google.adk.models.anthropic_llm import AnthropicGenerateContentConfig
     from google.adk.models.anthropic_llm import Claude as _Claude
 except Exception:  # noqa: BLE001 - missing optional dependency
     _Claude = None  # type: ignore[assignment]
 
 if _Claude is not None:
+    # ADK's Claude marks tools, system and the conversation's last block as cache breakpoints
+    # when a request carries a cache config; the default lifetime gives the 5-minute cache.
+    _CLAUDE_CACHE = ContextCacheConfig()
+
+    def _with_effort(config: genai_types.GenerateContentConfig | None, effort: str):
+        """``config`` as ADK's Anthropic config with ``effort`` (its only effort switch)."""
+        fields = {}
+        if config is not None:
+            fields = {
+                k: v for k in type(config).model_fields if (v := getattr(config, k)) is not None
+            }
+        return AnthropicGenerateContentConfig(**{**fields, "effort": effort})
 
     class RetryingClaude(_Claude):
         """ADK ``Claude`` with the shared retry loop, on the active provider (feature 032).
@@ -467,20 +528,33 @@ if _Claude is not None:
         """
 
         policy: RetryPolicy = RetryPolicy()
+        max_tokens: int = CLAUDE_MAX_TOKENS
 
         @cached_property
         def _anthropic_client(self):  # type: ignore[override]
             return (self.client or async_anthropic_client()).with_options(max_retries=0)
 
-        def _build_anthropic_kwargs(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-            """ADK's request, plus ``drop_block`` for thinking blocks the history no longer matches.
+        def _build_anthropic_kwargs(
+            self, llm_request: LlmRequest, *args: Any, **kwargs: Any
+        ) -> dict[str, Any]:
+            """ADK's request with prompt caching, plus ``drop_block`` for stale thinking blocks.
+
+            079 sc-568: cache breakpoints on the tools, the instruction's stable head and the
+            conversation's last block (ADK places them given a cache config), with the time
+            block pinned per turn (``_pin_time_block``), so each later request of a turn reads
+            the earlier ones' prompt from the cache. Usage comes back through ADK with the
+            cache reads and writes folded into ``prompt_token_count`` and the reads in
+            ``cached_content_token_count``.
 
             A replayed thinking block is valid only while everything before it is unchanged, and
             every request edits that history (old tool results stubbed, the per-turn preamble,
             the instruction's timestamp). Without this the API rejects such requests with a 400
             for newer accounts; with it, it drops the stale blocks and answers (feature 032).
             """
-            request = super()._build_anthropic_kwargs(*args, **kwargs)
+            if llm_request.cache_config is None:
+                llm_request.cache_config = _CLAUDE_CACHE
+            request = super()._build_anthropic_kwargs(llm_request, *args, **kwargs)
+            request["system"] = _pin_time_block(request.get("system"), current_turn.get())
             thinking = request.get("thinking")
             if isinstance(thinking, dict) and thinking.get("type") == "adaptive":
                 request["thinking"] = {
@@ -493,11 +567,46 @@ if _Claude is not None:
         async def generate_content_async(
             self, llm_request: LlmRequest, stream: bool = False
         ) -> AsyncGenerator[LlmResponse, None]:
-            async for response in generate_with_fallback(
-                lambda: super(RetryingClaude, self).generate_content_async(llm_request, stream),
-                llm_request,
-                self.policy,
-            ):
+            """The retrying call, re-run once at low effort when thinking used the whole budget.
+
+            079 sc-567: a final response that stopped on max_tokens with only thoughts would
+            end the turn with no answer. It is held back (its thought partials have streamed,
+            but no answer text) and the call runs once more at ``BUDGET_RETRY_EFFORT``; that
+            second outcome stands, whatever it is. Counted in ``TurnStats.budget_retries``.
+            """
+            if not stream:
+                llm_request.config = llm_request.config or genai_types.GenerateContentConfig()
+                if llm_request.config.max_output_tokens is None:
+                    llm_request.config.max_output_tokens = CLAUDE_NONSTREAM_MAX_TOKENS
+
+            def call():
+                return generate_with_fallback(
+                    lambda: super(RetryingClaude, self).generate_content_async(llm_request, stream),
+                    llm_request,
+                    self.policy,
+                )
+
+            cut_off: LlmResponse | None = None
+            async for response in call():
+                if _thinking_only_cutoff(response):
+                    cut_off = response
+                    continue
+                yield response
+            if cut_off is None:
+                return
+            stats = current_turn.get()
+            if stats is not None:
+                stats.budget_retries += 1
+            usage = cut_off.usage_metadata
+            logger.warning(
+                "claude call %s ended on max_tokens with no answer (thoughts_tokens=%s); "
+                "retrying once at effort=%s",
+                llm_request.model,
+                getattr(usage, "thoughts_token_count", None),
+                BUDGET_RETRY_EFFORT,
+            )
+            llm_request.config = _with_effort(llm_request.config, BUDGET_RETRY_EFFORT)
+            async for response in call():
                 yield response
 
 else:  # pragma: no cover - only without the anthropic extra

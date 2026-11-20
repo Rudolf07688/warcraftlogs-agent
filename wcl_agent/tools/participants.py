@@ -17,11 +17,17 @@ from ..cache.cache_models import ReportParticipants
 from ..game.constants import normalize_class_name, role_for_spec
 from ..game.roster import roster_snapshot
 from .provenance import Provenance, with_envelope
-from .report_tools import _fight_ids, _report_fields, _report_ttl
+from .report_tools import _report_fields, _report_ttl, player_details_query
 
 _GROUPS = (("tanks", "tank"), ("healers", "healer"), ("dps", "dps"))
 _ROLE_ORDER = {"tank": 0, "healer": 1, "dps": 2}
-_FIELDS = "endTime region { slug } playerDetails(fightIDs: $fightIDs)"
+
+
+def participants_query(fight_id: int) -> tuple[str, str, dict[str, Any]]:
+    """The fields, declarations and variables this tool sends; the Raids page recomputes its
+    store key from them (``raid_summary.part_keys``)."""
+    field, var_decls, variables = player_details_query(fight_id)
+    return f"endTime region {{ slug }} {field}", var_decls, variables
 
 
 def participants_from_player_details(details: Any, region: str | None) -> list[dict[str, Any]]:
@@ -102,9 +108,7 @@ async def _participants(code: str, fight_id: int) -> ReportParticipants | None:
     end_time: dict[str, int | None] = {"ms": None}
 
     async def load() -> ReportParticipants | None:
-        report = await _report_fields(
-            code, _FIELDS, ", $fightIDs: [Int]", {"fightIDs": _fight_ids(fight_id)}
-        )
+        report = await _report_fields(code, *participants_query(fight_id))
         if report is None:
             return None
         end_time["ms"] = report.get("endTime")

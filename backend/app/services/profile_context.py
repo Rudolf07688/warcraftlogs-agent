@@ -26,6 +26,7 @@ so behavior is identical to having no profile at all (FR-006, FR-011, SC-003, SC
 
 from __future__ import annotations
 
+from wcl_agent.cache.normalize import server_slug
 from wcl_agent.game.constants import DIFFICULTY_NAMES, role_for_spec
 from wcl_agent.guides.guide_meta import BriefRecord
 from wcl_agent.game.roster import roster_snapshot
@@ -63,8 +64,17 @@ _RECENT_HEADER = (
 _ROLE_LABELS = {"tank": "Tank", "healer": "Healer", "dps": "DPS"}
 
 
-def _ident(c: UserCharacter) -> str:
-    spec = " — ".join(x for x in [c.class_name, c.active_spec] if x)
+def _identity_key(name: str, server: str, region: str) -> tuple[str, str, str]:
+    # Realms compare by slug: a profile's "Tarren Mill" is a stored player's "tarren-mill".
+    return (name.lower(), server_slug(server), region.lower())
+
+
+def _ident(c: UserCharacter, seen: dict[tuple[str, str, str], KnownPlayer] | None = None) -> str:
+    # sc-575: a character saved without a class (only its spec) takes the class from a stored
+    # player record when there is one, so "Frost" never reads as Frost Mage or Frost Death Knight.
+    known = (seen or {}).get(_identity_key(c.name, c.server, c.region))
+    class_name = c.class_name or (known.class_name if known else None)
+    spec = " — ".join(x for x in [class_name, c.active_spec] if x)
     base = f"{c.name}-{c.server} ({c.region})"
     label = f"{base} — {spec}" if spec else base
     # US4: append the effective raid role (user override, else inferred from spec). Unset
@@ -231,13 +241,15 @@ def _brief_block(
     return lines
 
 
-def _you_line(own_characters: list[UserCharacter]) -> str:
+def _you_line(
+    own_characters: list[UserCharacter], seen: dict[tuple[str, str, str], KnownPlayer]
+) -> str:
     """The "You" line: unchanged for one own character, a labelled list for several."""
     if len(own_characters) == 1:
-        return f"- You (self): {_ident(own_characters[0])}"
+        return f"- You (self): {_ident(own_characters[0], seen)}"
     return (
         '- You (self) — the user plays all of these characters; "I/me/my" can mean any '
-        "of them: " + "; ".join(_ident(c) for c in own_characters)
+        "of them: " + "; ".join(_ident(c, seen) for c in own_characters)
     )
 
 
@@ -256,6 +268,8 @@ def build_preamble(
     available: dict[tuple[str, str], dict[str, bool]] = {},
     content_type: str = "raid",
     content_type_note: str | None = None,
+    main_class: str | None = None,
+    main_spec: str | None = None,
 ) -> str:
     """Compose the capped standing-context block, or "" when there's nothing to inject.
 
@@ -269,18 +283,26 @@ def build_preamble(
     maps the same pair to ``{content_type: has a published brief}`` for the index line.
     ``content_type_note`` explains a defaulted content type ("assumed — …"). No resolved
     specs ⇒ no brief block, so the output is byte-identical to pre-feature (FR-016).
+
+    ``main_class``/``main_spec`` are the workspace's saved main (profile settings, feature 074)
+    and ``known_players`` fill a profile character's missing class (sc-575); neither set ⇒ the
+    output is unchanged.
     """
     own_characters = list(own_characters)
     profile_chars = own_characters + list(friends)
+    seen = {_identity_key(p.name, p.server, p.region): p for p in known_players}
 
     # --- Profile block (unchanged output shape) -------------------------------
     profile_lines: list[str] = []
-    if own_characters or friends or guild is not None:
+    if own_characters or friends or guild is not None or main_class:
         profile_lines.append(_HEADER)
         if own_characters:
-            profile_lines.append(_you_line(own_characters))
+            profile_lines.append(_you_line(own_characters, seen))
+        if main_class:
+            main = " — ".join(x for x in [main_class, main_spec] if x)
+            profile_lines.append(f"- Main class/spec (profile settings): {main}")
         if friends:
-            profile_lines.append("- Friends: " + "; ".join(_ident(f) for f in friends))
+            profile_lines.append("- Friends: " + "; ".join(_ident(f, seen) for f in friends))
         if guild is not None:
             profile_lines.append(f"- Main guild: {guild.name}-{guild.server} ({guild.region})")
 

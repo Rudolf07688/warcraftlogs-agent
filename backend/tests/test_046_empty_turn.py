@@ -1,8 +1,9 @@
 """A big-report turn always ends with something readable (046, sc-302).
 
 ``stream_response`` is driven with synthetic ADK events (no model): tools then an empty final
-response end a chat turn with the no-answer message and ``outcome=empty``; interim text and the
-answer are separate paragraphs; the turn-stats line counts tool calls (sc-339 AC4).
+response end a chat turn with the no-answer message and ``outcome=empty``; interim text never
+reaches the answer (080 retracts it on a chat turn; the greeting and guide jobs keep sc-302's
+paragraph join); the turn-stats line counts tool calls (sc-339 AC4).
 """
 
 from __future__ import annotations
@@ -53,7 +54,9 @@ async def _turn(monkeypatch, caplog, events, user_id=CHAT_USER):
     with caplog.at_level(logging.INFO, logger="backend.app.agent_runner"):
         records = [r async for r in agent_runner.stream_response("m", "s", "hi", user_id=user_id)]
     (line,) = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn stats")]
-    text = "".join(r["text"] for r in records if r["type"] == "token")
+    # The answer is the tokens after the last ``interim`` (080, sc-572).
+    last = max((i for i, r in enumerate(records) if r["type"] == "interim"), default=-1)
+    text = "".join(r["text"] for r in records[last + 1 :] if r["type"] == "token")
     return text, line
 
 
@@ -68,7 +71,8 @@ def _interim_then_tools():
 async def test_tools_then_an_empty_final_end_with_the_no_answer_message(monkeypatch, caplog):
     events = [*_interim_then_tools(), _event(_part(text=""), final=True)]
     text, line = await _turn(monkeypatch, caplog, events)
-    assert text == "Let me get the totals.\n\n" + EMPTY_ANSWER_MESSAGE  # never just the interim line
+    # scope:080:retraction-guard: the retracted line comes back, never on its own.
+    assert text == "Let me get the totals.\n\n" + EMPTY_ANSWER_MESSAGE
     assert "outcome=empty" in line and "outcome=answered" not in line
     assert "tool_calls=2" in line
 
@@ -79,7 +83,7 @@ async def test_a_turn_with_no_text_at_all_gets_the_message(monkeypatch, caplog):
     assert "outcome=empty" in line and "tool_calls=0" in line
 
 
-async def test_interim_text_and_the_answer_are_separate_paragraphs(monkeypatch, caplog):
+async def test_interim_text_is_not_part_of_the_answer(monkeypatch, caplog):
     events = [
         *_interim_then_tools(),
         _event(_part(text="1. **Vagxsu**"), partial=True),
@@ -87,14 +91,14 @@ async def test_interim_text_and_the_answer_are_separate_paragraphs(monkeypatch, 
         _event(_part(text="1. **Vagxsu** 1.2M DPS"), final=True),  # the aggregated repeat
     ]
     text, line = await _turn(monkeypatch, caplog, events)
-    assert text == "Let me get the totals.\n\n1. **Vagxsu** 1.2M DPS"
+    assert text == "1. **Vagxsu** 1.2M DPS"
     assert "outcome=answered" in line
 
 
 async def test_an_answer_only_in_the_final_event_after_streamed_interim_text_is_kept(monkeypatch, caplog):
     events = [*_interim_then_tools(), _event(_part(text="Vagxsu topped damage."), final=True)]
     text, line = await _turn(monkeypatch, caplog, events)
-    assert text == "Let me get the totals.\n\nVagxsu topped damage."
+    assert text == "Vagxsu topped damage."
     assert "outcome=answered" in line
 
 
