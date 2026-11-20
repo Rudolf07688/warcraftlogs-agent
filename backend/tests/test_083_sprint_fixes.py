@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from wcl_agent.agent import _INSTRUCTION_BODY
@@ -57,3 +59,39 @@ async def test_boss_mechanics_ignores_difficulty_words_in_the_encounter(encounte
     hit = await get_boss_mechanics("Venomous Heart", encounter)
     assert hit["found"] is True
     assert (hit["encounter"], hit["ability"]) == ("Ula'tek", "Venomous Heart")
+
+
+# F5 (SPEC-003): whole-report participants stored before 078, under the old fightIDs: null
+# query, still reach the Raids page (read-only fallback; the tools never send that query again).
+LEGACY_PARTICIPANTS = (
+    "query ReportQ($code: String!, $fightIDs: [Int]) { reportData { report(code: $code) "
+    "{ endTime region { slug } playerDetails(fightIDs: $fightIDs) } } }"
+)
+
+
+async def test_participants_stored_under_the_pre_078_key_are_still_read(as_user, patched_db, monkeypatch):
+    from datetime import UTC, datetime
+
+    from backend.app.services.fetch_persistence import PendingWrite, store_batch
+    from backend.tests.test_072_raid_summary import DPS, get, new_code, refuse, track
+    from backend.tests.wcl_fakes import install
+    from wcl_agent.client.wcl_client import FetchedResponse, _flight_key
+
+    code = new_code()
+    variables = {"code": code, "fightIDs": None}
+    body = {"data": {"reportData": {"report": {
+        "endTime": 1, "region": {"slug": "eu"},
+        "playerDetails": {"data": {"playerDetails": {"tanks": [], "healers": [], "dps": DPS}}},
+    }}}}
+    row = FetchedResponse(
+        _flight_key(LEGACY_PARTICIPANTS, variables), LEGACY_PARTICIPANTS, variables,
+        json.dumps(body).encode(), datetime.now(UTC),
+    )
+    await store_batch([PendingWrite(row, as_user.tenant_id)])
+    await track(patched_db, as_user.tenant_id, code)
+    fake = install(monkeypatch, refuse)
+
+    out = (await get(as_user, code)).json()
+
+    assert out["participants"] == [{"name": "Thrall", "class_name": "Shaman", "spec": "Enhancement", "role": "dps"}]
+    assert fake.calls == []  # read from the store only: the old query is never sent
