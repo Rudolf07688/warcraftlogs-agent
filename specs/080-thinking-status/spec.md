@@ -110,7 +110,10 @@ text was shown only as status.
 - **FR-005**: When no status text is available, the live view MUST show "Thinking…" with the
   elapsed seconds after about 3 s without any turn event while no tool is running.
 - **FR-006**: Text streamed in a round that then calls a tool MUST be retracted from the answer
-  (live and server side alike) and shown only as the status line.
+  (live and server side alike) and shown only as the status line, unless it is answer-sized
+  (over 600 chars), accompanies a presenting tool (chart, profile proposal) or follows kept text;
+  a turn ending without an answer after a retraction gets the retracted text back
+  (scope:080:retraction-guard, 080 review SEC-001).
 - **FR-007**: The stored answer of a completed turn MUST equal the answer the live view shows at
   `done`; the knowledge index MUST receive only that answer.
 - **FR-008**: A turn interrupted while text streams MUST save as its partial exactly the text the

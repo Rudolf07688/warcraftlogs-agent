@@ -40,8 +40,7 @@ async def test_the_runner_marks_only_its_no_answer_message(monkeypatch):
     records = await _records(monkeypatch, [*_interim_then_tools(), _event(_part(text=""), final=True)])
     tokens = [r for r in records if r["type"] == "token"]
     assert tokens[0] == {"type": "token", "text": INTERIM}
-    # The interim line was retracted (080), so the closing message starts the answer.
-    assert tokens[-1] == {"type": "token", "text": EMPTY_ANSWER_MESSAGE, "empty": True}
+    assert tokens[-1] == {"type": "token", "text": "\n\n" + EMPTY_ANSWER_MESSAGE, "empty": True}
 
 
 async def test_an_answered_turn_carries_no_mark(monkeypatch):

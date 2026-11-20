@@ -71,7 +71,8 @@ def _interim_then_tools():
 async def test_tools_then_an_empty_final_end_with_the_no_answer_message(monkeypatch, caplog):
     events = [*_interim_then_tools(), _event(_part(text=""), final=True)]
     text, line = await _turn(monkeypatch, caplog, events)
-    assert text == EMPTY_ANSWER_MESSAGE  # never just the interim line
+    # scope:080:retraction-guard: the retracted line comes back, never on its own.
+    assert text == "Let me get the totals.\n\n" + EMPTY_ANSWER_MESSAGE
     assert "outcome=empty" in line and "outcome=answered" not in line
     assert "tool_calls=2" in line
 

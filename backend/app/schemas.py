@@ -94,23 +94,31 @@ class ModelRetryFrame(BaseModel):
 
 
 # Feature 080: transient status lines. The runner cleans and caps the text (``_status_line``,
-# 80 chars plus an ellipsis); the limit here is the backstop. Never saved.
+# 80 chars plus an ellipsis); this clamp is the backstop. It cuts rather than raises, so an
+# over-long line can never fail a turn (080 review SEC-004). Never saved.
 STATUS_TEXT_MAX = 120
 
 
-class ThinkingFrame(BaseModel):
+class _StatusFrame(BaseModel):
+    text: str = ""
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _clamp(cls, value):
+        return value[:STATUS_TEXT_MAX] if isinstance(value, str) else value
+
+
+class ThinkingFrame(_StatusFrame):
     """sc-569: one line from the model's latest thinking summary, while it thinks."""
 
     type: Literal["thinking"] = "thinking"
-    text: str = Field(max_length=STATUS_TEXT_MAX)
 
 
-class InterimFrame(BaseModel):
+class InterimFrame(_StatusFrame):
     """sc-572: the answer text streamed so far was progress, not answer: drop it, and show
     ``text`` (its first sentence, may be empty) as the status line."""
 
     type: Literal["interim"] = "interim"
-    text: str = Field(default="", max_length=STATUS_TEXT_MAX)
 
 
 class ModelFallbackFrame(BaseModel):

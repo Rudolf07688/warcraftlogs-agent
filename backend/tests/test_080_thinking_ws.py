@@ -14,7 +14,7 @@ from fastapi import WebSocketDisconnect
 
 from backend.app.api import ws as ws_mod
 from backend.app.kb import indexer as kb_indexer
-from backend.app.schemas import ChatTurn
+from backend.app.schemas import STATUS_TEXT_MAX, ChatTurn
 from backend.tests.test_076_turn_serialization import BOUND_S, _frames, _messages, _scripted, _sock, _start
 from backend.tests.test_proposal_ws import MODEL, _FakeSocket, _identity, _quiet, _tool_end
 
@@ -193,3 +193,41 @@ async def test_a_client_frame_of_the_new_types_starts_nothing(as_user, monkeypat
         assert started == []
         assert [f["type"] for f in client.sent] == ["error"]  # rejected as an invalid message
         assert client.sent[0]["code"] == "empty_message"
+
+
+class _DropOnInterim(_FakeSocket):
+    """A socket that is gone when the interim frame is sent: the browser never gets it."""
+
+    async def send_json(self, payload: dict) -> None:
+        if payload.get("type") == "interim":
+            raise WebSocketDisconnect(1006)
+        await super().send_json(payload)
+
+
+async def test_a_drop_as_the_interim_frame_is_sent_saves_what_the_browser_kept(as_user, patched_db, monkeypatch):
+    # 080 review SEC-002: the browser keeps its streamed text as the partial; so must the server,
+    # or the reload would show something the server never stored.
+    _quiet(monkeypatch, _stream({"type": "token", "text": INTERIM}, {"type": "interim", "text": STATUS}))
+    sock = _DropOnInterim()
+    try:
+        await ws_mod._handle_turn(sock, ChatTurn(model=MODEL, content="why?"), _identity(as_user))
+    except WebSocketDisconnect:
+        pass
+    conv_id = uuid.UUID(sock.frames[0]["conversation_id"])
+    assert await _messages(patched_db, conv_id, as_user.tenant_id) == [
+        ("user", "why?", "complete"),
+        ("agent", _live_answer(sock.frames), "partial"),
+    ]
+    assert _live_answer(sock.frames) == INTERIM
+
+
+async def test_an_over_long_status_line_is_cut_not_a_failed_turn(as_user, patched_db, monkeypatch):
+    # 080 review SEC-004: the frame clamps; it never raises mid-turn.
+    _quiet(monkeypatch, _stream({"type": "thinking", "text": "x" * 500}, {"type": "token", "text": ANSWER}))
+    sock = _FakeSocket()
+    task = await ws_mod._handle_turn(sock, ChatTurn(model=MODEL, content="why?"), _identity(as_user))
+    if task is not None:
+        await task
+    (thinking,) = [f for f in sock.frames if f["type"] == "thinking"]
+    assert thinking["text"] == "x" * STATUS_TEXT_MAX
+    assert sock.frames[-1]["type"] == "done"

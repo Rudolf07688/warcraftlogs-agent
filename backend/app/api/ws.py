@@ -485,8 +485,10 @@ async def _run_chat_turn(
                 elif kind == "interim":
                     # 080 (sc-572): the text so far was progress, not answer. The browser drops
                     # it too, so what this turn saves equals what it shows (live = reload).
-                    tokens.clear()
+                    # Sent first: if the socket is gone, the browser kept the text and so does
+                    # the partial saved for it (080 review SEC-002).
                     await _send(ws, InterimFrame(text=record.get("text") or ""))
+                    tokens.clear()
                 elif kind == "tool_start":
                     await _forward_tool_start(ws, record)
                 elif kind == "tool_end":
