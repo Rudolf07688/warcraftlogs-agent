@@ -9,11 +9,16 @@ import { PlotlyArtifact } from "./PlotlyArtifact";
 import { ProposalCard } from "./ProposalCard";
 import { useStreamText } from "../lib/streamStore";
 import { firstTokenRendered } from "../telemetry/chatEvents";
+import { THINKING_DEFAULT, thinkingElapsedLabel } from "../toolLabels";
 
 interface Props {
   messages: Message[];
   streaming: boolean;
   status: string;
+  /** Feature 080: the live status line (latest thought or interim text), plain text. */
+  thought?: string | null;
+  /** Feature 080: when the turn last reported anything (ms epoch), for "Thinking… Ns". */
+  quietSince?: number;
   error: string | null;
   streamCards: SpellCardState[];
   selectedBosses: number[];
@@ -66,9 +71,76 @@ function Spellbook({ cards, instant }: { cards: SpellCardState[]; instant?: bool
   );
 }
 
+// Feature 080: after this long without any turn event, while no tool is casting and no thought
+// line is showing, the status says "Thinking… Ns".
+const GENERIC_AFTER_S = 3;
+
+// Whole seconds since `since`, ticking once a second while `active`. Only the status re-renders.
+function useQuietSeconds(since: number | undefined, active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [since, active]);
+  return since === undefined ? 0 : Math.max(0, Math.floor((now - since) / 1000));
+}
+
+// Feature 080 (sc-569, sc-572): what the turn is doing while no answer text is showing. Before
+// any tool card: the animated indicator; under the cards: one transient line. Model text is
+// rendered as a text node only, never as markdown or HTML.
+function TurnStatus({
+  status,
+  thought,
+  quietSince,
+  cards,
+}: {
+  status: string;
+  thought: string | null;
+  quietSince?: number;
+  cards: SpellCardState[];
+}) {
+  const casting = cards.some((c) => c.status === "casting");
+  const quiet = useQuietSeconds(quietSince, !thought && !casting);
+  const generic =
+    !thought && !casting && quiet >= GENERIC_AFTER_S ? thinkingElapsedLabel(quiet) : null;
+  if (cards.length === 0) {
+    const label = thought ?? (status === THINKING_DEFAULT && generic ? generic : status);
+    const key = thought ? `t:${thought}` : generic && status === THINKING_DEFAULT ? "generic" : status;
+    return (
+      <div className="thinking" aria-label={label}>
+        <span key={key} className="thinking-text">
+          {label}
+        </span>
+        <span className="thinking-dots">
+          <i />
+          <i />
+          <i />
+        </span>
+      </div>
+    );
+  }
+  const line = thought ?? generic;
+  return line ? (
+    <div key={thought ?? "generic"} className="thinking-status">
+      {line}
+    </div>
+  ) : null;
+}
+
 // PERF-010: the in-flight reply. It is the only component that subscribes to the token
 // stream, so a token re-renders this message alone, not the list or the app.
-function LiveMessage({ status, streamCards }: { status: string; streamCards: SpellCardState[] }) {
+function LiveMessage({
+  status,
+  streamCards,
+  thought,
+  quietSince,
+}: {
+  status: string;
+  streamCards: SpellCardState[];
+  thought: string | null;
+  quietSince?: number;
+}) {
   const streamingText = useStreamText();
   const hasText = streamingText !== "";
   // Feature 060: client-side TTFT, after the first token was committed to the screen.
@@ -83,18 +155,7 @@ function LiveMessage({ status, streamCards }: { status: string; streamCards: Spe
       {streamingText ? (
         <StreamMarkdown content={streamingText} streaming />
       ) : (
-        streamCards.length === 0 && (
-          <div className="thinking" aria-label={status}>
-            <span key={status} className="thinking-text">
-              {status}
-            </span>
-            <span className="thinking-dots">
-              <i />
-              <i />
-              <i />
-            </span>
-          </div>
-        )
+        <TurnStatus status={status} thought={thought} quietSince={quietSince} cards={streamCards} />
       )}
     </div>
   );
@@ -152,6 +213,8 @@ function MessageListImpl({
   messages,
   streaming,
   status,
+  thought = null,
+  quietSince,
   error,
   streamCards,
   selectedBosses,
@@ -266,7 +329,14 @@ function MessageListImpl({
               </div>
             ))}
 
-            {streaming && <LiveMessage status={status} streamCards={streamCards} />}
+            {streaming && (
+              <LiveMessage
+                status={status}
+                streamCards={streamCards}
+                thought={thought}
+                quietSince={quietSince}
+              />
+            )}
 
             {error && <div className="message error">⚠️ {error}</div>}
 

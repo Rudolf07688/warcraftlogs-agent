@@ -548,6 +548,18 @@ body::after {
   }
 }
 
+/* Feature 080: the transient status line under the spell cards (thought or interim text). */
+.thinking-status {
+  margin-top: 6px;
+  font-size: 0.85em;
+  font-style: italic;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: label-in 0.28s ease-out;
+}
+
 .thinking-dots {
   display: inline-flex;
   gap: 4px;

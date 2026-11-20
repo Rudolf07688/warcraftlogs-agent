@@ -30,6 +30,11 @@ const TOOL_LABELS: Record<string, string> = {
 
 export const THINKING_DEFAULT = "Thinking";
 
+// Feature 080: the generic status while the model thinks without sending a summary.
+export function thinkingElapsedLabel(seconds: number): string {
+  return `Thinking… ${seconds}s`;
+}
+
 export function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? "Searching Warcraft Logs";
 }

@@ -21,7 +21,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import time
+import unicodedata
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -35,10 +37,11 @@ from wcl_agent.agent import WEB_SEARCH_AGENT_NAME, build_agent
 from wcl_agent.llm.model_retry import ModelRateLimited, RetryPolicy, TurnStats, current_turn
 
 from .agent_tools.kb_tools import KB_TOOLS
-from .agent_tools.profile_tools import PROFILE_TOOLS
+from .agent_tools.profile_tools import PROFILE_TOOLS, propose_profile_changes
 from .agent_tools.stored_data_tools import STORED_DATA_TOOLS
 from .config import settings
 from .scratch import TurnScratch
+from .services.artifacts import CHART_TOOL_NAME
 from .telemetry.metrics import record_conversation_depth, record_finish_reason, record_ttft
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,53 @@ EMPTY_ANSWER_MESSAGE = (
     "Please try again, or ask a narrower question (one boss, one player or one metric)."
 )
 PARAGRAPH = "\n\n"
+
+# Feature 080 (sc-569): the status line made from the model's thinking summaries. At most one
+# ``thinking`` record per THINKING_INTERVAL_S per turn, at most STATUS_LINE_CHARS long. Only the
+# last THOUGHT_KEEP_CHARS of a model call's thought text are kept and scanned.
+THINKING_INTERVAL_S = 1.0
+STATUS_LINE_CHARS = 80
+THOUGHT_KEEP_CHARS = 4000
+_thinking_clock = time.monotonic  # tests swap it for a fake clock
+# 080 (sc-572), scope:080:retraction-guard: only progress-sized text is retracted as interim.
+# Longer text, and text next to a tool that presents (a chart, a profile proposal: the prompt
+# asks for the explanation in text), is answer and stays.
+INTERIM_MAX_CHARS = 600
+PRESENTING_TOOLS = frozenset({CHART_TOOL_NAME, propose_profile_changes.__name__})
+_ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])")
+_MARKDOWN = re.compile(r"[*`~_]{2,}|[*`]|^\s*(?:#{1,6}\s|>\s?|[-+]\s)", re.M)
+_SENTENCE_END = re.compile(r"[.!?…](?=\s|$)")
+
+
+def _status_line(text: str, *, complete: bool = False) -> str:
+    """One plain line from model text: the first sentence of its latest paragraph (080).
+
+    Model text is untrusted: ANSI sequences, control and format characters (bidi overrides,
+    zero-width) and markdown markers are removed and whitespace collapsed, so the line is
+    inert wherever it is shown. A still-streaming last paragraph (``complete`` false) counts
+    once it has a sentence end or STATUS_LINE_CHARS characters; before that the previous
+    paragraph's sentence is used. Empty when there is nothing to show.
+    """
+    text = _ANSI.sub("", text[-THOUGHT_KEEP_CHARS:])
+    text = "".join(
+        ch for ch in text if ch == "\n" or unicodedata.category(ch) not in ("Cc", "Cf", "Co", "Cs")
+    )
+    paragraphs = re.split(r"\n\s*\n", text)
+    for i in range(len(paragraphs) - 1, -1, -1):
+        para = " ".join(_MARKDOWN.sub("", paragraphs[i]).split())
+        if not para:
+            continue
+        end = _SENTENCE_END.search(para)
+        if end:
+            sentence = para[: end.end()]
+        elif complete or i < len(paragraphs) - 1 or len(para) >= STATUS_LINE_CHARS:
+            sentence = para
+        else:
+            continue
+        if len(sentence) > STATUS_LINE_CHARS:
+            sentence = sentence[:STATUS_LINE_CHARS].rstrip() + "…"
+        return sentence
+    return ""
 
 # The session service is installed at startup (lifespan) via set_session_service —
 # a DatabaseSessionService so conversation *context* survives a restart (US2). If
@@ -297,16 +347,29 @@ async def _run_turn(
       large concurrent outputs are preserved and picked up after all calls finish (US2).
     - `{"type": "token", "text"}` — a streamed answer chunk; the closing no-answer message
       (below) also carries `"empty": True`, so the caller can tell it from model text (048).
+    - `{"type": "thinking", "text"}` — chat turns only (080, sc-569): a transient status line
+      from the model's thinking summary (:func:`_status_line`: plain, at most
+      STATUS_LINE_CHARS). At most one per THINKING_INTERVAL_S, only from the root agent's
+      events, and never while the current segment has answer text. Never part of the answer.
+    - `{"type": "interim", "text"}` — chat turns only (080, sc-572): all answer text streamed
+      so far was progress, not answer (the model went on to call a tool): drop it, and show
+      ``text`` (its first sentence, may be empty) as the status line. Yielded before the
+      round's first new `tool_start`, or before its `tool_end` for text written after a call.
+      Only for text of at most INTERIM_MAX_CHARS next to no PRESENTING_TOOLS call, and never
+      once text was kept as answer (scope:080:retraction-guard). A turn that ends with no
+      answer after a retraction gets the retracted text back as a `token` before the
+      no-answer message, so nothing the model wrote is lost.
 
     The agent uses the native thinking planner, so reasoning arrives as separate
-    `thought`-marked parts which we skip — only the answer text is streamed.
-    Concatenating all `token` records yields the answer.
+    `thought`-marked parts: never answer text, only the source of `thinking` lines.
+    The answer is the `token` records after the last `interim` (all of them without one).
 
-    sc-302: text after a tool round starts a new paragraph when text came before it, so an
+    sc-302: for the greeting, guide jobs and evals (the default local user), which get no
+    `interim`, text after a tool round starts a new paragraph when text came before it, so an
     interim line ("Let me get the totals.") never runs into the answer. A chat turn (one run
-    for a workspace, not the default local user of the greeting and guide jobs) whose model
-    gives no answer text after its last tool result, with no call left pending, ends with
-    :data:`EMPTY_ANSWER_MESSAGE` as its last token and the outcome ``empty``.
+    for a workspace) whose model gives no answer text after its last tool result, with no call
+    left pending, ends with :data:`EMPTY_ANSWER_MESSAGE` as its last token and the outcome
+    ``empty``.
     """
     turn_started = time.monotonic()
     runner = _get_runner(model)
@@ -338,6 +401,33 @@ async def _run_turn(
     # sc-289: call ids already announced, so a repeated function_call part cannot start a
     # second card.
     started_ids: set[str] = set()
+    # 080 (chat turns): ``segment`` holds the answer text streamed since the last ``interim``;
+    # ``thought`` the current model call's thought text (reset when the call or round ends).
+    root = getattr(getattr(runner, "agent", None), "name", None)
+    # ``kept``: answer text stays on screen, so nothing is retracted any more this turn;
+    # ``held``: the last retracted text; ``presenting``: this round calls a PRESENTING_TOOLS tool.
+    segment: list[str] = []
+    kept = False
+    held = ""
+    presenting = False
+    thought = ""
+    thinking_at: float | None = None
+    thinking_line = ""
+
+    def retract() -> dict | None:
+        """The ``interim`` record for a segment the model followed with a tool call, or
+        ``None`` when the segment is answer (scope:080:retraction-guard)."""
+        nonlocal text_sent, kept, held
+        text = "".join(segment)
+        segment.clear()
+        if not text:
+            return None
+        if kept or presenting or len(text) > INTERIM_MAX_CHARS:
+            kept = kept or bool(text.strip())
+            return None
+        held = text
+        text_sent = False  # nothing kept: the next text starts the answer, no paragraph join
+        return {"type": "interim", "text": _status_line(text, complete=True)}
 
     async for event in runner.run_async(
         user_id=user_id,
@@ -366,6 +456,7 @@ async def _run_turn(
 
         if not (event.content and event.content.parts):
             continue
+        partial = bool(getattr(event, "partial", False))
         for part in event.content.parts:
             call = getattr(part, "function_call", None)
             if call:
@@ -377,6 +468,12 @@ async def _run_turn(
                 if getattr(event, "partial", False) or (call_id and call_id in started_ids):
                     continue
                 args = _to_plain(getattr(call, "args", None))
+                presenting = presenting or any(
+                    getattr(getattr(p, "function_call", None), "name", None) in PRESENTING_TOOLS
+                    for p in event.content.parts
+                )
+                if chat and (interim := retract()):
+                    yield interim
                 if call_id:
                     started_ids.add(call_id)
                     pending_args[call_id] = args
@@ -404,6 +501,11 @@ async def _run_turn(
                 }
                 if started is not None:
                     record["ms"] = int((time.monotonic() - started) * 1000)
+                if chat and (interim := retract()):
+                    yield interim  # text the model wrote after its call, in the same round
+                if not pending_args:
+                    presenting = False  # the round's calls are all answered
+                thought, thinking_line = "", ""  # the next model call thinks afresh
                 # US2: deposit the full result on the shared per-turn scratch so large
                 # concurrent outputs are preserved and can be picked up when done.
                 if scratch is not None:
@@ -417,7 +519,30 @@ async def _run_turn(
                 yield record
                 continue
             if getattr(part, "thought", False):
-                continue  # model reasoning — never shown to the user
+                # Model reasoning: never answer text. On a chat turn its summary becomes the
+                # status line while no answer text is showing (080).
+                text = getattr(part, "text", None)
+                if not (chat and text and getattr(event, "author", None) == root):
+                    continue
+                if kept or "".join(segment).strip():
+                    continue  # the answer has started: no status after it
+                if partial:
+                    thought = (thought + text)[-THOUGHT_KEEP_CHARS:]
+                elif not thought:
+                    thought = text[-THOUGHT_KEEP_CHARS:]  # the call streamed no thought partials
+                else:
+                    continue  # the call's final event repeats what streamed
+                # The throttle counts every attempt, so the clean-up runs at most once a second
+                # however small the chunks (080 review SEC-003).
+                now = _thinking_clock()
+                if thinking_at is not None and now - thinking_at < THINKING_INTERVAL_S:
+                    continue
+                thinking_at = now
+                line = _status_line(thought, complete=not partial)
+                if line and line != thinking_line:
+                    thinking_line = line
+                    yield {"type": "thinking", "text": line}
+                continue
             text = getattr(part, "text", None)
             if not text:
                 continue
@@ -429,9 +554,13 @@ async def _run_turn(
                     text = PARAGRAPH + text
                 streamed = text_sent = True
                 answered = answered or bool(text.strip())
+                if chat:
+                    segment.append(text)
                 yield {"type": "token", "text": text}
             elif event.is_final_response():
                 final_text, final_author = text, getattr(event, "author", "")
+        if not partial:
+            thought = ""  # a model call ended
 
     # If the last round's text only arrived in the final (non-partial) event, emit it once.
     if not streamed and final_text.strip():
@@ -442,6 +571,11 @@ async def _run_turn(
     if not answered and not pending_args and user_id != USER_ID:
         if stats is not None:
             stats.outcome = "empty"
+        if held and not kept:
+            # scope:080:retraction-guard: no answer came after the last retraction, so what the
+            # model last wrote comes back ahead of the no-answer message instead of being lost.
+            yield {"type": "token", "text": held}
+            text_sent = True
         closing = PARAGRAPH + EMPTY_ANSWER_MESSAGE if text_sent else EMPTY_ANSWER_MESSAGE
         yield {"type": "token", "text": closing, "empty": True}
     if chat:
