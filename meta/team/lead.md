@@ -25,15 +25,14 @@ Running the team:
 - A security rework can break liveness; say so in the end-sweep brief when lanes, locks or ordering change.
 - Name tickets for the owner: a plain name, the id in brackets at most. Search Shortcut before filing: my sc-455 duplicated sc-428 (11-04b).
 - Count on the board, not from memory. Look at a file right before writing it, never a bare `>`; before deleting a worktree, list its ignored files (qa-reports/) and check no container still mounts it (11-05b: four obs services did).
-- Crash recovery: git fsck, board and transcripts for NUL tails; resume agents by ID; rewrite meta/CURRENT.md at each milestone.
+- Crash recovery: git fsck, board and transcripts for NUL tails; resume agents by ID.
+- Pre-checks are my cheapest lever: answer them at once (11-20: seven in 1–5 min, two root causes). Dry-run new livecheck judge logic on one turn before the pass (11-20: two checker bugs). Run the tip pass on both providers: each caught a FAIL the other missed.
 
 Live checks and reports:
-- Live checks run on what's running: after merging config that a service reads at start (Alloy, Loki, Mimir, Grafana), restart it before checking; `up -d --build` doesn't. I slipped on the 11-05 re-check despite this line, so it's in team-launch now.
-- Run the live pass in parallel with the end sweep and have the PO hold triage for it: on 11-05 its 5 FAILs joined the one fix round at no extra round.
 - The live pass on real data is where the bugs are: on 11-04b the stack proofs passed on fresh synthetic data while the real board dir jammed Loki and ratio stats read 341749%. Keep the live pass; push teams to seed old or odd data and assert values.
-- Render checks: a tall headless window; wait for the content, not the heading. browse.py blocks external hosts: count image requests, not the <img> left (11-07b false FAIL). Owner's stack: a vite on a free port adding the cookie server-side.
+- Render checks: a tall headless window; wait for the content, not the heading. browse.py blocks external hosts: count image requests, not the <img> left (11-07b false FAIL).
 - Look at what the owner will see before sending it: a headless screenshot per tab.
-- The owner's own chats are a live test: messages in the DB, tool args and results in the traces. Reproduce a suspect tool call from its args (11-07: empty event pulls, sc-570).
+- The owner's own chats are a live test: messages and tool args/results sit in the DB (ADK `events`, by session). Tempo traces expire within two weeks, so a ticket filed from a chat carries the args and key result fields, not a trace id (11-20). Reproduce a suspect call from its args.
 - Architecture docs (preference 24) must match the code before anything merges to main: `archdocs.py changed` and `check` from the sprint worktree; same steps for my own work on main.
 - The team is observed: start sprint sessions through `bin/claude-otel` (OTEL_* never reach Bash; TRACEPARENT does, per lead turn).
 

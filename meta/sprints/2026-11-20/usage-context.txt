@@ -1,0 +1,58 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            139    62753    21612545     208434      0
+Source mechanic notes bosses 1-3              5     9974      218094      76587      0
+Dev-2 Tomas: docs close-out                  78    44527    13922240     246103      0
+QA bug hunt sweep                            44    44038     4455840     153136      0
+Dev-1 Ansel: 081 boss mechanics              69    68655    10302773     197886      0
+D18 security review of 080                   25    23492     1533183      97834      0
+Dev-5 Edda: 080 thinking status line        119   110962    23636273     272262      1
+QA spec conformance sweep                    40    37259     4111612     168769      0
+Shortcut sync for sprint close               14     9387     1109612     110977      0
+Dev-3 Nils: 083 QA fix round                 54    32772     5728010     131026      0
+QA security sweep                            32    17737     2051488      91895      0
+Dev-3 Nils: 082b preamble hunk               13     4007      774097      79169      0
+Dev-2 Tomas: 078 WCL event windows           62    34181     6600178     129940      0
+Dev-4 Vera: 079 Claude cache and budget      60    46807    10953651     205360      0
+Dev-3 Nils: 082 coach defaults prompt        40    24802     4004968     132192      0
+QA performance sweep                         23    20821     1481670     101248      0
+product-owner                               210   142280    51492492     396051      1
+Source mechanic notes bosses 4-6              6    11255      304521      63953      0
+TOTAL {'calls': 1033, 'out': 745709, 'cr': 164293247, 'cc': 2862822, 'inp': 2252, 'sends': 2}
+main (team-lead) [('Bash', 95), ('mcp__shortcut__get_story', 11), ('Monitor', 7), ('ToolSearch', 3), ('mcp__shortcut__search_stories', 3), ('TaskStop', 3)]
+Source mechanic notes bosses 1-3 [('WebFetch', 6), ('Bash', 2), ('ToolSearch', 1)]
+Dev-2 Tomas: docs close-out [('Bash', 78), ('Read', 2)]
+QA bug hunt sweep [('Bash', 43), ('Write', 1)]
+Dev-1 Ansel: 081 boss mechanics [('Bash', 56), ('WebFetch', 10), ('WebSearch', 3), ('mcp__shortcut__update_story', 2), ('Agent', 2), ('Write', 2)]
+D18 security review of 080 [('Bash', 24), ('Write', 1)]
+Dev-5 Edda: 080 thinking status line [('Bash', 104), ('Skill', 4), ('mcp__shortcut__update_story', 3), ('Write', 3), ('Read', 2), ('ToolSearch', 1)]
+QA spec conformance sweep [('Bash', 39), ('Write', 1)]
+Shortcut sync for sprint close [('Bash', 7), ('mcp__shortcut__update_story', 7), ('mcp__shortcut__search_stories', 4), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1)]
+Dev-3 Nils: 083 QA fix round [('Bash', 50), ('Write', 1), ('ToolSearch', 1), ('Monitor', 1)]
+QA security sweep [('Bash', 30), ('Read', 1), ('Write', 1)]
+Dev-3 Nils: 082b preamble hunk [('Bash', 9), ('Monitor', 3)]
+Dev-2 Tomas: 078 WCL event windows [('Bash', 54), ('mcp__shortcut__update_story', 6), ('mcp__shortcut__create_story_comment', 3), ('Write', 1), ('ToolSearch', 1), ('mcp__shortcut__get_story', 1)]
+Dev-4 Vera: 079 Claude cache and budget [('Bash', 49), ('mcp__shortcut__update_story', 4), ('Edit', 4), ('Skill', 1), ('ToolSearch', 1), ('mcp__shortcut__get_story', 1)]
+Dev-3 Nils: 082 coach defaults prompt [('Bash', 38), ('Skill', 1), ('bash', 1), ('ToolSearch', 1), ('mcp__shortcut__list_workflow_states', 1), ('mcp__shortcut__update_story', 1)]
+QA performance sweep [('Bash', 23), ('Write', 1)]
+product-owner [('Bash', 152), ('Agent', 14), ('Write', 13), ('mcp__shortcut__update_story', 10), ('mcp__shortcut__get_story', 9), ('mcp__shortcut__create_story_comment', 9)]
+Source mechanic notes bosses 4-6 [('WebFetch', 7), ('Bash', 3), ('ToolSearch', 1), ('WebSearch', 1)]
+
+new context by kind (tool-result chars, share):
+main (team-lead)                           127160 other bash 50%, check/pg 18%, board 7%, shortcut 7%, git 7%
+Source mechanic notes bosses 1-3            31049 WebFetch 71%, other bash 29%, ToolSearch 0%
+Dev-2 Tomas: docs close-out               1197055 Read 75%, html reports 15%, git 4%, source reads 3%, other bash 1%
+QA bug hunt sweep                          193283 source reads 61%, git 29%, other bash 9%, Write 0%
+Dev-1 Ansel: 081 boss mechanics            187374 source reads 26%, other bash 21%, WebFetch 17%, board 14%, WebSearch 7%
+D18 security review of 080                 110306 source reads 75%, git 24%, other bash 1%, Write 0%
+Dev-5 Edda: 080 thinking status line       264818 source reads 51%, Read 17%, board 14%, other bash 12%, git 2%
+QA spec conformance sweep                  238559 git 35%, other bash 34%, source reads 30%, html reports 1%, Write 0%
+Shortcut sync for sprint close              74410 other bash 50%, shortcut 40%, git 8%, ToolSearch 1%
+Dev-3 Nils: 083 QA fix round               149182 source reads 62%, board 21%, git 11%, check/pg 3%, other bash 2%
+QA security sweep                           95161 source reads 47%, Read 44%, git 7%, other bash 2%, Write 0%
+Dev-3 Nils: 082b preamble hunk              23561 source reads 49%, git 23%, board 14%, check/pg 8%, Monitor 4%
+Dev-2 Tomas: 078 WCL event windows         122714 source reads 54%, board 17%, shortcut 9%, other bash 9%, git 6%
+Dev-4 Vera: 079 Claude cache and budget    176392 source reads 42%, other bash 38%, board 13%, shortcut 2%, git 2%
+Dev-3 Nils: 082 coach defaults prompt      110460 source reads 69%, board 13%, git 10%, other bash 3%, check/pg 3%
+QA performance sweep                       114429 git 56%, source reads 39%, other bash 5%, Write 0%
+product-owner                              805972 Read 65%, other bash 11%, source reads 8%, shortcut 7%, board 4%
+Source mechanic notes bosses 4-6            33607 WebFetch 58%, other bash 32%, WebSearch 10%, ToolSearch 0%

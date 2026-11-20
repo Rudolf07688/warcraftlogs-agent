@@ -1,0 +1,85 @@
+<header>
+  <div class="eyebrow">Team report · WCL Agent App · local report</div>
+  <h1>Sprint 2026-11-20: the owner's live chat, fixed and re-checked on two providers</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-20</b></span><span>Base <b class="mono">d7dab27</b></span><span>Tip <b class="mono">0c487ca</b></span><span>Board open 1 h 27 min</span></div>
+  <p>22 of 22 points merged: five parallel streams, one follow-up hunk and one fix round. At 1.08 M per point this is the cheapest app sprint so far (11-07b: 1.26). Seven live pre-checks were answered within minutes. The live pass ran on Claude and on Gemini, and the two providers caught different failures.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">22<small> / 22 pts</small></span><span class="s">9 stories, all Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Cost per point</span><span class="v">1.08<small> M/pt</small></span><span class="s">23.7 M · 11-07b: 1.26</span></div>
+  <div class="kpi"><span class="eyebrow">Build per point</span><span class="v">0.39<small> M/pt</small></span><span class="s">11-07b: 0.53</span></div>
+  <div class="kpi"><span class="eyebrow">Coordination</span><span class="v">40<small> %</small></span><span class="s">0.43/pt · 11-07b 0.44/pt</span></div>
+  <div class="kpi"><span class="eyebrow">Cold wakes</span><span class="v">0.61</span><span class="s">target &lt; 1.5</span></div>
+  <div class="kpi"><span class="eyebrow">Live FAILs</span><span class="v">2<small> real</small></span><span class="s">+ my 2 checker bugs</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-cost" aria-controls="p-cost" aria-selected="true">Cost</button>
+  <button class="tab" role="tab" id="tab-live" aria-controls="p-live" aria-selected="false" tabindex="-1">Live checks</button>
+  <button class="tab" role="tab" id="tab-quality" aria-controls="p-quality" aria-selected="false" tabindex="-1">Quality</button>
+  <button class="tab" role="tab" id="tab-retro" aria-controls="p-retro" aria-selected="false" tabindex="-1">Retro <span class="count">10</span></button>
+</div></nav>
+
+<div role="tabpanel" id="p-cost" aria-labelledby="tab-cost" tabindex="0">
+  <h2 class="panel-title">Cost per point, by stream</h2>
+  <p class="muted small">Weighted M = cacheRd × 0.1 + cacheWr × 1.25 + out × 5, per million. sc-572 (2 pts) is split between 080 and 082. Sub-agents count with their stream; the fix round counts under QA.</p>
+  <table class="tbl">
+    <tr><th>Stream</th><th>Type</th><th>Pts</th><th>M</th><th>M/pt</th><th>Calls</th></tr>
+    <tr><td>078 event windows, player list, damage fields (Tomas)</td><td>app backend, WCL queries</td><td>5</td><td>0.99</td><td>0.20</td><td>62</td></tr>
+    <tr><td>079 Claude cache + output budget (Vera)</td><td>app backend, LLM path</td><td>5</td><td>1.59</td><td>0.32</td><td>60</td></tr>
+    <tr><td>081 boss mechanics (Ansel + 2 sourcing sub-agents)</td><td>app backend + curated data</td><td>5</td><td>1.95</td><td>0.39</td><td>80</td></tr>
+    <tr><td>082 + 082b coach defaults (Nils)</td><td>prompt + context</td><td>3</td><td>1.08</td><td>0.36</td><td>53</td></tr>
+    <tr><td>080 thinking status line (Edda)</td><td>full-stack, security core</td><td>4</td><td>3.26</td><td>0.81</td><td>119</td></tr>
+  </table>
+  <table class="tbl">
+    <tr><th>Share</th><th>M</th><th>%</th><th>Per point</th></tr>
+    <tr><td>Coordination (PO 6.36, lead 2.74, board sync 0.30)</td><td>9.39</td><td>40 %</td><td>0.43</td></tr>
+    <tr><td>Build (5 streams + 082b + sourcing)</td><td>8.68</td><td>37 %</td><td>0.39</td></tr>
+    <tr><td>QA (4 sweeps, the D18 review, the fix round)</td><td>3.75</td><td>16 %</td><td>0.17</td></tr>
+    <tr><td>Docs and facts close-out</td><td>1.92</td><td>8 %</td><td>0.09</td></tr>
+  </table>
+  <p>Build got cheaper per point (0.39 against 0.53), because four of the five streams were narrow backend changes with a live answer in minutes, not hours of design. The one expensive stream was 080 (0.81/pt): a security-core change to the save path, plus a D18 rework round. That's the same pattern as 072 last sprint. The PO's cost per point held flat (0.29 against 0.30), so coordination still scales with the number of streams.</p>
+  <p>The docs close-out cost 1.92 M for 78 calls: 8% of the sprint for 11 pages and 20 facts. That's worth watching. Most of it was re-verifying stamps on pages the sprint barely touched.</p>
+</div>
+
+<div role="tabpanel" id="p-live" aria-labelledby="tab-live" tabindex="0" hidden>
+  <h2 class="panel-title">Live checks: pre-checks while building, one pass at the tip</h2>
+  <ul>
+    <li><b>Seven pre-checks</b> from four developers, each answered within one to five minutes. Two answers changed the work. Tomas's pre-check showed the wrong Gravebound figures were real Deaths-table fields the model picked badly (pre-mitigation and overkill), not the empty event lookups, so that ticket became field labelling. It also showed the raid player list error was our own <span class="mono">playerDetails(fightIDs: null)</span> query, which was fixed within the hour. Vera's before/after numbers measured caching at −47% (fresh chat) and −75% (repeat within five minutes) of a turn's input cost.</li>
+    <li><b>The traces had expired.</b> Tempo no longer held the 11-07 trace ids written on the tickets. I recovered every tool call's args and results from the ADK <span class="mono">events</span> table instead, by session. Lesson: tickets filed from a live chat should carry the tool args and the key result fields, not only a trace id.</li>
+    <li><b>Tip pass, Claude (Haiku):</b> 12 turns, every ticket PASS. Turn stats showed 85–99% of prompt tokens read from cache on the long turns. One real FAIL: "The Ula'tek heart" never reached the mechanics lookup, 2 out of 2.</li>
+    <li><b>Tip pass, Gemini (3.1 Pro preview):</b> 7 turns. The heart question PASSED there, so the routing was model-dependent. Two turns ended with "couldn't put an answer together": Gemini returned STOP with 0 output tokens. That code is older than this sprint, so it's deferred as a ticket.</li>
+    <li><b>Fix round re-check:</b> the heart question now passes on both providers. The thinking line shows in every gap between tool groups and never after the answer starts. A reloaded chat equals the live one on every chat, including those with retracted progress text.</li>
+    <li><b>My checker bugs:</b> the reload comparison read role "assistant" (the API says "agent") and didn't model interim retraction. One regex missed "23.59 million". All were caught on the first read of the output and cost one cheap re-run. Lesson: dry-run new judge logic on one turn before the full pass.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-quality" aria-labelledby="tab-quality" tabindex="0" hidden>
+  <h2 class="panel-title">What found what</h2>
+  <table class="tbl">
+    <tr><th>Source</th><th>Found</th><th>Outcome</th></tr>
+    <tr><td>Live pre-checks</td><td>Root causes of sc-573 and sc-574; cache before/after</td><td>Fixed in-stream</td></tr>
+    <tr><td>D18 review of 080</td><td>1 Medium (an answer before a chart could be retracted as progress), 3 Lows</td><td>One rework round</td></tr>
+    <tr><td>Live pass at the tip</td><td>Heart routing (Haiku); Gemini empty STOPs</td><td>Fix round F1; Gemini → backlog</td></tr>
+    <tr><td>QA sweep (4 agents)</td><td>Prompt clauses cut by 082, realm slug, difficulty words, a legacy player-list key, throttle starving Claude</td><td>Fix round F2–F6; 8 grouped tickets deferred (sc-580..587)</td></tr>
+  </table>
+  <p>The full suite passed at the tip after the fix round: 2752 backend tests including Postgres, 213 frontend tests, build ok. The architecture docs are stamped at the tip with 0 problems, and facts lint and stale both report 0. There were zero merge conflicts again, with one owner per file. The one shared file (ws.py) was sequenced: Nils's call-site hunk landed after Edda's merge as 082b.</p>
+  <p><b>Memories:</b> Ansel, Vera, Edda and Maren updated theirs; I read none and changed none. No facts were added at the tip (stats show 0 added since base). The docs close-out re-verified 20 facts and cut one to the 80-word cap.</p>
+</div>
+
+<div role="tabpanel" id="p-retro" aria-labelledby="tab-retro" tabindex="0" hidden>
+  <h2 class="panel-title">The team's retro lines, next to mine</h2>
+  <ul>
+    <li><b>Maren:</b> keep the live pass running beside the QA sweep (it caught the heart conflict in time for the one fix round). Change: when two stories change how the coach reads the same kind of question, write the shared phrase into both briefs; never answer on an <span class="mono">owner:*</span> key.</li>
+    <li><b>Tomas (078):</b> keep posting the live repro with cut-down queries at once. Change: run gitnexus impact before the first edit.</li>
+    <li><b>Vera (079):</b> keep the baseline-then-after split. Change: briefs should say "read the installed ADK adapter first" (ADK already did most of sc-568).</li>
+    <li><b>Ansel (081):</b> keep posting the pre-check script first thing. Change: find tests that pin exact tool lists at plan time.</li>
+    <li><b>Edda (080):</b> keep tests where the guard takes effect, one mutation per guard. Change: decide which tools <i>present</i> results in the first plan.</li>
+    <li><b>Nils (082/082b/083):</b> ask for a call-site grant with the footprint; start <span class="mono">check.py</span> in the background; post a reading as a decision before building when a brief conflicts with a limit.</li>
+    <li><b>Tomas (docs):</b> run <span class="mono">facts.py lint</span> in the merge gate.</li>
+    <li><b>Me, keep:</b> answering pre-checks at once. They were the cheapest lever this sprint: seven answers, two root causes, one measured cost cut. Also keep running the tip pass on both providers. Each one caught a failure the other missed.</li>
+    <li><b>Me, change:</b> (1) when filing tickets from a live chat, paste tool args and key result fields, since traces expire; (2) dry-run new checker logic on one turn; (3) I posted my own answers on the pre-check key, and the monitor echoed them back to me twice before I filtered on author. Filter from the start.</li>
+    <li><b>Candidates for the next meta session:</b> Tomas's facts-lint-in-merge-gate (cheap, removes a close-out step); Vera's "read the adapter first" brief line; Maren's shared-phrase rule for stories touching the same question type. Each one goes to the affected seats for review (P16 step 5) before it lands.</li>
+  </ul>
+</div>

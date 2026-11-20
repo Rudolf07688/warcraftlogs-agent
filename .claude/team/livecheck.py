@@ -52,7 +52,12 @@ async def turn(cookie, model, content, conv=None, timeout=240):
                 if f.get("type") in ("done", "error"):
                     return
         await asyncio.wait_for(pump(), timeout)
-    text = "".join(f.get("text") or f.get("token") or f.get("content") or "" for f in frames if f.get("type") == "token")
+    text = ""  # as the browser shows it: an interim frame retracts the text so far (080)
+    for f in frames:
+        if f.get("type") == "interim":
+            text = ""
+        elif f.get("type") == "token":
+            text += f.get("text") or f.get("token") or f.get("content") or ""
     return frames, text
 
 
@@ -61,7 +66,7 @@ async def main():
     _, models = await get("/api/models", cookie)
     lst = models.get("models", models); ids=[m if isinstance(m,str) else (m.get("id") or m.get("name")) for m in lst]
     model = next((m for m in ids if "haiku" in m), ids[0]); print("using", model)
-    convs, results = {}, []
+    convs, results, last_text = {}, [], {}
     for name in sys.argv[1:]:
         slot, key = name.split(":")
         prompt = PROMPTS.get(key)
@@ -87,11 +92,21 @@ async def main():
             if f["type"]=="tool_start": starts[f.get("name")]=starts.get(f.get("name"),0)+1
         ends=[(f.get("name"), f.get("ok"), f.get("ms") or f.get("duration_ms")) for f in frames if f["type"]=="tool_end"]
         print(f"\n=== {name} conv={convs.get(slot)} ===\nframes: {types}\ntool_start per name: {starts}\ntool_end: {ends}")
+        seq, seen_tok, late = [], False, 0
+        for f in frames:
+            t = f["type"]
+            if t == "token": seen_tok = True
+            if t == "interim": seen_tok = False
+            if t == "thinking" and seen_tok: late += 1
+            k = {"thinking": "T", "tool_start": "[", "tool_end": "]", "token": "w", "interim": "I"}.get(t)
+            if k and not (seq and seq[-1] == k and k in "Tw"): seq.append(k)
+        print("order:", "".join(seq), "| thinking after answer text:", late)
         for f in frames:
             if f["type"] in ("error",): print("  ", f)
             if f["type"]=="proposal":
                 pid=f["proposal"]["id"]; print("  proposal cancelled:", (await post(f"/api/profile/proposals/{pid}/cancel", cookie, csrf))[0])
         print("TEXT:", text[:700])
+        last_text[slot] = text
         results.append((name, judge(key, frames, text)))
         print("CHECK", *results[-1][1])
     for slot,cid in convs.items():
@@ -100,6 +115,12 @@ async def main():
         for m in body.get("messages",[]):
             for a in (m.get("artifacts") or []): arts.append((m.get("seq"), m.get("role"), a.get("kind") or a.get("type")))
         top=body.get("artifacts")
+        asst=[m for m in body.get("messages",[]) if m.get("role") in ("assistant","agent")]
+        stored=(asst[-1].get("content") or "") if asst else ""
+        live=last_text.get(slot,"")
+        same = stored.strip()==live.strip()
+        print(f"reload {slot}: stored answer {'==' if same else '!='} live text (stored {len(stored)} chars, live {len(live)})")
+        if not same: results.append((f"{slot}:reload", ("FAIL", "stored answer differs from live text (sc-572)")))
         print(f"reload {slot}: {code} message artifacts={arts} top-level artifacts={[ (a.get('message_seq'), a.get('kind')) for a in top] if isinstance(top,list) else None}")
     tally = {}
     for _, (v, _why) in results: tally[v] = tally.get(v, 0) + 1
@@ -119,7 +140,13 @@ def judge(key, frames, text):
     skip = {"token", "tool_start", "tool_end", "meta", "done", "status", "thinking"}
     hay = text + " " + json.dumps([f for f in frames if f.get("type") not in skip])
     missing = [r for r in exp.get("all", []) if not re.search(r, hay, re.I)]
-    wrong = [r for r in exp.get("none", []) if re.search(r, text, re.I)]
+    wrong = [r for r in exp.get("none", []) if re.search(r, text, re.I | re.M)]
+    called = {f.get("name") for f in frames if f.get("type") == "tool_start"}
+    missing += [f"tool {t}" for t in exp.get("tools", []) if t not in called]
+    if exp.get("anytool") and not called:
+        missing.append("any tool call")
+    if "maxq" in exp and text.count("?") > exp["maxq"]:
+        wrong.append(f"{text.count('?')} question marks > {exp['maxq']}")
     if missing or wrong:
         return "FAIL", f"missing {missing} wrong {wrong}".strip()
     return "PASS", exp.get("why", "")
@@ -145,6 +172,17 @@ def facts(code):
 
 
 PROMPTS = {
+    # sprint 2026-11-20: event windows + damage fields + player list (078), cache/budget (079),
+    # thinking status + interim retraction (080), boss mechanics (081), coach defaults (082)
+    "gbhit": "How hard did the Gravebound hit that killed Veritass in fight 1 of report bjXfNc92d8CPGhvB? One line.",
+    "before5": "What happened to Veritass in the 5 seconds before that death? Three short lines.",
+    "players": "Who was in report tbjGm2MkAd8KxwLN? Give the player count and name the healers, two lines.",
+    "gbmech": "What does Gravebound require me to do, and how can I survive it?",
+    "heart": "The Ula'tek heart",
+    "fakemech": "What does Flamebreath of Testing do on Ula'tek? One line.",
+    "improve": "help me improve",
+    "frost": "is frost mage difficult? I can't get the numbers I need",
+    "overview": "Give me a bounded overview of this raid (report tbjGm2MkAd8KxwLN): for each boss, one headline finding and the single biggest improvement opportunity, noting kills versus wipes. Stay at the report and per-boss level; go into cast-level detail only where a boss clearly warrants it.",
     # sprint 2026-11-05b: semantic search (061), smaller fixed prompt (064)
     "cds": "In report BKNtypgnhrxXvj84, on the last boss kill, how well did the raid use their defensive cooldowns, except the shaman? Two lines.",
     # sprint 2026-11-02: report fights + kickoff (050), raw store (051), turn hardening (052)
@@ -169,6 +207,23 @@ PROMPTS = {
 LAST_KILL = {"all": [r"ula.?tek"], "none": [r"nalorakk", r"blinding vale", r"kith.?ix"],
              "why": "last boss kill = Ula'tek heroic (fight 32)"}
 EXPECT = {
+    # 2026-11-20. bjXfNc92d8CPGhvB Deaths entries[0].events[0] (Veritass, ts 1109129): hit total
+    # 23,596,252 = amount 618,352 + absorbed 2,325,962 + overkill 20,651,938; unmitigated 30,896,940.
+    "gbhit": {"all": [r"23[.,]6|23[.,]59"], "none": [r"hit (of|for|was) (about |~|roughly )?(30[.,]9|20[.,]7)"],
+              "why": "the hit is 23.6M; 30.9M only as pre-mitigation, 20.7M only as overkill (sc-574)"},
+    "before5": {"tools": ["get_report_events"], "none": [r"came back empty", r"no events (were )?returned"],
+                "why": "event pull with a start time returns rows (sc-570)"},
+    "players": {"none": [r"server error", r"internal error", r"couldn.t (get|load|fetch)"],
+                "why": "player list loads on Veritass's report (sc-573)"},
+    "gbmech": {"tools": ["get_boss_mechanics"], "all": [r"soul fragment"],
+               "why": "curated note: collect your Soul Fragments (sc-571)"},
+    "heart": {"tools": ["get_boss_mechanics"], "none": [r"^\s*1[.)]\s.*\n\s*2[.)]\s.*\n\s*3[.)]"],
+              "why": "Venomous Heart note, no numbered option menu (sc-571/575)"},
+    "fakemech": {"tools": ["get_boss_mechanics"], "why": "found:false; DB check of the tool result"},
+    "improve": {"anytool": True, "maxq": 1, "why": "acts on a default, at most one question (sc-575)"},
+    "frost": {"none": [r"which class", r"death knight or", r"are you (playing|a) (a )?(frost )?(mage|dk|death knight)\?"],
+              "why": "trusts the stored class, never asks to confirm it (sc-575)"},
+    "overview": {"anytool": True, "why": "big kickoff answers (sc-567); cache read in turn stats (sc-568)"},
     "killdiff": {"all": [r"ula.?tek", r"heroic"], "none": [r"\bnormal\b", r"\blfr\b"],
                  "why": "raid kill = Ula'tek on Heroic (difficulty 4)"},
     "topdmg": LAST_KILL,

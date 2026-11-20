@@ -8,41 +8,42 @@
 
 ## Memory
 
-I'm Maren, product owner. Sprints: 10-31b (21 pts), 10-31c (19), 11-01 (33, tier L), 11-01b (20), 11-02 (20), 11-04 (23), 11-04b (24), 11-05 (26), 11-05b (10, app, 1.19 M/pt), 11-07 (20, tooling, 0.56 M/pt), 11-07b (25, app, 5 streams + 1 reserve).
+I'm Maren, product owner. Sprints: 10-31b (21), 10-31c (19), 11-01 (33, tier L), 11-01b (20), 11-02 (20), 11-04 (23), 11-04b (24), 11-05 (26), 11-05b (10), 11-07 (20, tooling), 11-07b (25, 5 streams), 11-20 (22, 5 streams + fix round).
 
 Judging a sprint:
-- Compare cost per point only within a stream type (app backend, frontend, full-stack, tooling, docs).
+- Compare cost per point only within a stream type.
 - Small steers stay small: 10 pts beat padding with unrelated backlog.
 
 Codebase and tooling:
 - `npm run build` dirties frontend/tsconfig.tsbuildinfo; restore it after.
 - Never draft files in a worktree another agent commits in; use my scratchpad.
-- Render checks: headless chrome, window taller than the page. Report tables over 3-4 columns overflow at 390px: fold detail into the first cell.
+- Render checks: headless chrome, window taller than the page; fold wide tables into the first cell at 390px.
 - Shortcut write calls echo the whole record: pass `fields`.
-- A new seat can't be addressed with --to until it claims: post its grants without --to and name them in the launch prompt.
-- Shared files (schemas, types, restClient) belong to one stream; a tiny prep commit (export a helper) lets the others build in their own modules.
-- browse.py blocks external images while a step runs: count image requests, not img elements.
+- qa-reports/ is gitignored: commit triage in the sprint dir, not the reports.
+- Never answer on an owner:* key: it overrides the grant. Answer on its own key.
 
 Teammates:
-- Ansel (dev-1): careful; probes a guard at its point of effect; early live-check-pre scripts.
-- Tomas (dev-2): fast, honest; docs close-out at sonnet high. Brief edge cases and the consumer's view first.
-- Nils (dev-3): measures first, mutation-checks fixes; SQL, agent loop, data paths. Name the hazard in his brief.
-- Vera (dev-4): measure-first, short hand-offs; concurrency fixes with liveness tests.
-- Edda (dev-5): new 11-07b; proves storage on real Postgres first; sound onboarding/RLS work.
+- Ansel (dev-1): careful; early live-check-pre scripts; sources content well.
+- Tomas (dev-2): fast, honest; docs close-out at sonnet high.
+- Nils (dev-3): prompt and data paths; fix rounds at opus medium go clean.
+- Vera (dev-4): measure-first; read ADK before designing (it did most of caching).
+- Edda (dev-5): full-stack, sound on save paths; good D18 rework.
 - Ilse (sm): seat her only when a trigger truly fires.
 
 Briefing:
-- Read the code while writing briefs; check what the epic's words map to (11-07b: "Raids page dropdown" was the sidebar list).
-- Check the real value of any security window before briefing on it (1-day re-verify nearly emptied the raid page).
-- Splitting a security-core 8-pointer into endpoint + screen with a contract worked; the screen landed first.
+- Read the code while writing briefs; check what the epic's words map to.
+- Name the hazard (time block in the cached prefix, shared runner callers) in the brief.
+- Grep for exact-list pin tests a stream will break and grant them up front.
+- Split prompt ownership by file, but brief any phrase two stories use differently (11-20: "the Ula'tek heart" was 575's vague-request example and 571's mechanic question; live pass caught it).
+- A call-site hunk in another stream's file: sequence it after that stream merges (082b), never grant twice.
+- Split a security-core 8-pointer into endpoint + screen with a contract.
 
 Judgement calls:
 - Check the transport before accepting an AC (chat is a WebSocket).
-- Synthetic proof stacks miss real-data failures: seed odd data, assert values; the live pass found both real 11-07b bugs.
-- D18 reviews keep finding "connection held across a wait" and "no rate bound": brief both up front.
-- Fix-round root causes often sit in another stream's file: grant the one hunk fast.
-- A Low regressing from this sprint's code goes into the rework; a pre-existing race made easier becomes a ticket.
-- A live PASS with little margin becomes a headroom ticket, not a second round.
-- When a contract changes mid-sprint, I patch the agent-file lines myself.
+- Synthetic proof stacks miss real-data failures; the live pass finds them.
+- D18 reviews keep finding "connection held across a wait", "no rate bound" and "a guard that drops real output": brief all three up front.
+- A Low regressing from this sprint's code goes into the rework; a pre-existing issue becomes a ticket.
+- Out-of-scope prompt cuts made to fit the budget are a fix-round item.
+- Live pass early on the merged tip, in parallel with the sweep, gives one fix round.
 
 Owner cares about: no scope creep, local HTML reports, never push, never Done, one rework round, ticket dedupe, plain ticket names, architecture docs current before main.
