@@ -24,3 +24,13 @@ Fix bar: a broken AC, a security hole or data loss, Medium and above in new code
 - Empty Gemini turns: finish STOP with no text and 0 candidate tokens, 2 of 7 live turns (pre-existing path; Gemini twin of sc-567).
 - Whole-report rankings still send fightIDs: null (spec, outside the diff; check whether it fails like playerDetails).
 - Spec L4 (080 tasks.md T013/T014 unchecked): doc drift, no ticket; fixed in the close-out if touched.
+
+## Tickets created (Backlog, qa-deferred; no existing QA ticket matched these root causes)
+- Claude output budget and time (sc-580, 2)
+- Claude history cache rewritten each turn start (sc-581, 3)
+- Thinking status and interim-text edge cases (sc-582, 3)
+- Small chat-turn costs (sc-583, 2)
+- Prompt-cache and mechanic-notes hardening (sc-584, 2)
+- Boss-mechanic notes coverage (sc-585, 2)
+- Gemini empty STOP turns (sc-586, 2)
+- Whole-report rankings with fightIDs: null (sc-587, 1)
