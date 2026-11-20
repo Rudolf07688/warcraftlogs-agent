@@ -1,0 +1,1766 @@
+{
+ "zone": {
+  "id": 53,
+  "name": "The Venomous Abyss"
+ },
+ "note": "Curated by the team (feature 081). Ability names and ids from Blizzard's Encounter Journal; text in our own words from the cited source. Refresh per tier.",
+ "encounters": [
+  {
+   "id": 3470,
+   "name": "Nek'zali the Soulcoiler",
+   "aliases": [
+    "Nekzali",
+    "Nek'zali",
+    "Soulcoiler"
+   ],
+   "abilities": [
+    {
+     "name": "Possession Barrage",
+     "ids": [
+      1284103
+     ],
+     "aliases": [
+      "barrage"
+     ],
+     "what_it_does": "Nek'zali fires spirits at the current tank. They deal raid-wide damage that drops with the distance each spirit travels, and explode on the first target they reach.",
+     "what_to_do": "Tanks stand far from the boss so the damage is low. Everyone else stays out of the line between boss and tank.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Hollowing Strikes",
+     "ids": [
+      1284110
+     ],
+     "aliases": [
+      "hollowing"
+     ],
+     "what_it_does": "Her melee hits put a stacking damage-over-time on the tank that reduces healing and absorbs received.",
+     "what_to_do": "Tanks swap taunts before the healing reduction gets too heavy. Healers expect weaker heals and absorbs on the tank as stacks build.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Essence Rend",
+     "ids": [
+      1287426
+     ],
+     "aliases": [
+      "rend",
+      "latent cultist",
+      "cultist puddle"
+     ],
+     "what_it_does": "Several players are pulled in and knocked back, then carry a dispellable damage-over-time. When it ends or is dispelled it leaves a Latent Cultist puddle that bursts and then leaves a slowing zone. The puddles come back in phase 2.",
+     "what_to_do": "Affected players move to the side of the room before it ends, and dispellers cleanse them there, away from the well and the walking route. Place puddles where nobody needs to walk later.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Gravebound Advance",
+     "ids": [
+      1287533
+     ],
+     "aliases": [
+      "restless amani",
+      "amani adds",
+      "amani",
+      "corpse blight"
+     ],
+     "what_it_does": "Restless Amani spirits march from the sarcophagi to the Soulcoil Well, shielded by an absorb that only magic damage can break. On death they explode with Corpse Blight, a raid-wide Plague hit plus a stacking damage-over-time.",
+     "what_to_do": "Casters and magic damage break the shield first, then everyone kills the adds before they reach the water. Strong AoE matters, especially in the intermission when more spawn.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Soulcoil Rite",
+     "ids": [
+      1284033
+     ],
+     "aliases": [
+      "rite",
+      "well",
+      "soulcoil well"
+     ],
+     "what_it_does": "Each add that reaches the Soulcoil Well triggers a Rite: the boss gains energy and the raid takes Shadow damage plus a stacking damage-over-time. On Heroic each Rite also applies Ritual Burn, which makes later Rites hurt more.",
+     "what_to_do": "Stop adds before the well; one leak is fine, several in a row snowball into a wipe. Healers plan cooldowns for stacked Rites.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Soulcoil Ignition",
+     "ids": [
+      1285681
+     ],
+     "aliases": [
+      "ignition",
+      "anguished echoes"
+     ],
+     "what_it_does": "The boss fires several Soulcoil Rites in a row while Anguished Echoes fall from the well as circles that hit hard and knock back anyone inside. It is heavy raid damage.",
+     "what_to_do": "Healers use raid cooldowns. Everyone dodges the circles and aims to arrive with no Ritual Burn stacks.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Soul Transfer",
+     "ids": [
+      1292248
+     ],
+     "aliases": [
+      "echo of jawae",
+      "echoes",
+      "tether of awakening"
+     ],
+     "what_it_does": "In the 50% intermission, Nek'zali is immune and tethered to Echoes of Jawae. Soul Transfer is a channel on one side of the room that spawns an Echo and ends in a large blast.",
+     "what_to_do": "Move out of the beam before the cast finishes, and kill the Echoes of Jawae to sever the tethers and end the intermission.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Hungering Pyre",
+     "ids": [
+      1289855
+     ],
+     "aliases": [
+      "pyre",
+      "slithering flame",
+      "cremation"
+     ],
+     "what_it_does": "Intermission soak circle whose damage is split between everyone inside; it also burns off corpses it stands on. Players who do not soak get a chasing Slithering Flame instead.",
+     "what_to_do": "Melee group up to soak the pyre. Ranged do not soak and instead lead the Slithering Flame over leftover corpses to burn them away.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Uncoiled Rage",
+     "ids": [
+      1284034,
+      1290003
+     ],
+     "aliases": [
+      "enrage",
+      "uncoiling",
+      "soft enrage"
+     ],
+     "what_it_does": "In phase 2 (Uncoiling) the overflowing well damages the raid every second as a soft enrage. At full energy the boss gains Uncoiled Rage: massively more damage, faster speed and taunt immunity.",
+     "what_to_do": "Use Heroism and cooldowns in phase 2 and kill her before she reaches full energy; the guide sees no recovery once she does. Keep the well clear of adds meanwhile.",
+     "source": {
+      "name": "Method, Nek'zali the Soulcoiler Heroic guide (updated 11 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/nekzali-the-soulcoiler-heroic"
+     },
+     "patch": "12.1.0"
+    }
+   ]
+  },
+  {
+   "id": 3445,
+   "name": "Entombed Sentinels",
+   "aliases": [
+    "Sentinels",
+    "Entombed Sentinel",
+    "Breath of Ula'tek",
+    "Blood of Ula'tek",
+    "Ula'tek golems",
+    "Sentinel Golems"
+   ],
+   "abilities": [
+    {
+     "name": "Ula'tek's Dominance",
+     "ids": [
+      1290193
+     ],
+     "aliases": [
+      "dominance"
+     ],
+     "what_it_does": "While the two golems are within 40 yards of each other they give each other near-total damage reduction. Each golem also stacks a damage-over-time on players near it (Mark of Acid and Mark of Blood).",
+     "what_to_do": "Split the raid into two groups, one per golem, and keep the golems on opposite sides. Groups swap sides after each intermission so the Mark stacks fall off.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Toxic Droplets",
+     "ids": [
+      1284434,
+      1284452
+     ],
+     "aliases": [
+      "droplets",
+      "noxious blast"
+     ],
+     "what_it_does": "Breath of Ula'tek sprays venom droplets that explode after a delay. Popping one deals Nature damage and applies a small damage-over-time.",
+     "what_to_do": "Players on the green side step on droplets to pop them before they explode, spreading them out so no one takes several. The green tank keeps them out of the group's path.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Venom Coagulation",
+     "ids": [
+      1284251,
+      1284257
+     ],
+     "aliases": [
+      "slime",
+      "contaminate",
+      "coagulation"
+     ],
+     "what_it_does": "Breath of Ula'tek creates a large slime that casts Contaminate until it dies, dealing high raid-wide damage.",
+     "what_to_do": "DPS on the green side kill the slime immediately. Healers expect raid-wide pulses while it lives.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Empowering Slam",
+     "ids": [
+      1284458
+     ],
+     "aliases": [
+      "slam"
+     ],
+     "what_it_does": "Breath of Ula'tek's tank hit. It deals heavy Physical damage and each slam on the same target increases the next one.",
+     "what_to_do": "The green tank swaps targets to reset the buildup; since only one tank is on that side, the swap happens at the intermission.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Blighted Blood",
+     "ids": [
+      1284471,
+      1284208
+     ],
+     "aliases": [
+      "blood venom",
+      "blood pools"
+     ],
+     "what_it_does": "Blood of Ula'tek infects players with a dispellable Shadow damage-over-time. When it expires or is dispelled it leaves a toxic pool, bigger with more applications.",
+     "what_to_do": "Healers dispel it but not carelessly, because dispelling creates the pool. Affected players go to the edge of the area first so pools land out of the way.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Unstable Miasma",
+     "ids": [
+      1288232,
+      1288297
+     ],
+     "aliases": [
+      "miasma",
+      "clinging murk"
+     ],
+     "what_it_does": "Blood of Ula'tek marks one player; after a short delay it erupts for heavy Shadow damage to everyone nearby, splitting the hit, and applies the stacking Clinging Murk damage-over-time.",
+     "what_to_do": "The red group stacks on the marked player to share the damage, then spreads back out so Clinging Murk does not overlap.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Bloodvenom Injection",
+     "ids": [
+      1284487
+     ],
+     "aliases": [
+      "injection"
+     ],
+     "what_it_does": "Blood of Ula'tek's tank hit: a big Physical hit plus a stacking Shadow damage-over-time. When each application expires it leaves a large puddle.",
+     "what_to_do": "The red tank swaps before stacks get high, and walks to a safe spot before stacks expire so puddles land away from the group.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Vitriolic Stasis",
+     "ids": [
+      1284588
+     ],
+     "aliases": [
+      "stasis",
+      "intermission"
+     ],
+     "what_it_does": "At 100 energy both golems meet in the middle, take near-total damage reduction, and the weaker one heals up to match the healthier one. Damage dealt unevenly is effectively refunded.",
+     "what_to_do": "Keep the two golems at similar health throughout the fight so the stasis costs you little. Both groups and tanks swap sides afterwards.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Helical Toxins",
+     "ids": [
+      1284590,
+      1284941
+     ],
+     "aliases": [
+      "helical",
+      "cultivated burst",
+      "orbs"
+     ],
+     "what_it_does": "During Vitriolic Stasis every player gets orbs of two colors. Touching other players must leave exactly four green orbs combined; anyone who misses suffers Cultivated Burst, a lethal explosion with a lingering damage-over-time.",
+     "what_to_do": "Pair up with pre-agreed partners so green orbs total exactly four. Anyone who fails goes to a pre-chosen corner, or uses a strong immunity.",
+     "source": {
+      "name": "Method, Entombed Sentinels Heroic guide (updated 12 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/entombed-sentinels-heroic"
+     },
+     "patch": "12.1.0"
+    }
+   ]
+  },
+  {
+   "id": 3497,
+   "name": "The Lost Explorers",
+   "aliases": [
+    "Lost Explorers",
+    "Mor'zahi",
+    "Morzahi",
+    "Trader Gebbo",
+    "Gebbo",
+    "Scrollsage Epu",
+    "Epu",
+    "First Mate Nema",
+    "Nema",
+    "tortollan explorers",
+    "turtles"
+   ],
+   "abilities": [
+    {
+     "name": "Dark Whispers",
+     "ids": [
+      1295451,
+      1297022
+     ],
+     "aliases": [
+      "whispers",
+      "mor'zahi's command",
+      "command",
+      "fish",
+      "disgusting fish",
+      "fishy feedback"
+     ],
+     "what_it_does": "Mor'zahi possesses one explorer, who then uses empowered abilities. If control is broken, Mor'zahi's Command takes a new explorer and spends all of his energy. A Disgusting Fish thrown at the possessed explorer breaks his control.",
+     "what_to_do": "The designated cleanup players throw a fish from Gebbo's crates at the possessed explorer when his energy nears 100. Healers prepare for the Fishy Feedback damage-over-time each feed causes.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Final Ascension",
+     "ids": [
+      1292780
+     ],
+     "aliases": [
+      "ascension",
+      "hard enrage"
+     ],
+     "what_it_does": "If Mor'zahi's energy fills and he finishes channelling Final Ascension, he deals continuous raid-wide Shadow damage until the raid dies. The guide treats a late fourth energy fill as a hard enrage.",
+     "what_to_do": "Watch his energy and have a fish ready every time it nears 100. The explorers should all be dead before the fish run out.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "United Defense",
+     "ids": [
+      1297646
+     ],
+     "aliases": [],
+     "what_it_does": "When all three explorers stand within 30 yards of each other they take almost no damage.",
+     "what_to_do": "Tanks keep the explorers apart so no more than two are in cleave range, and DPS cleave only two at a time. Epu's blinks and Gebbo's movement mean tanks must adjust on the fly.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Frostfire Volley",
+     "ids": [
+      1295893,
+      1295952,
+      1295928,
+      1295954
+     ],
+     "aliases": [
+      "frostfire",
+      "fire patch",
+      "frost patch",
+      "elemental explosion",
+      "burning flames",
+      "piercing frost"
+     ],
+     "what_it_does": "Epu fires fire or frost missiles at several players, leaving matching patches and a long damage-over-time. A missile hitting someone with the opposite element explodes and can wipe the raid.",
+     "what_to_do": "Stand in a patch of the opposite element to clear your debuff before the next volley arrives. Clear early, because mixing elements is the dangerous part.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Icebound Flames",
+     "ids": [
+      1286921
+     ],
+     "aliases": [
+      "icebound"
+     ],
+     "what_it_does": "Epu casts an interruptible Frostfire spell on one player, leaving a dispellable damage-over-time and slow if it lands.",
+     "what_to_do": "Interrupt the cast if possible, and dispel what lingers.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Shredding Shards",
+     "ids": [
+      1295854
+     ],
+     "aliases": [
+      "shards"
+     ],
+     "what_it_does": "Epu's ice shards deal magic damage to the tank and stack increased damage taken from the same effect.",
+     "what_to_do": "Tanks swap when the stacks ramp up.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Mighty Thud",
+     "ids": [
+      1296092,
+      1310500,
+      1313690
+     ],
+     "aliases": [
+      "thud",
+      "aftershock"
+     ],
+     "what_it_does": "Nema marks three players and leaps to each in turn. Each impact splits its Physical damage among players close to it and knocks them back, and leaves craters (Aftershock). An impact with nobody in it hits the whole raid at full strength.",
+     "what_to_do": "Run three soak groups and never leave a marked spot empty. Move out of the craters after each landing.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Explosive Surprise",
+     "ids": [
+      1297625,
+      1305844
+     ],
+     "aliases": [
+      "bomb",
+      "blast wave"
+     ],
+     "what_it_does": "Gebbo drops a bomb on a player, then sends out a lethal Fire shockwave (Blast Wave) with a burning damage-over-time.",
+     "what_to_do": "The bomb target drops the bomb at the edge. Everyone else avoids the wave, usually by timing a Bouncy Mushroom bounce or a blink or leap so the wave passes under them.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Throw Junk",
+     "ids": [
+      1291933,
+      1308853,
+      1312868,
+      1310027
+     ],
+     "aliases": [
+      "crates",
+      "boxes",
+      "splinters",
+      "relic rupture"
+     ],
+     "what_it_does": "Gebbo throws crates that hit nearby players hard. Breaking a crate applies a stacking bleed (Splinters), but crates also hold the fish. A crate left untouched ruptures for raid-wide Shadow damage after a while (Relic Rupture).",
+     "what_to_do": "A cleanup crew of players with physical resist or bleed removal breaks every crate in time and shares Splinters stacks.",
+     "source": {
+      "name": "Method, The Lost Explorers Heroic guide (updated 6 Nov 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-lost-explorers-heroic"
+     },
+     "patch": "12.1.5"
+    }
+   ]
+  },
+  {
+   "id": 3455,
+   "name": "Vashnik the Malignant",
+   "aliases": [
+    "Vashnik"
+   ],
+   "abilities": [
+    {
+     "name": "Imbibe",
+     "ids": [
+      1283164
+     ],
+     "aliases": [
+      "fountains",
+      "drink"
+     ],
+     "what_it_does": "At 100 energy Vashnik drinks from the two nearest fountains: heavy raid damage, one more Toxic Vapor stack, and a Living Venom add from each drained fountain crawls toward the center.",
+     "what_to_do": "Tanks position the boss between Imbibes to choose which two fountains he drains. Healers save cooldowns for the hit. DPS get ready to kill the incoming adds at once.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Malignant Burst",
+     "ids": [
+      1280189
+     ],
+     "aliases": [
+      "burst",
+      "malignant cavity"
+     ],
+     "what_it_does": "If a living venom add reaches the central Malignant Cavity it bursts for heavy raid damage and leaves a stacking 30-second damage over time.",
+     "what_to_do": "Everyone: kill every venom add before it reaches the center, and keep someone watching the closest one.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Toxic Vapor",
+     "ids": [
+      1284561
+     ],
+     "aliases": [
+      "vapor",
+      "soft enrage"
+     ],
+     "what_it_does": "Each Imbibe adds a permanent stack of raid-wide Nature damage that grows through the fight, acting as a soft enrage.",
+     "what_to_do": "Healers: expect raid damage to keep rising. Everyone: kill the boss quickly to limit stacks.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Hardened Venom",
+     "ids": [
+      1314837
+     ],
+     "aliases": [
+      "hardened"
+     ],
+     "what_it_does": "Any venom add still alive after 60 seconds becomes immune to crowd control and moves 50% faster.",
+     "what_to_do": "DPS: kill adds as they spawn rather than letting them live, so they never harden.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Malignant Catalyst",
+     "ids": [
+      1282525,
+      1282601
+     ],
+     "aliases": [
+      "catalyst",
+      "catalytic bile",
+      "bile"
+     ],
+     "what_it_does": "Vashnik detonates an orb in the center, hitting the raid and launching Catalytic Bile across the room. Each bile splashes players within 6 yards; an unsoaked bile hits the whole raid harder.",
+     "what_to_do": "Everyone: make sure each bile impact has at least one player near it, without stacking the whole raid on one spot.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Plague Froth",
+     "ids": [
+      1281907,
+      1295798
+     ],
+     "aliases": [
+      "froth",
+      "plague wave",
+      "plague waves"
+     ],
+     "what_it_does": "Several players are coated in corrosive venom that damages anyone within 5 yards. On expiry it releases waves in the four cardinal directions.",
+     "what_to_do": "Affected players spread away from the raid. Everyone else stays off the cardinal lines and dodges the waves; keep the boss clear of them too.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Adaptive Infection",
+     "ids": [
+      1282117,
+      1299941,
+      1295173,
+      1294994
+     ],
+     "aliases": [
+      "infection",
+      "siphoning infection",
+      "stygian infection",
+      "exploding infection"
+     ],
+     "what_it_does": "Infects several players with a type matching Vashnik's current infusions: Siphoning (blood) and Stygian (shadow) block and absorb healing, Exploding (flame) is a fire DoT that explodes raid-wide when removed.",
+     "what_to_do": "Siphoning: agree beforehand whether to group in the infected player's circle or absorb the damage. Stygian: infected players spread out. Exploding: healers and dispellers stagger dispels and avoid them while the raid is low.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Dripping Fangs",
+     "ids": [
+      1280935
+     ],
+     "aliases": [
+      "fangs"
+     ],
+     "what_it_does": "A heavy physical hit with a Nature damage over time that leaves a 32-second debuff increasing the tank's physical damage taken by 100%.",
+     "what_to_do": "Tanks swap on every cast and do not hold the boss through the debuff.",
+     "source": {
+      "name": "Method, Vashnik the Malignant Heroic guide (updated 3 Sep 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/vashnik-the-malignant-heroic"
+     },
+     "patch": "12.1.0"
+    }
+   ]
+  },
+  {
+   "id": 3420,
+   "name": "Sszorak",
+   "aliases": [],
+   "abilities": [
+    {
+     "name": "Apex Predator",
+     "ids": [
+      1277025,
+      1277002,
+      1287072
+     ],
+     "aliases": [
+      "apex",
+      "ravage",
+      "tempest"
+     ],
+     "what_it_does": "A five-attack combo in random order (two Ravage, two Mutilate, one Tempest) with cones aimed at the current tank. Ravage is a heavy physical tank frontal that raises damage from later Ravage hits.",
+     "what_to_do": "Tanks pass the boss between them during the combo (taunts work mid-cast) and take Ravage at the edge, away from the raid. Everyone else stays out of the cones and avoids the roaming Tempest tornadoes.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Mutilate",
+     "ids": [
+      1277027,
+      1277051
+     ],
+     "aliases": [
+      "mutilated gash"
+     ],
+     "what_it_does": "A raid frontal whose damage is split among the players hit; with fewer than 5 hit it is lethal. Those hit get a Nature DoT that greatly increases damage from the next Mutilate.",
+     "what_to_do": "DPS and healers soak in assigned groups and alternate between the two groups, so the same group never soaks twice in a row.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Venomous Surge",
+     "ids": [
+      1305959,
+      1287008
+     ],
+     "aliases": [
+      "surge",
+      "viscous cyst",
+      "cyst"
+     ],
+     "what_it_does": "Two players get a 10-second venom DoT; when it ends it hits the raid with damage that falls off with distance and leaves a Viscous Cyst. Cysts last 2 minutes and burst with knockback, damage and a slow if touched or expired.",
+     "what_to_do": "Marked players run away from the group and drop the cyst at the marker opposite the tunnels about to fire. Everyone else avoids popping cysts early, because they are needed for the intermission.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Raging Crosswinds",
+     "ids": [
+      1285419,
+      1285447
+     ],
+     "aliases": [
+      "crosswinds",
+      "arrows",
+      "turbulent gusts"
+     ],
+     "what_it_does": "Several players get arrows and are launched in their arrow's direction after a delay. Turbulent Gusts then makes floating players fall slowly for 10 seconds.",
+     "what_to_do": "Arrow players aim at another arrow player and collide mid-air to land safely; missing everyone drifts you toward the platform edge. Floating players steer into each other to drop early. Coordinate knockback immunities.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Howling Maelstrom",
+     "ids": [
+      1285732
+     ],
+     "aliases": [
+      "maelstrom",
+      "intermission"
+     ],
+     "what_it_does": "At 100 energy the winds of the Altar of Six Winds build to a Maelstrom that pushes everyone in a set direction, three times in a row.",
+     "what_to_do": "Everyone pixel-stacks in the middle. The wind pushes the raid to the cyst opposite the active tunnel, and the cyst knocks players back toward the boss with wind resistance. After the third wind, one player pops the leftover cyst.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Dig In",
+     "ids": [
+      1286033
+     ],
+     "aliases": [],
+     "what_it_does": "During the Maelstrom intermission Sszorak takes 30% more damage for 25 seconds.",
+     "what_to_do": "DPS: save big cooldowns and unload during this window.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Corroding Venom",
+     "ids": [
+      1282869
+     ],
+     "aliases": [
+      "corroding"
+     ],
+     "what_it_does": "Sszorak's melee hits stack increased Physical damage taken on the tank.",
+     "what_to_do": "Tanks swap on stacks.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Caustic Claws",
+     "ids": [
+      1305998,
+      1296602
+     ],
+     "aliases": [
+      "claws",
+      "caustic residue",
+      "pools"
+     ],
+     "what_it_does": "Toxin lands on player locations, hitting anyone within 6 yards and leaving Caustic Residue pools that increase damage taken by 30%.",
+     "what_to_do": "Dodge the impacts and stay out of the pools. Tanks move the boss to a clean part of the room.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Ula'tek's Presence",
+     "ids": [
+      1285961
+     ],
+     "aliases": [
+      "ulatek's presence",
+      "mist"
+     ],
+     "what_it_does": "A caustic mist deals Nature damage to the whole raid every 2 seconds for the entire fight.",
+     "what_to_do": "Healers sustain the constant damage; the guide suggests a fifth healer.",
+     "source": {
+      "name": "Method, Sszorak Heroic guide (updated 13 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/sszorak-heroic"
+     },
+     "patch": "12.1.0"
+    }
+   ]
+  },
+  {
+   "id": 3421,
+   "name": "The Twin Fangs",
+   "aliases": [
+    "Twin Fangs",
+    "Vexhul and Ithraz",
+    "Vexhul",
+    "Ithraz"
+   ],
+   "abilities": [
+    {
+     "name": "Eternal Venom",
+     "ids": [
+      1290336
+     ],
+     "aliases": [],
+     "what_it_does": "A permanent stacking damage over time that never expires on its own, applied by most green abilities. At 10 stacks the player dies; Ravenous Feast is the only way to remove it.",
+     "what_to_do": "Everyone avoids unnecessary stacks and spends them at Ravenous Feast.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Caustic Deluge",
+     "ids": [
+      1289192,
+      1289993,
+      1310360
+     ],
+     "aliases": [
+      "deluge",
+      "caustic globule",
+      "globules"
+     ],
+     "what_it_does": "Vexhul channels on the tank for 5 seconds: acid splashes apply Eternal Venom to nearby players, leave Caustic Globules and give the tank a stacking damage debuff. Unsoaked globules rupture after 10 seconds and give the whole raid a venom stack.",
+     "what_to_do": "Tanks alternate serpents as stacks build. Raid stays clear of the target during the channel. Assigned low-stack players soak one globule each.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Venomous Emergence",
+     "ids": [
+      1291404,
+      1291478
+     ],
+     "aliases": [
+      "emergence",
+      "spawn of vexhul",
+      "corrosive spit",
+      "spawns"
+     ],
+     "what_it_does": "An unavoidable raid-wide venom stack that spawns three Spawn of Vexhul adds. They fixate on players and spit frontal lines that apply venom.",
+     "what_to_do": "DPS kill the adds quickly. Targeted players angle the line away from the raid; everyone else stays out of the line.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Ravenous Feast",
+     "ids": [
+      1290516,
+      1310096,
+      1310099
+     ],
+     "aliases": [
+      "feast",
+      "ithraz feast"
+     ],
+     "what_it_does": "Ithraz makes three rapid explosions that split heavy physical damage among players within 14 yards. Each person hit loses one venom stack, then gets a debuff that boosts later Feast damage and blocks further consumption.",
+     "what_to_do": "Use three soak groups of 7 or more, or two groups plus immunities for the third. No group soaks twice.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Coiling Ichor",
+     "ids": [
+      1290809,
+      1292505
+     ],
+     "aliases": [
+      "ichor",
+      "congealed gore"
+     ],
+     "what_it_does": "Several players get shrinking, increasingly damaging circles. On expiry they leave a slowing pool that lasts 2 minutes.",
+     "what_to_do": "Affected players walk out and drop the pool somewhere out of the way.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Stone Breaker",
+     "ids": [
+      1288538
+     ],
+     "aliases": [
+      "slam"
+     ],
+     "what_it_does": "Ithraz roars to knock everyone back, then slams the platform; slams stack damage on the tank. If a slam hits nobody, the raid takes armor-ignoring damage and a knockback.",
+     "what_to_do": "Tanks alternate soaking the slams and return to stand in them after the knockback.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Submerge",
+     "ids": [
+      1308556,
+      1309471,
+      1294293,
+      1306872
+     ],
+     "aliases": [
+      "intermission",
+      "vile flood",
+      "sanguine storm",
+      "noxious slick"
+     ],
+     "what_it_does": "Intermission at 100 energy: both serpents dive and leave Noxious Slicks (30% more damage taken). Vexhul channels Vile Flood, a 14-second frontal torrent that stacks venom fast, and Ithraz rains gore for 18 seconds with Sanguine Storm.",
+     "what_to_do": "Avoid the slicks. For Vile Flood move against the sweep's rotation and cross early, staying behind it. For Sanguine Storm keep dodging while rotating around the platform.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Uncoiled Wrath",
+     "ids": [
+      1308583
+     ],
+     "aliases": [
+      "enrage",
+      "wrath",
+      "uncoiled"
+     ],
+     "what_it_does": "If one serpent dies before the other, the survivor enrages and gains stacking damage. A hard enrage also comes with the third Submerge.",
+     "what_to_do": "All DPS keep both serpents at similar health and kill them at roughly the same time, before the third Submerge.",
+     "source": {
+      "name": "Method, The Twin Fangs Heroic guide (updated 14 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-twin-fangs-heroic"
+     },
+     "patch": "12.1.0"
+    }
+   ]
+  },
+  {
+   "id": 3429,
+   "name": "The Coiled Altar",
+   "aliases": [
+    "Coiled Altar",
+    "Zul'jan",
+    "Malacrass",
+    "Hex Lord Malacrass"
+   ],
+   "abilities": [
+    {
+     "name": "Gravebound",
+     "ids": [
+      1286837,
+      1308330,
+      1297906
+     ],
+     "aliases": [
+      "soul fragment",
+      "soul fragments"
+     ],
+     "what_it_does": "Put on everyone hit by a tank frontal (Soul Sever, Blighted Sever) or a Gloombomb explosion. Your soul splits into Soul Fragments on the ground that fade over 15 seconds; if the debuff runs out before you reclaim them, you die outright.",
+     "what_to_do": "Walk over your own Soul Fragments before they fade (about 15 seconds): reclaiming them is what removes Gravebound; nothing else does. Gloombomb targets explode away from the raid, then pick up their fragments. Only tanks should ever be in a Sever cone; tanks swap on the Sever stacks.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Soul Sever",
+     "ids": [
+      1286620,
+      1307959,
+      1312630
+     ],
+     "aliases": [],
+     "what_it_does": "Malacrass's Stage Two tank frontal: a Shadow cone that stacks increased damage taken from Soul Sever, applies Gravebound to everyone hit and destroys Manifestations of Dread inside it.",
+     "what_to_do": "Tanks swap on the stacks and aim the cone over the parked ghosts to clear them, then collect their Soul Fragments. Everyone else stays out of the cone.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Blighted Sever",
+     "ids": [
+      1307279,
+      1307292,
+      1307403
+     ],
+     "aliases": [],
+     "what_it_does": "Zul'jan's Stage Three tank frontal: a Shadow cleave that applies Gravebound and destroys Coalesced Venom and Manifestations of Dread in the cone.",
+     "what_to_do": "Tanks swap on stacks and use the cone to clear orbs and ghosts, then collect their Soul Fragments. Everyone else stays out of it.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Gloombomb",
+     "ids": [
+      1310882,
+      1286895,
+      1310881,
+      1310883
+     ],
+     "aliases": [],
+     "what_it_does": "Marks several players who explode after 5 seconds, hitting everyone within 15 yards and applying Gravebound.",
+     "what_to_do": "If marked: move out so nobody else is clipped, explode away from the group, then collect your Soul Fragments within 15 seconds. A personal defensive helps.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Fangs of the Coiled Altar",
+     "ids": [
+      1282487,
+      1282512
+     ],
+     "aliases": [
+      "fangs",
+      "fangs of the crucible"
+     ],
+     "what_it_does": "Zul'jan infuses himself with poison: damage to all players, and stacks that power up his auto attacks (Twinfang Toxin on the tank). Snake statues leave Noxious Ground pools.",
+     "what_to_do": "Healers plan raid cooldowns for it (the Adventure Guide calls the damage massive). Everyone stays out of Noxious Ground.",
+     "source": {
+      "name": "Blizzard Adventure Guide, The Coiled Altar (warcraft.wiki.gg)",
+      "url": "https://warcraft.wiki.gg/wiki/The_Coiled_Altar"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Defilement of the Coiled Altar",
+     "ids": [
+      1298381,
+      1298594
+     ],
+     "aliases": [
+      "defilement",
+      "defiled ground",
+      "corrupted toxin"
+     ],
+     "what_it_does": "Stage Three: a heavy raid-wide hit with a healing absorb. Zul'jan's auto attacks stack Corrupted Toxin on the tank, and Defiled Ground absorbs healing on players standing in it.",
+     "what_to_do": "Healers use cooldowns for each Defilement. Stay out of Defiled Ground. After the first one, ignore the orbs and bring both bosses down evenly (Soulbound enrages the survivor).",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Guillotine",
+     "ids": [
+      1283489,
+      1283485,
+      1283594,
+      1306604,
+      1307425
+     ],
+     "aliases": [
+      "guillotined",
+      "widow's touch",
+      "execution"
+     ],
+     "what_it_does": "Zul'jan throws an axe at a random player; the damage is split among players nearby. Players 40+ yards away take Widow's Touch, and too few soakers trigger Execution on everyone. Soakers get Guillotined (more damage from the next one).",
+     "what_to_do": "Soak with at least 5 players, using two groups that alternate because of Guillotined.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Grim Guillotine",
+     "ids": [
+      1299267,
+      1299266,
+      1299296,
+      1307652
+     ],
+     "aliases": [],
+     "what_it_does": "Stage Three Shadow version of Guillotine that also leaves a healing absorb.",
+     "what_to_do": "Soak it with 5 players as in Stage One, alternating groups.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Sever",
+     "ids": [
+      1299680,
+      1299684,
+      1301690
+     ],
+     "aliases": [],
+     "what_it_does": "Zul'jan's Stage One tank frontal: a big cleave that stacks increased damage taken from Sever and destroys Coalesced Venom in the cone.",
+     "what_to_do": "Tanks swap on every cast and aim it at the orb pile to clear it.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Toxic Deluge",
+     "ids": [
+      1299960,
+      1282403,
+      1299781,
+      1282408,
+      1299838,
+      1282419
+     ],
+     "aliases": [
+      "coalesced venom",
+      "orbs",
+      "venom rupture",
+      "volatile venom"
+     ],
+     "what_it_does": "Poison missiles create Coalesced Venom globules that damage the raid over time. Destroying one causes a raid-wide Venom Rupture; stepping on one gives Volatile Venom, which hurts nearby players and then drops a new globule.",
+     "what_to_do": "Carry the orbs to the middle pile without stacking while you carry one, and clear every orb; the tank's Sever clears the pile.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Dreadmarch",
+     "ids": [
+      1285643,
+      1297445
+     ],
+     "aliases": [
+      "manifestation of dread",
+      "ghosts"
+     ],
+     "what_it_does": "Stage Two: possesses players, who walk toward the edge. Freeing them spawns Manifestations of Dread that fixate on a player and creep closer while that player isn't looking at them.",
+     "what_to_do": "Break the absorb shield on possessed players to free them. Face your Manifestation to freeze it and park the ghosts where the tank's Soul Sever can clear them.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Eternal Nightfall",
+     "ids": [
+      1286918,
+      1286912
+     ],
+     "aliases": [
+      "veil of twilight",
+      "nightfall"
+     ],
+     "what_it_does": "A major Shadow attack behind a Veil of Twilight shield; the shield also stacks Suffocating Darkness, a healing absorb.",
+     "what_to_do": "DPS break the Veil of Twilight shield to interrupt the cast.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Spiritcackle",
+     "ids": [
+      1286441,
+      1286498
+     ],
+     "aliases": [
+      "spiteful soulcoiler",
+      "wail of terror"
+     ],
+     "what_it_does": "Summons a Spiteful Soulcoiler add that fears the raid with Wail of Terror (interruptible).",
+     "what_to_do": "Move to the add, interrupt Wail of Terror late in the cast, and kill the add before it reaches 100 energy.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Soulbinding",
+     "ids": [
+      1304032,
+      1307130,
+      1287722,
+      1287718
+     ],
+     "aliases": [
+      "intermission",
+      "fragments of malacrass",
+      "spirit erasure"
+     ],
+     "what_it_does": "Intermission: Malacrass binds himself to Zul'jan, who heals over time but takes increased damage. Fragments of Malacrass move toward Zul'jan and heal him if they arrive; stepping on one causes raid-wide Spirit Erasure.",
+     "what_to_do": "Use Heroism/Bloodlust and damage Zul'jan (Malacrass is immune). Block the fragments to stop the healing, but delay soaks when the raid is low, since every block causes Spirit Erasure.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Soulbound",
+     "ids": [
+      1309987,
+      1313196,
+      1289798,
+      1309995
+     ],
+     "aliases": [],
+     "what_it_does": "Stage Three links Zul'jan and Malacrass: if one dies, the other enrages.",
+     "what_to_do": "Bring both bosses down evenly so they die close together.",
+     "source": {
+      "name": "Method, The Coiled Altar Heroic guide (updated 22 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/the-coiled-altar-heroic"
+     },
+     "patch": "12.1.0"
+    }
+   ]
+  },
+  {
+   "id": 3492,
+   "name": "Ula'tek",
+   "aliases": [
+    "Ula'tek the Serpent Mother",
+    "Serpent Mother"
+   ],
+   "abilities": [
+    {
+     "name": "Venomous Heart",
+     "ids": [
+      1299526
+     ],
+     "aliases": [
+      "heart",
+      "heart of ula'tek"
+     ],
+     "what_it_does": "Exposed each time Ula'tek flies into Rage of the Shackled: for 20 seconds her Venomous Heart takes 100% more damage. Ula'tek's Bond makes all her forms share health, so every point on the Heart counts against her.",
+     "what_to_do": "This is the burn window: DPS save cooldowns (Heroism/Bloodlust if planned) for it and go all-out on the Venomous Heart for the 20 seconds while dodging Falling Debris. Healers cover the raid damage of Rage of the Shackled.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Rage of the Shackled",
+     "ids": [
+      1286860
+     ],
+     "aliases": [
+      "damage amp"
+     ],
+     "what_it_does": "Ula'tek rages: Nature damage to all players every 5 seconds for 20 seconds, Falling Debris on random spots, and her Venomous Heart is exposed.",
+     "what_to_do": "Dodge the Falling Debris impacts, healers cover the pulses, DPS use all cooldowns on the Venomous Heart.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Falling Debris",
+     "ids": [
+      1286885
+     ],
+     "aliases": [
+      "debris"
+     ],
+     "what_it_does": "During Rage of the Shackled, debris drops on several random spots and hits players within 7 yards of each impact.",
+     "what_to_do": "Watch the impact markers and step out of them, even while bursting.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Fury Unleashed",
+     "ids": [
+      1286905
+     ],
+     "aliases": [
+      "enrage",
+      "hard enrage"
+     ],
+     "what_it_does": "The hard enrage: Ula'tek tears her prison apart for a massive raid-wide hit, then escalating damage every second.",
+     "what_to_do": "She must be nearly dead when it goes out; the raid can't survive it for long.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Unchecked Rage",
+     "ids": [
+      1286945
+     ],
+     "aliases": [],
+     "what_it_does": "If Ula'tek can't melee a nearby player while she isn't casting, she hits the whole raid with Physical damage.",
+     "what_to_do": "Tanks keep her tanked at all times; never let her sit idle.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Rattler Slam",
+     "ids": [
+      1299206
+     ],
+     "aliases": [
+      "tail",
+      "gore rattle"
+     ],
+     "what_it_does": "If nobody is in melee with her tail (the Gore Rattle), it slams the platform for heavy raid-wide damage.",
+     "what_to_do": "Tanks make sure someone always covers the tail as well as the boss.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Mother's Wrath",
+     "ids": [
+      1298367,
+      1298417,
+      1300938
+     ],
+     "aliases": [
+      "stone venom",
+      "hobbled"
+     ],
+     "what_it_does": "Knocks back and marks her target, then bites them for heavy damage with stacking Stone Venom (a long Nature DoT) and Hobbled (35% slow). If the target is out of reach, the whole raid takes it instead.",
+     "what_to_do": "The tank gets back into melee straight away. Tanks swap on high Stone Venom stacks.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Spectral Coils",
+     "ids": [
+      1287265,
+      1300685
+     ],
+     "aliases": [
+      "coils",
+      "soul constrictor"
+     ],
+     "what_it_does": "Her coils rise and crush the platform for big raid-wide damage, reduced by how many players stand at each impact. Those hit get Soul Constrictor and can't reduce the next Coils' damage for 6 seconds.",
+     "what_to_do": "Split into two groups and soak the left and right coils.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Caustic Waves",
+     "ids": [
+      1292403
+     ],
+     "aliases": [
+      "waves"
+     ],
+     "what_it_does": "Waves of venom cross the platform: heavy damage and a stacking DoT to anyone in their path, and any egg they touch hatches into a Blightscale Viper at once.",
+     "what_to_do": "Dodge the waves and keep the eggs out of their path.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Putrid Membrane",
+     "ids": [
+      1301268
+     ],
+     "aliases": [
+      "membrane"
+     ],
+     "what_it_does": "Every Blightscale Viper that hatches sprays the whole raid with a Nature DoT.",
+     "what_to_do": "Prevent hatches by keeping eggs away from venom and waves; healers expect a raid DoT for each one that does hatch.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Grasping Fangs",
+     "ids": [
+      1301117,
+      1311600,
+      1311609
+     ],
+     "aliases": [
+      "blight vein"
+     ],
+     "what_it_does": "Stage Two: the Doomscale Warden sinks fangs into players (a DoT and slow). Snapping free injects Blight Vein into the whole raid.",
+     "what_to_do": "Snap in a controlled order: two players at a time, let the DoT fall off, then the next two, until all are clear.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Writhing Gestation",
+     "ids": [
+      1290990,
+      1289962,
+      1308038
+     ],
+     "aliases": [
+      "blightscale clutch",
+      "mass gestation"
+     ],
+     "what_it_does": "The Doomscale Warden turns nearby Blightscale Spawn into a Blightscale Clutch that hatches after 20 seconds; disturbing one makes the remaining spawn on that side start Writhing Gestation (Mass Gestation).",
+     "what_to_do": "Kill the Doomscale Warden first, and kill any Blightscale Clutch before it hatches.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Circling Prey",
+     "ids": [
+      1301510
+     ],
+     "aliases": [],
+     "what_it_does": "Stage Three: Ula'tek destroys a chunk of the platform, pulling players in for lethal damage and a knockback.",
+     "what_to_do": "Circling Prey breaks the platform the melee stand on: move off it before it goes.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Serpent's Bite",
+     "ids": [
+      1295905,
+      1306086,
+      1306119,
+      1318329
+     ],
+     "aliases": [
+      "volatile purge",
+      "calcified corpse"
+     ],
+     "what_it_does": "Stage Three: fangs hit random players. Players within 7 yards can leech the venom off, but then carry Volatile Purge, which erupts on nearby players after 5 seconds. An untended bite becomes a Calcified Corpse that deals lethal raid damage.",
+     "what_to_do": "Never leave a bite: split into three even soak groups (for example melee, healers with close-range players, ranged). Leechers spread out before Volatile Purge bursts.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Call of the Serpent",
+     "ids": [
+      1304012,
+      1300751
+     ],
+     "aliases": [
+      "blightscale shrieker",
+      "shrieker"
+     ],
+     "what_it_does": "Ula'tek roars and drops spawn from the ceiling, damaging players near each impact; it puts a Blightscale Clutch on each platform, and in Stage Three also a Blightscale Shrieker.",
+     "what_to_do": "Stay out of the spawn circles. Tanks taunt each Shrieker and the raid kills it fast: its Acidic Expulsion stacks a heavy raid DoT.",
+     "source": {
+      "name": "Method, Ula'tek Heroic guide (updated 30 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek-heroic"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Toxic Incubation",
+     "ids": [
+      1299757,
+      1299764,
+      1302842
+     ],
+     "aliases": [
+      "mother's boon",
+      "toxic burn"
+     ],
+     "what_it_does": "A spectral Ula'tek streams venom at the Blightscale Wretch, stacking Mother's Boon on it (more damage and damage reduction). A player standing in the stream blocks it but takes heavy damage and stacking Toxic Burn.",
+     "what_to_do": "Tanks block the stream so the Wretch doesn't stack Mother's Boon (Mythic guide).",
+     "source": {
+      "name": "Method, Ula'tek Mythic guide (updated 16 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-venomous-abyss/ulatek"
+     },
+     "patch": "12.1.5"
+    }
+   ]
+  },
+  {
+   "id": 3513,
+   "name": "Kith'ix",
+   "aliases": [
+    "Kithix",
+    "The Unbinding of Kith'ix"
+   ],
+   "abilities": [
+    {
+     "name": "Suffocating Darkness",
+     "ids": [
+      1302951,
+      1302952,
+      1303257,
+      1303260
+     ],
+     "aliases": [
+      "intermission",
+      "darkness",
+      "refulgent bulwark",
+      "suffocation"
+     ],
+     "what_it_does": "At 100 energy Kith'ix smothers the raid in darkness while Lady Liadrin holds it back with Refulgent Bulwark. Adds still alive when it starts become greatly empowered.",
+     "what_to_do": "Kill all adds before the intermission and stay inside Liadrin's safe zone; outside it players take heavy damage and are slowed.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Abyssal Grasp",
+     "ids": [
+      1303406
+     ],
+     "aliases": [
+      "grasp",
+      "heal absorb",
+      "tentacle grab"
+     ],
+     "what_it_does": "Tentacles grab players during the darkness and apply a healing absorb; players are dragged into the darkness if it is not removed in time.",
+     "what_to_do": "Healers switch to grabbed players and heal through the absorb quickly, spreading their target choices.",
+     "source": {
+      "name": "PlayHub, The Unbinding of Kith'ix raid guide (published 13 Oct 2026)",
+      "url": "https://playhub.com/blog/wow/the-unbinding-of-kithix-raid-guide-1215-961763"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Extinguish",
+     "ids": [
+      1304424,
+      1304508
+     ],
+     "aliases": [
+      "light's embrace",
+      "shadow wave"
+     ],
+     "what_it_does": "A heavy raid-wide shadow wave; Light's Embrace from Lady Liadrin greatly reduces its damage.",
+     "what_to_do": "Everyone collects a spark from Liadrin before it hits, but not too early because the protection expires within about 8 seconds.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Dark Devastation",
+     "ids": [
+      1304930,
+      1304948,
+      1304950
+     ],
+     "aliases": [
+      "devastated",
+      "voidscar"
+     ],
+     "what_it_does": "A heavy hit on the tank and players near them that applies Devastated, a stacking damage-taken increase. On Heroic and Mythic it also leaves Voidscar zones.",
+     "what_to_do": "Tanks swap after every cast, use a defensive, and place the circle away from the group; never let both tanks be hit. Others stay out of range of the target. Put Voidscars at the arena edge, leaving a path to Liadrin.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Unspeakable Horrors",
+     "ids": [
+      1304045,
+      1304046
+     ],
+     "aliases": [
+      "overwhelming fear",
+      "fear dispel"
+     ],
+     "what_it_does": "Marks players with a warning and then applies Overwhelming Fear.",
+     "what_to_do": "The marked player moves away from the raid first, then a healer dispels the fear once they are isolated. Dispelling in the middle of the raid causes avoidable damage.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Gut Reaction",
+     "ids": [
+      1302117,
+      1302319,
+      1302295
+     ],
+     "aliases": [
+      "bomber beetle",
+      "beetles",
+      "digestive juices"
+     ],
+     "what_it_does": "Bomber Beetles fixate on players and explode, leaving stacking Digestive Juices damage over time; several in rapid succession inflict heavy damage.",
+     "what_to_do": "Fixated players lead beetles away from the group and avoid letting several explode together. Healers need recovery time between blasts.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Commanding Presence",
+     "ids": [
+      1305008
+     ],
+     "aliases": [],
+     "what_it_does": "Aqir near Kith'ix take greatly reduced damage; eggs are not protected.",
+     "what_to_do": "One tank holds the boss away from the add pack while the other gathers the adds, so DPS can kill them without the reduction.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Stygian Howl",
+     "ids": [
+      1301110,
+      1301479
+     ],
+     "aliases": [
+      "eightfold eclipse",
+      "last light"
+     ],
+     "what_it_does": "At 25% health the raid is fully healed and gains damage and healing boosts. Eightfold Eclipse is eight raid-wide hits; the raid dies after the eighth if the boss is still alive.",
+     "what_to_do": "Use Bloodlust and offensive cooldowns and kill the boss before the eighth eclipse; healers rotate raid cooldowns through the hits. Save big cooldowns for this phase.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    },
+    {
+     "name": "Null Gate",
+     "ids": [
+      1308873,
+      1308881,
+      1308875,
+      1318467,
+      1318472
+     ],
+     "aliases": [
+      "nullify",
+      "nullshards",
+      "negation",
+      "explosive restabilization",
+      "gates"
+     ],
+     "what_it_does": "In the final phase marked players are hit by Null Gates; gates throw Nullshard motes that stack the Nullify debuff on contact. Negation gives a tank movement speed to reach a gate.",
+     "what_to_do": "Marked players spread and move away when a gate opens (it hits within 5 yards). Everyone avoids standing near gates or crossing several mote paths. Tanks handle Negation by touching a gate with a defensive; healers cover that damage.",
+     "source": {
+      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
+      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+     },
+     "patch": "12.1.5"
+    }
+   ]
+  }
+ ]
+}
