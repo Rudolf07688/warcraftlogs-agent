@@ -39,12 +39,14 @@ from ..schemas import (
     DoneFrame,
     EncountersFrame,
     ErrorFrame,
+    InterimFrame,
     MetaFrame,
     ModelFallbackFrame,
     ModelRetryFrame,
     ProposalFrame,
     RaidTrackedFrame,
     SuggestionsFrame,
+    ThinkingFrame,
 )
 from ..suggestions import generate_followups
 from ..telemetry import chat_turn_span
@@ -477,6 +479,14 @@ async def _run_chat_turn(
                     empty = record.pop("empty", False) or empty
                     tokens.append(record["text"])
                     await ws.send_json(record)
+                elif kind == "thinking":
+                    # 080 (sc-569): a transient status line; never part of the answer.
+                    await _send(ws, ThinkingFrame(text=record["text"]))
+                elif kind == "interim":
+                    # 080 (sc-572): the text so far was progress, not answer. The browser drops
+                    # it too, so what this turn saves equals what it shows (live = reload).
+                    tokens.clear()
+                    await _send(ws, InterimFrame(text=record.get("text") or ""))
                 elif kind == "tool_start":
                     await _forward_tool_start(ws, record)
                 elif kind == "tool_end":

@@ -93,6 +93,26 @@ class ModelRetryFrame(BaseModel):
     wait_s: float
 
 
+# Feature 080: transient status lines. The runner cleans and caps the text (``_status_line``,
+# 80 chars plus an ellipsis); the limit here is the backstop. Never saved.
+STATUS_TEXT_MAX = 120
+
+
+class ThinkingFrame(BaseModel):
+    """sc-569: one line from the model's latest thinking summary, while it thinks."""
+
+    type: Literal["thinking"] = "thinking"
+    text: str = Field(max_length=STATUS_TEXT_MAX)
+
+
+class InterimFrame(BaseModel):
+    """sc-572: the answer text streamed so far was progress, not answer: drop it, and show
+    ``text`` (its first sentence, may be empty) as the status line."""
+
+    type: Literal["interim"] = "interim"
+    text: str = Field(default="", max_length=STATUS_TEXT_MAX)
+
+
 class ModelFallbackFrame(BaseModel):
     """Feature 021: the turn's model stayed rate-limited, so the turn continues on its
     same-class sibling. Sent at most once per turn (see contracts/websocket-model-fallback.md).
