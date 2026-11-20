@@ -45,8 +45,7 @@ from wcl_agent.client.queries import REPORT_SUMMARY
 from wcl_agent.client.wcl_client import _flight_key
 from wcl_agent.game.constants import DIFFICULTY_NAMES, normalize_class_name
 from wcl_agent.game.roster import roster_snapshot
-from wcl_agent.tools.participants import _FIELDS as PARTICIPANT_FIELDS
-from wcl_agent.tools.participants import participants_from_player_details
+from wcl_agent.tools.participants import participants_from_player_details, participants_query
 from wcl_agent.tools.report_tools import (
     MAX_NAME_CHARS,
     _bounded,
@@ -54,6 +53,7 @@ from wcl_agent.tools.report_tools import (
     _summary_from,
     _table_query,
     neutralise,
+    player_details_query,
     report_query,
 )
 
@@ -146,9 +146,11 @@ def part_keys(code: str, boss_fights: list[int]) -> dict[str, PartKind]:
     the whole-report rows first, then per boss fight. Each key is the tool's own query and
     variables (``_flight_key``)."""
     whole = {"code": code, "fightIDs": _fight_ids(0)}
+    participants_field, participants_decls, participants_vars = participants_query(0)
+    details_field, details_decls, details_vars = player_details_query(0)
     keys: dict[str, PartKind] = {
-        _key(report_query(PARTICIPANT_FIELDS, _FIGHTS_DECL), whole): "details",
-        _key(report_query("playerDetails(fightIDs: $fightIDs)", _FIGHTS_DECL), whole): "details",
+        _key(report_query(participants_field, participants_decls), {"code": code, **participants_vars}): "details",
+        _key(report_query(details_field, details_decls), {"code": code, **details_vars}): "details",
         _key(report_query(_RANKINGS_FIELD, _FIGHTS_DECL), whole): "rankings",
     }
     for fight in boss_fights:

@@ -493,12 +493,26 @@ def last_kill(summary: ReportSummary) -> dict[str, Any] | None:
     return {"fight_id": kills[-1].id, **_boss(kills[-1])} if kills else None
 
 
-EVENTS_OPEN_END_MS = 10**12  # report-relative ms; past any report's end
+OPEN_END_MS = 10**12  # report-relative ms; past any report's end
 
 
 def _fight_ids(fight_id: int) -> list[int] | None:
     """0 means 'all fights'; otherwise a single-fight filter list."""
     return [fight_id] if fight_id else None
+
+
+def player_details_query(fight_id: int) -> tuple[str, str, dict[str, Any]]:
+    """The ``playerDetails`` field call, its declarations and variables (the store's key).
+
+    WCL answers ``playerDetails(fightIDs: null)`` with an internal server error (sc-573), so
+    the whole report is asked for as a time window instead."""
+    if fight_id:
+        return "playerDetails(fightIDs: $fightIDs)", ", $fightIDs: [Int]", {"fightIDs": [fight_id]}
+    return (
+        "playerDetails(startTime: $startTime, endTime: $endTime)",
+        ", $startTime: Float, $endTime: Float",
+        {"startTime": 0, "endTime": OPEN_END_MS},
+    )
 
 
 # --- Report structure ---------------------------------------------------------
@@ -794,7 +808,7 @@ async def get_report_events(
         "abilityID": ability_id or None,
         "limit": limit,
         "startTime": start,
-        "endTime": EVENTS_OPEN_END_MS if start else None,
+        "endTime": OPEN_END_MS if start else None,
     }
     try:
         events = await _report_field(report_code, field, var_decls, variables, "events")
@@ -913,12 +927,9 @@ async def get_report_player_details(report_code: str, fight_id: int = 0) -> dict
         report_code (str): The report code.
         fight_id (int): Single fight id (0 = all fights).
     """
-    field = "playerDetails(fightIDs: $fightIDs)"
-    var_decls = ", $fightIDs: [Int]"
+    field, var_decls, variables = player_details_query(fight_id)
     try:
-        details = await _report_field(
-            report_code, field, var_decls, {"fightIDs": _fight_ids(fight_id)}, "playerDetails"
-        )
+        details = await _report_field(report_code, field, var_decls, variables, "playerDetails")
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if details is None:
