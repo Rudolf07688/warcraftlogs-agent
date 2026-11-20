@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .report_tools import _report_field
+from .report_tools import EVENTS_OPEN_END_MS, _report_field
 from ..client.aio import gather_settled, unwrap
 
 Interval = tuple[float, float]
@@ -187,9 +187,11 @@ async def fetch_dead_windows(
         events = await _report_field(
             report_code,
             "events(dataType: Casts, fightIDs: $fightIDs, sourceID: $sourceID, "
-            "startTime: $startTime, limit: 1) { data nextPageTimestamp }",
-            ", $fightIDs: [Int], $sourceID: Int, $startTime: Float",
-            {"fightIDs": [fight_id], "sourceID": source_id, "startTime": death + 1},
+            "startTime: $startTime, endTime: $endTime, limit: 1) { data nextPageTimestamp }",
+            ", $fightIDs: [Int], $sourceID: Int, $startTime: Float, $endTime: Float",
+            # A start needs an end or WCL returns nothing (sc-570); the fight filter bounds it.
+            {"fightIDs": [fight_id], "sourceID": source_id, "startTime": death + 1,
+             "endTime": EVENTS_OPEN_END_MS},
             "events",
         )
         data = (events or {}).get("data") or []

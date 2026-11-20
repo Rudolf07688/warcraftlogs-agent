@@ -493,6 +493,9 @@ def last_kill(summary: ReportSummary) -> dict[str, Any] | None:
     return {"fight_id": kills[-1].id, **_boss(kills[-1])} if kills else None
 
 
+EVENTS_OPEN_END_MS = 10**12  # report-relative ms; past any report's end
+
+
 def _fight_ids(fight_id: int) -> list[int] | None:
     """0 means 'all fights'; otherwise a single-fight filter list."""
     return [fight_id] if fight_id else None
@@ -776,18 +779,22 @@ async def get_report_events(
     field = (
         f"events(dataType: {data_type}, hostilityType: {hostility_type}, "
         "fightIDs: $fightIDs, sourceID: $sourceID, abilityID: $abilityID, "
-        "limit: $limit, startTime: $startTime) { data nextPageTimestamp }"
+        "limit: $limit, startTime: $startTime, endTime: $endTime) { data nextPageTimestamp }"
     )
     var_decls = (
         ", $fightIDs: [Int], $sourceID: Int, $abilityID: Float, "
-        "$limit: Int, $startTime: Float"
+        "$limit: Int, $startTime: Float, $endTime: Float"
     )
+    # WCL returns no events for a startTime without an endTime (sc-570), so a start always
+    # carries an open end: the report (or the fightIDs filter) still bounds the window.
+    start = max(0, int(start_time or 0)) or None
     variables = {
         "fightIDs": _fight_ids(fight_id),
         "sourceID": source_id or None,
         "abilityID": ability_id or None,
         "limit": limit,
-        "startTime": start_time or None,
+        "startTime": start,
+        "endTime": EVENTS_OPEN_END_MS if start else None,
     }
     try:
         events = await _report_field(report_code, field, var_decls, variables, "events")
