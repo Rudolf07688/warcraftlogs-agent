@@ -55,7 +55,7 @@
 
       <rect class="node core" x="440" y="50" width="210" height="92" rx="10"/>
       <text class="t" x="545" y="80" text-anchor="middle">Agent "Barnaby"</text>
-      <text class="sub" x="545" y="103" text-anchor="middle">Google ADK · 27 tools</text>
+      <text class="sub" x="545" y="103" text-anchor="middle">Google ADK · 28 tools</text>
       <text class="sub" x="545" y="124" text-anchor="middle">provider layer</text>
 
       <rect class="node core" x="440" y="200" width="210" height="190" rx="10"/>
@@ -143,8 +143,8 @@
     <li>The browser sends the question as a chat frame over <code>/ws/chat</code>; the frontend's nginx (or Vite in development) proxies it to the backend. <a href="pages/streaming.html">Stream protocol</a></li>
     <li>The backend checks the session cookie, sets the workspace for row-level security and the turn's identity, and numbers the message. <a href="pages/auth-tenancy.html">Auth &amp; multi-tenancy</a></li>
     <li>It builds Barnaby's instruction (profile, recent raids and runs, known names, playbooks) and runs the Google ADK agent on the active model provider. Rate limits are retried and may switch to a sibling model. <a href="pages/agent.html">Agent</a> · <a href="pages/models.html">Models</a></li>
-    <li>The model calls tools. Warcraft Logs tools read Redis, then the raw store, then the API; knowledge search queries pgvector and full-text indexes; profile changes are only ever proposed for the user to confirm. <a href="pages/wcl-data.html">WCL data</a> · <a href="pages/knowledge-base.html">Knowledge base</a></li>
-    <li>Text tokens, tool start and end, charts and follow-ups stream back as frames and render in the React chat. <a href="pages/frontend.html">Frontend</a></li>
+    <li>The model calls tools. Warcraft Logs tools read Redis, then the raw store, then the API; knowledge search queries pgvector and full-text indexes; a boss mechanic is looked up in curated notes kept in the repo; profile changes are only ever proposed for the user to confirm. <a href="pages/wcl-data.html">WCL data</a> · <a href="pages/knowledge-base.html">Knowledge base</a></li>
+    <li>Text tokens, a one-line thinking status, tool start and end, charts and follow-ups stream back as frames and render in the React chat. <a href="pages/frontend.html">Frontend</a></li>
     <li>The answer is saved, indexed for later search and given a title; the whole chat can be exported as a PDF report. <a href="pages/pdf-reports.html">PDF reports</a></li>
   </ol>
 </section>
@@ -165,18 +165,18 @@
   <div class="cards">
     <a class="card" href="pages/database.html"><b>Database &amp; migrations</b><span>One PostgreSQL 17 database with pgvector, async SQLAlchemy over asyncpg, 23 Alembic migrations and 30 tables, 18 of them under row-level security.</span><span>pgvector/pgvector:pg17 · SQLAlchemy · asyncpg · Alembic</span></a>
     <a class="card" href="pages/wcl-data.html"><b>WCL client, cache &amp; store</b><span>Every Warcraft Logs lookup goes Redis, then the Postgres raw store, then the API, through one client with lanes, single-flight and retries; every network answer is written back.</span><span>httpx · redis.asyncio · JSONB</span></a>
-    <a class="card" href="pages/knowledge-base.html"><b>Knowledge base</b><span>Stored WCL responses, published guides and finished chats become chunks, embedded in pgvector, behind the <code>search_knowledge</code> tool.</span><span>pgvector · Postgres full-text · gemini-embedding-001</span></a>
+    <a class="card" href="pages/knowledge-base.html"><b>Knowledge base</b><span>Stored WCL responses, published guides and finished chats become chunks, embedded in pgvector, behind the <code>search_knowledge</code> tool, plus curated boss-mechanic notes behind <code>get_boss_mechanics</code>.</span><span>pgvector · Postgres full-text · gemini-embedding-001</span></a>
   </div>
 
   <p class="eyebrow" style="margin-top:8px">Agent</p>
   <div class="cards">
-    <a class="card" href="pages/agent.html"><b>Agent runtime &amp; tools</b><span>Barnaby is one Google ADK agent: how a turn runs, how the instruction is built, big reports, kickoff, the class-guide pipeline, all 27 tools, and the proposal-only write path.</span><span>google-adk</span></a>
+    <a class="card" href="pages/agent.html"><b>Agent runtime &amp; tools</b><span>Barnaby is one Google ADK agent: how a turn runs, how the instruction is built, big reports, kickoff, the class-guide pipeline, all 28 tools, the live status line, and the proposal-only write path.</span><span>google-adk</span></a>
     <a class="card" href="pages/models.html"><b>Models &amp; providers</b><span>One switch picks Vertex AI or the Anthropic API; model roles, live discovery cached in Redis, the shared rate-limit loop and the same-class fallback.</span><span>google-adk · google-genai · anthropic[vertex]</span></a>
   </div>
 
   <p class="eyebrow" style="margin-top:8px">User-facing</p>
   <div class="cards">
-    <a class="card" href="pages/streaming.html"><b>Stream protocol</b><span>One authenticated WebSocket with 16 declared frame types (15 sent), plus the REST endpoints the chat leans on.</span><span>FastAPI WebSocket · Pydantic</span></a>
+    <a class="card" href="pages/streaming.html"><b>Stream protocol</b><span>One authenticated WebSocket with 18 declared frame types (17 sent), plus the REST endpoints the chat leans on.</span><span>FastAPI WebSocket · Pydantic</span></a>
     <a class="card" href="pages/frontend.html"><b>Frontend</b><span>A React 19 single-page app: the streaming renderer, safe Markdown, charts, themes, and the profile, raids and admin screens.</span><span>React 19 · Vite 5 · Tailwind 4 · Streamdown · Plotly</span></a>
     <a class="card" href="pages/pdf-reports.html"><b>PDF reports</b><span>A model rewrites the chat into findings, then Markdown becomes sanitised HTML and WeasyPrint renders a chat-style PDF with charts.</span><span>markdown-it-py · nh3 · WeasyPrint · matplotlib</span></a>
   </div>

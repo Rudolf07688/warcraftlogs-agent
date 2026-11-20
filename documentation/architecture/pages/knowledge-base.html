@@ -17,7 +17,7 @@
 <header class="top">
   <p class="eyebrow">Architecture · Data</p>
   <h1>Knowledge base</h1>
-  <p class="lede">The app turns what it already holds (stored Warcraft Logs responses, published class guides and finished chat exchanges) into short text chunks, embeds them with pgvector in the existing Postgres, and gives the agent one tool, <code>search_knowledge</code>, to search them before it calls Warcraft Logs. Indexing runs in the background and never holds up a fetch, a guide run or a chat turn. Every search applies each source's own visibility rule inside the SQL.</p>
+  <p class="lede">The app turns what it already holds (stored Warcraft Logs responses, published class guides and finished chat exchanges) into short text chunks, embeds them with pgvector in the existing Postgres, and gives the agent one tool, <code>search_knowledge</code>, to search them before it calls Warcraft Logs. A second, separate tool, <code>get_boss_mechanics</code>, reads hand-curated boss-mechanic notes kept in the repo (<a href="#mechanics">Boss mechanics notes</a>). Indexing runs in the background and never holds up a fetch, a guide run or a chat turn. Every search applies each source's own visibility rule inside the SQL.</p>
   <div class="toolbar">
     <button class="pausebtn" type="button" aria-pressed="false">Pause animations</button>
     <span class="muted verified"></span>
@@ -33,6 +33,7 @@
     <a href="#search">Search</a>
     <a href="#names">Name resolution</a>
     <a href="#untrusted">Hits as data &amp; prompt</a>
+    <a href="#mechanics">Boss mechanics</a>
     <a href="#backfill">Backfill CLI</a>
     <a href="#eval">Eval</a>
     <a href="#config">Config</a>
@@ -46,7 +47,7 @@
   <div class="chips"><span class="eyebrow">Tech</span><span class="chip">pgvector/pgvector:pg17-trixie</span><span class="chip">pgvector&gt;=0.5.1 (Python)</span><span class="chip">Postgres full-text search</span><span class="chip">gemini-embedding-001 · 768-d</span><span class="chip">google-adk tool</span></div>
 
   <h3>What it does, and where it lives</h3>
-  <p>The knowledge base was built in two features: 043 (chunk store, chunkers, embedder, indexer, backfill) and 044 (shared name resolver, hybrid search, the agent tool, the search-first prompt clause and the eval). All of it is backend code; the frontend has no knowledge-base UI.</p>
+  <p>The knowledge base was built in two features: 043 (chunk store, chunkers, embedder, indexer, backfill) and 044 (shared name resolver, hybrid search, the agent tool, the search-first prompt clause and the eval). The curated boss-mechanic notes (feature 081) came later and share the tool group but not the store. All of it is backend code; the frontend has no knowledge-base UI.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Module</th><th>Role</th></tr></thead>
     <tbody>
@@ -59,7 +60,8 @@
       <tr><td><code>backend/app/kb/indexer.py</code></td><td><code>KbIndexer</code>: bounded queue, one consumer, embed sweep; hooks <code>offer_fetch</code>, <code>offer_guide</code>, <code>offer_exchange</code>.</td></tr>
       <tr><td><code>backend/app/kb/store.py</code></td><td>The one chunk writer, shared by the indexer and the backfill.</td></tr>
       <tr><td><code>backend/app/kb/search.py</code></td><td>Hybrid search: SQL legs, reciprocal rank fusion, relaxation, output cap, the tool payload.</td></tr>
-      <tr><td><code>backend/app/agent_tools/kb_tools.py</code></td><td><code>search_knowledge</code> and <code>KB_TOOLS = ToolGroup("Stored knowledge", ...)</code>.</td></tr>
+      <tr><td><code>backend/app/agent_tools/kb_tools.py</code></td><td><code>search_knowledge</code> and <code>KB_TOOLS = ToolGroup("Stored knowledge", (search_knowledge, get_boss_mechanics))</code>.</td></tr>
+      <tr><td><code>backend/app/agent_tools/mechanics.py</code>, <code>backend/app/kb/mechanics/*.json</code></td><td><code>get_boss_mechanics</code> and the curated boss-mechanic notes it reads (feature 081, <a href="#mechanics">below</a>); not chunks, not searched by <code>search_knowledge</code>.</td></tr>
       <tr><td><code>backend/app/services/name_resolver.py</code></td><td>Loose names ("arms warr", "hc", "Ula'tek", a friend) to canonical filter values; shared with the stored-data tools.</td></tr>
       <tr><td><code>backend/cli/kb_backfill.py</code></td><td>Backfill of sources stored before 043: estimate first, resumable.</td></tr>
       <tr><td><code>backend/evals/kb/</code></td><td>Recall and latency eval (<code>run</code>), recorded embeddings (<code>record</code>), agent filter accuracy (<code>live</code>).</td></tr>
@@ -398,6 +400,27 @@
 </section>
 
 <!-- ============================================================ -->
+<section class="layer" id="mechanics">
+  <h2>Boss mechanics notes</h2>
+  <div class="chips"><span class="eyebrow">Tech</span><span class="chip">JSON notes in the repo</span><span class="chip">Pydantic v2</span><span class="chip">no database</span></div>
+
+  <h3>What it does, and where it lives</h3>
+  <ul>
+    <li><b>The notes.</b> <code>backend/app/kb/mechanics/*.json</code>, one file per raid tier (today <code>venomous_abyss.json</code>: zone 53, 9 encounters, 92 ability notes). Each ability has its name, the Blizzard spell ids WCL reports, aliases, what it does, what to do, a source name and URL and the patch it was checked against. The text is hand-curated in our own words from the cited guide; names and ids come from Blizzard's Encounter Journal. A new tier is a new file.</li>
+    <li><b>The tool.</b> <code>get_boss_mechanics(ability, encounter=None)</code> in <code>backend/app/agent_tools/mechanics.py</code>, registered in <code>KB_TOOLS</code> after <code>search_knowledge</code> (so the "Stored knowledge" group has two tools). The files are read once, at import, from that fixed directory and validated by Pydantic models with <code>extra="forbid"</code>, so a malformed note fails app start-up and the tests, and no argument ever names or opens a file.</li>
+    <li><b>Lookup.</b> Exact, on normalised text: NFKC, case-folded, any apostrophe style and a possessive dropped, punctuation and control characters as word breaks, a leading "the" dropped. It matches an ability name, an alias or an ability id; with a boss's own name inside the text ("ula'tek heart") it matches the rest against that boss. The <code>encounter</code> argument drops difficulty words (Mythic, Heroic, Normal, LFR), so "Ula'tek (Mythic)" is Ula'tek. Both arguments are at most 100 characters; anything else is the standard tool error with fixed text.</li>
+    <li><b>Answer.</b> A hit returns the boss, the ability, <code>ability_ids</code> (to tie the note to the log), <code>what_it_does</code>, <code>what_to_do</code>, the <code>source</code> (name and URL) and the <code>patch</code>. A miss is <code>found: false</code> with "Not in my mechanic guides."; an ability that exists only under another boss than the one passed adds <code>found_under</code> with canonical boss names. The argument text is never echoed back, only names from the notes.</li>
+    <li><b>Routing.</b> <code>ANALYSIS_ROUTING</code> in <code>wcl_agent/agent.py</code> sends mechanics questions here first, including a boss name with an ability, phase or part word ("the Ula'tek heart"); only a miss falls back to current-patch web sources. The tool's docstring tells the model to cite the source and patch and never to invent a mechanic.</li>
+  </ul>
+  <p>Not covered: older tiers, and Nymrissa Wavecaller (no good source found). The Kith'ix notes cite wow.gg and PlayHub because no Method guide exists yet.</p>
+
+  <h3>Why</h3>
+  <p class="why">Curated notes in the repo, not pgvector rows: a few dozen entries need only exact name, alias or id lookup, it works on every provider, and it needs no migration. Vector indexing can follow if the notes grow. Web search stays a separate ticket.<cite>specs/081-boss-mechanics/plan.md</cite></p>
+  <p class="why">The model's arguments are free text, so lookup never builds a path from them and a miss never repeats them.<cite>specs/081-boss-mechanics/contracts/mechanics-tool.md</cite></p>
+</section>
+
+
+<!-- ============================================================ -->
 <section class="layer" id="backfill">
   <h2>Backfill CLI</h2>
   <div class="chips"><span class="eyebrow">Tech</span><span class="chip">argparse</span><span class="chip">asyncio</span></div>
@@ -479,13 +502,14 @@
   <p>Sources checked for this page:</p>
   <ul>
     <li><code>backend/app/kb/</code>: <code>__init__.py</code>, <code>chunks.py</code>, <code>wcl_chunker.py</code>, <code>guide_chunker.py</code>, <code>chat_chunker.py</code>, <code>names.py</code>, <code>embedder.py</code>, <code>indexer.py</code>, <code>store.py</code>, <code>search.py</code></li>
-    <li><code>backend/app/agent_tools/kb_tools.py</code>, <code>backend/app/agent_runner.py</code>, <code>backend/app/agent_tools/stored_data_tools.py</code> (header)</li>
+    <li><code>backend/app/agent_tools/kb_tools.py</code>, <code>backend/app/agent_tools/mechanics.py</code>, <code>backend/app/kb/mechanics/venomous_abyss.json</code>, <code>backend/app/agent_runner.py</code>, <code>backend/app/agent_tools/stored_data_tools.py</code> (header)</li>
     <li><code>backend/app/services/name_resolver.py</code>, <code>backend/app/repositories/raw_fetches.py</code> (<code>fetch_visible_clause</code>, <code>fetch_names_code</code>, <code>list_fetch_keys</code>, <code>load_fetch_for_index</code>)</li>
     <li><code>backend/app/main.py</code> (lifespan), <code>backend/app/services/fetch_persistence.py</code> (<code>store_batch</code>), <code>backend/app/services/guide_pipeline/__init__.py</code>, <code>backend/app/api/ws.py</code>, <code>backend/app/tenancy/context.py</code></li>
     <li><code>backend/app/db/models.py</code> (<code>KbChunk</code>, <code>KbChatChunk</code>, <code>UserCharacter</code>), <code>backend/migrations/versions/0019_kb_chunks.py</code></li>
     <li><code>wcl_agent/llm/generation.py</code> (<code>embed_texts</code>, <code>embeddings_available</code>), <code>wcl_agent/llm/provider.py</code> (<code>genai_client</code>), <code>wcl_agent/agent.py</code> (<code>EVIDENCE_CONTRACT</code>, <code>EVIDENCE_PLAN</code>), <code>wcl_agent/tools/report_tools.py</code> (<code>neutralise</code>)</li>
     <li><code>backend/cli/kb_backfill.py</code>, <code>backend/evals/kb/</code> (<code>__init__.py</code>, <code>__main__.py</code>, <code>harness.py</code>, <code>live.py</code>, <code>standin.py</code>, fixtures), <code>backend/tests/test_kb_eval.py</code></li>
     <li><code>backend/app/config.py</code>, <code>.env.example</code>, <code>docker-compose.yml</code>, <code>pyproject.toml</code></li>
+    <li><code>specs/081-boss-mechanics/plan.md</code>, <code>specs/081-boss-mechanics/contracts/mechanics-tool.md</code></li>
     <li><code>documentation/designs/20261101_semantic_knowledge_base.md</code>, <code>specs/043-kb-store-embed/contracts/</code>, <code>specs/044-kb-search/contracts/search-knowledge.md</code>, <code>specs/044-kb-search/eval-writeup.md</code></li>
     <li><code>git log --since=2026-10-31</code> over <code>backend/app/kb</code>, <code>kb_tools.py</code>, <code>backend/cli</code>, <code>backend/evals</code>, <code>name_resolver.py</code></li>
     <li><code>backend/app/telemetry/metrics.py</code> (<code>record_retrieval</code>)</li>
