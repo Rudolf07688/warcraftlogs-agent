@@ -190,6 +190,15 @@ TOO_LARGE_NOTE = (
     "Table too large to return, even compacted. Narrow the query (set fight_id, source_id or "
     "ability_id, or request a more specific data_type) and try again."
 )
+# sc-574: every damage field is a real number, and the model once quoted unmitigatedAmount and
+# overkill as "the hit". Deaths and DamageTaken results say which is which.
+DAMAGE_FIELDS_NOTE = (
+    "Damage fields of a hit: amount = damage to health; absorbed = taken by shields; overkill = "
+    "damage past the remaining health; the hit's size is amount + absorbed + overkill (a table's "
+    "damage.total). unmitigatedAmount is the hit before armor and damage reduction (mitigated is "
+    "what they removed), not what landed. Name the field when quoting a number."
+)
+DAMAGE_FIELD_TYPES = {"Deaths", "DamageTaken"}
 _SORT_KEYS = ("total", "totalUptime")
 _LEAD_KEYS = ("name", "id", "class", "spec", "total", "per_second")
 _ROW_LIST_KEYS = ("entries", "details")  # a row's own rows, not a per-row breakdown
@@ -695,9 +704,14 @@ async def get_report_table(
             "status": "success",
             "data_type": data_type,
             "table": await (aoverview_table(table) if overview else acompact_table(table)),
+            **_damage_note(data_type),
         },
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
     )
+
+
+def _damage_note(data_type: str) -> dict[str, str]:
+    return {"damage_fields": DAMAGE_FIELDS_NOTE} if data_type in DAMAGE_FIELD_TYPES else {}
 
 
 def _table_query(
@@ -818,7 +832,7 @@ async def get_report_events(
         return {"status": "error", "error_message": f"No data for report '{report_code}'."}
     has_more = isinstance(events, dict) and events.get("nextPageTimestamp") is not None
     return with_envelope(
-        {"status": "success", "data_type": data_type, "events": await _acap(events)},
+        {"status": "success", "data_type": data_type, "events": await _acap(events), **_damage_note(data_type)},
         Provenance(report_code=report_code, fight_id=fight_id or None, source_id=source_id or None),
         Completeness(has_more=has_more),
     )
