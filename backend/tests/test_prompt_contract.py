@@ -237,8 +237,8 @@ def test_time_block_is_last_so_the_prefix_stays_cacheable():
 
 
 def test_run_resolution_follows_decision_d5():
-    """Feature 030 (D5): ask with candidates, never guess; newest only on "last"/"latest"."""
+    """Feature 030 (D5): ask with candidates before a profile write, never guess; sc-575: an analysis takes the newest run and says so."""
     body = section("RUN_RESOLUTION").lower()
-    for clause in ("last", "latest", "recent runs", "at most 5", "never guess silently", "confirmation"):
+    for clause in ("last", "latest", "recent runs", "at most 5", "never guess silently", "confirmation", "writes to a profile"):
         assert clause in body, f"missing D5 clause: {clause!r}"
     assert "get_report_participants" not in body  # tool usage lives in its docstring
