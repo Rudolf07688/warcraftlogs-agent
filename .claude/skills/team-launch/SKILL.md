@@ -180,8 +180,8 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    the sprint worktree's `qa-reports/` into the main checkout. It is gitignored, so
    `git worktree remove` deletes it silently (2026-11-02: lost, then rebuilt from the
    transcripts). Only then remove the worktrees and run
-   `node .gitnexus/run.cjs analyze --index-only`. Then check that the index is sound:
-   `node .gitnexus/run.cjs context stream_response --repo .` must return `"status": "found"`.
+   `gitnexus analyze --index-only`. Then check that the index is sound:
+   `gitnexus context stream_response --repo .` must return `"status": "found"`.
    On 2026-11-05 an incremental run left a nameless index (every name and path empty, a
    crash WAL); `analyze --index-only --force --no-parse-cache` rebuilt it.
 7. **Skills** (owner preference 18, you own `.claude/skills/`): after the merge, on main,

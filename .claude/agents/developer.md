@@ -182,7 +182,7 @@ comment-only edits, a single-component frontend file, or a new stand-alone file.
   flows. `UNKNOWN` is unresolved: confirm with a text search. Post HIGH or CRITICAL risk
   with your mitigation when it shapes what you do, and name it in the hand-off.
 - **Once before hand-off:** index your worktree
-  (`node /home/rudolf/dev/warcraftlogs-agent/.gitnexus/run.cjs analyze --index-only`), then
+  (`gitnexus analyze --index-only`), then
   `detect-changes --scope all --repo .`. `partial` or `truncated` isn't clean: re-run.
 - **Before a plan gate**, grep the tests your design must leave unchanged and run
   `guards.py`: a "no change needed in X" claim or a new stored-data shape broke a guard twice.
