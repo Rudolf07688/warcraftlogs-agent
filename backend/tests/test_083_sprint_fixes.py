@@ -95,3 +95,81 @@ async def test_participants_stored_under_the_pre_078_key_are_still_read(as_user,
 
     assert out["participants"] == [{"name": "Thrall", "class_name": "Shaman", "spec": "Enhancement", "role": "dps"}]
     assert fake.calls == []  # read from the store only: the old query is never sent
+
+
+# F6 (SPEC-004, BUG-003): a Claude call's tiny thought chunks still give a status line. The slot
+# is spent only on a chunk that can yield a line, and a line held back by the throttle goes out
+# when the call ends (its final event or tool call), never after answer text.
+async def _thinking(monkeypatch, events, step):
+    from backend.tests.test_080_thinking_runner import _lines, _records
+
+    return _lines(await _records(monkeypatch, events, step=step))
+
+
+def _claude_call(chunks, final_text, call_id="c1"):
+    from backend.tests.test_080_thinking_runner import _call, _event, _thought
+
+    return [
+        *(_event(_thought(c), partial=True) for c in chunks),
+        _event(_thought(final_text), _call(call_id)),
+    ]
+
+
+def _after(call_id="c1"):
+    from backend.tests.test_080_thinking_runner import _event, _response, _text
+
+    return [_event(_response(call_id)), _event(_text("Ok."), final=True)]
+
+
+async def test_an_unfinished_first_chunk_does_not_use_up_the_slot(monkeypatch):
+    chunks = ["I am", " comparing", " the death", " times.", " Next"]
+    events = [*_claude_call(chunks, "".join(chunks)), *_after()]
+    # 0.1 s apart: the old throttle spent the slot on "I am" and skipped the rest of the call.
+    assert await _thinking(monkeypatch, events, step=0.1) == ["I am comparing the death times."]
+
+
+async def test_a_held_back_line_is_sent_when_the_call_ends(monkeypatch):
+    # No sentence end before the call's final event: the line comes out at the call's end.
+    events = [*_claude_call(["Checking", " the pulls and the deaths of the night in order of time, then"],
+                            "unused"), *_after()]
+    lines = await _thinking(monkeypatch, events, step=0.1)
+    assert lines == ["Checking the pulls and the deaths of the night in order of time, then"]
+    # A newer sentence the throttle held back within the second is sent at the tool call.
+    events = [*_claude_call(["First thought.\n\n", "Second thought."], "unused"), *_after()]
+    assert await _thinking(monkeypatch, events, step=0.1) == ["First thought.", "Second thought."]
+    # A final event that carries only the call (no repeated thought) ends the call too.
+    from backend.tests.test_080_thinking_runner import _call, _event, _thought
+
+    events = [_event(_thought("First thought.\n\n"), partial=True),
+              _event(_thought("Second thought."), partial=True), _event(_call("c1")), *_after()]
+    assert await _thinking(monkeypatch, events, step=0.1) == ["First thought.", "Second thought."]
+
+
+async def test_a_held_back_line_is_dropped_once_the_answer_has_started(monkeypatch):
+    from backend.tests.test_080_thinking_runner import _event, _text, _thought
+
+    events = [
+        _event(_thought("First thought.\n\n"), partial=True),
+        _event(_thought("Second thought."), partial=True),
+        _event(_text("Vagxsu topped damage."), partial=True),
+        _event(_thought("First thought. Second thought."), _text("Vagxsu topped damage."), final=True),
+    ]
+    assert await _thinking(monkeypatch, events, step=0.1) == ["First thought."]
+    # Answer text kept at the tool call (longer than an interim): no status after it either.
+    from backend.tests.test_080_thinking_runner import _call
+
+    events = [_event(_thought("Checking"), partial=True), _event(_text("Vagxsu " * 120), partial=True),
+              _event(_call("c1")), *_after()]
+    assert await _thinking(monkeypatch, events, step=0.1) == []
+
+
+async def test_the_clean_up_stays_at_most_once_a_second_with_the_call_end_flush(monkeypatch):
+    from backend.app import agent_runner
+
+    calls: list[str] = []
+    real = agent_runner._status_line
+    monkeypatch.setattr(agent_runner, "_status_line", lambda t, **kw: calls.append(t) or real(t, **kw))
+    # 100 tiny chunks in 1 s (SEC-003), then the call ends: one clean-up while streaming, one at the end.
+    lines = await _thinking(monkeypatch, [*_claude_call(["abc. "] * 100, "unused"), *_after()], step=0.01)
+    assert len(calls) == 2
+    assert lines == ["abc."]

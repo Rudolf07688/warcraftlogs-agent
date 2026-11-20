@@ -413,6 +413,18 @@ async def _run_turn(
     thought = ""
     thinking_at: float | None = None
     thinking_line = ""
+    thought_dirty = False  # thought text not yet cleaned into a status line (083 F6)
+
+    def think(now: float, complete: bool) -> dict | None:
+        """Clean ``thought`` into a ``thinking`` record, or ``None`` when the line is empty or
+        unchanged. Every run spends the 1/s slot (SEC-003); callers decide when to run it."""
+        nonlocal thinking_at, thinking_line, thought_dirty
+        thinking_at, thought_dirty = now, False
+        line = _status_line(thought, complete=complete)
+        if not line or line == thinking_line:
+            return None
+        thinking_line = line
+        return {"type": "thinking", "text": line}
 
     def retract() -> dict | None:
         """The ``interim`` record for a segment the model followed with a tool call, or
@@ -474,6 +486,8 @@ async def _run_turn(
                 )
                 if chat and (interim := retract()):
                     yield interim
+                if chat and thought_dirty and not kept and (status := think(_thinking_clock(), complete=True)):
+                    yield status  # the call ended with its line held back by the throttle (083 F6)
                 if call_id:
                     started_ids.add(call_id)
                     pending_args[call_id] = args
@@ -505,7 +519,7 @@ async def _run_turn(
                     yield interim  # text the model wrote after its call, in the same round
                 if not pending_args:
                     presenting = False  # the round's calls are all answered
-                thought, thinking_line = "", ""  # the next model call thinks afresh
+                thought, thinking_line, thought_dirty = "", "", False  # the next call thinks afresh
                 # US2: deposit the full result on the shared per-turn scratch so large
                 # concurrent outputs are preserved and can be picked up when done.
                 if scratch is not None:
@@ -528,20 +542,27 @@ async def _run_turn(
                     continue  # the answer has started: no status after it
                 if partial:
                     thought = (thought + text)[-THOUGHT_KEEP_CHARS:]
+                    thought_dirty = True
                 elif not thought:
                     thought = text[-THOUGHT_KEEP_CHARS:]  # the call streamed no thought partials
                 else:
-                    continue  # the call's final event repeats what streamed
-                # The throttle counts every attempt, so the clean-up runs at most once a second
-                # however small the chunks (080 review SEC-003).
+                    # The call's final event repeats what streamed: the call has ended, so a line
+                    # the throttle held back goes out now (083 F6).
+                    if thought_dirty and (status := think(_thinking_clock(), complete=True)):
+                        yield status
+                    continue
+                # A clean-up runs at most once a second however small the chunks (080 review
+                # SEC-003), and only for a chunk that can yield a line (a sentence end, a
+                # paragraph break, or enough text), so an unfinished first chunk spends no slot.
+                if partial and not (
+                    "\n" in text or _SENTENCE_END.search(text) or len(thought) >= STATUS_LINE_CHARS
+                ):
+                    continue
                 now = _thinking_clock()
                 if thinking_at is not None and now - thinking_at < THINKING_INTERVAL_S:
                     continue
-                thinking_at = now
-                line = _status_line(thought, complete=not partial)
-                if line and line != thinking_line:
-                    thinking_line = line
-                    yield {"type": "thinking", "text": line}
+                if status := think(now, complete=not partial):
+                    yield status
                 continue
             text = getattr(part, "text", None)
             if not text:
@@ -560,7 +581,7 @@ async def _run_turn(
             elif event.is_final_response():
                 final_text, final_author = text, getattr(event, "author", "")
         if not partial:
-            thought = ""  # a model call ended
+            thought, thought_dirty = "", False  # a model call ended
 
     # If the last round's text only arrived in the final (non-partial) event, emit it once.
     if not streamed and final_text.strip():
