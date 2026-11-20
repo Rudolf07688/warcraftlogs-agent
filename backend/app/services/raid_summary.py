@@ -87,6 +87,12 @@ _FIGHTS_DECL = ", $fightIDs: [Int]"
 # The rankings field get_report_rankings sends with its defaults (compare Rankings, timeframe
 # Historical); a test pins the key against the tool.
 _RANKINGS_FIELD = "rankings(fightIDs: $fightIDs, compare: Rankings, timeframe: Historical)"
+# The whole-report participant fields the tools sent before 078 (with fightIDs: null). Read-only
+# fallbacks so rows stored then still count; the tools never send them again (SPEC-003).
+_LEGACY_DETAILS_FIELDS = (
+    "endTime region { slug } playerDetails(fightIDs: $fightIDs)",
+    "playerDetails(fightIDs: $fightIDs)",
+)
 _REPORT = ("data", "reportData", "report")
 # The parts read from each stored row, by index (read_visible_parts' ``paths``).
 _PATHS = (
@@ -151,6 +157,7 @@ def part_keys(code: str, boss_fights: list[int]) -> dict[str, PartKind]:
     keys: dict[str, PartKind] = {
         _key(report_query(participants_field, participants_decls), {"code": code, **participants_vars}): "details",
         _key(report_query(details_field, details_decls), {"code": code, **details_vars}): "details",
+        **{_key(report_query(field, _FIGHTS_DECL), whole): "details" for field in _LEGACY_DETAILS_FIELDS},
         _key(report_query(_RANKINGS_FIELD, _FIGHTS_DECL), whole): "rankings",
     }
     for fight in boss_fights:

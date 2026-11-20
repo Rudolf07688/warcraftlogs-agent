@@ -23,6 +23,7 @@ _BAD_ENCOUNTER = f"encounter must be a boss name of at most {MAX_ARG_CHARS} char
 _APOSTROPHES = re.compile("['‘’ʼ`´′]")
 _POSSESSIVE = re.compile(r"'s\b")
 _SEPARATORS = re.compile(r"[\W_]+")
+_DIFFICULTY_WORDS = frozenset({"lfr", "normal", "heroic", "mythic"})
 
 
 class _Note(BaseModel):
@@ -68,6 +69,11 @@ def normalise(text: str) -> str:
     text = _APOSTROPHES.sub("'", unicodedata.normalize("NFKC", text).casefold())
     words = _SEPARATORS.sub(" ", _POSSESSIVE.sub("", text).replace("'", "")).split()
     return " ".join(words[1:] if words[:1] == ["the"] else words)
+
+
+def _encounter_key(text: str) -> str:
+    """``normalise`` with difficulty words dropped: "Ula'tek (Mythic)" is Ula'tek (BUG-002)."""
+    return " ".join(w for w in normalise(text).split() if w not in _DIFFICULTY_WORDS)
 
 
 def load_notes(data_dir: Path = DATA_DIR) -> tuple[Encounter, ...]:
@@ -140,8 +146,8 @@ async def get_boss_mechanics(ability: str, encounter: str | None = None) -> dict
     if encounter is not None and not _valid(encounter):
         return {"status": "error", "error_message": _BAD_ENCOUNTER}
     named = None
-    if encounter is not None and normalise(encounter):
-        named = _BY_ENCOUNTER.get(normalise(encounter), _UNKNOWN)
+    if encounter is not None and _encounter_key(encounter):
+        named = _BY_ENCOUNTER.get(_encounter_key(encounter), _UNKNOWN)
     candidates = _candidates(normalise(ability))
     if named is not None:
         hits = [c for c in candidates if c[0] is named]
