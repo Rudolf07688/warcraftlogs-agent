@@ -45,7 +45,16 @@ const RaidsPage = lazy(() => import("./pages/RaidsPage"));
 
 const CONNECTION_LOST = "Connection lost, the answer may be incomplete.";
 // Frames that only make sense while a turn is streaming here.
-const TURN_FRAMES = new Set<Frame["type"]>(["token", "tool_start", "tool_end", "done"]);
+const TURN_FRAMES = new Set<Frame["type"]>([
+  "token",
+  "tool_start",
+  "tool_end",
+  "thinking",
+  "interim",
+  "done",
+]);
+// Feature 080: a status line is model text; it is shown as plain text and never longer than this.
+const STATUS_MAX = 120;
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -68,6 +77,10 @@ export default function App() {
   // PERF-010: the streaming text lives in `streamStore`, not here, so a token never
   // re-renders the app; only the live message subscribes to it.
   const [status, setStatus] = useState(THINKING_DEFAULT);
+  // Feature 080: the live status line (latest thought or interim text) and when the turn last
+  // reported anything, for the generic "Thinking… Ns".
+  const [thought, setThought] = useState<string | null>(null);
+  const [quietSince, setQuietSince] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
 
   // US6: live spellcasting cards for the in-flight turn.
@@ -139,6 +152,7 @@ export default function App() {
       // sc-376: a frame of a turn that was already ended locally (socket drop) is stale.
       // An `error` frame is not: it is shown even when idle (it never touches the messages).
       if (TURN_FRAMES.has(f.type) && !streamingRef.current) return;
+      if (f.type !== "token") setQuietSince(Date.now());
       switch (f.type) {
         case "meta":
           turnConvRef.current = f.conversation_id;
@@ -172,8 +186,21 @@ export default function App() {
             };
             setCards(next);
           }
+          setThought(null); // the model thinks afresh about the result
           break;
         }
+        case "thinking":
+          // Feature 080: shown only while no answer text is (LiveMessage), and the backend
+          // sends none once the answer has started.
+          setThought(f.text.slice(0, STATUS_MAX) || null);
+          break;
+        case "interim":
+          // Feature 080 (sc-572): the text so far was progress; the backend dropped it from the
+          // answer it saves, so drop it here too and show its first sentence as status.
+          streamRef.current = "";
+          streamStore.set("");
+          setThought(f.text.slice(0, STATUS_MAX) || null);
+          break;
         case "model_retry":
           // Feature 011: the backend is waiting out a model rate limit; the next
           // tool_start/token replaces this status as usual.
@@ -281,6 +308,7 @@ export default function App() {
           setStreaming(false);
           streamStore.set("");
           setStatus(THINKING_DEFAULT);
+          setThought(null);
           streamRef.current = "";
           groundedRef.current = false;
           fallbackRef.current = undefined;
@@ -305,6 +333,7 @@ export default function App() {
           setStreaming(false);
           streamStore.set("");
           setStatus(THINKING_DEFAULT);
+          setThought(null);
           streamRef.current = "";
           groundedRef.current = false;
           fallbackRef.current = undefined;
@@ -376,6 +405,7 @@ export default function App() {
       setStreaming(false);
       streamStore.set("");
       setStatus(THINKING_DEFAULT);
+      setThought(null);
       streamRef.current = "";
       groundedRef.current = false;
       fallbackRef.current = undefined;
@@ -535,6 +565,8 @@ export default function App() {
       pendingProposalsRef.current = [];
       streamStore.set("");
       setStatus(THINKING_DEFAULT);
+      setThought(null);
+      setQuietSince(Date.now());
       setStreaming(true);
       const ok = socketRef.current?.send({
         conversation_id: convId,
@@ -780,6 +812,8 @@ export default function App() {
                 messages={messages}
                 streaming={streaming}
                 status={status}
+                thought={thought}
+                quietSince={quietSince}
                 error={error}
                 streamCards={streamCards}
                 selectedBosses={selectedBosses}
