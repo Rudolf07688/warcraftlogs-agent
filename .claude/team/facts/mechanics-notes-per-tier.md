@@ -2,7 +2,7 @@
 id: mechanics-notes-per-tier
 anchors: [file:backend/app/kb/mechanics/, sym:backend/app/agent_tools/mechanics.py::get_boss_mechanics]
 by: dev-1 Ansel
-verified: c0d587d 2026-11-20
+verified: 8986855 2026-11-20
 ---
 Boss-mechanic notes are hand-curated JSON, one file per raid tier, loaded once at import (no
 file opened per call). Ability names and spell ids come from Blizzard's Encounter Journal

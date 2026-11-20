@@ -2,7 +2,7 @@
 id: grafana-plugin-source-map
 anchors: [comp:grafana]
 by: dev-1 Ansel
-verified: 9ff8602 2026-11-07
+verified: 8986855 2026-11-20
 ---
 To read how a Grafana panel computes a value, read the plugin's TypeScript from the local image,
 offline: docker run --rm --network none --entrypoint cat grafana/grafana:13.2.5
