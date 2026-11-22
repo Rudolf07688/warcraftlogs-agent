@@ -703,6 +703,56 @@ Source: the 2026-11-07 retro (`meta/sprints/2026-11-07/retro.md`) and the owner'
   parked in the card round section of `meta/sprints/2026-11-07/retro.md`. Only one small fix
   goes ahead: `member.py lint` flags lines that merely mention a tool name (four false flags).
 
+### P17. Team-lead teaches after the retro (owner idea 2026-11-22; proposal, not built)
+
+Owner: look at what agents say about each other, find the members who keep making the same
+mistake, and "teach" them the way a real co-worker would, instead of relying on them to write
+the memory themselves.
+
+- **Why memory alone fails.** Nils's 11-07 High was already a line in his memory. Maren's memory
+  says "D18 reviews keep finding a connection held across a wait, no rate bound, a guard that
+  drops real output". The pattern was spotted, but by the PO, and it sits in *her* memory, not
+  in the memories of the people who make the mistake. Nobody closes the loop.
+- **1. A ledger of critique (team-lead only, at wrap-up, no new work for agents).** The signal
+  already exists. QA triage splits fix rounds by author, D18 reviews and gate reworks are on
+  the board, live passes name the failing stream, and retro lines and the "Teammates" sections
+  of the memories hold the rest. One sonnet pass at wrap-up turns these into
+  `meta/coaching/ledger.jsonl` rows: sprint, seat (from stream ownership, not from who found
+  it), observer, **class** (the P16 hazard classes, so one taxonomy serves both), severity,
+  evidence ref and a short quote. Positive notes go in too.
+- **2. Two verdicts, so a person doesn't get blamed for a process gap.**
+  - Same seat, same class, in 2 sprints (or 3 hits) → a **coaching** case for that person.
+  - Same class across 3 or more seats → a **system** fix: a brief item, a hazard or an
+    agent-file rule (P16 step 5 review). Teaching one person would be the wrong fix.
+  - A class the seat already has in its memory that still recurs → a memory that didn't fire.
+    Go straight to the firing mechanism (step 4).
+- **3. The 1:1 (the teaching itself).** Relaunch the seat read-only (about 60k, the cost of a
+  seat review) with the instances: situation, behaviour and impact, each with its ref, and the
+  fix-round cost. Don't ask "remember X". Ask "what in how you work lets this through?" The
+  member may dispute the case (a vague brief makes it a PO or system item). The outcome is
+  **one agreed practice**: a concrete action at a concrete moment, with its trigger (a file
+  kind or hazard class). The member writes it themselves (preference 21 holds) in a new
+  **"Working on"** section through `member.py goal`. It holds at most 2 active goals, sits
+  outside the 500-word cap, and lapses after 2 sprints in which the class came up. Cap: 2 1:1s
+  per sprint.
+- **4. Firing (ties into P16 step 2).** Active goals print at the top of `member.py me` (run at
+  every launch). The PreToolUse hazard hook injects a goal when the file's class matches. The
+  PO sees active goals while briefing and pairs work with them, as a lead would.
+- **5. Follow-up.** The next wrap-up checks the ledger.
+  - The class came up and stayed clean for 2 sprints → the goal **graduates**: the member keeps
+    it in their own words or drops it.
+  - It recurred despite an active goal → teaching isn't the fix. Make it a check (hook, test,
+    tool guard).
+  - One seat never makes a class of mistake that others repeat → that seat's practice is the
+    teaching material (peer teaching, e.g. Ansel's point-of-effect probes).
+- **Measure:** fix-bar findings per point by class; how often a class recurs after coaching
+  compared with before; the cost of the 1:1s compared with the fix rounds they prevent (one fix
+  round cost about 1.2 M on 11-07).
+- **Pilot before building anything.** Extract the ledger once over 11-01..11-20 (about 6
+  sprints, one sonnet pass) and see whether person-level repeats exist at all, or whether
+  mostly system patterns come out. Candidate to check, unverified: out-of-scope prompt cuts
+  (082's deleted PERSONALITY rule on 11-20, and Maren's memory line about them).
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -967,3 +1017,4 @@ through respawns as the same named member, with its own small, curated memory. I
   traces: one confirmed tool bug (event pulls with a start time come back empty) and five more
   coach-quality tickets, sc-570..575.
 - **2026-11-22 (meta, owner "run with your proposed changes"):** the three 11-20 retro candidates landed after Maren's seat review (P16 step 5, 66k, read-only). `product-owner.md`: merge step 1 runs `facts.py lint` in the developer's worktree when a branch changed `.claude/team/facts/` (close-out lint stays); a "read the installed ADK code first" brief item for streams on model calls or the runner (main checkout's `.venv`: worktrees have none); a "Shared wording" rule for two streams touching the same question type (owning path, one example, the routing phrase word for word). Maren widened her `owner:*` line from the board: 6 of the sprint's grant asks were posted on `owner:<path>` keys, and one (#47) replaced Edda's `ws.py` grant. So: nothing but grants on `owner:*` keys; answers use `--supersedes`; developers ask on `ask:<path>` (`developer.md` rule 1); `scrum-master.md` the same. Main was already pushed (b5bd091).
+- **2026-11-22 (meta, owner idea):** teach members after the retro, like a co-worker, instead of relying on them to remember. Recorded as **P17**: a critique ledger from existing signals → person vs system verdict → a read-only 1:1 where the member writes one agreed practice into a new "Working on" section → injected at the moment of work (P16 step 2) → follow-up at the next wrap-up. Proposed: a pilot extraction over 11-01..11-20 before building.

@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-22 (retro rules landed, pushed 883f5a9, 32 stories Done)
+Updated: 2026-11-22 (P17 teaching proposal drafted)
 
 ## Topic
 
@@ -24,6 +24,13 @@ The agent-team redesign: persistence and autonomy. Full record in
   the end. Owner hasn't said go yet.
 - Cost 1.08 M/pt on 11-20, the cheapest app sprint so far (team report
   `meta/sprints/2026-11-20/team-report.html`).
+
+## In discussion now
+
+- **P17, team-lead teaches after the retro** (owner idea). Critique ledger → person vs
+  system verdict → 1:1 → member-written "Working on" goal → fires via the P16 hook →
+  follow-up. Waiting on the owner: pilot extraction over 11-01..11-20 first? Is a
+  member-written goal section OK under pref 21?
 
 ## Next meta session
 
