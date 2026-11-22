@@ -38,3 +38,4 @@ Docs: SPEC-005 (architecture docs stale) is the close-out docs pass; SPEC-006 (p
 - Retraction residual: sc-606
 - Status/socket pre-existing + rankings cold read (PERF-005): QA 1122-D (sc-607)
 - Flaky raw-store test: merged into the existing flaky raw-store ticket sc-436 (renamed, description extended)
+- Live re-check at 78d5c5a: all PASS except Claude wrong-boss wording (soft) -> sc-608, no second fix round.
