@@ -1,0 +1,58 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            140    48510    22671488     202541      0
+D18 security review of 087                   27    30776     1619904      99650      0
+Fix 088b status UI fixes                     57    37035     6888346     132292      0
+QA performance sweep                         23    29827     1645042     105455      0
+product-owner                               230   139311    57893266     375355      3
+QA bug hunt sweep                            52    61528     5468498     174323      0
+Dev 086 mechanics rankings                   71    52712     9305687     158961      0
+Fix 088a runner fixes                        50    43686     6113279     136687      0
+Shortcut sync for sprint                      7     3203      425642      78873      0
+Dev 085 status frames                       111    96445    20273273     467103      1
+Dev 087 Claude history cache                 94   100342    16721288     227479      0
+D18 security review of 085                   24    27572     1451420      94257      0
+QA security sweep                            19    16682     1046922      74163      0
+Docs close-out 089                           57    30904     7710956     189200      0
+Fix 088c data fixes                          97    52422    12480161     150110      1
+Dev 084 model re-runs                        86    82496    15367077     239575      0
+QA spec conformance sweep                    44    41705     5074573     185730      0
+Fetch Nymrissa and Kith'ix guides             3    15021       61695     103992      0
+TOTAL {'calls': 1192, 'out': 910177, 'cr': 192218517, 'cc': 3195746, 'inp': 2624, 'sends': 5}
+main (team-lead) [('Bash', 91), ('Monitor', 10), ('ToolSearch', 2), ('Skill', 1), ('mcp__shortcut__search_stories', 1), ('AskUserQuestion', 1)]
+D18 security review of 087 [('Bash', 26), ('Write', 1)]
+Fix 088b status UI fixes [('Bash', 53), ('Edit', 2), ('Write', 1), ('ToolSearch', 1), ('Monitor', 1)]
+QA performance sweep [('Bash', 23), ('Write', 1)]
+product-owner [('Bash', 153), ('Agent', 15), ('mcp__shortcut__get_story', 9), ('mcp__shortcut__update_story', 9), ('mcp__shortcut__create_story_comment', 8), ('mcp__shortcut__create_story', 6)]
+QA bug hunt sweep [('Bash', 52), ('Write', 1)]
+Dev 086 mechanics rankings [('Bash', 61), ('mcp__shortcut__update_story', 6), ('ToolSearch', 2), ('mcp__shortcut__get_story', 1), ('mcp__shortcut__list_workflow_states', 1), ('Agent', 1)]
+Fix 088a runner fixes [('Bash', 47), ('Write', 1)]
+Shortcut sync for sprint [('Bash', 3), ('mcp__shortcut__search_stories', 3), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1), ('mcp__shortcut__search_epics', 1)]
+Dev 085 status frames [('Bash', 92), ('Write', 12), ('Skill', 5), ('mcp__shortcut__update_story', 4), ('ToolSearch', 2), ('mcp__shortcut__get_story', 2)]
+Dev 087 Claude history cache [('Bash', 81), ('Write', 9), ('mcp__shortcut__update_story', 3), ('ToolSearch', 2), ('mcp__shortcut__get_story', 2), ('Skill', 2)]
+D18 security review of 085 [('Bash', 23), ('Write', 1)]
+QA security sweep [('Bash', 18), ('Write', 1)]
+Docs close-out 089 [('Bash', 56), ('Read', 1)]
+Fix 088c data fixes [('Bash', 95), ('Write', 1), ('Edit', 1), ('SendMessage', 1)]
+Dev 084 model re-runs [('Bash', 68), ('mcp__shortcut__update_story', 5), ('Skill', 3), ('ToolSearch', 2), ('mcp__shortcut__get_story', 2), ('Read', 2)]
+QA spec conformance sweep [('Bash', 42), ('Read', 1), ('Write', 1)]
+Fetch Nymrissa and Kith'ix guides [('WebFetch', 11)]
+
+new context by kind (tool-result chars, share):
+main (team-lead)                           167689 other bash 40%, shortcut 26%, check/pg 15%, source reads 8%, board 4%
+D18 security review of 087                 108496 other bash 56%, source reads 36%, git 8%, Write 0%
+Fix 088b status UI fixes                   146004 source reads 56%, board 22%, other bash 14%, git 6%, check/pg 2%
+QA performance sweep                       127394 git 59%, source reads 31%, other bash 9%, Write 0%
+product-owner                             1256220 Read 78%, other bash 6%, source reads 5%, shortcut 4%, board 3%
+QA bug hunt sweep                          227235 source reads 50%, git 29%, other bash 20%, Write 0%
+Dev 086 mechanics rankings                 156657 source reads 54%, other bash 15%, git 10%, Agent 9%, check/pg 6%
+Fix 088a runner fixes                      149242 source reads 62%, board 21%, other bash 9%, git 7%, check/pg 1%
+Shortcut sync for sprint                    64473 shortcut 75%, other bash 15%, git 9%, ToolSearch 1%
+Dev 085 status frames                      223250 source reads 57%, other bash 19%, board 9%, check/pg 9%, shortcut 3%
+Dev 087 Claude history cache               189974 source reads 54%, other bash 17%, board 14%, Read 6%, git 4%
+D18 security review of 085                 109050 source reads 47%, other bash 28%, git 24%, check/pg 0%, Write 0%
+QA security sweep                           86035 git 54%, source reads 46%, Write 0%, other bash 0%
+Docs close-out 089                         606288 Read 58%, html reports 21%, git 13%, source reads 6%, other bash 2%
+Fix 088c data fixes                        163077 source reads 58%, board 18%, other bash 12%, check/pg 6%, git 6%
+Dev 084 model re-runs                      249188 other bash 32%, Read 27%, source reads 20%, board 10%, check/pg 4%
+QA spec conformance sweep                  301804 other bash 29%, source reads 28%, git 23%, Read 10%, board 7%
+Fetch Nymrissa and Kith'ix guides          195736 WebFetch 100%

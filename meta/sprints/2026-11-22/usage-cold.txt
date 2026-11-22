@@ -1,0 +1,54 @@
+agent                                     calls      out     cacheRd    cacheWr  sends
+main (team-lead)                            140    48510    22671488     202541      0
+D18 security review of 087                   27    30776     1619904      99650      0
+Fix 088b status UI fixes                     57    37035     6888346     132292      0
+QA performance sweep                         23    29827     1645042     105455      0
+product-owner                               230   139311    57893266     375355      3
+QA bug hunt sweep                            52    61528     5468498     174323      0
+Dev 086 mechanics rankings                   71    52712     9305687     158961      0
+Fix 088a runner fixes                        50    43686     6113279     136687      0
+Shortcut sync for sprint                      7     3203      425642      78873      0
+Dev 085 status frames                       111    96445    20273273     467103      1
+Dev 087 Claude history cache                 94   100342    16721288     227479      0
+D18 security review of 085                   24    27572     1451420      94257      0
+QA security sweep                            19    16682     1046922      74163      0
+Docs close-out 089                           57    30904     7710956     189200      0
+Fix 088c data fixes                          97    52422    12480161     150110      1
+Dev 084 model re-runs                        86    82496    15367077     239575      0
+QA spec conformance sweep                    44    41705     5074573     185730      0
+Fetch Nymrissa and Kith'ix guides             3    15021       61695     103992      0
+TOTAL {'calls': 1192, 'out': 910177, 'cr': 192218517, 'cc': 3195746, 'inp': 2624, 'sends': 5}
+main (team-lead) [('Bash', 91), ('Monitor', 10), ('ToolSearch', 2), ('Skill', 1), ('mcp__shortcut__search_stories', 1), ('AskUserQuestion', 1)]
+D18 security review of 087 [('Bash', 26), ('Write', 1)]
+Fix 088b status UI fixes [('Bash', 53), ('Edit', 2), ('Write', 1), ('ToolSearch', 1), ('Monitor', 1)]
+QA performance sweep [('Bash', 23), ('Write', 1)]
+product-owner [('Bash', 153), ('Agent', 15), ('mcp__shortcut__get_story', 9), ('mcp__shortcut__update_story', 9), ('mcp__shortcut__create_story_comment', 8), ('mcp__shortcut__create_story', 6)]
+QA bug hunt sweep [('Bash', 52), ('Write', 1)]
+Dev 086 mechanics rankings [('Bash', 61), ('mcp__shortcut__update_story', 6), ('ToolSearch', 2), ('mcp__shortcut__get_story', 1), ('mcp__shortcut__list_workflow_states', 1), ('Agent', 1)]
+Fix 088a runner fixes [('Bash', 47), ('Write', 1)]
+Shortcut sync for sprint [('Bash', 3), ('mcp__shortcut__search_stories', 3), ('ToolSearch', 1), ('mcp__shortcut__list_workflows', 1), ('mcp__shortcut__get_current_iterations', 1), ('mcp__shortcut__search_epics', 1)]
+Dev 085 status frames [('Bash', 92), ('Write', 12), ('Skill', 5), ('mcp__shortcut__update_story', 4), ('ToolSearch', 2), ('mcp__shortcut__get_story', 2)]
+Dev 087 Claude history cache [('Bash', 81), ('Write', 9), ('mcp__shortcut__update_story', 3), ('ToolSearch', 2), ('mcp__shortcut__get_story', 2), ('Skill', 2)]
+D18 security review of 085 [('Bash', 23), ('Write', 1)]
+QA security sweep [('Bash', 18), ('Write', 1)]
+Docs close-out 089 [('Bash', 56), ('Read', 1)]
+Fix 088c data fixes [('Bash', 95), ('Write', 1), ('Edit', 1), ('SendMessage', 1)]
+Dev 084 model re-runs [('Bash', 68), ('mcp__shortcut__update_story', 5), ('Skill', 3), ('ToolSearch', 2), ('mcp__shortcut__get_story', 2), ('Read', 2)]
+QA spec conformance sweep [('Bash', 42), ('Read', 1), ('Write', 1)]
+Fetch Nymrissa and Kith'ix guides [('WebFetch', 11)]
+
+cold-cache calls (weighted at 1.25x the rewrite):
+main (team-lead)                           1 calls   0.03
+Fix 088b status UI fixes                   1 calls   0.03
+QA performance sweep                       1 calls   0.04
+product-owner                              1 calls   0.04
+Dev 086 mechanics rankings                 1 calls   0.03
+Fix 088a runner fixes                      1 calls   0.04
+Shortcut sync for sprint                   1 calls   0.03
+Dev 085 status frames                      2 calls   0.30
+Dev 087 Claude history cache               1 calls   0.03
+Docs close-out 089                         1 calls   0.06
+Fix 088c data fixes                        1 calls   0.03
+Dev 084 model re-runs                      1 calls   0.04
+Fetch Nymrissa and Kith'ix guides          2 calls   0.12
+TOTAL cold weight                                    0.81
