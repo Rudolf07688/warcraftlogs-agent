@@ -160,6 +160,15 @@ work. Open a new seat only when every existing one is busy.
   in an argument, redirects and subresources, identity read from free text, config read
   outside the selected scope, and a forged artefact (11-07: 5 of 8 fix-bar findings were on
   this list).
+- **Bounds**, when the stream adds a path that runs per request, per turn or on a schedule
+  (an endpoint, client fetch, outbound call or retry, queue, cache, background job, or a
+  loop or regex over input or stored data): list each bound one per line, with its value
+  when the product decides it, and the test that pins it. Check **time** (timeout or
+  deadline, including retries and shutdown), **size** (payload, field, label, regex input),
+  **rate** (per user or workspace, in-flight cap), **growth** (caches, keys, tags, logs,
+  history) and **held resources** (no connection, lock or lane slot held across an external
+  wait). Drop what doesn't apply. P17 pilot: 52 bounds findings in 10 sprints across 5
+  seats, both Criticals among them.
 - **Live pre-check:** "if a question needs the real stack, post `live-check:<NNN>-pre` with
   the exact command while building; team-lead runs it at once"
 - for a spike: the read-only data sources and the verification scripts
@@ -284,9 +293,11 @@ wording (11-05b: a cooldown regex passed on wording alone).
 1. **QA sweep:** run one `/qa-sweep` (`Skill` tool) from the sprint worktree over the
    sprint diff only (`<base>...<tip>`), telling it the full suite already ran and which
    paths had a D18 security review (skipped). For a sprint of tier-S work only, you may
-   limit it to `bugs` and `security`. If a security rework touched lanes, locks, queues or
-   ordering, add: "re-check the <feature> rework for liveness: can any turn now wait behind
-   another?" (2026-11-01b: only the end sweep caught a stuck turn.)
+   limit it to `bugs` and `security`. If a security rework touched lanes, locks, queues,
+   ordering or what data a path runs over, add: "re-check the <feature> rework for liveness
+   and cost: can any turn now wait behind another, and does it now run over more data?"
+   (2026-11-01b: only the end sweep caught a stuck turn; 11-02: a rework ran neutralise over
+   the whole raw table. Both Highs came from unreviewed rework hunks.)
 2. **Fix bar:** a broken acceptance criterion, a security hole or data loss: Medium and
    above in new code (`indiff.py` tells new from old). Lows go to the backlog unless they're
    in a hunk you're fixing anyway. **Nothing meets the bar: no fix round.** Otherwise use

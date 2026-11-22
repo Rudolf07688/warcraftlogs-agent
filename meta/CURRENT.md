@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-22 (P17 pilot done)
+Updated: 2026-11-22 (P17 built, first 1:1 done)
 
 ## Topic
 
@@ -27,10 +27,9 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## In discussion now
 
-- **P17, team-lead teaches after the retro.** Owner go (pref 30). Pilot done:
-  `meta/coaching/pilot-2026-11-22.md`. One person case (Nils, no bound on new paths); system
-  fixes worked for the rest. Proposed next: `member.py goal` and the "Working on" print, a
-  1:1 with Nils, a bounds row in the PO's hostile-input list. Awaiting owner go.
+- **P17 built and first run.** `member.py goal` + wrap-up step 10 "Teach"; Nils's 1:1 done (goal 1:
+  volume test at the bound); bounds now in briefs (PO) and developer hard rule 11; sc-597
+  for a shared volume-test fake. Next: follow up dev-3 `unbounded` at the next wrap-up.
 
 ## Next meta session
 

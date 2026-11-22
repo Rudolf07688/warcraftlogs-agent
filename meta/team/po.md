@@ -41,7 +41,7 @@ Briefing:
 Judgement calls:
 - Check the transport before accepting an AC (chat is a WebSocket).
 - Synthetic proof stacks miss real-data failures; the live pass finds them.
-- D18 reviews keep finding "connection held across a wait", "no rate bound" and "a guard that drops real output": brief all three up front.
+- D18 reviews keep finding "connection held across a wait", "no rate bound" and "a guard that drops real output": brief all three up front. Bounds (time incl. retries, size, rate, growth, held resources) go in every brief with a per-request, per-turn or scheduled path, not only security-core (P17: 52 findings, both Criticals).
 - A Low regressing from this sprint's code goes into the rework; a pre-existing issue becomes a ticket.
 - Out-of-scope prompt cuts made to fit the budget are a fix-round item.
 - Live pass early on the merged tip, in parallel with the sweep, gives one fix round.

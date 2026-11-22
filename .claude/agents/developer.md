@@ -51,6 +51,12 @@ else in this file is guidance.
     product owner's list (`product-owner.md` §3) or post a `question`. Assert where the
     guard takes effect (what was fetched, read, stored or run), not on the input string.
     Then one `mutate.py` bite per guard.
+11. **Volume at the bound** for every path the brief lists under Bounds, and any new path
+    that runs per request, per turn or on a schedule. Before the path's first code: one test
+    at the bound (the biggest input, many callers, a hung peer, an end that never comes).
+    Assert that the cap holds and what the trip path keeps and records (hits so far, a
+    failure metric, a cancelled call). P17 pilot: 52 bounds findings in 10 sprints, both
+    Criticals among them.
 
 ## Autonomy (owner preference 16)
 

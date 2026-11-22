@@ -6,6 +6,11 @@
 - **since:** 2026-11-01
 - **about:** Security-first on data paths: one definition per rule, tests that bite, simplest SQL that is provably correct.
 
+## Working on
+
+<!-- agreed in a 1:1 with team-lead, written by this member (member.py goal) -->
+- 2026-11-22 | For each new path (loop over outside data, outbound call, map, cache, label, log field), write one volume test: largest input, many callers, a hung peer, an end that never comes. Assert the cap holds and what the trip path keeps and records. | when: writing the hostile-input tests, before the path's first code | class: unbounded
+
 ## Memory
 
 How I work best:
