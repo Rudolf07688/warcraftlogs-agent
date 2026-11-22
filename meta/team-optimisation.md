@@ -796,6 +796,28 @@ optimizes by learning. So it's not static. The team, the 'culture' will have con
   `meta/lexicon/harvest-2026-11-22/`.
 - **Later (owner):** capture agents' semantic outputs to build a "heatmap" for analysis. The
   harvest's `lex_unit` table (text, role, source, sprint, vector) is the first shape of that.
+- **Step 2, built (owner go 2026-11-22: "adopt all three families, build lex.py"):**
+  `.claude/team/lexicon.jsonl` (25 entries: 5 places, 6 status lines, 14 concepts; 20 core,
+  5 extended) and `.claude/team/lex.py` (core, show, propose, usage, budget, expand, plain,
+  promote, retire, lint).
+  - **Core budget 1000 tokens, counted exactly** with count_tokens (the first draft was 1,098 on
+    an estimate that read 713; the core's `< | @` text tokenizes at 2.35 chars/token). Seed
+    core is 929. Role-only terms (wrap-up, close-out, qa-deferred, seat-start, clean-env)
+    went to extended, so they're looked up when needed rather than always loaded.
+  - **Dedupe:** SEMANTIC_SIMILARITY embeddings (not CLUSTERING), threshold 0.89, calibrated
+    on 12 pairs (duplicates ≥ 0.90, distinct ≤ 0.88). Over it, a proposal needs `--distinct
+    "why"`; team-lead reviews every proposal at wrap-up anyway.
+  - **Wiring:** `member.py me` prints the core. Lexicon rule in `developer.md`, PO hard rule 6,
+    SM hard rule 4. QA agents reply with a `SEV` line. `qa-sweep` no longer repeats their reply
+    format (74 repeats in the harvest). `report.py build` warns when a term leaks into an
+    owner report, but `(D18)` in brackets passes (pref 23). `lexicon.jsonl` merges with
+    `merge=union`, and lint catches duplicates. Wrap-up step 8 adds usage, proposal review,
+    budget and lint, and the retro ratifies.
+  - **Baseline (all 16 sprints, before adoption):** places and status lines 0% adopted, and
+    their long-form misses are worth about 49k tokens. Living terms: hand-off 931 uses, receipt
+    481, live-check 93% adopted, fix round 77%, D18 76%.
+  - **Measure next sprint:** adoption per term (`lex.py usage --since <sprint>`), proposals
+    made, any misuse in the critique ledger.
 
 ## What changed in the agent setup (2026-10-31)
 
@@ -1065,3 +1087,4 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-11-22 (P17 pilot):** owner go on the pilot and the "Working on" section (pref 30). Ledger of 357 rows over 11-01..11-20 in `meta/coaching/`. One person case (Nils, bounds on new paths); the 11-07 system fixes measurably worked; the person rule tightened to habits.
 - **2026-11-22 (P17 steps built, owner go on all three):** `member.py goal` ("Working on", max 2, member-written, prints in `me` and `roster`, close logs to `meta/coaching/goals-log.jsonl`) and team-launch wrap-up step 10 "Teach". First 1:1, Nils (78k): pattern confirmed, cause "hostile-input tests start from content, never volume", goal 1 written by him. Maren's seat review (70k) reshaped the Bounds bullet and dropped the brief-pairing line. Landed: `product-owner.md` Bounds bullet and rework re-check "liveness and cost", `developer.md` hard rule 11 "Volume at the bound". Backlog: shared volume-test fake (sc-597). Follow-up: dev-3 `unbounded` rows at the next wrap-ups.
 - **2026-11-22 (meta, owner idea → P18):** a living team lexicon. Owner: pgvector, harvest first, heatmap of semantic outputs later. Harvest built and run (`.claude/team/lexharvest.py`, 5,246 messages, 37k units, gemini-embedding-001, 300 groups at 0.93): self-grown protocol ACK/GO/MERGED died with the SM role; paths ~33k tokens; status lines and brief boilerplate repeat. Measured: abbreviations cost more than IDs ("QA sec rvw @ HO" 11 tok vs "D18 review" 4). Report `meta/lexicon/harvest-2026-11-22/report.html`; seed proposal waits on the owner.
+- **2026-11-22 (owner go: "adopt all three families, build lex.py"):** P18 step 2 built. 25-entry lexicon, lex.py, exact core budget (929/1000), semantic dedupe at 0.89, wired into member.py me, three agent files, the QA SEV reply, report.py's plain check and wrap-up step 8. First real use: the next sprint.

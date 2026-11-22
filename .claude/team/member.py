@@ -112,6 +112,16 @@ def cmd_me(a):
             print(f"  {i}. {g['practice']}\n     when: {g['when']}  (since {g['since']})")
         print()
     print(f"Your memory ({words(memory)}/{cap(a.seat)} words):\n{memory or '(empty)'}")
+    print_lexicon_core()
+
+
+def print_lexicon_core():
+    """P18: every seat starts with the team lexicon's core (lex.py core); silent if it's missing."""
+    lex = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lex.py")
+    if os.path.exists(lex):
+        r = subprocess.run([sys.executable, lex, "core"], capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            print("\n" + r.stdout.rstrip())
 
 
 def roster_rows():

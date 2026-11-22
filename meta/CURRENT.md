@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-22 (P18 lexicon: harvest done)
+Updated: 2026-11-22 (P18 lexicon built: lex.py + seed)
 
 ## Topic
 
@@ -26,16 +26,13 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## In discussion now
 
-- **P18 team lexicon (owner idea, 2026-11-22).** A living "rosetta stone" the team owns and
-  evolves. Owner chose pgvector (not Weaviate) and the harvest first; focus is the lexicon,
-  later a "heatmap" of agents' semantic outputs. Harvest done: `.claude/team/lexharvest.py`,
-  report `meta/lexicon/harvest-2026-11-22/report.html`. Findings: an ACK/GO/MERGED protocol
-  was born and died with the scrum master; paths are the biggest repeat (~33k tok); status
-  lines written 100 ways (grammar candidates); brief boilerplate. Proposed seed: places
-  (@sprint …), status lines (TESTS, SEV, MERGED …), concept terms. Waiting on the owner's
-  pick; then lexicon file + `lex.py` (propose/usage/budget). Step 2 idea: harvest the
-  standing prompts (agent definitions), the biggest token lever.
-
+- **P18 team lexicon (owner idea, 2026-11-22).** Built on the owner's go ("adopt all three
+  families, build lex.py"): `.claude/team/lexicon.jsonl` (25 entries; core 929/1000 tokens)
+  + `lex.py`; `member.py me` prints the core; wired into agent files, QA SEV replies,
+  report.py plain check, wrap-up step 8. Harvest: `meta/lexicon/harvest-2026-11-22/`.
+  First real use next sprint: run `lex.py usage --since <sprint>` at wrap-up and review
+  proposals. Later (owner): heatmap of agents' semantic outputs (lex_unit table is the seed).
+  Step-3 idea: harvest the standing prompts (agent definitions), the biggest token lever.
 - **P17 built and first run.** `member.py goal` + wrap-up step 10 "Teach"; Nils's 1:1 done (goal 1:
   volume test at the bound). Nils not seated 11-22, so his goal carries; follow up next wrap-up.
 

@@ -77,4 +77,4 @@ Severity guide: **Critical** = data loss/corruption, crash on main path, securit
 
 Low findings are one line each under a "Low" heading (no evidence block), so the caller can group them into backlog tickets.
 
-When done, reply to the caller with: the report path, severity counts, and the top 3 bugs in one line each.
+When done, reply to the caller with: the report path, severity counts as one line `SEV <n>C <n>H <n>M <n>L`, and the top 3 bugs in one line each.

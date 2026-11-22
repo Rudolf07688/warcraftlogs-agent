@@ -234,25 +234,25 @@ def cache_db():
     return db
 
 
-def h(text):
-    return hashlib.sha256(f"{MODEL}:{DIMS}:CLUSTERING:{text}".encode()).hexdigest()
+def h(text, task="CLUSTERING"):
+    return hashlib.sha256(f"{MODEL}:{DIMS}:{task}:{text}".encode()).hexdigest()
 
 
-async def embed_all(texts):
+async def embed_all(texts, task="CLUSTERING"):
     from google import genai
     from google.genai import types
 
     db = cache_db()
     have = {}
     for i in range(0, len(texts), 900):
-        chunk = [h(t) for t in texts[i:i + 900]]
+        chunk = [h(t, task) for t in texts[i:i + 900]]
         q = "select h, v from e where h in (%s)" % ",".join("?" * len(chunk))
         have.update({k: v for k, v in db.execute(q, chunk)})
-    todo = [t for t in texts if h(t) not in have]
+    todo = [t for t in texts if h(t, task) not in have]
     print(f"embed: {len(texts)} units, {len(texts) - len(todo)} cached, {len(todo)} to embed", file=sys.stderr)
     if todo:
         client = genai.Client(vertexai=True, project=os.environ["GOOGLE_CLOUD_PROJECT"], location="europe-west1")
-        cfg = types.EmbedContentConfig(task_type="CLUSTERING", output_dimensionality=DIMS, auto_truncate=True)
+        cfg = types.EmbedContentConfig(task_type=task, output_dimensionality=DIMS, auto_truncate=True)
         sem = asyncio.Semaphore(6)
         batches = [todo[i:i + 40] for i in range(0, len(todo), 40)]
         done = [0]
@@ -268,7 +268,7 @@ async def embed_all(texts):
                             raise
                         await asyncio.sleep(2 ** attempt + 1)
                         print(f"embed: retry {attempt + 1} ({str(exc)[:80]})", file=sys.stderr)
-                rows = [(h(t), np.asarray(e.values, dtype=np.float32).tobytes()) for t, e in zip(batch, r.embeddings)]
+                rows = [(h(t, task), np.asarray(e.values, dtype=np.float32).tobytes()) for t, e in zip(batch, r.embeddings)]
                 db.executemany("insert or replace into e values (?, ?)", rows)
                 db.commit()
                 have.update(dict(rows))
@@ -277,7 +277,7 @@ async def embed_all(texts):
                     print(f"embed: {done[0]}/{len(batches)} batches", file=sys.stderr)
 
         await asyncio.gather(*(one(b) for b in batches))
-    v = np.stack([np.frombuffer(have[h(t)], dtype=np.float32) for t in texts])
+    v = np.stack([np.frombuffer(have[h(t, task)], dtype=np.float32) for t in texts])
     return v / np.linalg.norm(v, axis=1, keepdims=True)
 
 

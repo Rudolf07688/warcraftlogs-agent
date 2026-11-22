@@ -28,7 +28,7 @@ In a **single message**, call the Agent tool once per selected agent (they run c
 | perf | `qa-performance` | `$OUT/performance.md` |
 | security | `qa-security` | `$OUT/security.md` |
 
-Prompt each with: the project root, the output directory `$OUT` (tell it to write there), the scope if any, the already-reviewed paths, whether the suite already ran, and "follow your report format exactly; reply with path, counts, top 3."
+Prompt each with: the project root, the output directory `$OUT` (tell it to write there), the scope if any, the already-reviewed paths, and whether the suite already ran. Their reply format is in their definitions (the counts come as a `SEV` line); don't repeat it.
 
 Wait for all of them to finish. Don't duplicate their work while waiting.
 

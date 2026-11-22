@@ -20,6 +20,7 @@ import argparse
 import html
 import os
 import re
+import subprocess
 import sys
 
 SHELL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report-shell.html")
@@ -56,6 +57,12 @@ def build(body_path, out_path, title):
     with open(out_path, "w") as f:
         f.write(page)
     print(f"wrote {out_path} ({len(page)} bytes; body {len(body)} bytes)")
+    lex = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lex.py")
+    if os.path.exists(lex):  # P18 / owner preference 23: owner-facing text stays plain
+        r = subprocess.run([sys.executable, lex, "plain", body_path], capture_output=True, text=True)
+        if r.returncode:
+            print("warning: team-lexicon terms in an owner-facing report; say them in plain words:\n"
+                  + r.stdout.rstrip())
 
 
 def main():

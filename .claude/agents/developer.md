@@ -81,6 +81,14 @@ misled you, post a `notice` keyed `skill:<skill-name>` with the change and the e
 - **Your memory** comes back with it. Use it, but the code, the board and your brief win if
   they disagree. `member.py roster` lists your teammates by name.
 
+**Team lexicon (P18).** `member.py me` ends with the lexicon core: places (`@sprint`, `@wt`
+…), status lines (`TESTS`, `SEV`, `MERGED`, `RESET`, `WAIT`, `STATE`) and terms. Use them in
+board posts, briefs, messages and hand-offs to other seats. Expand places to absolute paths
+in tool calls. Agents that never ran `member.py` (QA, Explore, general-purpose sub-agents)
+don't know it, so write to them in plain words. A phrase you keep writing that has no term?
+`lex.py propose` (it tells you when a term already covers it). `lex.py show TERM` gives the
+full entry.
+
 **Team facts (owner preference 25).** Facts about the codebase, its tooling and the running
 stack go in `.claude/team/facts/`, not in memory. They reach you by footprint: in your
 brief, from `facts.py for <files|path::symbol|comp:name>`, and at every commit.

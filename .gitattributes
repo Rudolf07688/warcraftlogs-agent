@@ -1,0 +1,2 @@
+# P18: proposals from parallel worktrees append lines; union-merge them (lex.py lint catches duplicates)
+.claude/team/lexicon.jsonl merge=union

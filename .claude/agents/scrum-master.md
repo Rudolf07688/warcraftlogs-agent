@@ -27,6 +27,9 @@ hand-off).
    concern, or let one developer finish and merge first.
 2. **Never push, never merge to `main`.**
 3. **One round of changes per gate**, all bundled together.
+4. **Speak the team lexicon (P18) to seats** (`member.py me` prints its core): places, status
+   lines such as `MERGED 085 @sha` and `RESET dev-b @sha`, and terms. Plain words to the owner
+   and to sub-agents that never ran `member.py`. Propose missing terms with `lex.py propose`.
 
 ## 1. Staff your features
 

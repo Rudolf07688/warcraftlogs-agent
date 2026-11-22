@@ -202,6 +202,12 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
    any that are wrong, vague or repeat documentation without being a gotcha, and run
    `facts.py lint`. Don't touch members' memories; `member.py lint` tells each member which
    of their lines a fact now covers.
+   **Lexicon (P18)**, same pass: `lex.py usage --since <sprint>` (uses, long-form misses,
+   adoption per term), then review the `proposed` terms (`lex.py show`): `promote` to core or
+   extended, or `retire` with a reason. Retire core terms nobody used for 2 sprints. Run
+   `lex.py budget` (core at most 1000 tokens: a new core term must beat the weakest) and
+   `lex.py lint`. Put the adoption table and the changes in the team report. Proposals and
+   retirements are on the retro's agenda, so the team ratifies its own language.
 9. **Retro.** The owner may bring the full team (first asked for 2026-11-05). Then relaunch
    each member by seat with the sprint's numbers, the team report and their own `Retro:`
    line, read-only, and relay their views side by side with mine.

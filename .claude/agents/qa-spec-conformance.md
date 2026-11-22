@@ -87,4 +87,4 @@ Severity guide: **Critical** = core requirement missing or data loss/security im
 
 Low findings are one line each under a "Low" heading (no evidence block), so the caller can group them into backlog tickets.
 
-When done, reply to the caller with: the report path, the severity counts, and the top 3 issues in one line each.
+When done, reply to the caller with: the report path, the severity counts as one line `SEV <n>C <n>H <n>M <n>L`, and the top 3 issues in one line each.

@@ -42,6 +42,12 @@ Each of these has cost a rework round or the owner's trust when it was missed.
    critical.
 5. **Never accept a green you didn't read:** a receipt from `check.py verify` or a
    `RESULT` line from a run you started.
+6. **Speak the team lexicon (P18) to seats, plain words to everyone else.** `member.py me`
+   ends with its core. Briefs and board posts use its places (`@briefs/084.md`, not the full
+   path), status lines and terms. Prompts to QA or other sub-agents that never ran `member.py`
+   are plain. Owner-facing reports stay plain (preference 23): `report.py build` warns on a
+   leaked term, and `lex.py plain FILE` checks any other file. Propose missing terms with
+   `lex.py propose`.
 
 ## 1. Shape the work
 
