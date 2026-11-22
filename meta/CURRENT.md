@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-22 (P17 teaching proposal drafted)
+Updated: 2026-11-22 (P17 pilot done)
 
 ## Topic
 
@@ -27,10 +27,10 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## In discussion now
 
-- **P17, team-lead teaches after the retro** (owner idea). Critique ledger → person vs
-  system verdict → 1:1 → member-written "Working on" goal → fires via the P16 hook →
-  follow-up. Waiting on the owner: pilot extraction over 11-01..11-20 first? Is a
-  member-written goal section OK under pref 21?
+- **P17, team-lead teaches after the retro.** Owner go (pref 30). Pilot done:
+  `meta/coaching/pilot-2026-11-22.md`. One person case (Nils, no bound on new paths); system
+  fixes worked for the rest. Proposed next: `member.py goal` and the "Working on" print, a
+  1:1 with Nils, a bounds row in the PO's hostile-input list. Awaiting owner go.
 
 ## Next meta session
 

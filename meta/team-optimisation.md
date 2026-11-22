@@ -703,7 +703,7 @@ Source: the 2026-11-07 retro (`meta/sprints/2026-11-07/retro.md`) and the owner'
   parked in the card round section of `meta/sprints/2026-11-07/retro.md`. Only one small fix
   goes ahead: `member.py lint` flags lines that merely mention a tool name (four false flags).
 
-### P17. Team-lead teaches after the retro (owner idea 2026-11-22; proposal, not built)
+### P17. Team-lead teaches after the retro (owner idea 2026-11-22; owner go on the pilot and the "Working on" section, pref 30)
 
 Owner: look at what agents say about each other, find the members who keep making the same
 mistake, and "teach" them the way a real co-worker would, instead of relying on them to write
@@ -752,6 +752,17 @@ the memory themselves.
   sprints, one sonnet pass) and see whether person-level repeats exist at all, or whether
   mostly system patterns come out. Candidate to check, unverified: out-of-scope prompt cuts
   (082's deleted PERSONALITY rule on 11-20, and Maren's memory line about them).
+- **Pilot result (2026-11-22, `meta/coaching/pilot-2026-11-22.md`):** 357 rows over 10 sprints.
+  - The first-draft rule (same seat and class in 2 sprints) flags 38 pairs, because volume
+    follows workload and bug classes aren't habits. The new rule: medium or above, in 2 of the
+    last 4 sprints, the same **habit**, not already falling after a system fix, and a higher
+    share than the rest of the team.
+  - The system fixes worked: Ansel's guard bypasses went to 0 after hard rule 10; untrusted text
+    reaching the model went to 0 after sc-328.
+  - One clear person case: Nils, no bound on new paths (13 medium+ in 7 of 10 sprints,
+    including the only Critical). His medium+ per sprint stayed flat while the others fell.
+  - Maren's brief gaps are a different gap each time, so that's learning, not repeating.
+  - The prompt-cut candidate was a single instance.
 
 ## What changed in the agent setup (2026-10-31)
 
@@ -1018,3 +1029,4 @@ through respawns as the same named member, with its own small, curated memory. I
   coach-quality tickets, sc-570..575.
 - **2026-11-22 (meta, owner "run with your proposed changes"):** the three 11-20 retro candidates landed after Maren's seat review (P16 step 5, 66k, read-only). `product-owner.md`: merge step 1 runs `facts.py lint` in the developer's worktree when a branch changed `.claude/team/facts/` (close-out lint stays); a "read the installed ADK code first" brief item for streams on model calls or the runner (main checkout's `.venv`: worktrees have none); a "Shared wording" rule for two streams touching the same question type (owning path, one example, the routing phrase word for word). Maren widened her `owner:*` line from the board: 6 of the sprint's grant asks were posted on `owner:<path>` keys, and one (#47) replaced Edda's `ws.py` grant. So: nothing but grants on `owner:*` keys; answers use `--supersedes`; developers ask on `ask:<path>` (`developer.md` rule 1); `scrum-master.md` the same. Main was already pushed (b5bd091).
 - **2026-11-22 (meta, owner idea):** teach members after the retro, like a co-worker, instead of relying on them to remember. Recorded as **P17**: a critique ledger from existing signals → person vs system verdict → a read-only 1:1 where the member writes one agreed practice into a new "Working on" section → injected at the moment of work (P16 step 2) → follow-up at the next wrap-up. Proposed: a pilot extraction over 11-01..11-20 before building.
+- **2026-11-22 (P17 pilot):** owner go on the pilot and the "Working on" section (pref 30). Ledger of 357 rows over 11-01..11-20 in `meta/coaching/`. One person case (Nils, bounds on new paths); the 11-07 system fixes measurably worked; the person rule tightened to habits.
