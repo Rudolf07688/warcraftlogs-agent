@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-22 (11-20 retro rules landed after Maren's seat review)
+Updated: 2026-11-22 (retro rules landed, pushed 883f5a9, 32 stories Done)
 
 ## Topic
 
@@ -14,13 +14,16 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- Sprint 2026-11-20 (the owner's live-chat tickets, 22/22 pts, features 078–083): owner
-  live-tested the tip ("it's great"), merged to main 9cbc701, NOT pushed. Its nine stories
-  are Under Review; Done is the owner's call. Deferred QA follow-ups: sc-580..587 (incl.
-  Gemini empty answers, pre-existing).
-- Cost 1.08 M/pt, the cheapest app sprint so far (baseline row in team-optimisation.md;
-  team report `meta/sprints/2026-11-20/team-report.html`).
-- GitNexus runs as the global `gitnexus` binary (node 22); team files switched (d7dab27).
+- 2026-11-22: main pushed at 883f5a9 (sprint 2026-11-20 + the 11-20 retro rules, which
+  landed after Maren's seat review; see the change log). Owner marked all 32 Under Review
+  stories Done (the nine 11-20 stories plus older Raids, onboarding, portraits, telemetry).
+  Board: nothing in Under Review.
+- Next app work, my recommendation to the owner: a chat-reliability sprint from the 11-20
+  QA follow-ups sc-580..587 (~17 pts; Gemini empty STOP answers sc-586 first, Claude output
+  budget sc-580, history cache rewrite sc-581), one developer straight through, QA sweep at
+  the end. Owner hasn't said go yet.
+- Cost 1.08 M/pt on 11-20, the cheapest app sprint so far (team report
+  `meta/sprints/2026-11-20/team-report.html`).
 
 ## Next meta session
 
