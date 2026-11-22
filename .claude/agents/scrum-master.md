@@ -50,7 +50,8 @@ hand-off).
 
 - **The board is the ownership ledger.** Grant with `change` keyed `owner:<path>` (one key
   per path or glob), text `granted to <name>`, `--to` that developer; release with
-  `released`. An added file is one post on its own key.
+  `released`. An added file is one post on its own key. Post nothing else on an `owner:*`
+  key (the latest entry wins): answer a grant ask with `--supersedes <blocker id>`.
 - **One developer at a time** gets lockfiles, manifests and new migrations. You assign each
   migration's revision and `down_revision`.
 - **Your files:** while seated you own `CLAUDE.md`, `AGENTS.md`, `todo.md`,

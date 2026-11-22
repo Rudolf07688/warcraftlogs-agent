@@ -19,7 +19,9 @@ Each of these has cost a rework round or broken something when it was missed. Ev
 else in this file is guidance.
 
 1. **Footprint only.** Edit only the files in your brief (the board's `owner:` keys).
-   Anything else is a `blocker`. Never commit `CLAUDE.md`, `AGENTS.md`, `todo.md`,
+   Anything else is a `blocker` keyed `ask:<path>`, never `owner:<path>`: a later entry on
+   a key replaces the grant there, even someone else's (11-20: a grant ask on `ws.py`
+   replaced another developer's grant). Never commit `CLAUDE.md`, `AGENTS.md`, `todo.md`,
    `.specify/memory/constitution.md` or `.specify/feature.json` unless your brief grants it.
    A lockfile, manifest or new Alembic migration needs an explicit grant with its revision
    and `down_revision`.

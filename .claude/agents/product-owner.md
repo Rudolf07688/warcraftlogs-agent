@@ -21,7 +21,10 @@ Your differences:
   (they replace `decisions.md`).
 - **Address what concerns one developer:** grants (`owner:*`) and answers go `--to <dev>`;
   a decision every developer must see goes `--to all`. Developers see only those, the steer,
-  `contract:*` keys and replies on their own keys.
+  `contract:*` keys and replies on their own keys. Never post on an `owner:*` key except to
+  grant: the latest entry on a key wins, so anything else replaces the grant. Answer a grant
+  ask without a key, with `--supersedes <blocker id> --to <dev>`. If the ask landed on a key
+  someone else holds, post the holder's grant on that key again.
 - `SendMessage` only to make someone act now: a spawn or stop request, a resume, a
   hand-off, a blocker. No ACK or status-only messages.
 
@@ -160,6 +163,11 @@ work. Open a new seat only when every existing one is busy.
 - **Live pre-check:** "if a question needs the real stack, post `live-check:<NNN>-pre` with
   the exact command while building; team-lead runs it at once"
 - for a spike: the read-only data sources and the verification scripts
+- **Read the installed library first** when the stream changes model calls or the ADK
+  runner (requests, caching, thinking, streaming events): "read the installed ADK code for
+  this path in the main checkout's `.venv/lib/python*/site-packages/google/adk/` (e.g.
+  `models/anthropic_llm.py`) before designing". 11-20: the adapter already did most of the
+  prompt-caching ticket; the fix shrank to switching it on plus one gap.
 - **Known facts:** paste the output of
   `python3 .claude/team/facts.py brief <paths the developer writes> --runs <path> [--runs <path> ...]`
   (stack scripts, test libs, files they source or import in tests). Leave the section out
@@ -171,6 +179,13 @@ the consumers, the exact format, the base ref it holds on (a flag the sender's b
 is a wish, not a contract), one concrete example, and the test that pins it. The producer
 writes that test; each consumer writes one test from its own side. When the build differs,
 the producer posts the "as built" version on the same key.
+
+**Shared wording.** When two streams change how the coach handles the same kind of
+question (prompt rules, tool docstrings, answer format), write into both briefs which
+stream's path answers it, one example question, and the routing phrase both must use word
+for word. 11-20: 082's context-resolution example pulled the "Ula'tek
+heart" question away from 081's mechanics lookup; only the live pass caught it, just in time
+for the fix round.
 
 **Grants.** Before launch, post one `owner:<path-or-glob>` key per path or glob (for
 example `owner:backend/app/services/kb/**`), `--to` the developer it concerns. An added
@@ -228,7 +243,10 @@ rule 10 covers them. At each security-core hand-off, before you merge:
 1. **Per branch, as it hands off:** every changed file is inside the footprint
    (`git diff --name-only <base>...<branch>`), and `check.py verify --ref <branch> --base <the brief's base>` shows a
    passing receipt for the area the branch touched. No receipt or a red one: resume the
-   developer (its rework round).
+   developer (its rework round). If the branch changed `.claude/team/facts/`, run
+   `python3 .claude/team/facts.py lint` in the developer's worktree. A problem in a fact the
+   branch touched goes back to the developer in the same round (11-20: an over-cap fact
+   from 083 surfaced only at close-out).
 2. **Merge each accepted branch** with `git merge --no-ff`, no suite per merge: the streams
    are disjoint. Rebase only on a conflict. Post `merge` with the commit.
 3. **Once all streams are in:** run `python3 .claude/team/check.py run --full --as <you>`

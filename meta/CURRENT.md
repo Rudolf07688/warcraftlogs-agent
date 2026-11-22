@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-20 (sprint 2026-11-20 merged to main, unpushed)
+Updated: 2026-11-22 (11-20 retro rules landed after Maren's seat review)
 
 ## Topic
 
@@ -24,15 +24,12 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Next meta session
 
-1. Retro candidates from 2026-11-20: `facts.py lint` in the merge gate; a "read the ADK
-   adapter first" line in briefs that touch the runner; the shared-phrase rule.
-2. Seat review (P16 step 5) of the 11-07b retro proposals plus my `board.py … --instead`
+1. Seat review (P16 step 5) of the 11-07b retro proposals plus my `board.py … --instead`
    decision field.
-3. P16 steps 2–4 (lessons that fire via hooks, fewer tools, cost per point by stream type).
+2. P16 steps 2–4 (lessons that fire via hooks, fewer tools, cost per point by stream type).
 
 ## Open with the owner
 
-- Push main (2 meta commits + the sprint merge) when they say so.
 - Board tidy-up: sc-534 now in iteration 576; iterations 536/553/472 still open.
 - Wipe the pre-fix Mimir series? (local only)
 - Gemini Flash list price changes 2027-01-01 (pricing.yaml commit that day).
