@@ -30,3 +30,11 @@ code. Lows only when they sit in a hunk the fix round touches anyway.
 
 Docs: SPEC-005 (architecture docs stale) is the close-out docs pass; SPEC-006 (plan wording on
 "nekzali gravebound") fixed by the PO in plan.md.
+
+## Tickets (created 2026-11-22, Backlog, label qa-deferred)
+- Claude call cost after a cut: QA 1122-A (sc-603)
+- Cache layout hardening: QA 1122-B (sc-604)
+- Notes lint depth: QA 1122-C (sc-605)
+- Retraction residual: sc-606
+- Status/socket pre-existing + rankings cold read (PERF-005): QA 1122-D (sc-607)
+- Flaky raw-store test: merged into the existing flaky raw-store ticket sc-436 (renamed, description extended)
