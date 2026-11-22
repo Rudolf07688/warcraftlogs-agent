@@ -2,7 +2,7 @@
 id: raid-summary-tool-keys
 anchors: [sym:backend/app/services/raid_summary.py::part_keys, file:wcl_agent/tools/participants.py]
 by: dev-3 Nils
-verified: bc0deef 2026-11-22
+verified: 90e21c4 2026-11-22
 ---
 The Raids page summary (072) recomputes the exact store keys our tools send: participants,
 player-details (fight 0), per-boss Summary tables, get_report_rankings (Rankings/Historical). Whole-report
