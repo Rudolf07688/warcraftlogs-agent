@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   details: {} as Record<string, unknown>,
   getConversation: null as null | ((id: string) => Promise<unknown>),
   sent: 0,
+  listRenders: 0,
 }));
 
 vi.mock("./api/wsClient", () => ({
@@ -48,10 +49,11 @@ vi.mock("./api/restClient", () => ({
 vi.mock("./auth/useAuth", () => ({ useAuth: () => ({ identity: null, logout: vi.fn() }) }));
 vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn(), useMatch: () => null }));
 vi.mock("./components/Sidebar", () => ({
-  Sidebar: (p: { onSelect: (id: string) => void }) => (
+  Sidebar: (p: { onSelect: (id: string) => void; onNew: () => void }) => (
     <div>
       <button onClick={() => p.onSelect("A")}>open-A</button>
       <button onClick={() => p.onSelect("B")}>open-B</button>
+      <button onClick={() => p.onNew()}>new-chat</button>
     </div>
   ),
 }));
@@ -64,6 +66,7 @@ vi.mock("./components/MessageList", () => ({
     looseProposals: ProfileProposal[];
   }) => (
     <div>
+      {void h.listRenders++}
       <div data-testid="messages">{p.messages.map((m) => `${m.role}:${m.content}`).join("|")}</div>
       <div data-testid="error">{p.error ?? ""}</div>
       <div data-testid="cards">{p.streamCards.map((c) => `${c.name}:${c.status}`).join(",")}</div>
@@ -141,6 +144,49 @@ describe("App: a dropped socket ends the turn locally (sc-376)", () => {
     await status(true);
     expect(text("messages")).toBe("user:hi|agent:Half an answer");
     expect(text("error")).toBe(NOTE);
+  });
+
+  it("a partial the server saves after the reload replaces the local copy (085 SEC-001)", async () => {
+    // The server learns of the drop only at its next send, after the reload found nothing: our
+    // copy (here text the turn retracted, its interim lost with the socket) shows until then.
+    await streamingInA();
+    await status(false);
+    savedQuestion();
+    vi.useFakeTimers();
+    try {
+      await status(true);
+      expect(text("messages")).toBe("user:hi|agent:Half an answer");
+      h.details.A = detail("A", [
+        { role: "user", content: "hi" },
+        { role: "agent", content: "(no response)", status: "partial" },
+      ]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(text("messages")).toBe("user:hi|agent:(no response)");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rechecks a drop with nothing saved a bounded number of times, then keeps the copy", async () => {
+    await streamingInA();
+    await status(false);
+    savedQuestion(); // a restart: nothing is ever saved
+    const { getConversation } = await import("./api/restClient");
+    vi.useFakeTimers();
+    try {
+      const calls = vi.mocked(getConversation).mock.calls.length;
+      await status(true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60 * 60_000);
+      });
+      // 088b bound: the reload plus 9 rechecks, the last 8 minutes after the drop.
+      expect(vi.mocked(getConversation).mock.calls.length).toBe(calls + 1 + 9);
+      expect(text("messages")).toBe("user:hi|agent:Half an answer");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the reload replaces the local copy with the saved partial answer", async () => {
@@ -353,5 +399,146 @@ describe("App: a dropped socket ends the turn locally (sc-376)", () => {
     await status(false);
     await status(true);
     expect(text("messages")).toBe("user:hi|agent:Half an answer|user:hi");
+  });
+});
+
+// 088b: the drop rechecks cover the server's worst silent stretch (a 180 s Claude call, its 180 s
+// re-run and rate-limit waits), one chain at a time, stopped by a new turn or opening a chat, and
+// a recheck that finds nothing new changes nothing on screen.
+describe("App: drop rechecks (088b)", () => {
+  beforeEach(async () => {
+    h.details = { A: detail("A", []), B: detail("B", [{ role: "agent", content: "b-msg" }]) };
+    h.getConversation = null;
+    render(<App />);
+    await status(true);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+  });
+
+  const SAVED = [
+    { role: "user" as const, content: "hi" },
+    { role: "agent" as const, content: "(no response)", status: "partial" as const },
+  ];
+  async function calls() {
+    const { getConversation } = await import("./api/restClient");
+    return vi.mocked(getConversation).mock.calls.length;
+  }
+  async function wait(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+  // Drop mid-answer, reconnect with nothing saved yet: the local copy shows, rechecks pending.
+  async function droppedAndReloaded() {
+    await streamingInA();
+    await status(false);
+    savedQuestion();
+    vi.useFakeTimers();
+    await status(true);
+    expect(text("messages")).toBe("user:hi|agent:Half an answer");
+  }
+
+  it("a partial saved 7 minutes after the drop still replaces the local copy (SPEC-001)", async () => {
+    await droppedAndReloaded();
+    await wait(7 * 60_000);
+    expect(text("messages")).toBe("user:hi|agent:Half an answer");
+    h.details.A = detail("A", SAVED);
+    await wait(60_000);
+    expect(text("messages")).toBe("user:hi|agent:(no response)");
+  });
+
+  it("stops rechecking once the server has saved the turn", async () => {
+    await droppedAndReloaded();
+    h.details.A = detail("A", SAVED);
+    await wait(2_000);
+    const after = await calls();
+    await wait(60 * 60_000);
+    expect(await calls()).toBe(after);
+  });
+
+  it("a failed recheck does not end the rechecks (BUG-005)", async () => {
+    await droppedAndReloaded();
+    h.getConversation = async () => {
+      throw new Error("blip");
+    };
+    await wait(2_000); // this recheck fails
+    h.getConversation = null;
+    h.details.A = detail("A", SAVED);
+    await wait(4_000);
+    expect(text("messages")).toBe("user:hi|agent:(no response)");
+  });
+
+  it("reopening the chat stops the rechecks and keeps the stored messages (BUG-004)", async () => {
+    await droppedAndReloaded();
+    await click("open-A");
+    expect(text("messages")).toBe("user:hi");
+    const after = await calls();
+    await wait(60 * 60_000);
+    expect(await calls()).toBe(after);
+    expect(text("messages")).toBe("user:hi");
+  });
+
+  it("a recheck in flight when the chat is reopened does not re-add the local copy (BUG-004)", async () => {
+    await droppedAndReloaded();
+    let release: (v: unknown) => void = () => {};
+    h.getConversation = () => new Promise((r) => (release = r));
+    await wait(2_000); // the recheck's fetch is in flight
+    h.getConversation = null;
+    await click("open-A");
+    expect(text("messages")).toBe("user:hi");
+    await act(async () => release(detail("A", [{ role: "user", content: "hi" }])));
+    expect(text("messages")).toBe("user:hi");
+  });
+
+  it("switching chat stops the rechecks (PERF-004)", async () => {
+    await droppedAndReloaded();
+    await click("open-B");
+    const after = await calls();
+    await wait(60 * 60_000);
+    expect(await calls()).toBe(after);
+    expect(text("messages")).toBe("agent:b-msg");
+  });
+
+  it("opening a new chat stops the rechecks (PERF-004)", async () => {
+    await droppedAndReloaded();
+    await click("new-chat");
+    const after = await calls();
+    await wait(60 * 60_000);
+    expect(await calls()).toBe(after);
+  });
+
+  it("a new turn stops the rechecks (PERF-004)", async () => {
+    await droppedAndReloaded();
+    await click("send");
+    const after = await calls();
+    await wait(60 * 60_000);
+    expect(await calls()).toBe(after);
+  });
+
+  it("a reconnect while a chain runs starts one chain, not a second", async () => {
+    await streamingInA();
+    await status(false);
+    savedQuestion();
+    vi.useFakeTimers();
+    h.getConversation = async () => {
+      throw new Error("blip");
+    };
+    const before = await calls();
+    await status(true); // fails: the drop is kept for the next reconnect, and rechecks go on
+    h.getConversation = null;
+    await status(false);
+    await status(true); // the kept drop: a new chain replaces the old one
+    await wait(60 * 60_000);
+    expect(await calls()).toBe(before + 1 + 1 + 9);
+  });
+
+  it("a recheck that finds nothing new does not re-render the list (PERF-003)", async () => {
+    await droppedAndReloaded();
+    const renders = h.listRenders;
+    await wait(2_000 + 4_000 + 8_000);
+    expect(await calls()).toBeGreaterThan(0);
+    expect(h.listRenders).toBe(renders);
   });
 });

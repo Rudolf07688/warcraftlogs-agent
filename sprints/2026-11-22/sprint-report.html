@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCL Sprint 2026-11-22 Review</title>
+<style>
+/* Standalone sprint review: no network requests, light/dark tokens, tabbed sections (all shown in print / without JS). */
+:root{
+  --bg:#f5f6f9; --surface:#fff; --sunk:#eceef4; --fg:#1a1d27; --muted:#5d6475; --line:#d9dce6;
+  --accent:#3d4fc4; --accent-soft:#e3e6fb;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86300; --warn-soft:#fbecd4; --bad:#b8323a; --bad-soft:#f8dfe1;
+  --q1:#1c9a22; --q2:#0a62c9; --q3:#8a2fd1; --q5:#d46a00;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11131a; --surface:#181b24; --sunk:#1f2330; --fg:#e7e9f0; --muted:#9aa1b4; --line:#2c3142;
+  --accent:#8e9bff; --accent-soft:#262c4d;
+  --ok:#5cd08a; --ok-soft:#173326; --warn:#f0a845; --warn-soft:#382a14; --bad:#ff7a82; --bad-soft:#3a1a1e;
+  --q1:#4fd257; --q2:#4c9dff; --q3:#b77cf0; --q5:#ff9a33; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+h1{font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0;max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header{padding:36px 0 20px;display:grid;gap:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:14px}
+.meta b{color:var(--fg)}
+section{display:grid;gap:14px;margin-top:28px}
+.stack{display:grid;gap:14px}
+/* Text containers are block flow, not grid: a grid makes every inline child (<b>, <code>, a bare word run) its own row. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flow-root}
+.card>*+*{margin-top:8px}
+.card>:first-child{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+.kpi .v{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:15px;color:var(--muted);font-weight:600}
+.kpi .s{font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:700;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;font:700 13px var(--f-mono);border:1.5px solid currentColor}
+.p1{color:var(--q1)}.p2{color:var(--q2)}.p3{color:var(--q3)}.p5{color:var(--q5)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{margin:0;padding-left:22px}
+li{margin:4px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:12px 16px;display:flow-root;margin:10px 0}
+.callout>*{margin:0}
+.callout>*+*{margin-top:6px}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.flow span{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+/* Tabs */
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 0;margin-top:18px;border-bottom:1px solid var(--line)}
+.tablist{display:flex;flex-wrap:wrap;gap:2px 4px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:9px 12px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;border-radius:8px 8px 0 0}
+.tab:hover{color:var(--fg);background:var(--sunk)}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tab .count{display:inline-block;margin-left:6px;font-size:12px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.js [role="tabpanel"][hidden]{display:none}
+[role="tabpanel"]{padding-top:6px}
+[role="tabpanel"]>h2.panel-title{display:none}
+html:not(.js) [role="tabpanel"]>h2.panel-title{display:block;margin-top:36px}
+html:not(.js) .tabs{display:none}
+
+/* Test growth bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;font-size:14px}
+.bar .track{height:14px;background:var(--sunk);border-radius:7px;overflow:hidden;display:flex}
+.bar .fill{display:block;flex:none;height:100%;background:var(--accent);border-radius:7px}
+.bar .fill.base{background:var(--muted)}
+.bar .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+
+/* Timeline */
+.timeline{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.tl{position:relative;padding:0 0 14px 20px}
+.tl::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.ok::before{border-color:var(--ok);background:var(--ok)}
+.tl.warn::before{border-color:var(--warn)}
+.tl .t{font:700 13px var(--f-mono);color:var(--muted)}
+
+/* Checklist */
+.checks{list-style:none;padding:0;display:grid;gap:8px}
+.checks li{display:flow-root;background:var(--surface);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;margin:0}
+.checks li.ok{border-left-color:var(--ok)}
+.checks li.no{border-left-color:var(--warn)}
+.checks span.no{float:left;margin-right:10px;min-width:24px;padding:0 4px;font:700 13px var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;text-align:center;line-height:24px;height:24px}
+.checks .ref{font-size:13px;color:var(--muted);margin-left:6px;white-space:nowrap}
+.checks ul{margin:6px 0 0;padding-left:20px}
+[role=tabpanel]>*+*{margin-top:16px}
+[role=tabpanel]>h3{margin-bottom:0}
+
+@media (max-width:560px){.bar{grid-template-columns:96px 1fr 48px}}
+@media print{
+  .tabs{display:none}
+  [role="tabpanel"][hidden]{display:block !important}
+  [role="tabpanel"]>h2.panel-title{display:block;margin-top:28px}
+  body{background:#fff}
+}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sprint review · WCL Agent App · local report</div>
+  <h1>Chat reliability</h1>
+  <div class="meta"><span>Branch <b class="mono">sprint-2026-11-22</b></span> <span>Code tip <b class="mono">910dd52</b></span> <span>Base <b class="mono">4fc12a3</b></span> <span>Product owner: Maren</span></div>
+  <p>All eight follow-ups from the 11-20 sprint are built, merged and Under Review. Gemini turns no longer end with "no answer" on an empty reply, no Claude call runs past 3 minutes, Claude chats read their earlier history from the cache, and the status line shows retries and stays consistent with what is saved. One fix round closed the QA sweep's and the live pass's findings.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><span class="eyebrow">Delivered</span><span class="v">17<small> / 17 pts</small></span><span class="s">8 stories Under Review</span></div>
+  <div class="kpi"><span class="eyebrow">Features</span><span class="v">4<small> + fix round</small></span><span class="s">084-087, 088a-c, docs 089</span></div>
+  <div class="kpi"><span class="eyebrow">Full suite at tip</span><span class="v">2926<small> pytest</small></span><span class="s">235 vitest, build ok</span></div>
+  <div class="kpi"><span class="eyebrow">Live pass</span><span class="v">Pass</span><span class="s">1 soft Claude wording miss, ticketed</span></div>
+</div>
+
+<nav class="tabs"><div class="tablist" role="tablist">
+  <button class="tab" role="tab" id="tab-stories" aria-controls="p-stories" aria-selected="true">Stories <span class="count">8</span></button>
+  <button class="tab" role="tab" id="tab-features" aria-controls="p-features" aria-selected="false" tabindex="-1">Features <span class="count">4</span></button>
+  <button class="tab" role="tab" id="tab-qa" aria-controls="p-qa" aria-selected="false" tabindex="-1">QA and fixes</button>
+  <button class="tab" role="tab" id="tab-live" aria-controls="p-live" aria-selected="false" tabindex="-1">Live checks</button>
+  <button class="tab" role="tab" id="tab-decisions" aria-controls="p-decisions" aria-selected="false" tabindex="-1">Decisions and risks</button>
+</div></nav>
+
+<div role="tabpanel" id="p-stories" aria-labelledby="tab-stories" tabindex="0">
+  <h2 class="panel-title">Stories: planned vs delivered</h2>
+  <table class="tbl">
+    <tr><th>Story</th><th>Pts</th><th>State</th></tr>
+    <tr><td><b>Gemini empty answers (sc-586)</b><br><span class="small muted">Feature 084, 088a.</span> <span class="small">An empty Gemini reply is re-run once, never after answer text was shown; counted as <code>empty_retries</code>. The rate change since 082 could not be measured (no older logs; a fresh baseline saw 0 empty calls in 35).</span></td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Claude output budget and time (sc-580)</b><br><span class="small muted">Feature 084, 088a.</span> <span class="small">Each streamed Claude call is cut at 180 s; with no answer yet it gets one low-effort re-run, otherwise the answer ends with "This answer was cut off at the time limit." Re-runs count toward the lookup cap; <code>budget_retries</code>, <code>empty_retries</code>, <code>time_cuts</code> are on the turn-stats line.</span></td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Claude history cache (sc-581)</b><br><span class="small muted">Feature 087, 088a.</span> <span class="small">The ticket's idea saved 0% (measured first). Built instead: the time block leads the turn's message and a breakpoint marks the stubbed history, plus a lagging one for heavy turns. From turn 4 each turn reads the older history from the cache: -9% over 8 turns, -35% over 30, heavy raid chats -24%.</span></td><td class="num"><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Thinking status edge cases (sc-582)</b><br><span class="small muted">Feature 084, 085, 088b.</span> <span class="small">No spliced status after a re-run; headings count as sentences; retracted text comes back when a turn ends on a pending call; saved answer equals what the browser showed after a second-tab cancel or a drop; retry and fallback notices show under spell cards and under answer text. <b>Not done:</b> the short-answer-then-lookup residual (no rule can tell it from progress text; ticket sc-606).</span></td><td class="num"><span class="pts p3">3</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Small chat-turn costs (sc-583)</b><br><span class="small muted">Feature 085, 086.</span> <span class="small">Preamble reads only main class and spec; the status line lives in a small store (50 frames, 0 re-renders); damage-fields note 430 to 148 chars; mechanics tool description 382 to 272 chars.</span></td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Cache and notes hardening (sc-584)</b><br><span class="small muted">Feature 086, 087.</span> <span class="small">Tests prove the shared cached head is byte-identical across workspaces and never holds player context; the mechanic notes are linted at load (allowed hosts, no markup, no links, no instruction-like text).</span></td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Boss-mechanic notes (sc-585)</b><br><span class="small muted">Feature 086, 088c.</span> <span class="small">Nymrissa Wavecaller 14 notes, Kith'ix re-sourced to Method; an ability asked under the wrong boss now says which boss it belongs to.</span></td><td class="num"><span class="pts p2">2</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+    <tr><td><b>Whole-report rankings (sc-587)</b><br><span class="small muted">Feature 086, 088c.</span> <span class="small">The live pre-check showed the old query failing on all three reports; rankings now ask by fight ids, and the Raids page finds parses for reports still being logged.</span></td><td class="num"><span class="pts p1">1</span></td><td><span class="tag t-ok">Under Review</span></td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-features" aria-labelledby="tab-features" tabindex="0" hidden>
+  <h2 class="panel-title">Features</h2>
+  <table class="tbl">
+    <tr><th>Feature</th><th>Developer</th><th>Merged</th></tr>
+    <tr><td><b>084 Model re-runs and the runner</b><br><span class="small muted">Tier M; receipt 2705 pass.</span> <span class="small">Short-answer residual dropped with evidence</span></td><td>Vera</td><td class="mono">64c9413</td></tr>
+    <tr><td><b>085 Status frames and turn costs</b><br><span class="small muted">Tier M, security; receipt 2684 + 223 pass.</span> <span class="small">One rework round from its security review (3 Lows)</span></td><td>Edda</td><td class="mono">8926d56</td></tr>
+    <tr><td><b>086 Mechanic notes and rankings</b><br><span class="small muted">Tier S; receipt 2838 pass.</span> <span class="small">Live pre-check confirmed the rankings failure in a minute</span></td><td>Ansel</td><td class="mono">be522fb</td></tr>
+    <tr><td><b>087 Claude history cache</b><br><span class="small muted">Tier M, security; receipt 2803 pass.</span> <span class="small">Security review: 2 Lows, ticketed</span></td><td>Vera</td><td class="mono">f1835c4</td></tr>
+    <tr><td><b>088a/b/c fix round</b><br><span class="small muted">Tier S; receipt 2821, 2815 + 235, 2834.</span> <span class="small">All Medium findings and the live Gemini failure</span></td><td>Vera, Edda, Ansel</td><td class="mono">67b2655, 6996229, 78d5c5a</td></tr>
+    <tr><td><b>089 Architecture docs and facts</b><br><span class="small muted">Tier S; receipt docs only.</span> <span class="small">10 pages updated, 22 facts re-verified</span></td><td>Tomas</td><td class="mono">910dd52</td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-qa" aria-labelledby="tab-qa" tabindex="0" hidden>
+  <h2 class="panel-title">QA sweep, security reviews and the fix round</h2>
+  <div class="grid2">
+    <div class="card"><h3>Sweep at f1835c4</h3><p>0 Critical, 0 High, 8 Medium, 16 Low over the sprint diff. Two security reviews at hand-off: status frames (3 Lows, fixed in the rework) and the history cache (2 Lows, ticketed).</p></div>
+    <div class="card"><h3>Fix round (one)</h3><ul class="checks">
+      <li class="ok">A Claude answer cut at the limit says so instead of passing as complete.</li>
+      <li class="ok">The Gemini re-run never repeats an answer or chart already shown.</li>
+      <li class="ok">Heavy raid chats read the cached history (0/10 to 7/10 turn starts).</li>
+      <li class="ok">After a drop the browser rechecks for up to 8 minutes without redrawing unchanged messages.</li>
+      <li class="ok">Retry notices show under answer text too.</li>
+      <li class="ok">Raids page parses survive a report still being logged.</li>
+      <li class="ok">Wrong-boss mechanic questions name the right boss (the live Gemini failure).</li>
+      <li class="ok">The player comparison accepts the owner's own character (realm spelled two ways).</li>
+    </ul></div>
+  </div>
+  <h3>Deferred to the backlog (label qa-deferred)</h3>
+  <table class="tbl">
+    <tr><th>Ticket</th><th>Pts</th><th>What</th></tr>
+    <tr><td>Claude call cost after a time cut (sc-603)</td><td class="num">2</td><td>A cut throws away billed thinking and its re-run rewrites the cache; no per-turn time bound.</td></tr>
+    <tr><td>Cache layout hardening (sc-604)</td><td class="num">1</td><td>A typed time block counts like the server's; layout also applies to greeting and guide jobs.</td></tr>
+    <tr><td>Notes lint depth (sc-605)</td><td class="num">1</td><td>Instruction check is a phrase list; look-alike letters pass.</td></tr>
+    <tr><td>Short answer then a lookup (sc-606)</td><td class="num">2</td><td>The answer is retracted as progress text; three options listed.</td></tr>
+    <tr><td>Chat socket and status, older code (sc-607)</td><td class="num">2</td><td>A setup frame holds a DB connection; live text shows in another open chat; one cold rankings read.</td></tr>
+    <tr><td>Wrong-boss mechanic wording on Claude (sc-608)</td><td class="num">1</td><td>Claude reads "The Coiled Altar" as Nek'zali's location; live-test chats pollute knowledge-search hits.</td></tr>
+    <tr><td>Flaky raw-store tests (sc-436, extended)</td><td class="num">1</td><td>This sprint's flaky test got timeout headroom; the older one remains.</td></tr>
+  </table>
+</div>
+
+<div role="tabpanel" id="p-live" aria-labelledby="tab-live" tabindex="0" hidden>
+  <h2 class="panel-title">Live checks (team-lead, both providers)</h2>
+  <div class="timeline">
+    <div class="tl ok"><span class="t">pre</span> Whole-report rankings: old query fails on all 3 reports, fight-id list works; Gemini empty reply did not reproduce at base (0 of 35 calls).</div>
+    <div class="tl warn"><span class="t">tip f1835c4</span> Claude 11/11 answered; Gemini 8 turns, 1 failure (wrong-boss mechanic not told to the user). Frost question answers on Gemini; frames parse; reload equals live text; history cache grows from turn 4; parses show. Found too: the player comparison rejected the owner's own character (older code).</div>
+    <div class="tl ok"><span class="t">fix tip</span> Re-check of the fixed paths: heavy Claude chat reads the cached history from turn 4 (18.6k to 26.6k to 59.2k cached), no cache errors in 28 requests; time_cuts=0 and empty_retries=0 on both providers; Gemini chart and answer once; player comparison and Raids page parses PASS; Gemini names the right boss. Claude still reads the owning boss as a location (soft fail): ticketed as sc-608, no second fix round.</div>
+  </div>
+  <h3>For the owner to look at</h3>
+  <ul class="checks">
+    <li>Ask "What does Gravebound do on Nekzali?": the answer names The Coiled Altar.</li>
+    <li>A long Claude chat with report lookups: answers keep coming, no call stalls for minutes.</li>
+    <li>Gemini, "is frost mage difficult?" in a fresh chat: it answers.</li>
+    <li>Raids page for a report you asked about mid-raid: parses show.</li>
+  </ul>
+</div>
+
+<div role="tabpanel" id="p-decisions" aria-labelledby="tab-decisions" tabindex="0" hidden>
+  <h2 class="panel-title">Decisions and risks</h2>
+  <ul class="checks">
+    <li class="ok">Split by file, not ticket: the chat-turn code had one owner at a time, so 087 followed 084.</li>
+    <li class="ok">180 s per Claude call; a cut answer is marked, never re-run after text (it would repeat on screen).</li>
+    <li class="ok">Re-run counts on the turn-stats log line, no new metric.</li>
+    <li class="ok">The ticket's cache idea was measured first and replaced: it saved nothing.</li>
+    <li class="ok">The time stamp now travels in the turn's message on Claude; a typed fake only misleads that user's own turn (ticketed hardening).</li>
+    <li class="ok">The player-comparison bug was older code but on the main coaching path, so it joined the fix round.</li>
+    <li class="no">Risk: the 180 s cut and its re-run still cost tokens and a turn can run long overall (sc-603).</li>
+    <li class="no">Risk: the cache saving starts at turn 4; turns 2-3 rewrite as before (keeping two turns of full results is an earlier product choice).</li>
+  </ul>
+</div>
+
+<footer>Written by Maren (product owner), 2026-11-22. Nothing pushed; merging to main is the owner's call.</footer>
+</div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function show(tab,focus){
+    tabs.forEach(function(t){
+      var on=t===tab;
+      t.setAttribute('aria-selected',on);
+      t.tabIndex=on?0:-1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden=!on;
+    });
+    if(focus)tab.focus();
+    try{history.replaceState(null,'','#'+tab.getAttribute('aria-controls').slice(2))}catch(e){}
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){show(t)});
+    t.addEventListener('keydown',function(e){
+      var n=null;
+      if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+      else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+      else if(e.key==='Home')n=tabs[0];
+      else if(e.key==='End')n=tabs[tabs.length-1];
+      if(n){e.preventDefault();show(n,true)}
+    });
+  });
+  var h=location.hash.slice(1);
+  var start=tabs.filter(function(t){return t.getAttribute('aria-controls')==='p-'+h})[0];
+  if(start)show(start);
+})();
+</script>
+</body>
+</html>

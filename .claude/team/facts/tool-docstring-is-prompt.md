@@ -2,7 +2,7 @@
 id: tool-docstring-is-prompt
 anchors: [file:wcl_agent/tools/, file:backend/app/agent_tools/, sym:wcl_agent/agent.py::drop_schema_titles]
 by: dev-4 Vera, dev-2 Tomas
-verified: 8986855 2026-11-20
+verified: 9107884 2026-11-22
 ---
 A tool's whole docstring is its model-facing description, sent every request. Keep usage rules
 in one place (docstring or instruction); leave result shapes out. ADK adds no

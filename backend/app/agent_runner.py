@@ -70,6 +70,9 @@ PRESENTING_TOOLS = frozenset({CHART_TOOL_NAME, propose_profile_changes.__name__}
 _ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])")
 _MARKDOWN = re.compile(r"[*`~_]{2,}|[*`]|^\s*(?:#{1,6}\s|>\s?|[-+]\s)", re.M)
 _SENTENCE_END = re.compile(r"[.!?…](?=\s|$)")
+# 084 (SPEC L1): a paragraph that opens with a finished heading line ("# Plan", "**Analyzing X**")
+# has that heading as its first sentence.
+_HEADING_LINE = re.compile(r"[ \t]*(?:#{1,6}[ \t]+[^\n]*|\*\*[^*\n]+\*\*[ \t]*)\n")
 
 
 def _status_line(text: str, *, complete: bool = False) -> str:
@@ -79,7 +82,8 @@ def _status_line(text: str, *, complete: bool = False) -> str:
     zero-width) and markdown markers are removed and whitespace collapsed, so the line is
     inert wherever it is shown. A still-streaming last paragraph (``complete`` false) counts
     once it has a sentence end or STATUS_LINE_CHARS characters; before that the previous
-    paragraph's sentence is used. Empty when there is nothing to show.
+    paragraph's sentence is used. A paragraph opening with a finished heading line has that
+    heading as its sentence (084, SPEC L1). Empty when there is nothing to show.
     """
     text = _ANSI.sub("", text[-THOUGHT_KEEP_CHARS:])
     text = "".join(
@@ -87,11 +91,14 @@ def _status_line(text: str, *, complete: bool = False) -> str:
     )
     paragraphs = re.split(r"\n\s*\n", text)
     for i in range(len(paragraphs) - 1, -1, -1):
-        para = " ".join(_MARKDOWN.sub("", paragraphs[i]).split())
+        heading = _HEADING_LINE.match(paragraphs[i].lstrip("\n"))
+        para = " ".join(_MARKDOWN.sub("", heading.group() if heading else paragraphs[i]).split())
         if not para:
             continue
         end = _SENTENCE_END.search(para)
-        if end:
+        if heading:
+            sentence = para
+        elif end:
             sentence = para[: end.end()]
         elif complete or i < len(paragraphs) - 1 or len(para) >= STATUS_LINE_CHARS:
             sentence = para
@@ -305,7 +312,8 @@ async def stream_response(
             current_turn.set(None)
         logger.info(
             "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
-            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d tool_calls=%d fallback=%s",
+            "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d tool_calls=%d "
+            "budget_retries=%d empty_retries=%d time_cuts=%d fallback=%s",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
@@ -317,6 +325,9 @@ async def stream_response(
             stats.last_cached_tokens,
             stats.trimmed_results,
             tool_calls,
+            stats.budget_retries,
+            stats.empty_retries,
+            stats.time_cuts,
             stats.switched_to or "-",
         )
 
@@ -414,6 +425,8 @@ async def _run_turn(
     thinking_at: float | None = None
     thinking_line = ""
     thought_dirty = False  # thought text not yet cleaned into a status line (083 F6)
+    # 084 (BUG-005): a model call re-run by the wrapper streams afresh; its thoughts start anew.
+    reruns = stats.reruns if stats is not None else 0
 
     def think(now: float, complete: bool) -> dict | None:
         """Clean ``thought`` into a ``thinking`` record, or ``None`` when the line is empty or
@@ -429,7 +442,7 @@ async def _run_turn(
     def retract() -> dict | None:
         """The ``interim`` record for a segment the model followed with a tool call, or
         ``None`` when the segment is answer (scope:080:retraction-guard)."""
-        nonlocal text_sent, kept, held
+        nonlocal text_sent, kept, held, answered
         text = "".join(segment)
         segment.clear()
         if not text:
@@ -439,6 +452,9 @@ async def _run_turn(
             return None
         held = text
         text_sent = False  # nothing kept: the next text starts the answer, no paragraph join
+        answered = False  # 084 (BUG-006): retracted text is no answer, even with the call pending
+        if stats is not None:
+            stats.answer_shown = False  # 088a BUG-003: progress, so no answer on screen
         return {"type": "interim", "text": _status_line(text, complete=True)}
 
     async for event in runner.run_async(
@@ -448,6 +464,9 @@ async def _run_turn(
         run_config=_RUN_CONFIG,
         **count_turn,
     ):
+        if stats is not None and stats.reruns != reruns:
+            reruns = stats.reruns
+            thought, thought_dirty = "", False  # the re-run's thoughts are not the cut-off call's
         usage = getattr(event, "usage_metadata", None)
         if not getattr(event, "partial", False):  # a streamed response repeats it on its partials
             record_finish_reason(
@@ -575,6 +594,8 @@ async def _run_turn(
                     text = PARAGRAPH + text
                 streamed = text_sent = True
                 answered = answered or bool(text.strip())
+                if stats is not None and text.strip():
+                    stats.answer_shown = True  # 088a BUG-003: read by the Gemini empty-STOP re-run
                 if chat:
                     segment.append(text)
                 yield {"type": "token", "text": text}
@@ -589,15 +610,17 @@ async def _run_turn(
             _record_ttft(model, stats, final_author, turn_started)
         yield {"type": "token", "text": PARAGRAPH + final_text if text_sent else final_text}
         answered = True
-    if not answered and not pending_args and user_id != USER_ID:
-        if stats is not None:
-            stats.outcome = "empty"
+    if not answered and chat:
         if held and not kept:
             # scope:080:retraction-guard: no answer came after the last retraction, so what the
-            # model last wrote comes back ahead of the no-answer message instead of being lost.
+            # model last wrote comes back (ahead of the no-answer message) instead of being lost;
+            # also when the turn ends on a call that was never answered (084 BUG-006).
             yield {"type": "token", "text": held}
             text_sent = True
-        closing = PARAGRAPH + EMPTY_ANSWER_MESSAGE if text_sent else EMPTY_ANSWER_MESSAGE
-        yield {"type": "token", "text": closing, "empty": True}
+        if not pending_args:
+            if stats is not None:
+                stats.outcome = "empty"
+            closing = PARAGRAPH + EMPTY_ANSWER_MESSAGE if text_sent else EMPTY_ANSWER_MESSAGE
+            yield {"type": "token", "text": closing, "empty": True}
     if chat:
         record_conversation_depth(getattr(getattr(runner, "agent", None), "name", ""), turns)

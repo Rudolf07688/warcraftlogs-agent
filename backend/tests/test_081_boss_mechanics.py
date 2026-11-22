@@ -152,7 +152,8 @@ async def test_ability_of_another_boss_names_that_boss_and_never_returns_its_not
     assert result == {
         "status": "success",
         "found": False,
-        "message": "Not in my mechanic guides for Ula'tek.",
+        "message": "Gravebound is not a Ula'tek mechanic in my guides; it is The Coiled Altar's. "
+                   "Tell the user which boss it belongs to.",
         "found_under": ["The Coiled Altar"],
     }
 

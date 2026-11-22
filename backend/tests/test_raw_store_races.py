@@ -66,6 +66,8 @@ def isolated(monkeypatch):
     """Process-wide state: a closed breaker and no tombstones, for this test only."""
     monkeypatch.setattr(raw_fetch_reads, "breaker", raw_fetch_reads.Breaker())
     monkeypatch.setattr(fetch_persistence, "_tombstones", type(fetch_persistence._tombstones)())
+    # Not a timing test: the 400 ms production probe bound tripped on a pause in the full suite (sc-436).
+    monkeypatch.setattr(raw_fetch_reads.settings, "raw_store_probe_timeout_ms", 5_000)
 
 
 @pytest.fixture

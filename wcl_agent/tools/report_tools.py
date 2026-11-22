@@ -193,10 +193,8 @@ TOO_LARGE_NOTE = (
 # sc-574: every damage field is a real number, and the model once quoted unmitigatedAmount and
 # overkill as "the hit". Deaths and DamageTaken results say which is which.
 DAMAGE_FIELDS_NOTE = (
-    "Damage fields of a hit: amount = damage to health; absorbed = taken by shields; overkill = "
-    "damage past the remaining health; the hit's size is amount + absorbed + overkill (a table's "
-    "damage.total). unmitigatedAmount is the hit before armor and damage reduction (mitigated is "
-    "what they removed), not what landed. Name the field when quoting a number."
+    "Hit size = amount + absorbed + overkill (damage.total). unmitigatedAmount is before armor "
+    "and reductions, not what landed. Name the field you quote."
 )
 DAMAGE_FIELD_TYPES = {"Deaths", "DamageTaken"}
 _SORT_KEYS = ("total", "totalUptime")
@@ -503,6 +501,14 @@ def last_kill(summary: ReportSummary) -> dict[str, Any] | None:
 
 
 OPEN_END_MS = 10**12  # report-relative ms; past any report's end
+
+
+def ranked_fight_ids(summary: ReportSummary) -> list[int]:
+    """The whole report's rankings filter: its encounter fights (boss pulls and key runs).
+
+    WCL answers ``rankings(fightIDs: null)`` with an internal server error on some reports
+    (sc-587, like playerDetails in sc-573); an explicit list works. Wipes are simply unranked."""
+    return sorted(f.id for f in summary.fights if f.encounter_id)
 
 
 def _fight_ids(fight_id: int) -> list[int] | None:
@@ -917,9 +923,15 @@ async def get_report_rankings(
     field = f"rankings(fightIDs: $fightIDs, compare: {compare}, timeframe: {timeframe})"
     var_decls = ", $fightIDs: [Int]"
     try:
-        rankings = await _report_field(
-            report_code, field, var_decls, {"fightIDs": _fight_ids(fight_id)}, "rankings"
-        )
+        fight_ids = _fight_ids(fight_id)
+        if fight_ids is None:
+            summary = await load_report_summary(report_code)
+            if summary is None:
+                return {"status": "error", "error_message": f"No data for report '{report_code}'."}
+            fight_ids = ranked_fight_ids(summary)
+            if not fight_ids:
+                return {"status": "error", "error_message": f"Report '{report_code}' has no boss fights to rank."}
+        rankings = await _report_field(report_code, field, var_decls, {"fightIDs": fight_ids}, "rankings")
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"WCL request failed: {exc}"}
     if rankings is None:

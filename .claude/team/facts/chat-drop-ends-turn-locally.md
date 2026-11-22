@@ -2,11 +2,11 @@
 id: chat-drop-ends-turn-locally
 anchors: [file:frontend/src/App.tsx, sym:backend/app/api/ws.py::_persist_partial]
 by: dev-2 Tomas
-verified: 8986855 2026-11-20
+verified: 56b4a72 2026-11-22
 ---
-App.handleStatus ends a streaming turn when the socket drops (partial text kept, note in the
-error line, composer free); the next open reloads that chat (reloadAfterDrop). The backend saves
-a status=partial message only when the process survives (_persist_partial; none if a newer turn
-took the chat); after a restart the reload re-appends the local partial. The Composer is disabled
-while disconnected: no send mid-drop in tests. Partial and `done` go only into
-the open chat; sendText and selectConversation clear dropRef.
+App.handleStatus ends a streaming turn when the socket drops (partial kept, note, composer free);
+the reconnect reloads that chat (reloadAfterDrop). The backend saves a partial only when its next
+send fails, so while none is saved App rechecks (DROP_RECHECK_MS, 8 min) in one chain;
+stopRechecks on send, chat open and new chat. After a restart the local partial stays. Composer
+is disabled while disconnected: no send mid-drop in tests. sendText and selectConversation clear
+dropRef.

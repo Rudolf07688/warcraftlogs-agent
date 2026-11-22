@@ -88,6 +88,8 @@ async def stored_by_tools(monkeypatch, code: str, *, dps=DPS, ranked_rows=RANKED
     details = {"tanks": [], "healers": [], "dps": dps}
 
     def respond(query: str, variables: dict) -> dict:
+        if query == REPORT_SUMMARY:  # get_report_rankings reads the fights for the whole report (sc-587)
+            return {"data": {"reportData": {"report": summary_report(code)}}}
         if "rankings(" in query:
             report = {"rankings": rankings(*ranked_rows)}
         elif "table(" in query:
@@ -104,7 +106,9 @@ async def stored_by_tools(monkeypatch, code: str, *, dps=DPS, ranked_rows=RANKED
     await load_report_table(code, "Summary", fight_id=BOSS)
     now = datetime.now(UTC)
     rows = [
-        FetchedResponse(_flight_key(q, v), q, v, json.dumps(respond(q, v)).encode(), now) for q, v in fake.calls
+        FetchedResponse(_flight_key(q, v), q, v, json.dumps(respond(q, v)).encode(), now)
+        for q, v in fake.calls
+        if q != REPORT_SUMMARY  # the tests store the summary row themselves
     ]
     monkeypatch.setattr(wcl_client, "get_async_client", real)  # the endpoint must not reach the fake
     return rows
@@ -497,3 +501,22 @@ async def test_a_row_under_a_computed_key_that_names_another_code_is_not_used(as
     body = (await get(as_user, code)).json()
     assert body["participants"] == [{"name": "Thrall", "class_name": "Shaman", "spec": None, "role": None}]
     assert body["my_characters"] == []
+
+
+async def test_whole_report_rankings_key_is_the_one_the_tool_sends(monkeypatch):
+    """sc-587: the tool sends the report's encounter fights, not fightIDs null; the Raids page
+    recomputes that key from the stored summary (fact raid-summary-tool-keys)."""
+    code = f"rk{uuid.uuid4().hex[:12]}"
+    report = summary_report(code)
+    report["fights"].append({**report["fights"][0], "id": 5, "kill": False, "startTime": 30})
+
+    def respond(query: str, variables: dict) -> dict:
+        body = report if query == REPORT_SUMMARY else {"rankings": rankings(*RANKED)}
+        return {"data": {"reportData": {"report": body}}}
+
+    fake = install(monkeypatch, respond)
+    await get_report_rankings(code)
+    [(query, variables)] = [(q, v) for q, v in fake.calls if "rankings(" in q]
+    assert variables["fightIDs"] == [BOSS, 5]
+    names, bosses, ranked = raid_summary._fight_names(report)
+    assert raid_summary.part_keys(code, bosses, ranked)[_flight_key(query, variables)] == "whole_rankings"

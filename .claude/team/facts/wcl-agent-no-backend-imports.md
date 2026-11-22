@@ -3,7 +3,7 @@ id: wcl-agent-no-backend-imports
 anchors: [file:wcl_agent/]
 by: dev-3 Nils
 source: meta/team/dev-3.md L19; meta/sprints/2026-11-04b/board.jsonl #36; meta/sprints/2026-11-02/board.jsonl #53
-verified: 8986855 2026-11-20
+verified: 9107884 2026-11-22
 ---
 `wcl_agent` never imports `backend`: it runs standalone, and only backend may import
 wcl_agent. So OTel instruments for wcl_agent code live in wcl_agent (`app.cache.requests`

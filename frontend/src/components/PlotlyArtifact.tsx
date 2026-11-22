@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, memo, Suspense, useMemo } from "react";
 import type { ChartArtifact } from "../types";
 
 // Plotly is heavy, so load it (and the React wrapper factory) only when a chart is
@@ -20,7 +20,7 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-export function PlotlyArtifact({ artifact }: { artifact: ChartArtifact }) {
+function PlotlyArtifactImpl({ artifact }: { artifact: ChartArtifact }) {
   const reduced = useMemo(prefersReducedMotion, []);
 
   const layout = useMemo(
@@ -55,3 +55,6 @@ export function PlotlyArtifact({ artifact }: { artifact: ChartArtifact }) {
     </div>
   );
 }
+
+// 088b (PERF-003): a list re-render (a drop recheck) does not re-plot a chart it kept.
+export const PlotlyArtifact = memo(PlotlyArtifactImpl);
