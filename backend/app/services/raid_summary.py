@@ -10,7 +10,8 @@ Rules:
 * The rows read are the newest own report summary naming the code and the exact rows our own tools
   would have stored for it (``part_keys``): playerDetails for the whole report, the kickoff's
   per-boss Summary tables and the default rankings (Rankings, Historical) for the whole report and
-  per boss. A malformed part of a stored body is dropped, never an error.
+  per boss. Of the whole-report rankings rows only the newest is read (any fight list the tool may
+  have sent, BUG-002). A malformed part of a stored body is dropped, never an error.
 * "My characters" are the workspace's own profile characters, matched to stored players by name,
   realm and region, all three present in the stored data; never from request input.
 * Uploader-controlled text is neutralised, stripped of control characters and capped.
@@ -104,7 +105,7 @@ _PATHS = (
 )
 
 Role = Literal["tank", "healer", "dps"]
-PartKind = Literal["details", "table", "rankings"]
+PartKind = Literal["details", "table", "rankings", "whole_rankings"]
 
 
 class Participant(BaseModel):
@@ -152,10 +153,16 @@ def part_keys(code: str, boss_fights: list[int], ranked_fights: list[int]) -> di
     """The store keys of the rows our tools would have written for ``code``, in reading order:
     the whole-report rows first, then per boss fight. Each key is the tool's own query and
     variables (``_flight_key``); ``ranked_fights`` is the whole-report rankings filter
-    (``ranked_fight_ids``)."""
+    (``ranked_fight_ids``) of the newest stored summary.
+
+    The tool sent the encounter fights logged when it ran: on a report still being logged, a prefix
+    of ``ranked_fights`` (fights are only appended). So every prefix is a whole-report key, longest
+    first (BUG-002); the caller reads only the newest of them."""
     whole = {"code": code, "fightIDs": _fight_ids(0)}
-    whole_rankings = {} if not ranked_fights else {
-        _key(report_query(_RANKINGS_FIELD, _FIGHTS_DECL), {"code": code, "fightIDs": ranked_fights}): "rankings"
+    rankings_query = report_query(_RANKINGS_FIELD, _FIGHTS_DECL)
+    whole_rankings: dict[str, PartKind] = {
+        _key(rankings_query, {"code": code, "fightIDs": ranked_fights[:n]}): "whole_rankings"
+        for n in range(len(ranked_fights), 0, -1)
     }
     participants_field, participants_decls, participants_vars = participants_query(0)
     details_field, details_decls, details_vars = player_details_query(0)
@@ -165,14 +172,12 @@ def part_keys(code: str, boss_fights: list[int], ranked_fights: list[int]) -> di
         **{_key(report_query(field, _FIGHTS_DECL), whole): "details" for field in _LEGACY_DETAILS_FIELDS},
         **whole_rankings,
         # Before 086 the tool sent fightIDs: null (WCL can fail on it, sc-587): a read-only fallback.
-        _key(report_query(_RANKINGS_FIELD, _FIGHTS_DECL), whole): "rankings",
+        _key(rankings_query, whole): "whole_rankings",
     }
     for fight in boss_fights:
         field, decls, variables = _table_query("Summary", "Friendlies", fight, 0, 0)
         keys[_key(report_query(field, decls), {"code": code, **variables})] = "table"
-        keys[_key(report_query(_RANKINGS_FIELD, _FIGHTS_DECL), {"code": code, "fightIDs": _fight_ids(fight)})] = (
-            "rankings"
-        )
+        keys[_key(rankings_query, {"code": code, "fightIDs": _fight_ids(fight)})] = "rankings"
     return keys
 
 
@@ -432,7 +437,12 @@ async def _read(
     report = _report_object(await _loads(found[0]), code) if found else None
     names, bosses, ranked = _fight_names(report) if report else ({}, [], [])
     keys = part_keys(code, bosses, ranked)
-    parts = await read_visible_parts(session, code, list(keys), _PATHS, tenant_id=tenant_id, since=since)
+    # Whole-report rankings: their stamps first, then the newest row's body only (BUG-002 bound).
+    whole = [key for key, kind in keys.items() if kind == "whole_rankings"]
+    stamped = await read_visible_parts(session, code, whole, (), tenant_id=tenant_id, since=since)
+    newest = max(stamped, key=lambda key: stamped[key][0], default=None)
+    wanted = [key for key, kind in keys.items() if kind != "whole_rankings" or key == newest]
+    parts = await read_visible_parts(session, code, wanted, _PATHS, tenant_id=tenant_id, since=since)
 
     stamps = [found[1]] if report is not None else []
     detail_rows: list[dict[str, Any]] = []
@@ -441,7 +451,7 @@ async def _read(
         if key not in parts:
             continue
         fetched_at, raw = parts[key]
-        if kind == "rankings":
+        if kind in ("rankings", "whole_rankings"):
             value = await _loads(raw[3])
             rankings.append(value)
             used = value is not None

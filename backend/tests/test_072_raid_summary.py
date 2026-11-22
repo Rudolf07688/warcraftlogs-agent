@@ -519,4 +519,4 @@ async def test_whole_report_rankings_key_is_the_one_the_tool_sends(monkeypatch):
     [(query, variables)] = [(q, v) for q, v in fake.calls if "rankings(" in q]
     assert variables["fightIDs"] == [BOSS, 5]
     names, bosses, ranked = raid_summary._fight_names(report)
-    assert raid_summary.part_keys(code, bosses, ranked)[_flight_key(query, variables)] == "rankings"
+    assert raid_summary.part_keys(code, bosses, ranked)[_flight_key(query, variables)] == "whole_rankings"
