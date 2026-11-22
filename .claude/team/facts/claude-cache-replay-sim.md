@@ -2,7 +2,7 @@
 id: claude-cache-replay-sim
 anchors: [file:backend/tests/test_087_history_cache.py, comp:telemetry]
 by: dev-4 Vera
-verified: 7a90bcc 2026-11-22
+verified: a8f834d 2026-11-22
 ---
 Cache-layout changes can be measured offline: test_087_history_cache.simulate replays captured
 Anthropic request bodies (scripted transport, real agent path) through a model of Claude's
