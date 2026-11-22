@@ -11,8 +11,9 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "kb" / "mechanics"
 MAX_ARG_CHARS = 100
@@ -26,40 +27,77 @@ _SEPARATORS = re.compile(r"[\W_]+")
 _DIFFICULTY_WORDS = frozenset({"lfr", "normal", "heroic", "mythic"})
 
 
+# Notes lint (sc-584): the notes are web-sourced text the model trusts and cites, so every tier
+# file is checked at load (a bad file fails app start-up and the tests): sources on known guide
+# hosts only, and plain one-line prose with no markup or instruction-like text.
+SOURCE_HOSTS = frozenset({"www.method.gg", "warcraft.wiki.gg"})
+_SOURCE_URL = re.compile(r"https://([a-z0-9.-]+)(?:/[A-Za-z0-9._~%!$&'()*+,;=:/-]*)?")
+_MARKUP = re.compile(r"[<>\[\]{}`|\\#*]")
+_INSTRUCTION = re.compile(
+    r"\b(?:ignore|disregard|forget)\b.{0,40}\b(?:previous|prior|above|earlier|instructions?|rules)\b"
+    r"|\b(?:system|assistant|user|developer|human|tool)\s*:"
+    r"|\byou\s+(?:must|are\s+now)\b|\binstructions?\b|\bsystem\s+prompt\b",
+    re.IGNORECASE,
+)
+_UNSEEN = frozenset({"Cc", "Cf", "Co", "Cs", "Cn", "Zl", "Zp"})  # control, zero-width, unassigned
+
+
+def _plain(text: str) -> str:
+    if any(unicodedata.category(c) in _UNSEEN for c in text):
+        raise ValueError("control or invisible character")
+    folded = unicodedata.normalize("NFKC", text)  # fullwidth "＜" and "ｓｙｓｔｅｍ" are caught too
+    if _MARKUP.search(folded):
+        raise ValueError("markup character")
+    if _INSTRUCTION.search(folded):
+        raise ValueError("instruction-like text")
+    return text
+
+
+def _source_url(url: str) -> str:
+    match = _SOURCE_URL.fullmatch(url)
+    if match is None or match.group(1) not in SOURCE_HOSTS:
+        raise ValueError("source must be an https URL on an allowed guide host")
+    return url
+
+
+Plain = Annotated[str, AfterValidator(_plain)]
+Name = Annotated[Plain, Field(min_length=1, max_length=MAX_ARG_CHARS)]
+
+
 class _Note(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
 class Source(_Note):
-    name: str = Field(min_length=1)
-    url: str = Field(pattern=r"^https://[^\s]+$")
+    name: Plain = Field(min_length=1, max_length=200)
+    url: Annotated[str, AfterValidator(_source_url)] = Field(max_length=300)
 
 
 class Ability(_Note):
-    name: str = Field(min_length=1)
+    name: Name
     ids: tuple[int, ...] = Field(min_length=1)
-    aliases: tuple[str, ...] = ()
-    what_it_does: str = Field(min_length=1, max_length=400)
-    what_to_do: str = Field(min_length=1, max_length=500)
+    aliases: tuple[Name, ...] = ()
+    what_it_does: Plain = Field(min_length=1, max_length=400)
+    what_to_do: Plain = Field(min_length=1, max_length=500)
     source: Source
     patch: str = Field(pattern=r"^\d+\.\d+\.\d+$")
 
 
 class Encounter(_Note):
     id: int
-    name: str = Field(min_length=1)
-    aliases: tuple[str, ...] = ()
+    name: Name
+    aliases: tuple[Name, ...] = ()
     abilities: tuple[Ability, ...]
 
 
 class Zone(_Note):
     id: int
-    name: str
+    name: Name
 
 
 class TierNotes(_Note):
     zone: Zone
-    note: str = ""
+    note: Plain = Field("", max_length=400)
     encounters: tuple[Encounter, ...]
 
 
@@ -106,18 +144,24 @@ _BY_ENCOUNTER, _BY_KEY = _index(ENCOUNTERS)
 _UNKNOWN = Encounter(id=0, name="unknown", abilities=())  # a named boss the notes don't have
 
 
-def _candidates(key: str) -> list[tuple[Encounter, Ability]]:
-    """Notes whose name, alias or id is ``key``; else, with a boss's own name inside the text
-    ("ula'tek heart"), that boss's notes matching the rest."""
+def _candidates(key: str) -> tuple[list[tuple[Encounter, Ability]], Encounter | None]:
+    """(notes whose name, alias or id is ``key``, the boss named inside the text or None).
+
+    With one boss's own name inside the text ("ula'tek heart") the rest is the ability, and that
+    boss is the one asked about, so an ability of another boss is a miss naming where it is
+    (SPEC L3: "nekzali gravebound")."""
     if key in _BY_KEY:
-        return _BY_KEY[key]
+        return _BY_KEY[key], None
     padded = f" {key} "
-    found = []
+    found: list[tuple[Encounter, Ability]] = []
+    named: list[Encounter] = []
     for enc_key, enc in _BY_ENCOUNTER.items():
         if f" {enc_key} " in padded:
             rest = normalise(padded.replace(f" {enc_key} ", " ", 1))
-            found += [(e, a) for e, a in _BY_KEY.get(rest, []) if e is enc]
-    return found
+            if rest in _BY_KEY:
+                found += [c for c in _BY_KEY[rest] if c not in found]
+                named.append(enc)
+    return found, named[0] if len({id(e) for e in named}) == 1 else None
 
 
 def _miss(found_under: list[Encounter], named: Encounter | None) -> dict:
@@ -135,11 +179,10 @@ def _valid(value: object) -> bool:
 
 
 async def get_boss_mechanics(ability: str, encounter: str | None = None) -> dict:
-    """Look up a current-tier raid boss mechanic in the curated guides: what it does and what to do.
+    """A current-tier raid boss mechanic from the curated guides: what it does, what to do.
 
-    Pass the ability's name or ability id and, when known, the boss. Cite the hit's source and
-    patch, then check the player in the log with its ability_ids. found false: say it is not in
-    your guides, never invent the mechanic; found_under names the boss to ask with instead.
+    Pass the ability name or id and, if known, the boss. Cite source and patch; check the log
+    with ability_ids. found false: not in your guides, never invent it; found_under names the boss.
     """
     if not _valid(ability) or not normalise(ability):
         return {"status": "error", "error_message": _BAD_ABILITY}
@@ -148,7 +191,8 @@ async def get_boss_mechanics(ability: str, encounter: str | None = None) -> dict
     named = None
     if encounter is not None and _encounter_key(encounter):
         named = _BY_ENCOUNTER.get(_encounter_key(encounter), _UNKNOWN)
-    candidates = _candidates(normalise(ability))
+    candidates, in_text = _candidates(normalise(ability))
+    named = named or in_text
     if named is not None:
         hits = [c for c in candidates if c[0] is named]
     else:

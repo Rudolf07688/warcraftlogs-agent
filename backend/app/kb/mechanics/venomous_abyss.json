@@ -1582,6 +1582,246 @@
    ]
   },
   {
+   "id": 3379,
+   "name": "Nymrissa Wavecaller",
+   "aliases": [
+    "Nymrissa",
+    "Wavecaller"
+   ],
+   "abilities": [
+    {
+     "name": "Alluring Bubble",
+     "ids": [
+      1257717
+     ],
+     "aliases": [
+      "bubble",
+      "giant bubble",
+      "bubblefin shorerunner",
+      "shorerunners"
+     ],
+     "what_it_does": "Nymrissa forms a giant bubble that lures packs of Bubblefin Shorerunners toward it; murlocs that reach it are empowered into Bubblefin Berserkers.",
+     "what_to_do": "Kill or crowd-control the Shorerunners before they reach the bubble. Bring the boss to the largest spawn and let ranged handle single spawns.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Pulsing Tides",
+     "ids": [
+      1258894
+     ],
+     "aliases": [
+      "bubblefin berserker",
+      "berserker",
+      "berserkers"
+     ],
+     "what_it_does": "A Bubblefin Berserker pulses frost damage to the whole raid every few seconds while it lives.",
+     "what_to_do": "Kill Berserkers on sight, first in the kill order. A pulse landing during Abyssal Rain or Pop is the common wipe.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Pop!",
+     "ids": [
+      1258150
+     ],
+     "aliases": [
+      "pop",
+      "bubble pop"
+     ],
+     "what_it_does": "When the bubble is hit it pops: raid-wide frost damage and a knockback.",
+     "what_to_do": "Plan a healer cooldown for each pop and stand so the knockback does not throw players into the water. A Warlock gateway can cancel the knockback.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Waterfog Shield",
+     "ids": [
+      1273091
+     ],
+     "aliases": [
+      "bubblefin frostscale",
+      "frostscale"
+     ],
+     "what_it_does": "Mythic: a Bubblefin Frostscale shields nearby murlocs, cutting their damage taken almost entirely.",
+     "what_to_do": "Kill the Frostscale first on Mythic.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Swirling Whirlpools",
+     "ids": [
+      1258668
+     ],
+     "aliases": [
+      "whirlpools",
+      "whirlpool",
+      "tidepiercer's rush"
+     ],
+     "what_it_does": "Whirlpools spawn around the room and surge toward the bubble, dealing heavy frost damage to anyone in their path and leaving one gap.",
+     "what_to_do": "Everyone runs to the gap and stacks there.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Chilling Frost",
+     "ids": [
+      1313393
+     ],
+     "aliases": [
+      "chilling"
+     ],
+     "what_it_does": "Hits several players with frost damage and a short slow, and drops a Frost Orb where each stands.",
+     "what_to_do": "Targeted players place their orbs where the raid can soak them; stutter-stepping to place them is optional.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Frost Orb",
+     "ids": [
+      1313402
+     ],
+     "aliases": [
+      "frost orbs",
+      "drifting globules"
+     ],
+     "what_it_does": "Touching a Frost Orb deals heavy frost damage, a stacking damage over time and more frost damage taken for a while, and leaves Lingering Frost.",
+     "what_to_do": "Soaking the orbs is mandatory on Heroic and Mythic: tanks and mobile or immune players soak them. On Mythic, spread the soak timings.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Shatter",
+     "ids": [
+      1313456
+     ],
+     "aliases": [
+      "orb explosion"
+     ],
+     "what_it_does": "A Frost Orb nobody touches explodes for massive raid-wide frost damage plus a stacking damage over time.",
+     "what_to_do": "Soak every orb; never leave one to explode.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Frost Burst",
+     "ids": [
+      1313450
+     ],
+     "aliases": [],
+     "what_it_does": "Mythic: a touched orb also bursts for raid-wide frost damage.",
+     "what_to_do": "Pop orbs in a controlled order and check raid health first.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Lingering Frost",
+     "ids": [
+      1257654
+     ],
+     "aliases": [
+      "icy patch",
+      "ice patches"
+     ],
+     "what_it_does": "An icy patch left where an orb was taken; it deals frost damage and makes players slide.",
+     "what_to_do": "Keep the patches off the raid's paths and aim Water Jet over them to wash them away.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Water Jet",
+     "ids": [
+      1258901
+     ],
+     "aliases": [
+      "jet"
+     ],
+     "what_it_does": "Sustained frost damage and a knockback on Nymrissa's current target, stacking more damage taken; it also washes away Lingering Frost.",
+     "what_to_do": "Tanks swap on stacks and aim the jet across Lingering Frost to clear it.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Abyssal Rain",
+     "ids": [
+      1260837
+     ],
+     "aliases": [
+      "rain",
+      "drenched"
+     ],
+     "what_it_does": "A raid-wide channel of a few seconds that leaves Drenched, a frost damage over time: a healing check.",
+     "what_to_do": "Healers use cooldowns and avoid letting it overlap Berserker pulses or Pop.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Wavecaller's Might",
+     "ids": [
+      1277386
+     ],
+     "aliases": [],
+     "what_it_does": "A stacking frost damage buff on Nymrissa: the soft enrage.",
+     "what_to_do": "Keep kill speed high; every stack makes the fight harder.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    },
+    {
+     "name": "Unending Tides",
+     "ids": [
+      1294867
+     ],
+     "aliases": [],
+     "what_it_does": "The hard enrage: raid-wide frost damage every second until the raid dies.",
+     "what_to_do": "Kill Nymrissa before she starts channeling it.",
+     "source": {
+      "name": "Method, Nymrissa Wavecaller Heroic and Mythic guide (updated 19 Aug 2026)",
+      "url": "https://www.method.gg/guides/the-tidebound-grotto/nymrissa-wavecaller"
+     },
+     "patch": "12.1.0"
+    }
+   ]
+  },
+  {
    "id": 3513,
    "name": "Kith'ix",
    "aliases": [
@@ -1603,11 +1843,11 @@
       "refulgent bulwark",
       "suffocation"
      ],
-     "what_it_does": "At 100 energy Kith'ix smothers the raid in darkness while Lady Liadrin holds it back with Refulgent Bulwark. Adds still alive when it starts become greatly empowered.",
-     "what_to_do": "Kill all adds before the intermission and stay inside Liadrin's safe zone; outside it players take heavy damage and are slowed.",
+     "what_it_does": "At 100 energy Kith'ix smothers the room in darkness that damages the whole raid; only Lady Liadrin's Refulgent Bulwark in the middle is safe. Adds still alive when it starts gain Dark Frenzy: speed, crowd-control immunity and a damage aura.",
+     "what_to_do": "Kill every add and egg before 100 energy and stand inside Refulgent Bulwark for the intermission. Soak the assigned Eclipse Fragments so none reaches Liadrin and shrinks the safe zone.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1621,11 +1861,11 @@
       "heal absorb",
       "tentacle grab"
      ],
-     "what_it_does": "Tentacles grab players during the darkness and apply a healing absorb; players are dragged into the darkness if it is not removed in time.",
-     "what_to_do": "Healers switch to grabbed players and heal through the absorb quickly, spreading their target choices.",
+     "what_it_does": "Void tendrils grab random players during the darkness and apply a large healing absorb; a player not healed out of it within about 8 seconds is pulled into the darkness.",
+     "what_to_do": "Healers prioritise grabbed players and heal through the absorb quickly.",
      "source": {
-      "name": "PlayHub, The Unbinding of Kith'ix raid guide (published 13 Oct 2026)",
-      "url": "https://playhub.com/blog/wow/the-unbinding-of-kithix-raid-guide-1215-961763"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1639,11 +1879,11 @@
       "light's embrace",
       "shadow wave"
      ],
-     "what_it_does": "A heavy raid-wide shadow wave; Light's Embrace from Lady Liadrin greatly reduces its damage.",
-     "what_to_do": "Everyone collects a spark from Liadrin before it hits, but not too early because the protection expires within about 8 seconds.",
+     "what_it_does": "A raid-wide shadow shockwave that also removes Light's Embrace. Light's Embrace, from motes Liadrin provides, cuts shadow damage taken by 90% for up to 8 seconds.",
+     "what_to_do": "Everyone grabs a Light's Embrace mote shortly before each Extinguish, or covers it with an immunity or defensive.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1658,11 +1898,11 @@
       "devastated",
       "voidscar"
      ],
-     "what_it_does": "A heavy hit on the tank and players near them that applies Devastated, a stacking damage-taken increase. On Heroic and Mythic it also leaves Voidscar zones.",
-     "what_to_do": "Tanks swap after every cast, use a defensive, and place the circle away from the group; never let both tanks be hit. Others stay out of range of the target. Put Voidscars at the arena edge, leaving a path to Liadrin.",
+     "what_it_does": "A heavy shadow and physical hit on the tank and players within 15 yards that leaves Devastated, more physical and shadow damage taken for 25 seconds. On Heroic and Mythic it leaves Voidscar zones that damage and knock back on touch.",
+     "what_to_do": "Tanks swap after every cast and others stay out of range. Place Voidscars where the Eclipse Fragments they release in the intermission stay manageable.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1676,11 +1916,11 @@
       "overwhelming fear",
       "fear dispel"
      ],
-     "what_it_does": "Marks players with a warning and then applies Overwhelming Fear.",
-     "what_to_do": "The marked player moves away from the raid first, then a healer dispels the fear once they are isolated. Dispelling in the middle of the raid causes avoidable damage.",
+     "what_it_does": "A few random players are feared by Overwhelming Fear; dispelling it releases a scream that damages the raid, less the farther away it is.",
+     "what_to_do": "Feared players move out of the group before a healer dispels them.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1696,11 +1936,11 @@
       "beetles",
       "digestive juices"
      ],
-     "what_it_does": "Bomber Beetles fixate on players and explode, leaving stacking Digestive Juices damage over time; several in rapid succession inflict heavy damage.",
-     "what_to_do": "Fixated players lead beetles away from the group and avoid letting several explode together. Healers need recovery time between blasts.",
+     "what_it_does": "Bomber Beetles fixate on random players and explode on contact or after 30 seconds, coating the raid in Digestive Juices, a stacking nature damage over time.",
+     "what_to_do": "Bring one beetle at a time onto the Venomous Hulk, for example with a Death Knight grip, and let Digestive Juices fall off before the next one explodes.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1710,11 +1950,11 @@
       1305008
      ],
      "aliases": [],
-     "what_it_does": "Aqir near Kith'ix take greatly reduced damage; eggs are not protected.",
-     "what_to_do": "One tank holds the boss away from the add pack while the other gathers the adds, so DPS can kill them without the reduction.",
+     "what_it_does": "Aqir within 25 yards of Kith'ix take 75% less damage; eggs are not protected.",
+     "what_to_do": "Tanks pull the adds away from the boss before the raid kills them.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1728,11 +1968,11 @@
       "eightfold eclipse",
       "last light"
      ],
-     "what_it_does": "At 25% health the raid is fully healed and gains damage and healing boosts. Eightfold Eclipse is eight raid-wide hits; the raid dies after the eighth if the boss is still alive.",
-     "what_to_do": "Use Bloodlust and offensive cooldowns and kill the boss before the eighth eclipse; healers rotate raid cooldowns through the hits. Save big cooldowns for this phase.",
+     "what_it_does": "At 25% health the raid is stunned and Kith'ix absorbs his adds. Liadrin's Last Light then heals the raid fully and grants Luminous Grace, more damage and healing for the rest of the fight. Eightfold Eclipse is the hard enrage: eight eclipses hit the raid one at a time and the eighth kills everyone.",
+     "what_to_do": "Near 25%, ignore what can be safely ignored and push. Use Bloodlust and cooldowns in the last phase and kill the boss before the eighth eclipse.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     },
@@ -1752,11 +1992,11 @@
       "explosive restabilization",
       "gates"
      ],
-     "what_it_does": "In the final phase marked players are hit by Null Gates; gates throw Nullshard motes that stack the Nullify debuff on contact. Negation gives a tank movement speed to reach a gate.",
-     "what_to_do": "Marked players spread and move away when a gate opens (it hits within 5 yards). Everyone avoids standing near gates or crossing several mote paths. Tanks handle Negation by touching a gate with a defensive; healers cover that damage.",
+     "what_it_does": "After a short delay on random players a gate opens, damages nearby players and scatters Nullshards; each shard touched adds a stack of Nullify, and too many stacks kill. Negation gives the active tank speed and immunity to Nullshards for a few seconds, and kills them when it expires.",
+     "what_to_do": "Targeted players drop gates away from the raid and everyone dodges the shards. The tank with Negation runs into a Null Gate to remove it, which triggers Explosive Restabilization, a raid-wide hit healers prepare for.",
      "source": {
-      "name": "wow.gg, The Unbinding of Kith'ix raid guide (published 14 Oct 2026)",
-      "url": "https://wow.gg/guides/the-unbinding-of-kithix"
+      "name": "Method, Kith'ix Heroic and Mythic guide (updated 14 Oct 2026)",
+      "url": "https://www.method.gg/guides/the-unbinding-of-kithix/kithix"
      },
      "patch": "12.1.5"
     }
