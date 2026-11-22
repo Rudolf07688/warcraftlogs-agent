@@ -57,8 +57,11 @@ vi.mock("./components/Sidebar", () => ({
     </div>
   ),
 }));
-vi.mock("./components/MessageList", () => ({
-  MessageList: (p: { messages: Message[]; looseProposals: ProfileProposal[]; status: string }) => {
+vi.mock("./components/MessageList", async () => {
+  // 085: the live status comes from the status store, not a prop.
+  const { useTurnStatus } = await import("./lib/statusStore");
+  return { MessageList: (p: { messages: Message[]; looseProposals: ProfileProposal[] }) => {
+    const { status } = useTurnStatus();
     if (h.listThrows) throw new Error("list exploded");
     return (
       <div>
@@ -66,11 +69,11 @@ vi.mock("./components/MessageList", () => ({
           {p.messages.flatMap((m) => m.proposals ?? []).map((x) => x.id).join(",")}
         </div>
         <div data-testid="loose">{p.looseProposals.map((x) => x.id).join(",")}</div>
-        <div data-testid="status">{p.status}</div>
+        <div data-testid="status">{status}</div>
       </div>
     );
-  },
-}));
+  } };
+});
 vi.mock("./components/Composer", () => ({
   Composer: (p: { onSend: (t: string) => void }) => <button onClick={() => p.onSend("hi")}>send</button>,
 }));
