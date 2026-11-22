@@ -159,6 +159,25 @@ describe("App: live thinking status (080)", () => {
     expect(statusLine()).toBeNull(); // the next tool casts: the notice is gone
   });
 
+  it("shows a retry or fallback notice while answer text is showing, plain and clamped (088b)", async () => {
+    // SPEC-002: text kept from an earlier round stays on screen while a later round waits.
+    await askWithACard();
+    frame({ type: "token", text: "Kept so far." });
+    frame({ type: "model_retry", attempt: 2, max_attempts: 5, wait_s: 8.0 });
+    expect(statusLine()).toBe("Model busy — retrying (2 of 5)…");
+    expect(live()!.querySelector(".thinking")).toBeNull(); // the answer text shows, not the indicator
+    frame({ type: "token", text: " More." }); // the model answers again: the notice is gone
+    expect(statusLine()).toBeNull();
+    const id = "<img src=x onerror=alert(1)>" + "m".repeat(5000);
+    frame({ type: "model_fallback", from_model: id, to_model: "x" });
+    const line = statusLine()!;
+    expect(line.startsWith("<img src=x onerror=alert(1)>")).toBe(true);
+    expect(Array.from(line).length).toBeLessThanOrEqual(120);
+    expect(live()!.querySelector(".thinking-status img")).toBeNull();
+    frame({ type: "thinking", text: "A late thought." }); // a thought still never shows under text
+    expect(statusLine()).toBeNull();
+  });
+
   it("shows a retry with odd numbers as a plain label", async () => {
     await askWithACard();
     frame({ type: "model_retry", attempt: Number.NaN, max_attempts: -1, wait_s: Number.NaN });

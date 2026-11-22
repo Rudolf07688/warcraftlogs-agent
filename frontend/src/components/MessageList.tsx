@@ -117,6 +117,17 @@ function TurnStatus({ cards }: { cards: SpellCardState[] }) {
   ) : null;
 }
 
+// 088b (SPEC-002): a retry or fallback notice while answer text is showing (a later round can
+// wait out a rate limit after text was kept). Plain and clamped like the line under the cards.
+function TurnNotice() {
+  const { notice } = useTurnStatus();
+  return notice ? (
+    <div key={notice} className="thinking-status" dir="auto">
+      {notice}
+    </div>
+  ) : null;
+}
+
 // PERF-010: the in-flight reply. It is the only component that subscribes to the token
 // stream, so a token re-renders this message alone, not the list or the app.
 function LiveMessage({ streamCards }: { streamCards: SpellCardState[] }) {
@@ -132,7 +143,10 @@ function LiveMessage({ streamCards }: { streamCards: SpellCardState[] }) {
       {/* US6: live spellcasting cards for the in-flight turn. */}
       <Spellbook cards={streamCards} />
       {streamingText ? (
-        <StreamMarkdown content={streamingText} streaming />
+        <>
+          <StreamMarkdown content={streamingText} streaming />
+          <TurnNotice />
+        </>
       ) : (
         <TurnStatus cards={streamCards} />
       )}
