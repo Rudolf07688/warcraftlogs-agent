@@ -4,7 +4,8 @@
 // this many characters, cut on a character boundary, not inside a surrogate pair.
 export const STATUS_MAX = 120;
 
-const CONTROLS = /[؜​-‏‪-‮⁠-⁩﻿]/g;
+// By Unicode category, like the runner's own clean-up (it keeps newlines, so do we).
+const CONTROLS = /(?!\n)[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}]/gu;
 
 export function cleanStatus(text: string): string {
   return Array.from(text.replace(CONTROLS, "")).slice(0, STATUS_MAX).join("");

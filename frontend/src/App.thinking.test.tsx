@@ -119,7 +119,12 @@ describe("App: live thinking status (080)", () => {
 
   it("drops bidi and zero-width controls and isolates the line's direction", async () => {
     await askWithACard();
-    frame({ type: "thinking", text: "Pull\u202E 3 \u200Bwent\u2066 well\uFEFF." });
+    // Bidi overrides, zero-width and other format characters (soft hyphen, Mongolian vowel
+    // separator, interlinear annotation, a tag character), line/paragraph separators, a C0 control.
+    frame({
+      type: "thinking",
+      text: "Pull\u202E 3 \u200Bwent\u2066 well\uFEFF\u00AD\u180E\uFFF9\u{E0041}\u2028\u2029\u0007.",
+    });
     expect(statusLine()).toBe("Pull 3 went well.");
     expect(document.querySelector(".thinking-status")?.getAttribute("dir")).toBe("auto");
   });

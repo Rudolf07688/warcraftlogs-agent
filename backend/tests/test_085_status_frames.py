@@ -12,8 +12,10 @@ import json
 import uuid
 from contextlib import asynccontextmanager
 
+import pytest
 from fastapi import WebSocketDisconnect
 from sqlalchemy import event
+from starlette.websockets import WebSocketDisconnected
 
 from backend.app.api import ws as ws_mod
 from backend.app.db import repository as repo
@@ -215,3 +217,27 @@ async def test_the_preamble_reads_only_main_class_and_spec(session, tenant_id, m
     columns = reads[0].split("FROM")[0]
     assert "main_class" in columns and "main_spec" in columns
     assert "main_content" not in columns and "onboarding" not in columns
+
+
+class _AlreadyDisconnected(_FakeSocket):
+    """A socket another task's send found dead first: starlette then raises WebSocketDisconnected
+    (a RuntimeError), not WebSocketDisconnect, on every later send."""
+
+    async def send_json(self, payload: dict) -> None:
+        if payload.get("type") == "interim":
+            raise WebSocketDisconnected('Cannot call "send" once a close message has been sent.')
+        await super().send_json(payload)
+
+
+async def test_a_second_send_to_a_dead_socket_is_a_drop_too(as_user, patched_db, monkeypatch):
+    # D18 085 SEC-002: the interim send fails with WebSocketDisconnected; the turn is handled as
+    # a drop (the placeholder is stored), and the receive loop sees WebSocketDisconnect.
+    _quiet(monkeypatch, _stream({"type": "token", "text": INTERIM}, {"type": "interim", "text": STATUS}))
+    sock = _AlreadyDisconnected()
+    with pytest.raises(WebSocketDisconnect):
+        await ws_mod._handle_turn(sock, ChatTurn(model=MODEL, content="why?"), _identity(as_user))
+    conv_id = uuid.UUID(sock.frames[0]["conversation_id"])
+    assert await _messages(patched_db, conv_id, as_user.tenant_id) == [
+        ("user", "why?", "complete"),
+        ("agent", "(no response)", "partial"),
+    ]

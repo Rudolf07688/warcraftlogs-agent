@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnected
 from pydantic import ValidationError
 
 from wcl_agent.cache.cache import abandon_turn, set_refresh_actor
@@ -536,14 +537,18 @@ async def _run_chat_turn(
             except Exception:  # noqa: BLE001 - SEC-003: the cancel goes on, the socket stays
                 logger.exception("superseded turn: partial answer not saved")
         raise
-    except WebSocketDisconnect:
-        # Client vanished mid-reply: keep what we have, can't send anything. After a retraction
-        # with nothing kept, the browser may still hold the retracted text (the interim frame
-        # can be lost with the socket), and its reconnect reload keeps that local copy when the
-        # chat has no agent message (sc-376, for a restart). A stored no-answer partial makes the
-        # reload show what is stored instead (085 SEC-002 residual).
+    except (WebSocketDisconnect, WebSocketDisconnected) as exc:
+        # Client vanished mid-reply: keep what we have, can't send anything. Only the first send
+        # to a dead socket raises WebSocketDisconnect; later ones (say, after the last turn's
+        # title task hit it first) raise WebSocketDisconnected, a RuntimeError (085 SEC-002).
+        # After a retraction with nothing kept, the browser may still hold the retracted text
+        # (the interim frame can be lost with the socket) and shows it while the chat has no
+        # agent message (sc-376, for a restart). A stored no-answer partial gives its reload
+        # rechecks (App.reloadAfterDrop) the server's word to replace that copy with (085).
         kept = tokens if tokens or not retracted else [NO_RESPONSE]
         await _persist_partial(conv_id, kept, identity, user_seq)
+        if isinstance(exc, WebSocketDisconnected):
+            raise WebSocketDisconnect(1006) from exc  # the receive loop ends on this one
         raise
     except ModelRateLimited as exc:
         # Feature 011 / FR-004, FR-005: the retry budget is spent. Plain-language error,

@@ -143,6 +143,48 @@ describe("App: a dropped socket ends the turn locally (sc-376)", () => {
     expect(text("error")).toBe(NOTE);
   });
 
+  it("a partial the server saves after the reload replaces the local copy (085 SEC-001)", async () => {
+    // The server learns of the drop only at its next send, after the reload found nothing: our
+    // copy (here text the turn retracted, its interim lost with the socket) shows until then.
+    await streamingInA();
+    await status(false);
+    savedQuestion();
+    vi.useFakeTimers();
+    try {
+      await status(true);
+      expect(text("messages")).toBe("user:hi|agent:Half an answer");
+      h.details.A = detail("A", [
+        { role: "user", content: "hi" },
+        { role: "agent", content: "(no response)", status: "partial" },
+      ]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(text("messages")).toBe("user:hi|agent:(no response)");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rechecks a drop with nothing saved a bounded number of times, then keeps the copy", async () => {
+    await streamingInA();
+    await status(false);
+    savedQuestion(); // a restart: nothing is ever saved
+    const { getConversation } = await import("./api/restClient");
+    vi.useFakeTimers();
+    try {
+      const calls = vi.mocked(getConversation).mock.calls.length;
+      await status(true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10 * 60_000);
+      });
+      expect(vi.mocked(getConversation).mock.calls.length).toBe(calls + 1 + 5);
+      expect(text("messages")).toBe("user:hi|agent:Half an answer");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("the reload replaces the local copy with the saved partial answer", async () => {
     await streamingInA();
     await status(false);

@@ -45,3 +45,9 @@
 ## Dependencies
 
 T002/T003 before T010/T014. US1 (backend) and US2/US3 frontend parts are independent; T009 and T006 both edit ws.py (sequential).
+
+## Rework (D18 review, d18-085-security.md)
+
+- [X] T016 SEC-001: App.reloadAfterDrop rechecks (2/4/8/16/32 s) while no agent message is saved; a later saved partial replaces the local copy (frontend/src/App.tsx, frontend/src/App.reconnect.test.tsx)
+- [X] T017 SEC-002: ws.py treats WebSocketDisconnected like WebSocketDisconnect (placeholder stored, loop ends) (backend/app/api/ws.py, backend/tests/test_085_status_frames.py)
+- [X] T018 SEC-003: cleanStatus strips by Unicode category (Cc/Cf/Co/Cs/Zl/Zp, newline kept like the runner) (frontend/src/lib/statusText.ts, frontend/src/App.thinking.test.tsx)

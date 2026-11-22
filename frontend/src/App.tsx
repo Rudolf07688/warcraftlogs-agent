@@ -45,6 +45,9 @@ import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 const RaidsPage = lazy(() => import("./pages/RaidsPage"));
 
 const CONNECTION_LOST = "Connection lost, the answer may be incomplete.";
+// 085: after a drop, while the chat has no saved answer, check again after these delays (~1 min
+// in all: the server saves once its next send fails, which can be after a tool call).
+const DROP_RECHECK_MS = [2_000, 4_000, 8_000, 16_000, 32_000];
 // Frames that only make sense while a turn is streaming here.
 const TURN_FRAMES = new Set<Frame["type"]>([
   "token",
@@ -108,6 +111,7 @@ export default function App() {
   // sc-376: set when the socket drops mid-answer, until the reconnect has reloaded that chat.
   const dropRef = useRef<{ conversationId: string; partial: string } | null>(null);
   const turnSeqRef = useRef(0); // counts sent turns, so a late reload can tell a newer one began
+  const recheckRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 085: next drop recheck
 
   const setStreaming = useCallback((value: boolean) => {
     streamingRef.current = value;
@@ -353,30 +357,46 @@ export default function App() {
   // sc-376: the saved (partial) answer replaces the local copy after a drop. Only if the chat
   // is still open and no newer turn began meanwhile; a failed reload keeps the drop for the
   // next reconnect, until a new turn or opening a chat makes it stale.
-  const reloadAfterDrop = useCallback(async (drop: { conversationId: string; partial: string }) => {
+  // 085 (SEC-001): the server learns of a drop only at its next send, which can come after this
+  // reload (say, at the end of a tool call). Until it has saved, the chat has no agent message
+  // and our copy is shown; it can be text the turn retracted. So while nothing is saved, check
+  // again a few times (DROP_RECHECK_MS); the saved partial then replaces our copy.
+  const reloadAfterDrop = useCallback((drop: { conversationId: string; partial: string }) => {
     const seq = turnSeqRef.current;
-    try {
-      const detail = await getConversation(drop.conversationId);
-      if (
-        activeIdRef.current !== drop.conversationId ||
-        turnSeqRef.current !== seq ||
-        streamingRef.current
-      ) {
-        return;
+    const load = async (attempt: number) => {
+      recheckRef.current = null;
+      try {
+        const detail = await getConversation(drop.conversationId);
+        if (
+          activeIdRef.current !== drop.conversationId ||
+          turnSeqRef.current !== seq ||
+          streamingRef.current
+        ) {
+          return;
+        }
+        const loaded: Message[] = detail.messages.map((m) => ({ ...m }));
+        const saved = loaded[loaded.length - 1]?.role === "agent";
+        // The backend saved nothing of the cut-off answer (yet, or a restart lost it): our copy.
+        if (drop.partial && !saved) {
+          loaded.push({ role: "agent", content: drop.partial });
+        }
+        setMessages(loaded);
+        setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
+        if (!saved && attempt < DROP_RECHECK_MS.length) {
+          recheckRef.current = setTimeout(() => void load(attempt + 1), DROP_RECHECK_MS[attempt]);
+        }
+      } catch {
+        // Not kept when a new turn began or the chat changed while the request was in flight.
+        if (attempt === 0 && turnSeqRef.current === seq && activeIdRef.current === drop.conversationId) {
+          dropRef.current ??= drop;
+        }
       }
-      const loaded: Message[] = detail.messages.map((m) => ({ ...m }));
-      // The backend saved nothing of the cut-off answer (a restart loses it): keep our copy.
-      if (drop.partial && loaded[loaded.length - 1]?.role !== "agent") {
-        loaded.push({ role: "agent", content: drop.partial });
-      }
-      setMessages(loaded);
-      setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
-    } catch {
-      // Not kept when a new turn began or the chat changed while the request was in flight.
-      if (turnSeqRef.current === seq && activeIdRef.current === drop.conversationId) {
-        dropRef.current ??= drop;
-      }
-    }
+    };
+    if (recheckRef.current !== null) clearTimeout(recheckRef.current);
+    return load(0);
+  }, []);
+  useEffect(() => () => {
+    if (recheckRef.current !== null) clearTimeout(recheckRef.current);
   }, []);
 
   // The socket's connection changes. A drop while a turn streams ends that turn here: the
