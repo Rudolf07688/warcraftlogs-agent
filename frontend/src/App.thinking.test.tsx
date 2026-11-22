@@ -7,7 +7,19 @@ import type { Frame } from "./api/wsClient";
 // the real MessageList, so the guard is checked where it acts: the DOM. Model text is hostile:
 // it must render as plain text, capped, and never once the answer is showing.
 
-const h = vi.hoisted(() => ({ onFrame: null as ((f: unknown) => void) | null }));
+const h = vi.hoisted(() => ({ onFrame: null as ((f: unknown) => void) | null, listRenders: 0 }));
+
+// 085: counts how often App renders the message list (the wrapper is not memoised, so it runs on
+// every App render); the real list renders inside it.
+vi.mock("./components/MessageList", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./components/MessageList")>();
+  return {
+    MessageList: (props: Parameters<typeof real.MessageList>[0]) => {
+      h.listRenders++;
+      return <real.MessageList {...props} />;
+    },
+  };
+});
 
 vi.mock("./api/wsClient", () => ({
   ChatSocket: class {
@@ -91,6 +103,69 @@ describe("App: live thinking status (080)", () => {
     expect(statusLine()).toBe(text);
     const node = live()!;
     expect(node.querySelector("img, a, strong, code, pre, script")).toBeNull();
+  });
+
+  it.each([
+    ["a script tag", "<script>alert(1)</script>"],
+    ["an image", "![x](https://evil.example/a.png)"],
+  ])("renders %s in thought and interim text inert", async (_name, text) => {
+    await askWithACard();
+    frame({ type: "thinking", text });
+    expect(statusLine()).toBe(text);
+    frame({ type: "interim", text });
+    expect(statusLine()).toBe(text);
+    expect(live()!.querySelector("img, a, script")).toBeNull();
+  });
+
+  it("drops bidi and zero-width controls and isolates the line's direction", async () => {
+    await askWithACard();
+    frame({ type: "thinking", text: "Pull\u202E 3 \u200Bwent\u2066 well\uFEFF." });
+    expect(statusLine()).toBe("Pull 3 went well.");
+    expect(document.querySelector(".thinking-status")?.getAttribute("dir")).toBe("auto");
+  });
+
+  it("cuts a long line on a character boundary", async () => {
+    await askWithACard();
+    frame({ type: "thinking", text: "\u{1F525}".repeat(500) });
+    const line = statusLine()!;
+    expect(Array.from(line)).toHaveLength(120);
+    expect(line).toBe("\u{1F525}".repeat(120)); // no half surrogate pair at the end
+  });
+
+  it("shows the contract's retry frame under the cards until the next status event", async () => {
+    // contract:chat-status-records example; 085 (backlog:status-under-cards-retry).
+    await askWithACard();
+    frame({ type: "thinking", text: "Comparing the pulls." });
+    frame({ type: "model_retry", attempt: 1, max_attempts: 5, wait_s: 4.0 });
+    expect(statusLine()).toBe("Model busy — retrying (1 of 5)…");
+    frame({ type: "thinking", text: "Back to the pulls." });
+    expect(statusLine()).toBe("Back to the pulls.");
+  });
+
+  it("shows a fallback with an odd model id as plain, bounded text under the cards", async () => {
+    await askWithACard();
+    const id = "<img src=x onerror=alert(1)>" + "m".repeat(5000);
+    frame({ type: "model_fallback", from_model: id, to_model: "[b](javascript:x)" });
+    const line = statusLine()!;
+    expect(line.startsWith("<img src=x onerror=alert(1)>")).toBe(true);
+    expect(Array.from(line).length).toBeLessThanOrEqual(120);
+    expect(live()!.querySelector("img, a")).toBeNull();
+    frame({ type: "tool_start", name: "get_report_events" });
+    expect(statusLine()).toBeNull(); // the next tool casts: the notice is gone
+  });
+
+  it("shows a retry with odd numbers as a plain label", async () => {
+    await askWithACard();
+    frame({ type: "model_retry", attempt: Number.NaN, max_attempts: -1, wait_s: Number.NaN });
+    expect(statusLine()).toBe("Model busy — retrying (NaN of -1)…");
+  });
+
+  it("a burst of thinking frames re-renders neither App nor the message list", async () => {
+    await askWithACard();
+    const before = h.listRenders;
+    for (let i = 0; i < 50; i++) frame({ type: "thinking", text: `Step ${i}.` });
+    expect(statusLine()).toBe("Step 49.");
+    expect(h.listRenders).toBe(before);
   });
 
   it("caps a long status line", async () => {

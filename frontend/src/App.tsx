@@ -24,9 +24,10 @@ import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
 import { investigateErrorMessage } from "./lib/investigateError";
 import { streamStore } from "./lib/streamStore";
+import { statusStore, type TurnStatusState } from "./lib/statusStore";
 import { Button } from "./components/ui/button";
 import { Toggle } from "./components/ui/toggle";
-import { THINKING_DEFAULT, fallbackLabel, retryLabel, toolLabel } from "./toolLabels";
+import { fallbackLabel, retryLabel, toolLabel } from "./toolLabels";
 import type {
   ChartArtifact,
   Conversation,
@@ -53,8 +54,6 @@ const TURN_FRAMES = new Set<Frame["type"]>([
   "interim",
   "done",
 ]);
-// Feature 080: a status line is model text; it is shown as plain text and never longer than this.
-const STATUS_MAX = 120;
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -75,12 +74,8 @@ export default function App() {
 
   const [streaming, setStreamingState] = useState(false);
   // PERF-010: the streaming text lives in `streamStore`, not here, so a token never
-  // re-renders the app; only the live message subscribes to it.
-  const [status, setStatus] = useState(THINKING_DEFAULT);
-  // Feature 080: the live status line (latest thought or interim text) and when the turn last
-  // reported anything, for the generic "Thinking… Ns".
-  const [thought, setThought] = useState<string | null>(null);
-  const [quietSince, setQuietSince] = useState(() => Date.now());
+  // re-renders the app; only the live message subscribes to it. 085: the same for the live
+  // status (label, thought line, retry/fallback notice, last event time) in `statusStore`.
   const [error, setError] = useState<string | null>(null);
 
   // US6: live spellcasting cards for the in-flight turn.
@@ -152,7 +147,9 @@ export default function App() {
       // sc-376: a frame of a turn that was already ended locally (socket drop) is stale.
       // An `error` frame is not: it is shown even when idle (it never touches the messages).
       if (TURN_FRAMES.has(f.type) && !streamingRef.current) return;
-      if (f.type !== "token") setQuietSince(Date.now());
+      // 085: this frame's status change, applied once after the switch (only the live status
+      // subscribes to it, so it never re-renders the app).
+      const turnStatus: Partial<TurnStatusState> = f.type !== "token" ? { quietSince: Date.now() } : {};
       switch (f.type) {
         case "meta":
           turnConvRef.current = f.conversation_id;
@@ -162,7 +159,7 @@ export default function App() {
           }
           break;
         case "tool_start": {
-          setStatus(toolLabel(f.name));
+          Object.assign(turnStatus, { status: toolLabel(f.name), notice: null });
           // US6: spawn a casting spell card (correlated to tool_end by name + FIFO order,
           // since the frames carry no call id).
           const key = `${f.name}-${streamCardsRef.current.length}`;
@@ -186,36 +183,43 @@ export default function App() {
             };
             setCards(next);
           }
-          setThought(null); // the model thinks afresh about the result
+          // the model thinks afresh about the result
+          Object.assign(turnStatus, { thought: null, notice: null });
           break;
         }
         case "thinking":
           // Feature 080: shown only while no answer text is (LiveMessage), and the backend
           // sends none once the answer has started.
-          setThought(f.text.slice(0, STATUS_MAX) || null);
+          Object.assign(turnStatus, { thought: f.text, notice: null });
           break;
         case "interim":
           // Feature 080 (sc-572): the text so far was progress; the backend dropped it from the
           // answer it saves, so drop it here too and show its first sentence as status.
           streamRef.current = "";
           streamStore.set("");
-          setThought(f.text.slice(0, STATUS_MAX) || null);
+          Object.assign(turnStatus, { thought: f.text, notice: null });
           break;
         case "model_retry":
           // Feature 011: the backend is waiting out a model rate limit; the next
-          // tool_start/token replaces this status as usual.
-          setStatus(retryLabel(f.attempt, f.max_attempts));
+          // tool_start/token replaces this status as usual. 085: shown under the cards too.
+          {
+            const label = retryLabel(f.attempt, f.max_attempts);
+            Object.assign(turnStatus, { status: label, notice: label, thought: null });
+          }
           break;
         case "model_fallback":
           // Feature 021: the turn continues on the same-class sibling; the answer is
           // marked with the model that gave it on `done`.
           fallbackRef.current = { from: f.from_model, to: f.to_model };
-          setStatus(fallbackLabel(f.from_model, f.to_model));
+          {
+            const label = fallbackLabel(f.from_model, f.to_model);
+            Object.assign(turnStatus, { status: label, notice: label, thought: null });
+          }
           break;
         case "grounding":
           if (f.used) {
             groundedRef.current = true;
-            setStatus("Searching the web…");
+            Object.assign(turnStatus, { status: "Searching the web…", notice: null });
           }
           break;
         case "raid_tracked":
@@ -307,8 +311,7 @@ export default function App() {
           }
           setStreaming(false);
           streamStore.set("");
-          setStatus(THINKING_DEFAULT);
-          setThought(null);
+          statusStore.reset();
           streamRef.current = "";
           groundedRef.current = false;
           fallbackRef.current = undefined;
@@ -332,8 +335,7 @@ export default function App() {
           setError(f.message);
           setStreaming(false);
           streamStore.set("");
-          setStatus(THINKING_DEFAULT);
-          setThought(null);
+          statusStore.reset();
           streamRef.current = "";
           groundedRef.current = false;
           fallbackRef.current = undefined;
@@ -343,6 +345,7 @@ export default function App() {
           break;
         }
       }
+      statusStore.update(turnStatus);
     },
     [refreshConversations, refreshRaids, setCards, setStreaming],
   );
@@ -404,8 +407,7 @@ export default function App() {
       setError(CONNECTION_LOST);
       setStreaming(false);
       streamStore.set("");
-      setStatus(THINKING_DEFAULT);
-      setThought(null);
+      statusStore.reset();
       streamRef.current = "";
       groundedRef.current = false;
       fallbackRef.current = undefined;
@@ -564,9 +566,7 @@ export default function App() {
       pendingArtifactsRef.current = [];
       pendingProposalsRef.current = [];
       streamStore.set("");
-      setStatus(THINKING_DEFAULT);
-      setThought(null);
-      setQuietSince(Date.now());
+      statusStore.reset();
       setStreaming(true);
       const ok = socketRef.current?.send({
         conversation_id: convId,
@@ -811,9 +811,6 @@ export default function App() {
               <MessageList
                 messages={messages}
                 streaming={streaming}
-                status={status}
-                thought={thought}
-                quietSince={quietSince}
                 error={error}
                 streamCards={streamCards}
                 selectedBosses={selectedBosses}

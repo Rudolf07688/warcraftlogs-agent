@@ -48,7 +48,6 @@ describe("MessageList: reopened chat", () => {
       <MessageList
         messages={detail.messages}
         streaming={false}
-        status=""
         error={null}
         streamCards={[]}
         selectedBosses={[]}
@@ -73,7 +72,6 @@ describe("MessageList: the streaming answer", () => {
     const props = {
       messages: [{ role: "user" as const, content: "q" }],
       streaming: true,
-      status: "Thinking…",
       error: null,
       streamCards: [],
       selectedBosses: [],

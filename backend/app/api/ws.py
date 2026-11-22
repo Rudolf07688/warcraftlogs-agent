@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -80,6 +81,9 @@ SUPERSEDED_MESSAGE = "This chat continued in another window. The answer so far i
 SUPERSEDE_WAIT_S = 5.0
 # 076 review SEC-004: the 'superseded' notice is best effort; a stalled socket can't hold it up.
 SUPERSEDED_SEND_S = 1.0
+# The stored text of a turn that ended without any answer text. 085 (scope:085:drop-placeholder):
+# also the partial of a turn that dropped after retracting all it had streamed.
+NO_RESPONSE = "(no response)"
 # QA SEC-001: any other failure. Provider, database and WCL errors can carry internal
 # details (project ids, SQL), so the player gets this plus a reference to the log line.
 AGENT_ERROR_MESSAGE = (
@@ -189,6 +193,20 @@ async def _send_superseded(ws) -> None:
 async def _send(ws: WebSocket, frame) -> None:
     payload = frame.model_dump(mode="json") if hasattr(frame, "model_dump") else frame
     await ws.send_json(payload)
+
+
+def _retry_frame(record: dict) -> ModelRetryFrame:
+    """The ``model_retry`` frame with finite, non-negative numbers (085).
+
+    ``send_json`` writes a non-finite float as a bare ``NaN``/``Infinity``, which the browser's
+    ``JSON.parse`` rejects, so the retry label would never show. The shape is unchanged.
+    """
+    wait_s = float(record.get("wait_s") or 0.0)
+    return ModelRetryFrame(
+        attempt=max(int(record.get("attempt") or 0), 0),
+        max_attempts=max(int(record.get("max_attempts") or 0), 0),
+        wait_s=wait_s if math.isfinite(wait_s) and wait_s > 0 else 0.0,
+    )
 
 
 async def _forward_tool_start(ws: WebSocket, record: dict) -> None:
@@ -457,6 +475,7 @@ async def _run_chat_turn(
     # Stream the agent response, accumulating tokens into the final content.
     tokens: list[str] = []
     empty = False  # 048: the turn ended with the runner's no-answer message, not model text
+    retracted = False  # 080: some streamed text was progress, not answer (an interim record)
     proposal_ids: list[uuid.UUID] = []  # feature 031: proposals sent this turn
     switched = False  # feature 021: the turn moved to the sibling model
     # Backend agent tools act as this user (029, C7), for this turn only (sc-222): the token
@@ -485,10 +504,12 @@ async def _run_chat_turn(
                 elif kind == "interim":
                     # 080 (sc-572): the text so far was progress, not answer. The browser drops
                     # it too, so what this turn saves equals what it shows (live = reload).
-                    # Sent first: if the socket is gone, the browser kept the text and so does
-                    # the partial saved for it (080 review SEC-002).
-                    await _send(ws, InterimFrame(text=record.get("text") or ""))
+                    # Cleared before the send (085 BUG-004): a cancel landing during the send
+                    # must not save it. A drop may lose the frame; see the WebSocketDisconnect
+                    # branch below.
                     tokens.clear()
+                    retracted = True
+                    await _send(ws, InterimFrame(text=record.get("text") or ""))
                 elif kind == "tool_start":
                     await _forward_tool_start(ws, record)
                 elif kind == "tool_end":
@@ -499,7 +520,7 @@ async def _run_chat_turn(
                     await ws.send_json(record)
                 elif kind == "model_retry":
                     # Feature 011 / FR-003: the model is rate-limited; show "retrying".
-                    await _send(ws, ModelRetryFrame(**record))
+                    await _send(ws, _retry_frame(record))
                 elif kind == "model_fallback":
                     # Feature 021: the turn moved to the same-class sibling; show which.
                     switched = True
@@ -516,8 +537,13 @@ async def _run_chat_turn(
                 logger.exception("superseded turn: partial answer not saved")
         raise
     except WebSocketDisconnect:
-        # Client vanished mid-reply: keep what we have, can't send anything.
-        await _persist_partial(conv_id, tokens, identity, user_seq)
+        # Client vanished mid-reply: keep what we have, can't send anything. After a retraction
+        # with nothing kept, the browser may still hold the retracted text (the interim frame
+        # can be lost with the socket), and its reconnect reload keeps that local copy when the
+        # chat has no agent message (sc-376, for a restart). A stored no-answer partial makes the
+        # reload show what is stored instead (085 SEC-002 residual).
+        kept = tokens if tokens or not retracted else [NO_RESPONSE]
+        await _persist_partial(conv_id, kept, identity, user_seq)
         raise
     except ModelRateLimited as exc:
         # Feature 011 / FR-004, FR-005: the retry budget is spent. Plain-language error,
@@ -547,7 +573,7 @@ async def _run_chat_turn(
         set_refresh_actor(None)
         scratch.cleanup()
 
-    final_text = "".join(tokens) or "(no response)"
+    final_text = "".join(tokens) or NO_RESPONSE
     try:
         agent_msg_id, agent_seq = await _save_answer(identity, conv_id, final_text, proposal_ids)
     except _LostChat:
@@ -684,7 +710,7 @@ async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
     # Feature 015 / US2: whole coaching briefs of the content type this turn is about,
     # for each profile character's resolved spec (published briefs only, never drafts).
     profile_chars = list(own) + list(friends)
-    profile_settings, _ = await repo.get_profile_settings(session, tenant_id=tenant_id)
+    main_class, main_spec = await repo.get_main_selection(session, tenant_id=tenant_id)
     specs = [(c.class_name, c.active_spec) for c in profile_chars if c.class_name and c.active_spec]
     turn = None
     if specs:
@@ -707,8 +733,8 @@ async def _build_turn_preamble(session, tenant_id, user_text: str = "") -> str:
         available=turn.available if turn else {},
         content_type=turn.content_type if turn else "raid",
         content_type_note=turn.note if turn else None,
-        main_class=profile_settings.main_class if profile_settings else None,
-        main_spec=profile_settings.main_spec if profile_settings else None,
+        main_class=main_class,
+        main_spec=main_spec,
     )
 
 
