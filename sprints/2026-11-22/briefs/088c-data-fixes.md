@@ -3,9 +3,9 @@
 - **Branch:** `088c-data-fixes`. **Seat:** dev-1 (Ansel), fresh run. **Model:** opus medium. **Worktree:** `/home/rudolf/dev/wcl-worktrees/dev-c`.
 - **In parallel:** Vera (088a), Edda (088b). Not security-core; the Raids page read stays tenant-scoped.
 - **Tier S** (short plan, then implement; no Spec Kit). Fix round: fix the listed findings and nothing else (owner rule: no scope creep); anything more is a `backlog:<topic>` notice.
-- **Base ref:** `sprint-2026-11-22` at BASE_SHA (all four streams merged, full suite green at f1835c4). Create your branch from it and use it as `--base`.
+- **Base ref:** `sprint-2026-11-22` at 39c4b3f (all four streams merged, full suite green at f1835c4). Create your branch from it and use it as `--base`.
 - **Reports** (read the cited sections, they hold file:line and the failure path): /home/rudolf/dev/wcl-worktrees/sprint/qa-reports/2026-11-22/bugs.md (BUG-002), /home/rudolf/dev/wcl-worktrees/sprint/qa-reports/2026-11-22/security.md (SEC-002), board entry 91 (live F1, F2)
-- One test per finding that fails before the fix; a mutation bite for any guard; `check.py run --as <you> --base BASE_SHA` on the committed head; hand-off on the board and a short result (RESULT/RECEIPT lines, one line per finding with its test).
+- One test per finding that fails before the fix; a mutation bite for any guard; `check.py run --as <you> --base 39c4b3f` on the committed head; hand-off on the board and a short result (RESULT/RECEIPT lines, one line per finding with its test).
 - **Live pre-check:** if a question needs the real stack, post `live-check:088-pre` (kind `question`) with the exact command; team-lead runs it at once.
 
 ## Findings to fix
