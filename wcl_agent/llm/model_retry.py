@@ -106,6 +106,11 @@ class TurnStats:
     budget_retries: int = 0
     # 084 sc-586: Gemini calls that ended STOP with nothing in them and were re-run.
     empty_retries: int = 0
+    # 088a BUG-003: answer text is on screen (set by the runner, cleared when it is retracted as
+    # progress). A Gemini empty STOP is re-run only while it is False.
+    answer_shown: bool = False
+    # 088a BUG-001: Claude calls cut at CLAUDE_CALL_TIMEOUT_S after answer text (ended with CUT_LINE).
+    time_cuts: int = 0
 
     def record_prompt_tokens(self, count: int | None, cached: int | None = None) -> None:
         if count is None:
@@ -456,7 +461,9 @@ class RetryingGemini(Gemini):
         Gemini sometimes ends a call STOP with no text, no function call and 0 candidate
         tokens, on a first call as well as after a tool round; the turn would end with the
         no-answer message. That final response is held back and the call runs once more; the
-        second outcome stands, whatever it is. Counted in ``TurnStats.empty_retries``.
+        second outcome stands, whatever it is. Counted in ``TurnStats.empty_retries``. Not once
+        the turn shows answer text (``TurnStats.answer_shown``, 088a BUG-003): an empty closing
+        call after an answer or a chart is a valid end, and a re-run could repeat them.
         """
 
         def call():
@@ -472,7 +479,11 @@ class RetryingGemini(Gemini):
             yield response
         if watch.held is None:
             return
-        _count_rerun(current_turn.get(), "empty")
+        stats = current_turn.get()
+        if stats is not None and stats.answer_shown:
+            yield watch.held  # 088a BUG-003: the turn has its answer; an empty closing call ends it
+            return
+        _count_rerun(stats, "empty")
         logger.warning(
             "gemini call %s ended STOP with no text, no function call and no output tokens; "
             "retrying once",
@@ -496,6 +507,8 @@ BUDGET_RETRY_EFFORT = "low"
 # cut off and handled like the thinking-only cut-off (scope:084:claude-call-time). Each request
 # gets its own (a rate-limit retry starts a new one); the waits between them are not counted.
 CLAUDE_CALL_TIMEOUT_S = 180.0
+# 088a BUG-001: the closing line of an answer cut at that bound, so it never passes as complete.
+CUT_LINE = "This answer was cut off at the time limit."
 # 079 sc-568: the instruction's last section, the only part that changes during a session.
 _TIME_OPEN, _TIME_CLOSE = "<CURRENT_TIME>", "</CURRENT_TIME>"
 
@@ -566,8 +579,10 @@ def _turn_layout(request: dict[str, Any], stats: TurnStats) -> None:
     block becomes the first block of the turn's user message, before its preamble. A fourth
     breakpoint marks the end of the turns older than ``keep_turns()``: ``context_trim`` has
     stubbed their results and they no longer change, so the next turn reads them from the cache
-    and writes only the kept turns and its new message (board measure:087). Placement reads only
-    roles and block types, never text; at most four breakpoints (tools, head, history, end).
+    and writes only the kept turns and its new message (board measure:087); from the turn after,
+    the previous turn's boundary is marked as well (088a PERF-001, see below). Placement reads
+    only roles and block types, never text; at most four breakpoints (tools or the previous
+    boundary, head, history, end).
     """
     split = _split_time_block(request.get("system"))
     messages = request.get("messages")
@@ -582,14 +597,28 @@ def _turn_layout(request: dict[str, Any], stats: TurnStats) -> None:
     keep = keep_turns()
     if len(starts) <= keep:
         return
-    for message in reversed(messages[: starts[-keep]]):
+    _mark_history_end(messages[: starts[-keep]], head["cache_control"])
+    # 088a PERF-001: Claude looks back only ~20 blocks from a breakpoint, and a heavy turn (rounds
+    # of parallel calls) moves the boundary further. So the previous turn start's boundary is
+    # marked too: the exact entry it wrote, read with no look-back. The head entry covers the
+    # tools, so their breakpoint goes, keeping four (head, previous boundary, boundary, end).
+    if len(starts) > keep + 1 and _mark_history_end(messages[: starts[-keep - 1]], head["cache_control"]):
+        tools = request.get("tools")
+        if isinstance(tools, list) and tools and isinstance(tools[-1], dict):
+            tools[-1].pop("cache_control", None)
+
+
+def _mark_history_end(messages: list[dict], cache_control: Any) -> bool:
+    """Put ``cache_control`` on the last cacheable block of ``messages``; False without one."""
+    for message in reversed(messages):
         content = message.get("content")
         cacheable = [
             b for b in content if isinstance(b, dict) and b.get("type") not in _UNCACHEABLE
         ] if isinstance(content, list) else []
         if cacheable:
-            cacheable[-1]["cache_control"] = head["cache_control"]
-            return
+            cacheable[-1]["cache_control"] = cache_control
+            return True
+    return False
 
 
 # --- one re-run per model call (079 sc-567, 084 sc-580 / sc-586) -------------------------------
@@ -600,17 +629,23 @@ class ModelCallTimedOut(Exception):
 
 
 async def _within(gen: AsyncGenerator[Any, None], seconds: float) -> AsyncGenerator[Any, None]:
-    """Pass ``gen`` on until ``seconds`` have passed on :data:`_clock`, then cut it off.
+    """Pass ``gen`` on until it has taken ``seconds`` on :data:`_clock`, then cut it off.
 
-    The bound holds while waiting for the next chunk (``asyncio.timeout``, in this task, so a
-    stream that sends nothing more is cut too) and for each chunk as it arrives (one that comes
-    in past the bound is dropped). ``gen`` is always closed, so a cut-off stream releases its
-    connection. Raises :class:`ModelCallTimedOut` on a cut.
+    Only the time spent waiting on ``gen`` counts, not the time the consumer holds each chunk
+    (088a PERF-007). The bound holds while waiting for the next chunk (``asyncio.timeout``, in
+    this task, so a stream that sends nothing more is cut too) and is checked before each wait,
+    so a stream that never yields to the loop is cut as well. A chunk that has arrived is always
+    passed on, even past the bound (088a BUG-007: it can be the final response with the tool
+    calls). ``gen`` is always closed, so a cut-off stream releases its connection. Raises
+    :class:`ModelCallTimedOut` on a cut.
     """
-    deadline = _clock() + seconds
+    spent = 0.0
     try:
         while True:
-            bound = asyncio.timeout(max(deadline - _clock(), 0.0))
+            if spent >= seconds:
+                raise ModelCallTimedOut(f"model request cut off after {seconds:g}s")
+            started = _clock()
+            bound = asyncio.timeout(seconds - spent)
             try:
                 async with bound:
                     item = await anext(gen)
@@ -620,8 +655,7 @@ async def _within(gen: AsyncGenerator[Any, None], seconds: float) -> AsyncGenera
                 if bound.expired():
                     raise ModelCallTimedOut(f"model request cut off after {seconds:g}s") from None
                 raise
-            if _clock() > deadline:
-                raise ModelCallTimedOut(f"model request cut off after {seconds:g}s")
+            spent += _clock() - started
             yield item
     finally:
         await gen.aclose()
@@ -670,15 +704,35 @@ def _count_rerun(stats: TurnStats | None, kind: str) -> None:
         stats.budget_retries += 1
 
 
-def _cut_response(text: list[str]) -> LlmResponse:
-    """The final response of a call cut off at its time bound: the answer text it streamed, if any
-    (scope:084:time-cut-after-text), so the turn and its history keep what the player saw."""
-    joined = "".join(text)
-    return LlmResponse(
-        content=genai_types.Content(role="model", parts=[genai_types.Part(text=joined)]) if joined else None,
-        finish_reason=genai_types.FinishReason.MAX_TOKENS,
-        partial=False,
-    )
+def _has_text(text: list[str]) -> bool:
+    """Answer text streamed: whitespace alone is none (088a BUG-008)."""
+    return bool("".join(text).strip())
+
+
+def _cut_responses(text: list[str], model: str | None) -> list[LlmResponse]:
+    """The end of a call cut off at its time bound.
+
+    Without answer text, an empty final response. With it (scope:084:time-cut-after-text), the
+    :data:`CUT_LINE` streamed once as the answer's closing paragraph, then a final response with
+    the text and that line, so the turn and its history keep what the player saw and never pass
+    a cut answer as complete (088a BUG-001). Counted in ``TurnStats.time_cuts``.
+    """
+    if not _has_text(text):
+        return [LlmResponse(finish_reason=genai_types.FinishReason.MAX_TOKENS, partial=False)]
+    stats = current_turn.get()
+    if stats is not None:
+        stats.time_cuts += 1
+    logger.warning("claude call %s cut off after %gs with answer text; ending it there", model, CLAUDE_CALL_TIMEOUT_S)
+    line = "\n\n" + CUT_LINE
+
+    def response(value: str, partial: bool) -> LlmResponse:
+        return LlmResponse(
+            content=genai_types.Content(role="model", parts=[genai_types.Part(text=value)]),
+            finish_reason=None if partial else genai_types.FinishReason.MAX_TOKENS,
+            partial=partial,
+        )
+
+    return [response(line, True), response("".join(text) + line, False)]
 
 
 def _empty_stop(response: LlmResponse) -> bool:
@@ -784,8 +838,8 @@ if _Claude is not None:
 
             084 sc-580: each streamed request runs at most ``CLAUDE_CALL_TIMEOUT_S`` (thinking
             included). A request cut off before any answer text is handled like the budget
-            cut-off; one cut off after answer text began ends with that text (a re-run would
-            repeat it), as does a cut-off re-run.
+            cut-off; one cut off after answer text began ends with that text and :data:`CUT_LINE`
+            (a re-run would repeat it; 088a BUG-001), as does a cut-off re-run.
             """
             if not stream:
                 llm_request.config = llm_request.config or genai_types.GenerateContentConfig()
@@ -802,9 +856,10 @@ if _Claude is not None:
             watch = _CallWatch()
             async for response in _watch(call(), watch, _thinking_only_cutoff):
                 yield response
-            if watch.timed_out and (watch.text or watch.final):
+            if watch.timed_out and (_has_text(watch.text) or watch.final):
                 if not watch.final:
-                    yield _cut_response(watch.text)
+                    for response in _cut_responses(watch.text, llm_request.model):
+                        yield response
                 return
             if watch.held is None and not watch.timed_out:
                 return
@@ -829,7 +884,8 @@ if _Claude is not None:
             async for response in _watch(call(), rerun, lambda _response: False):
                 yield response
             if rerun.timed_out and not rerun.final:
-                yield _cut_response(rerun.text)
+                for response in _cut_responses(rerun.text, llm_request.model):
+                    yield response
 
 else:  # pragma: no cover - only without the anthropic extra
     RetryingClaude = None  # type: ignore[assignment,misc]

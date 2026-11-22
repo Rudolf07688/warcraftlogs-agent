@@ -270,9 +270,10 @@ async def test_a_call_still_thinking_at_the_bound_is_cut_and_rerun_once_at_low_e
     assert parent.calls == 2 and parent.efforts == [None, "low"]
     assert parent.closed == [True, True]  # the cut stream was closed, not left running
     assert _answer_text(out) == "The short version."
-    # Cut on the first chunk past the bound: 180 s at 50 s a chunk is the 4th chunk (200 s).
+    # Cut at the wait after the first chunk past the bound: 180 s at 50 s a chunk is the 4th
+    # chunk (200 s), which arrived and is passed on (088a BUG-007).
     assert clock["t"] - started == 200.0
-    assert len([r for r in out if r.partial and r.content.parts[0].thought]) == 3
+    assert len([r for r in out if r.partial and r.content.parts[0].thought]) == 4
     assert stats.budget_retries == 1
 
 
@@ -300,7 +301,8 @@ async def test_a_call_cut_after_answer_text_keeps_the_text_and_is_not_rerun(monk
     assert parent.calls == 1 and parent.closed == [True]
     final = out[-1]
     assert not final.partial and final.finish_reason == MAX_TOKENS
-    assert final.content.parts[0].text == "Short version: frost is "  # what the player saw
+    # What the player saw (the 4th chunk arrived, 088a BUG-007), then the cut line (088a BUG-001).
+    assert final.content.parts[0].text == "Short version: frost is easy.\n\n" + model_retry.CUT_LINE
     assert stats.budget_retries == 0
 
 
