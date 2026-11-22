@@ -5,7 +5,7 @@ compaction, a resume or a new session while Status is "active". Keep it under ab
 lines, and rewrite it (don't append) at the end of every meta exchange. -->
 
 Status: active
-Updated: 2026-11-22 (P17 built, first 1:1 done)
+Updated: 2026-11-22 (P17 built; sprint 2026-11-22 merged + pushed)
 
 ## Topic
 
@@ -14,27 +14,24 @@ The agent-team redesign: persistence and autonomy. Full record in
 
 ## Where we are
 
-- 2026-11-22: main pushed at 883f5a9 (sprint 2026-11-20 + the 11-20 retro rules, which
-  landed after Maren's seat review; see the change log). Owner marked all 32 Under Review
-  stories Done (the nine 11-20 stories plus older Raids, onboarding, portraits, telemetry).
-  Board: nothing in Under Review.
-- Next app work, my recommendation to the owner: a chat-reliability sprint from the 11-20
-  QA follow-ups sc-580..587 (~17 pts; Gemini empty STOP answers sc-586 first, Claude output
-  budget sc-580, history cache rewrite sc-581), one developer straight through, QA sweep at
-  the end. Owner hasn't said go yet.
-- Cost 1.08 M/pt on 11-20, the cheapest app sprint so far (team report
-  `meta/sprints/2026-11-20/team-report.html`).
+- 2026-11-22: chat-reliability sprint (sc-580..587, 17 pts) merged to main a97631d and pushed
+  on the owner's word. Stories Under Review. Team report:
+  `meta/sprints/2026-11-22/team-report.html`. Cost 1.63 M/pt (fix round 3.74 = 13%; 1.41
+  without it); 11-20 was 1.08.
+- Deferred: sc-603..608 (sc-608 = Claude reads the owning boss as a location in the
+  wrong-boss mechanic answer) + sc-436 flaky raw-store tests.
+- New meta proposals from 11-22: livecheck in its own workspace (live-test chats pollute
+  search_knowledge); facts.py stale skips facts re-stamped this sprint (Tomas); fix-round
+  briefs name stories (3 devs + Maren); point QA follow-ups for the hardening.
 
 ## In discussion now
 
 - **P17 built and first run.** `member.py goal` + wrap-up step 10 "Teach"; Nils's 1:1 done (goal 1:
-  volume test at the bound); bounds now in briefs (PO) and developer hard rule 11; sc-597
-  for a shared volume-test fake. Next: follow up dev-3 `unbounded` at the next wrap-up.
+  volume test at the bound). Nils not seated 11-22, so his goal carries; follow up next wrap-up.
 
 ## Next meta session
 
-1. Seat review (P16 step 5) of the 11-07b retro proposals plus my `board.py … --instead`
-   decision field.
+1. The 11-22 proposals above, then the seat review (P16 step 5) of the 11-07b proposals.
 2. P16 steps 2–4 (lessons that fire via hooks, fewer tools, cost per point by stream type).
 
 ## Open with the owner
@@ -46,5 +43,5 @@ The agent-team redesign: persistence and autonomy. Full record in
 ## How to resume
 
 1. Read `meta/README.md`, then this file, then P16 in `meta/team-optimisation.md`, then
-   `meta/sprints/2026-11-20/team-report.html` (retro lines).
+   `meta/sprints/2026-11-22/team-report.html` (retro lines).
 2. Owner preferences: `meta/owner-preferences.md`.

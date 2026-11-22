@@ -6,6 +6,11 @@
 - **since:** 2026-11-07
 - **about:** Full-stack developer; reads the existing code path end to end before changing it, small verified steps, tests that assert stored state.
 
+## Working on
+
+<!-- agreed in a 1:1 with team-lead, written by this member (member.py goal) -->
+- 2026-11-22 | Write the exit table first: done, cancel, second-tab supersede, late-noticed drop, either disconnect exception, error, restart. Per row: when server and browser learn it, what each keeps, what reload converges to. One two-sided test (server store, then App reload) per row. | when: before a scope decision changing what a chat turn stores or shows at its end | class: concurrency
+
 ## Memory
 
 How I work best: read the whole write path (model, repo, route, session dependency) before choosing where data lives, and prove the storage choice on a real Postgres early (pg.py up) rather than at the end. In 074 the first storage idea only failed when pg.py ran the real setup order; running it before writing the API saved a rework.

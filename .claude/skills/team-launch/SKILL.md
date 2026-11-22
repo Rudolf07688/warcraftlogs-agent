@@ -115,9 +115,17 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
   - **Judge answers, not just arrival.** Add an `EXPECT` entry for every prompt whose answer
     the stored report fixes. Pin facts from `livecheck.py --facts <code>` (e.g.
     `mode=hybrid`), never a model's words or a regex over the answer's wording (11-05b: a
-    cooldown regex passed on wording alone). The run prints PASS/FAIL per turn and a
-    `LIVE RESULT` line, and exits 1 on any FAIL or EMPTY. Report a FAIL as a finding with a
-    ticket.
+    cooldown regex passed on wording alone; 11-22: "coiled altar" passed an answer that put
+    the mechanic on the wrong boss, so pin the relation, not a keyword it contains). Read the
+    tool result behind each PASS on a tool question (ADK `events` by session), and prove a tool
+    fix with a direct call too: a model may never call the tool. The run prints PASS/FAIL per
+    turn and a `LIVE RESULT` line, and exits 1 on any FAIL or EMPTY. Report a FAIL as a
+    finding with a ticket.
+  - **Both providers.** `.env` runs Claude. For Gemini, add a compose override that sets
+    `WCL_LLM_PROVIDER: vertex` on the backend and run with
+    `LIVECHECK_MODEL=gemini-3.1-pro-preview`. Per-call usage (cache reads, finish reasons) is
+    in ADK `events.event_data->'usage_metadata'`; Loki redacts the turn-stats token numbers,
+    and `docker logs` of the backend doesn't.
 - **If an agent has stalled** (it's idle and waiting on something the board shows was
   already answered), send it one self-contained message pointing at the board entry.
 - **Pass on owner messages:** if the owner asks something or changes direction, post it on

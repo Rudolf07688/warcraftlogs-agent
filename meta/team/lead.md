@@ -26,7 +26,8 @@ Running the team:
 - Name tickets for the owner: a plain name, the id in brackets at most. Search Shortcut before filing: my sc-455 duplicated sc-428 (11-04b).
 - Count on the board, not from memory. Look at a file right before writing it, never a bare `>`; before deleting a worktree, list its ignored files (qa-reports/) and check no container still mounts it (11-05b: four obs services did).
 - Crash recovery: git fsck, board and transcripts for NUL tails; resume agents by ID.
-- Pre-checks are my cheapest lever: answer them at once (11-20: seven in 1–5 min, two root causes). Dry-run new livecheck judge logic on one turn before the pass (11-20: two checker bugs). Run the tip pass on both providers: each caught a FAIL the other missed.
+- Pre-checks are my cheapest lever: answer them at once (11-20: seven; 11-22: three in 1–10 min). Run the tip pass on both providers: each caught a FAIL the other missed (11-20, 11-22). My checker gaps recur (11-20, 11-22): read the tool result behind each PASS; the rest is in team-launch.
+- 1:1 briefs: merge ledger rows by root cause before quoting counts (Edda's 11-22 brief counted one miss three times).
 
 Live checks and reports:
 - The live pass on real data is where the bugs are: on 11-04b the stack proofs passed on fresh synthetic data while the real board dir jammed Loki and ratio stats read 341749%. Keep the live pass; push teams to seed old or odd data and assert values.
