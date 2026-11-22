@@ -3,7 +3,7 @@ id: runner-test-fakes
 anchors: [file:backend/app/agent_runner.py, file:backend/tests/test_context_injection.py]
 by: dev-3 Nils
 source: meta/team/dev-3.md L16; meta/sprints/2026-11-05/board.jsonl #39
-verified: 8986855 2026-11-20
+verified: 9107884 2026-11-22
 ---
 The `agent_runner` tests feed `SimpleNamespace` events and parts through fake runners
 (`test_046_empty_turn`, `test_tool_start_once`, `test_context_injection`, whose strict

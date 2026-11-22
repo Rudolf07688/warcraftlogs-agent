@@ -2,7 +2,7 @@
 id: wcl-time-window-args
 anchors: [sym:wcl_agent/tools/report_tools.py::OPEN_END_MS, sym:wcl_agent/tools/report_tools.py::player_details_query, sym:wcl_agent/tools/report_tools.py::ranked_fight_ids]
 by: dev-2 Tomas
-verified: 365129b 2026-11-20
+verified: 9107884 2026-11-22
 ---
 WCL report fields are picky about window args: events(startTime) with no endTime returns no
 events at all (sc-570); playerDetails(fightIDs: null) (sc-573) and rankings(fightIDs: null)
