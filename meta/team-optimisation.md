@@ -766,6 +766,37 @@ the memory themselves.
   - Maren's brief gaps are a different gap each time, so that's learning, not repeating.
   - The prompt-cut candidate was a single instance.
 
+### P18. A living team lexicon (owner idea 2026-11-22; owner go on the harvest)
+
+Owner: "some sort of map (think rosetta stone) that can help agents shorten certain phrases or
+commands - compacting tokens for efficient communication in a way that the team maintains and
+optimizes by learning. So it's not static. The team, the 'culture' will have control of it."
+
+- **Where tokens go (11-22):** 0.9 M output vs 192 M cache reads over 1,191 calls; 131 board
+  messages. Shortening what agents *say* saves little; what every call *re-reads* (agent
+  definitions about 97 KB, briefs, skills) is the big lever. A likely bigger win than tokens is
+  **precision**: one term, one meaning, fewer misreadings and fix rounds (13% on 11-22).
+- **The team already has one, unwritten:** D18, tier M, security-core, fix round, hand-off,
+  receipt, livecheck, M/pt. New agents absorb it from briefs.
+- **Three levels:** concept terms (a word stands for a definition or procedure, looked up on
+  demand: the main value); a message grammar for board posts (`BLOCK`, `ASK`, `HANDOFF`:
+  parseable, not only shorter); raw abbreviations (mostly skip: tokenizers often split them as
+  long as the word, and models misread invented acronyms).
+- **Living:** coin (`lex.py propose`, with a "do we already have a term for this?" check by
+  embeddings), earn (usage counted per sprint, estimated saving), confusion signal (misuse
+  flagged by the critique ledger or livecheck judge), a token budget for the always-loaded core
+  (a new term must beat the weakest), retire unused terms, ratify at retro, team-lead curates.
+- **Boundaries:** owner-facing text stays plain (pref 23); reports expand terms. Code, commits
+  and architecture docs stay plain.
+- **Storage (owner 2026-11-22: pgvector, not Weaviate):** the lexicon is plain files in git (as
+  D20); embeddings are a derived cache in a team pgvector container, never the app database.
+- **Step 1, the harvest (owner go):** `.claude/team/lexharvest.py` over boards, briefs, memories
+  and the agent transcripts still on disk: coined terms, repeated phrases, and paraphrase
+  clusters (gemini-embedding-001, task CLUSTERING, 768 dims). Output in
+  `meta/lexicon/harvest-2026-11-22/`.
+- **Later (owner):** capture agents' semantic outputs to build a "heatmap" for analysis. The
+  harvest's `lex_unit` table (text, role, source, sprint, vector) is the first shape of that.
+
 ## What changed in the agent setup (2026-10-31)
 
 | Before | After |
@@ -1033,3 +1064,4 @@ through respawns as the same named member, with its own small, curated memory. I
 - **2026-11-22 (meta, owner idea):** teach members after the retro, like a co-worker, instead of relying on them to remember. Recorded as **P17**: a critique ledger from existing signals → person vs system verdict → a read-only 1:1 where the member writes one agreed practice into a new "Working on" section → injected at the moment of work (P16 step 2) → follow-up at the next wrap-up. Proposed: a pilot extraction over 11-01..11-20 before building.
 - **2026-11-22 (P17 pilot):** owner go on the pilot and the "Working on" section (pref 30). Ledger of 357 rows over 11-01..11-20 in `meta/coaching/`. One person case (Nils, bounds on new paths); the 11-07 system fixes measurably worked; the person rule tightened to habits.
 - **2026-11-22 (P17 steps built, owner go on all three):** `member.py goal` ("Working on", max 2, member-written, prints in `me` and `roster`, close logs to `meta/coaching/goals-log.jsonl`) and team-launch wrap-up step 10 "Teach". First 1:1, Nils (78k): pattern confirmed, cause "hostile-input tests start from content, never volume", goal 1 written by him. Maren's seat review (70k) reshaped the Bounds bullet and dropped the brief-pairing line. Landed: `product-owner.md` Bounds bullet and rework re-check "liveness and cost", `developer.md` hard rule 11 "Volume at the bound". Backlog: shared volume-test fake (sc-597). Follow-up: dev-3 `unbounded` rows at the next wrap-ups.
+- **2026-11-22 (meta, owner idea → P18):** a living team lexicon. Owner: pgvector, harvest first, heatmap of semantic outputs later. Harvest built and run (`.claude/team/lexharvest.py`, 5,246 messages, 37k units, gemini-embedding-001, 300 groups at 0.93): self-grown protocol ACK/GO/MERGED died with the SM role; paths ~33k tokens; status lines and brief boilerplate repeat. Measured: abbreviations cost more than IDs ("QA sec rvw @ HO" 11 tok vs "D18 review" 4). Report `meta/lexicon/harvest-2026-11-22/report.html`; seed proposal waits on the owner.
