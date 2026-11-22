@@ -54,6 +54,7 @@ from wcl_agent.tools.report_tools import (
     _table_query,
     neutralise,
     player_details_query,
+    ranked_fight_ids,
     report_query,
 )
 
@@ -147,17 +148,23 @@ def _key(query: str, variables: dict[str, Any]) -> str:
     return _flight_key(query, variables)
 
 
-def part_keys(code: str, boss_fights: list[int]) -> dict[str, PartKind]:
+def part_keys(code: str, boss_fights: list[int], ranked_fights: list[int]) -> dict[str, PartKind]:
     """The store keys of the rows our tools would have written for ``code``, in reading order:
     the whole-report rows first, then per boss fight. Each key is the tool's own query and
-    variables (``_flight_key``)."""
+    variables (``_flight_key``); ``ranked_fights`` is the whole-report rankings filter
+    (``ranked_fight_ids``)."""
     whole = {"code": code, "fightIDs": _fight_ids(0)}
+    whole_rankings = {} if not ranked_fights else {
+        _key(report_query(_RANKINGS_FIELD, _FIGHTS_DECL), {"code": code, "fightIDs": ranked_fights}): "rankings"
+    }
     participants_field, participants_decls, participants_vars = participants_query(0)
     details_field, details_decls, details_vars = player_details_query(0)
     keys: dict[str, PartKind] = {
         _key(report_query(participants_field, participants_decls), {"code": code, **participants_vars}): "details",
         _key(report_query(details_field, details_decls), {"code": code, **details_vars}): "details",
         **{_key(report_query(field, _FIGHTS_DECL), whole): "details" for field in _LEGACY_DETAILS_FIELDS},
+        **whole_rankings,
+        # Before 086 the tool sent fightIDs: null (WCL can fail on it, sc-587): a read-only fallback.
         _key(report_query(_RANKINGS_FIELD, _FIGHTS_DECL), whole): "rankings",
     }
     for fight in boss_fights:
@@ -198,13 +205,14 @@ def _duration(report: dict[str, Any]) -> int | None:
     return end - start
 
 
-def _fight_names(report: dict[str, Any]) -> tuple[dict[int, str], list[int]]:
-    """(fight id → name, the kickoff's boss fights) of a stored summary; empty when malformed."""
+def _fight_names(report: dict[str, Any]) -> tuple[dict[int, str], list[int], list[int]]:
+    """(fight id → name, the kickoff's boss fights, the whole-report rankings filter) of a stored
+    summary; empty when malformed."""
     try:
         summary = _summary_from(str(report.get("code")), report)
-        return {f.id: f.name for f in summary.fights}, pick_boss_fights(summary)
+        return {f.id: f.name for f in summary.fights}, pick_boss_fights(summary), ranked_fight_ids(summary)
     except (KeyError, TypeError, ValueError, AttributeError):
-        return {}, []
+        return {}, [], []
 
 
 def _detail_rows(details: Any, region: Any) -> list[dict[str, Any]]:
@@ -422,8 +430,8 @@ async def _read(
     found = await read_visible_summary(session, code, tenant_id=tenant_id, since=since)
     stale = found is None and await stored_summary_exists(session, code)
     report = _report_object(await _loads(found[0]), code) if found else None
-    names, bosses = _fight_names(report) if report else ({}, [])
-    keys = part_keys(code, bosses)
+    names, bosses, ranked = _fight_names(report) if report else ({}, [], [])
+    keys = part_keys(code, bosses, ranked)
     parts = await read_visible_parts(session, code, list(keys), _PATHS, tenant_id=tenant_id, since=since)
 
     stamps = [found[1]] if report is not None else []
