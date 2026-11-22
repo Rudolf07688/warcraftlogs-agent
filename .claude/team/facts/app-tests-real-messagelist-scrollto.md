@@ -2,7 +2,7 @@
 id: app-tests-real-messagelist-scrollto
 anchors: [file:frontend/src/components/MessageList.tsx]
 by: dev-5 Edda
-verified: 3dcf75c 2026-11-20
+verified: 9107884 2026-11-22
 ---
 App tests that render the real MessageList must stub HTMLElement.prototype.scrollTo (jsdom lacks
 it): on 'done' ScrollToQuestion scrolls the question into view, the throw is caught by the

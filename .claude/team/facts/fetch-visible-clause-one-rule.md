@@ -3,7 +3,7 @@ id: fetch-visible-clause-one-rule
 anchors: [sym:backend/app/repositories/raw_fetches.py::fetch_visible_clause, sym:backend/app/repositories/raw_fetches.py::fetch_names_code, comp:postgres]
 by: dev-3 Nils, sm Ilse
 source: meta/team/dev-3.md L12; meta/sprints/2026-11-01/board.jsonl #15, #106, #107
-verified: 03a3982 2026-11-07
+verified: 9107884 2026-11-22
 ---
 Visibility for the global tables (`raw_fetches`, `kb_chunks`) lives in the SQL of every read
 branch, and it has one definition: `raw_fetches.fetch_visible_clause`, the 039 rule (every code

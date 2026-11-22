@@ -3,7 +3,7 @@ id: stream-response-shared-by-jobs
 anchors: [sym:backend/app/agent_runner.py::stream_response, sym:backend/app/agent_runner.py::_run_turn]
 by: dev-3 Nils
 source: meta/team/dev-3.md L15; meta/sprints/2026-11-01b/board.jsonl #51; meta/sprints/2026-11-05/board.jsonl #39
-verified: 8986855 2026-11-20
+verified: 9107884 2026-11-22
 ---
 `stream_response` and `_run_turn` serve chat turns AND greeting, guide jobs and evals. Those
 jobs run as `USER_ID` (`"local_user"`). Chat-only behaviour keys on `user_id != USER_ID`,
