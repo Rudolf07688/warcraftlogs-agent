@@ -18,4 +18,4 @@ Bounds tests come before each path's code (developer rule 11).
 ## Phase 4: Polish
 - [X] T008 Mutation bites for the re-run cap and the time bound (mutate.py)
 - [X] T009 Existing suites: test_079, test_080_thinking_runner, test_046_empty_turn, test_model_retry, test_runner_retry
-- [ ] T010 detect-changes, receipt, facts, hand-off
+- [X] T010 detect-changes, receipt, facts, hand-off
