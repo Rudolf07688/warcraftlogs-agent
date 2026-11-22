@@ -2,7 +2,7 @@
 id: raid-summary-tool-keys
 anchors: [sym:backend/app/services/raid_summary.py::part_keys, file:wcl_agent/tools/participants.py]
 by: dev-3 Nils
-verified: 8986855 2026-11-20
+verified: bc0deef 2026-11-22
 ---
 The Raids page summary (072) finds stored rows by recomputing the exact store keys our tools
 send: participants and player-details (fight 0), per-boss Summary tables and get_report_rankings
