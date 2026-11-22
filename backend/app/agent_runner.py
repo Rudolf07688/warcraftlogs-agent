@@ -313,7 +313,7 @@ async def stream_response(
         logger.info(
             "turn stats model=%s requests=%d rounds=%d retries=%d waited_s=%.1f outcome=%s "
             "prompt_tokens=%s max_prompt_tokens=%s cached_tokens=%s trimmed=%d tool_calls=%d "
-            "budget_retries=%d empty_retries=%d fallback=%s",
+            "budget_retries=%d empty_retries=%d time_cuts=%d fallback=%s",
             stats.model,
             stats.model_requests,
             stats.tool_rounds,
@@ -327,6 +327,7 @@ async def stream_response(
             tool_calls,
             stats.budget_retries,
             stats.empty_retries,
+            stats.time_cuts,
             stats.switched_to or "-",
         )
 
@@ -452,6 +453,8 @@ async def _run_turn(
         held = text
         text_sent = False  # nothing kept: the next text starts the answer, no paragraph join
         answered = False  # 084 (BUG-006): retracted text is no answer, even with the call pending
+        if stats is not None:
+            stats.answer_shown = False  # 088a BUG-003: progress, so no answer on screen
         return {"type": "interim", "text": _status_line(text, complete=True)}
 
     async for event in runner.run_async(
@@ -591,6 +594,8 @@ async def _run_turn(
                     text = PARAGRAPH + text
                 streamed = text_sent = True
                 answered = answered or bool(text.strip())
+                if stats is not None and text.strip():
+                    stats.answer_shown = True  # 088a BUG-003: read by the Gemini empty-STOP re-run
                 if chat:
                     segment.append(text)
                 yield {"type": "token", "text": text}
