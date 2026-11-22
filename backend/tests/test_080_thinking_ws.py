@@ -147,7 +147,12 @@ async def test_a_dropped_socket_after_a_retraction_saves_no_interim_text(as_user
     except WebSocketDisconnect:
         pass
     conv_id = uuid.UUID(sock.frames[0]["conversation_id"])
-    assert await _messages(patched_db, conv_id, as_user.tenant_id) == [("user", "why?", "complete")]
+    # 085 scope:085:drop-placeholder: a stored no-answer partial, so the reconnect reload shows
+    # the server's word, never the browser's copy of retracted text.
+    assert await _messages(patched_db, conv_id, as_user.tenant_id) == [
+        ("user", "why?", "complete"),
+        ("agent", "(no response)", "partial"),
+    ]
 
 
 class _ClientSocket:
@@ -204,9 +209,10 @@ class _DropOnInterim(_FakeSocket):
         await super().send_json(payload)
 
 
-async def test_a_drop_as_the_interim_frame_is_sent_saves_what_the_browser_kept(as_user, patched_db, monkeypatch):
-    # 080 review SEC-002: the browser keeps its streamed text as the partial; so must the server,
-    # or the reload would show something the server never stored.
+async def test_a_drop_as_the_interim_frame_is_sent_stores_no_retracted_text(as_user, patched_db, monkeypatch):
+    # 080 review SEC-002 residual (085): whether or not the browser got the frame, the retracted
+    # text is never stored; the no-answer partial makes the reconnect reload replace the browser's
+    # local copy with what is stored (App.reloadAfterDrop), so stored = PDF = reopened.
     _quiet(monkeypatch, _stream({"type": "token", "text": INTERIM}, {"type": "interim", "text": STATUS}))
     sock = _DropOnInterim()
     try:
@@ -216,9 +222,10 @@ async def test_a_drop_as_the_interim_frame_is_sent_saves_what_the_browser_kept(a
     conv_id = uuid.UUID(sock.frames[0]["conversation_id"])
     assert await _messages(patched_db, conv_id, as_user.tenant_id) == [
         ("user", "why?", "complete"),
-        ("agent", _live_answer(sock.frames), "partial"),
+        ("agent", "(no response)", "partial"),
     ]
-    assert _live_answer(sock.frames) == INTERIM
+    detail = (await as_user.client.get(f"/api/conversations/{conv_id}")).json()
+    assert INTERIM not in [m["content"] for m in detail["messages"]]
 
 
 async def test_an_over_long_status_line_is_cut_not_a_failed_turn(as_user, patched_db, monkeypatch):

@@ -46,7 +46,6 @@ function props(over: Partial<ComponentProps<typeof MessageList>>): ComponentProp
   return {
     messages: [],
     streaming: false,
-    status: "",
     error: null,
     streamCards: [],
     selectedBosses: [],
@@ -73,7 +72,7 @@ describe("MessageList: scroll to the question when the answer completes", () => 
   it("does nothing if the reader scrolled away while it streamed", () => {
     const { rerender } = render(<MessageList {...props({ messages: asking, streaming: true })} />);
     ctx.isAtBottom = false; // scrolled up
-    rerender(<MessageList {...props({ messages: asking, streaming: true, status: "x" })} />);
+    rerender(<MessageList {...props({ messages: asking, streaming: true })} />);
     rerender(<MessageList {...props({ messages: answered, streaming: false })} />);
     expect(scrollTo).not.toHaveBeenCalled();
     expect(ctx.stopScroll).not.toHaveBeenCalled();

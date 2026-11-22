@@ -8,17 +8,13 @@ import { EncounterPicker } from "./EncounterPicker";
 import { PlotlyArtifact } from "./PlotlyArtifact";
 import { ProposalCard } from "./ProposalCard";
 import { useStreamText } from "../lib/streamStore";
+import { useTurnStatus } from "../lib/statusStore";
 import { firstTokenRendered } from "../telemetry/chatEvents";
 import { THINKING_DEFAULT, thinkingElapsedLabel } from "../toolLabels";
 
 interface Props {
   messages: Message[];
   streaming: boolean;
-  status: string;
-  /** Feature 080: the live status line (latest thought or interim text), plain text. */
-  thought?: string | null;
-  /** Feature 080: when the turn last reported anything (ms epoch), for "Thinking… Ns". */
-  quietSince?: number;
   error: string | null;
   streamCards: SpellCardState[];
   selectedBosses: number[];
@@ -87,19 +83,12 @@ function useQuietSeconds(since: number | undefined, active: boolean): number {
 }
 
 // Feature 080 (sc-569, sc-572): what the turn is doing while no answer text is showing. Before
-// any tool card: the animated indicator; under the cards: one transient line. Model text is
-// rendered as a text node only, never as markdown or HTML.
-function TurnStatus({
-  status,
-  thought,
-  quietSince,
-  cards,
-}: {
-  status: string;
-  thought: string | null;
-  quietSince?: number;
-  cards: SpellCardState[];
-}) {
+// any tool card: the animated indicator; under the cards: one transient line, which also shows a
+// model retry/fallback notice (085). Model text is rendered as a text node only, never as
+// markdown or HTML, isolated from the surrounding text direction (dir="auto"). It reads the live
+// status from `statusStore` (085), so a status change re-renders this alone.
+function TurnStatus({ cards }: { cards: SpellCardState[] }) {
+  const { status, thought, notice, quietSince } = useTurnStatus();
   const casting = cards.some((c) => c.status === "casting");
   const quiet = useQuietSeconds(quietSince, !thought && !casting);
   const generic =
@@ -109,7 +98,7 @@ function TurnStatus({
     const key = thought ? `t:${thought}` : generic && status === THINKING_DEFAULT ? "generic" : status;
     return (
       <div className="thinking" aria-label={label}>
-        <span key={key} className="thinking-text">
+        <span key={key} className="thinking-text" dir="auto">
           {label}
         </span>
         <span className="thinking-dots">
@@ -120,9 +109,9 @@ function TurnStatus({
       </div>
     );
   }
-  const line = thought ?? generic;
+  const line = thought ?? notice ?? generic;
   return line ? (
-    <div key={thought ?? "generic"} className="thinking-status">
+    <div key={thought ?? notice ?? "generic"} className="thinking-status" dir="auto">
       {line}
     </div>
   ) : null;
@@ -130,17 +119,7 @@ function TurnStatus({
 
 // PERF-010: the in-flight reply. It is the only component that subscribes to the token
 // stream, so a token re-renders this message alone, not the list or the app.
-function LiveMessage({
-  status,
-  streamCards,
-  thought,
-  quietSince,
-}: {
-  status: string;
-  streamCards: SpellCardState[];
-  thought: string | null;
-  quietSince?: number;
-}) {
+function LiveMessage({ streamCards }: { streamCards: SpellCardState[] }) {
   const streamingText = useStreamText();
   const hasText = streamingText !== "";
   // Feature 060: client-side TTFT, after the first token was committed to the screen.
@@ -155,7 +134,7 @@ function LiveMessage({
       {streamingText ? (
         <StreamMarkdown content={streamingText} streaming />
       ) : (
-        <TurnStatus status={status} thought={thought} quietSince={quietSince} cards={streamCards} />
+        <TurnStatus cards={streamCards} />
       )}
     </div>
   );
@@ -212,9 +191,6 @@ function ScrollToQuestion({ streaming, answered }: { streaming: boolean; answere
 function MessageListImpl({
   messages,
   streaming,
-  status,
-  thought = null,
-  quietSince,
   error,
   streamCards,
   selectedBosses,
@@ -330,12 +306,7 @@ function MessageListImpl({
             ))}
 
             {streaming && (
-              <LiveMessage
-                status={status}
-                streamCards={streamCards}
-                thought={thought}
-                quietSince={quietSince}
-              />
+              <LiveMessage streamCards={streamCards} />
             )}
 
             {error && <div className="message error">⚠️ {error}</div>}
@@ -358,6 +329,6 @@ function MessageListImpl({
   );
 }
 
-// Re-renders only when its props change: new messages, turn start/end, tool cards or
-// status, never per token (PERF-010).
+// Re-renders only when its props change: new messages, turn start/end or tool cards, never per
+// token (PERF-010) or per status change (085).
 export const MessageList = memo(MessageListImpl);

@@ -24,9 +24,10 @@ import { ModelSelect } from "./components/ModelSelect";
 import { Sidebar } from "./components/Sidebar";
 import { investigateErrorMessage } from "./lib/investigateError";
 import { streamStore } from "./lib/streamStore";
+import { statusStore, type TurnStatusState } from "./lib/statusStore";
 import { Button } from "./components/ui/button";
 import { Toggle } from "./components/ui/toggle";
-import { THINKING_DEFAULT, fallbackLabel, retryLabel, toolLabel } from "./toolLabels";
+import { fallbackLabel, retryLabel, toolLabel } from "./toolLabels";
 import type {
   ChartArtifact,
   Conversation,
@@ -44,6 +45,9 @@ import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 const RaidsPage = lazy(() => import("./pages/RaidsPage"));
 
 const CONNECTION_LOST = "Connection lost, the answer may be incomplete.";
+// 085: after a drop, while the chat has no saved answer, check again after these delays (~1 min
+// in all: the server saves once its next send fails, which can be after a tool call).
+const DROP_RECHECK_MS = [2_000, 4_000, 8_000, 16_000, 32_000];
 // Frames that only make sense while a turn is streaming here.
 const TURN_FRAMES = new Set<Frame["type"]>([
   "token",
@@ -53,8 +57,6 @@ const TURN_FRAMES = new Set<Frame["type"]>([
   "interim",
   "done",
 ]);
-// Feature 080: a status line is model text; it is shown as plain text and never longer than this.
-const STATUS_MAX = 120;
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -75,12 +77,8 @@ export default function App() {
 
   const [streaming, setStreamingState] = useState(false);
   // PERF-010: the streaming text lives in `streamStore`, not here, so a token never
-  // re-renders the app; only the live message subscribes to it.
-  const [status, setStatus] = useState(THINKING_DEFAULT);
-  // Feature 080: the live status line (latest thought or interim text) and when the turn last
-  // reported anything, for the generic "Thinking… Ns".
-  const [thought, setThought] = useState<string | null>(null);
-  const [quietSince, setQuietSince] = useState(() => Date.now());
+  // re-renders the app; only the live message subscribes to it. 085: the same for the live
+  // status (label, thought line, retry/fallback notice, last event time) in `statusStore`.
   const [error, setError] = useState<string | null>(null);
 
   // US6: live spellcasting cards for the in-flight turn.
@@ -113,6 +111,7 @@ export default function App() {
   // sc-376: set when the socket drops mid-answer, until the reconnect has reloaded that chat.
   const dropRef = useRef<{ conversationId: string; partial: string } | null>(null);
   const turnSeqRef = useRef(0); // counts sent turns, so a late reload can tell a newer one began
+  const recheckRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 085: next drop recheck
 
   const setStreaming = useCallback((value: boolean) => {
     streamingRef.current = value;
@@ -152,7 +151,9 @@ export default function App() {
       // sc-376: a frame of a turn that was already ended locally (socket drop) is stale.
       // An `error` frame is not: it is shown even when idle (it never touches the messages).
       if (TURN_FRAMES.has(f.type) && !streamingRef.current) return;
-      if (f.type !== "token") setQuietSince(Date.now());
+      // 085: this frame's status change, applied once after the switch (only the live status
+      // subscribes to it, so it never re-renders the app).
+      const turnStatus: Partial<TurnStatusState> = f.type !== "token" ? { quietSince: Date.now() } : {};
       switch (f.type) {
         case "meta":
           turnConvRef.current = f.conversation_id;
@@ -162,7 +163,7 @@ export default function App() {
           }
           break;
         case "tool_start": {
-          setStatus(toolLabel(f.name));
+          Object.assign(turnStatus, { status: toolLabel(f.name), notice: null });
           // US6: spawn a casting spell card (correlated to tool_end by name + FIFO order,
           // since the frames carry no call id).
           const key = `${f.name}-${streamCardsRef.current.length}`;
@@ -186,36 +187,43 @@ export default function App() {
             };
             setCards(next);
           }
-          setThought(null); // the model thinks afresh about the result
+          // the model thinks afresh about the result
+          Object.assign(turnStatus, { thought: null, notice: null });
           break;
         }
         case "thinking":
           // Feature 080: shown only while no answer text is (LiveMessage), and the backend
           // sends none once the answer has started.
-          setThought(f.text.slice(0, STATUS_MAX) || null);
+          Object.assign(turnStatus, { thought: f.text, notice: null });
           break;
         case "interim":
           // Feature 080 (sc-572): the text so far was progress; the backend dropped it from the
           // answer it saves, so drop it here too and show its first sentence as status.
           streamRef.current = "";
           streamStore.set("");
-          setThought(f.text.slice(0, STATUS_MAX) || null);
+          Object.assign(turnStatus, { thought: f.text, notice: null });
           break;
         case "model_retry":
           // Feature 011: the backend is waiting out a model rate limit; the next
-          // tool_start/token replaces this status as usual.
-          setStatus(retryLabel(f.attempt, f.max_attempts));
+          // tool_start/token replaces this status as usual. 085: shown under the cards too.
+          {
+            const label = retryLabel(f.attempt, f.max_attempts);
+            Object.assign(turnStatus, { status: label, notice: label, thought: null });
+          }
           break;
         case "model_fallback":
           // Feature 021: the turn continues on the same-class sibling; the answer is
           // marked with the model that gave it on `done`.
           fallbackRef.current = { from: f.from_model, to: f.to_model };
-          setStatus(fallbackLabel(f.from_model, f.to_model));
+          {
+            const label = fallbackLabel(f.from_model, f.to_model);
+            Object.assign(turnStatus, { status: label, notice: label, thought: null });
+          }
           break;
         case "grounding":
           if (f.used) {
             groundedRef.current = true;
-            setStatus("Searching the web…");
+            Object.assign(turnStatus, { status: "Searching the web…", notice: null });
           }
           break;
         case "raid_tracked":
@@ -307,8 +315,7 @@ export default function App() {
           }
           setStreaming(false);
           streamStore.set("");
-          setStatus(THINKING_DEFAULT);
-          setThought(null);
+          statusStore.reset();
           streamRef.current = "";
           groundedRef.current = false;
           fallbackRef.current = undefined;
@@ -332,8 +339,7 @@ export default function App() {
           setError(f.message);
           setStreaming(false);
           streamStore.set("");
-          setStatus(THINKING_DEFAULT);
-          setThought(null);
+          statusStore.reset();
           streamRef.current = "";
           groundedRef.current = false;
           fallbackRef.current = undefined;
@@ -343,6 +349,7 @@ export default function App() {
           break;
         }
       }
+      statusStore.update(turnStatus);
     },
     [refreshConversations, refreshRaids, setCards, setStreaming],
   );
@@ -350,30 +357,46 @@ export default function App() {
   // sc-376: the saved (partial) answer replaces the local copy after a drop. Only if the chat
   // is still open and no newer turn began meanwhile; a failed reload keeps the drop for the
   // next reconnect, until a new turn or opening a chat makes it stale.
-  const reloadAfterDrop = useCallback(async (drop: { conversationId: string; partial: string }) => {
+  // 085 (SEC-001): the server learns of a drop only at its next send, which can come after this
+  // reload (say, at the end of a tool call). Until it has saved, the chat has no agent message
+  // and our copy is shown; it can be text the turn retracted. So while nothing is saved, check
+  // again a few times (DROP_RECHECK_MS); the saved partial then replaces our copy.
+  const reloadAfterDrop = useCallback((drop: { conversationId: string; partial: string }) => {
     const seq = turnSeqRef.current;
-    try {
-      const detail = await getConversation(drop.conversationId);
-      if (
-        activeIdRef.current !== drop.conversationId ||
-        turnSeqRef.current !== seq ||
-        streamingRef.current
-      ) {
-        return;
+    const load = async (attempt: number) => {
+      recheckRef.current = null;
+      try {
+        const detail = await getConversation(drop.conversationId);
+        if (
+          activeIdRef.current !== drop.conversationId ||
+          turnSeqRef.current !== seq ||
+          streamingRef.current
+        ) {
+          return;
+        }
+        const loaded: Message[] = detail.messages.map((m) => ({ ...m }));
+        const saved = loaded[loaded.length - 1]?.role === "agent";
+        // The backend saved nothing of the cut-off answer (yet, or a restart lost it): our copy.
+        if (drop.partial && !saved) {
+          loaded.push({ role: "agent", content: drop.partial });
+        }
+        setMessages(loaded);
+        setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
+        if (!saved && attempt < DROP_RECHECK_MS.length) {
+          recheckRef.current = setTimeout(() => void load(attempt + 1), DROP_RECHECK_MS[attempt]);
+        }
+      } catch {
+        // Not kept when a new turn began or the chat changed while the request was in flight.
+        if (attempt === 0 && turnSeqRef.current === seq && activeIdRef.current === drop.conversationId) {
+          dropRef.current ??= drop;
+        }
       }
-      const loaded: Message[] = detail.messages.map((m) => ({ ...m }));
-      // The backend saved nothing of the cut-off answer (a restart loses it): keep our copy.
-      if (drop.partial && loaded[loaded.length - 1]?.role !== "agent") {
-        loaded.push({ role: "agent", content: drop.partial });
-      }
-      setMessages(loaded);
-      setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
-    } catch {
-      // Not kept when a new turn began or the chat changed while the request was in flight.
-      if (turnSeqRef.current === seq && activeIdRef.current === drop.conversationId) {
-        dropRef.current ??= drop;
-      }
-    }
+    };
+    if (recheckRef.current !== null) clearTimeout(recheckRef.current);
+    return load(0);
+  }, []);
+  useEffect(() => () => {
+    if (recheckRef.current !== null) clearTimeout(recheckRef.current);
   }, []);
 
   // The socket's connection changes. A drop while a turn streams ends that turn here: the
@@ -404,8 +427,7 @@ export default function App() {
       setError(CONNECTION_LOST);
       setStreaming(false);
       streamStore.set("");
-      setStatus(THINKING_DEFAULT);
-      setThought(null);
+      statusStore.reset();
       streamRef.current = "";
       groundedRef.current = false;
       fallbackRef.current = undefined;
@@ -564,9 +586,7 @@ export default function App() {
       pendingArtifactsRef.current = [];
       pendingProposalsRef.current = [];
       streamStore.set("");
-      setStatus(THINKING_DEFAULT);
-      setThought(null);
-      setQuietSince(Date.now());
+      statusStore.reset();
       setStreaming(true);
       const ok = socketRef.current?.send({
         conversation_id: convId,
@@ -811,9 +831,6 @@ export default function App() {
               <MessageList
                 messages={messages}
                 streaming={streaming}
-                status={status}
-                thought={thought}
-                quietSince={quietSince}
                 error={error}
                 streamCards={streamCards}
                 selectedBosses={selectedBosses}

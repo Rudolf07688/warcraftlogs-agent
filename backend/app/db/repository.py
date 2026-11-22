@@ -1294,6 +1294,21 @@ async def get_profile_settings(
     return row, not has_own
 
 
+async def get_main_selection(
+    session: AsyncSession, *, tenant_id: uuid.UUID
+) -> tuple[str | None, str | None]:
+    """The tenant's saved ``(main_class, main_spec)``, or ``(None, None)``; two columns only
+    (sc-583: the chat preamble reads this every turn)."""
+    row = (
+        await session.execute(
+            select(ProfileSettings.main_class, ProfileSettings.main_spec).where(
+                ProfileSettings.tenant_id == tenant_id
+            )
+        )
+    ).first()
+    return (row.main_class, row.main_spec) if row is not None else (None, None)
+
+
 async def set_main_selection(
     session: AsyncSession,
     *,
