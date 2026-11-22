@@ -2,7 +2,7 @@
 id: claude-prompt-cache-layout
 anchors: [sym:wcl_agent/llm/model_retry.py::_turn_layout, sym:wcl_agent/llm/model_retry.py::_pin_time_block, sym:wcl_agent/agent.py::build_instruction]
 by: dev-4 Vera
-verified: a8f834d 2026-11-22
+verified: 5805461 2026-11-22
 ---
 Claude chat requests carry at most four cache breakpoints (_turn_layout): the instruction head
 (no tenant text), the end of the stubbed history older than keep_turns(), the last block, and the
