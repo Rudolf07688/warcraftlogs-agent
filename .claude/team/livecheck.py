@@ -65,7 +65,8 @@ async def main():
     cookie, csrf = await login()
     _, models = await get("/api/models", cookie)
     lst = models.get("models", models); ids=[m if isinstance(m,str) else (m.get("id") or m.get("name")) for m in lst]
-    model = next((m for m in ids if "haiku" in m), ids[0]); print("using", model)
+    import os; want = os.environ.get("LIVECHECK_MODEL")  # e.g. gemini-3.1-pro-preview on a vertex stack
+    model = want if want in ids else next((m for m in ids if "haiku" in m), ids[0]); print("using", model)
     convs, results, last_text = {}, [], {}
     for name in sys.argv[1:]:
         slot, key = name.split(":")
@@ -143,6 +144,8 @@ def judge(key, frames, text):
     wrong = [r for r in exp.get("none", []) if re.search(r, text, re.I | re.M)]
     called = {f.get("name") for f in frames if f.get("type") == "tool_start"}
     missing += [f"tool {t}" for t in exp.get("tools", []) if t not in called]
+    failed = {f.get("name") for f in frames if f.get("type") == "tool_end" and f.get("ok") is False}
+    missing += [f"tool {t} ok" for t in exp.get("toolsok", []) if t in failed or t not in called]
     if exp.get("anytool") and not called:
         missing.append("any tool call")
     if "maxq" in exp and text.count("?") > exp["maxq"]:
@@ -172,6 +175,10 @@ def facts(code):
 
 
 PROMPTS = {
+    # sprint 2026-11-22: rankings with boss-fight ids (086, sc-587), Nymrissa notes + found_under (086, sc-585)
+    "parses": "What were our parses in report hkcZxrj1gaPz8NR6? One short line per boss, at most 8 lines.",
+    "bubble": "How do we handle Alluring Bubble on Nymrissa? Two lines.",
+    "nekgb": "What does Gravebound do on Nekzali? One line.",
     # sprint 2026-11-20: event windows + damage fields + player list (078), cache/budget (079),
     # thinking status + interim retraction (080), boss mechanics (081), coach defaults (082)
     "gbhit": "How hard did the Gravebound hit that killed Veritass in fight 1 of report bjXfNc92d8CPGhvB? One line.",
@@ -181,6 +188,19 @@ PROMPTS = {
     "heart": "The Ula'tek heart",
     "fakemech": "What does Flamebreath of Testing do on Ula'tek? One line.",
     "improve": "help me improve",
+    "dk1": "Show the deaths in fight 1 of report hkcZxrj1gaPz8NR6. Three short lines.",
+    "dk2": "Show the deaths in fight 2 of report hkcZxrj1gaPz8NR6. Three short lines.",
+    "dk3": "Show the deaths in fight 3 of report hkcZxrj1gaPz8NR6. Three short lines.",
+    "dk4": "Show the deaths in fight 4 of report hkcZxrj1gaPz8NR6. Three short lines.",
+    "dk5": "Show the deaths in fight 6 of report hkcZxrj1gaPz8NR6. Three short lines.",
+    "hv1": "For report hkcZxrj1gaPz8NR6, look up deaths: who died first on each boss kill and to what. Fetch the data for every boss kill, then one line per boss.",
+    "hv2": "For report hkcZxrj1gaPz8NR6, look up damage taken: the biggest avoidable damage source on each boss kill. Fetch the data for every boss kill, then one line per boss.",
+    "hv3": "For report hkcZxrj1gaPz8NR6, look up DPS: the top 3 damage dealers on each boss kill. Fetch the data for every boss kill, then one line per boss.",
+    "hv4": "For report hkcZxrj1gaPz8NR6, look up healing: the top 2 healers on each boss kill. Fetch the data for every boss kill, then one line per boss.",
+    "hv5": "For report hkcZxrj1gaPz8NR6, look up interrupts and dispels on each boss kill. Fetch the data for every boss kill, then one line per boss.",
+    "cohort": "Compare Traecie to the other ranked players on fight 4 of report tbjGm2MkAd8KxwLN. Two lines.",
+    "today": "What is today's date? One line.",
+    "deaths1": "Show the deaths in fight 1 of report bjXfNc92d8CPGhvB. Three short lines.",
     "frost": "is frost mage difficult? I can't get the numbers I need",
     "overview": "Give me a bounded overview of this raid (report tbjGm2MkAd8KxwLN): for each boss, one headline finding and the single biggest improvement opportunity, noting kills versus wipes. Stay at the report and per-boss level; go into cast-level detail only where a boss clearly warrants it.",
     # sprint 2026-11-05b: semantic search (061), smaller fixed prompt (064)
@@ -207,6 +227,19 @@ PROMPTS = {
 LAST_KILL = {"all": [r"ula.?tek"], "none": [r"nalorakk", r"blinding vale", r"kith.?ix"],
              "why": "last boss kill = Ula'tek heroic (fight 32)"}
 EXPECT = {
+    "cohort": {"tools": ["compare_player_to_cohort"], "toolsok": ["compare_player_to_cohort"],
+               "none": [r"no ranking row"], "why": "realm match Twilight'sHammer vs Twilight's Hammer (088c F2)"},
+    "today": {"all": [r"\b22(nd)?\b|11-22|22\.11"], "none": [r"\b(21|23)(st|rd)?\b,? 2026"],
+              "why": "the server time block now leads the user message (087); date 2026-11-22"},
+    # 2026-11-22. live-check:086-pre: fightIDs null -> WCL 'Internal server error'; with boss ids 11 ranked fights.
+    "parses": {"tools": ["get_report_rankings"], "toolsok": ["get_report_rankings"],
+               "none": [r"internal server error", r"server error", r"couldn.t (get|load|fetch|retrieve)", r"rankings? (are|is) (not )?unavailable"],
+               "why": "whole-report rankings succeed with the boss-fight id list (sc-587)"},
+    "bubble": {"tools": ["get_boss_mechanics"], "all": [r"method\.gg|tidebound"],
+               "why": "curated Nymrissa note, Method source (sc-585)"},
+    "nekgb": {"tools": ["get_boss_mechanics"], "all": [r"coiled altar|malacrass|hex lord",
+              r"not (a |an |one of )?(nek.?zali|on nek)|isn.t (a |an |one of )?nek|(doesn.t|does not) (appear|belong|happen)|belongs to|not part of|not from nek|rather than nek|not nek"],
+              "why": "Gravebound is a Hex Lord Malacrass / Coiled Altar mechanic: found_under, no invented note (sc-585)"},
     # 2026-11-20. bjXfNc92d8CPGhvB Deaths entries[0].events[0] (Veritass, ts 1109129): hit total
     # 23,596,252 = amount 618,352 + absorbed 2,325,962 + overkill 20,651,938; unmitigated 30,896,940.
     "gbhit": {"all": [r"23[.,]6|23[.,]59"], "none": [r"hit (of|for|was) (about |~|roughly )?(30[.,]9|20[.,]7)"],
