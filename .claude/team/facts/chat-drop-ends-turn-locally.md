@@ -2,7 +2,7 @@
 id: chat-drop-ends-turn-locally
 anchors: [file:frontend/src/App.tsx, sym:backend/app/api/ws.py::_persist_partial]
 by: dev-2 Tomas
-verified: a3e43e5 2026-11-22
+verified: 56b4a72 2026-11-22
 ---
 App.handleStatus ends a streaming turn when the socket drops (partial kept, note, composer free);
 the reconnect reloads that chat (reloadAfterDrop). The backend saves a partial only when its next
