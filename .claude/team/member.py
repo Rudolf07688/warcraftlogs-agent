@@ -10,12 +10,17 @@ every worktree reads and writes the same copy. team-lead commits them at wrap-up
   member.py me --seat SEAT                       who you are + your memory (run this first)
   member.py claim --seat SEAT --name NAME --role ROLE --about "one line"   (lead: no --name)
   member.py remember --seat SEAT [-|PATH]         REPLACE your memory (max 500 words; lead 1000)
-  member.py roster                               everyone on the team, one line each
+  member.py roster                               everyone on the team, one line each (+ goals)
+  member.py goal --seat SEAT add "PRACTICE" --when "TRIGGER" [--cls CLASS]
+                                                 a "Working on" goal agreed in a 1:1 with team-lead
+                                                 (max 2; outside the memory cap; only you write it)
+  member.py goal --seat SEAT list | close N --outcome graduated|dropped|recurred
   member.py lint --seat SEAT | --all             read-only: memory lines that repeat the shared
                                                  files or a team fact (.claude/team/facts/), or
                                                  that a team tool now covers
 """
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -25,6 +30,10 @@ from datetime import date
 WORD_CAP = 500
 LEAD_WORD_CAP = 1000  # owner, 2026-11-01: team-lead gets a larger memory
 SEP = "\n## Memory\n"
+GOALS_HEAD = "## Working on"
+GOAL_MAX = 2
+GOAL_WORDS = 60
+GOAL_LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2}) \| (.+?) \| when: (.+?)(?: \| class: (\S+))?$", re.M)
 
 
 def team_dir():
@@ -48,9 +57,26 @@ def parse(path):
     return fields, memory.strip()
 
 
-def write(path, fields, memory):
+def goals_of(path):
+    """Active "Working on" goals: [{since, practice, when, cls}], from the section above ## Memory."""
+    if not os.path.exists(path):
+        return []
+    head = open(path).read().partition(SEP)[0]
+    section = head.partition(GOALS_HEAD)[2]
+    return [{"since": m[0], "practice": m[1], "when": m[2], "cls": m[3] or ""}
+            for m in GOAL_LINE.findall(section)]
+
+
+def write(path, fields, memory, goals=None):
+    """goals=None keeps the file's current goals (remember and claim never touch them)."""
+    goals = goals_of(path) if goals is None else goals
     head = f"# {fields['name']}\n\n" + "\n".join(
         f"- **{k}:** {fields[k]}" for k in ("name", "seat", "role", "since", "about"))
+    if goals:
+        head += (f"\n\n{GOALS_HEAD}\n\n<!-- agreed in a 1:1 with team-lead, written by this member "
+                 "(member.py goal) -->\n" + "\n".join(
+                     f"- {g['since']} | {g['practice']} | when: {g['when']}"
+                     + (f" | class: {g['cls']}" if g['cls'] else "") for g in goals))
     open(path, "w").write(head + "\n" + SEP + "\n" + (memory.strip() + "\n" if memory.strip() else ""))
 
 
@@ -79,6 +105,12 @@ def cmd_me(a):
     fields, memory = parse(path)
     print(f"You are {fields['name']} ({fields['role']}, seat {a.seat}, since {fields['since']}). "
           f"{fields['about']}\nUse --as {fields['name'].lower()} on the board.\n")
+    goals = goals_of(path)
+    if goals:
+        print("Working on (you agreed these in a 1:1 with team-lead; act on each when its trigger comes up):")
+        for i, g in enumerate(goals, 1):
+            print(f"  {i}. {g['practice']}\n     when: {g['when']}  (since {g['since']})")
+        print()
     print(f"Your memory ({words(memory)}/{cap(a.seat)} words):\n{memory or '(empty)'}")
 
 
@@ -87,7 +119,8 @@ def roster_rows():
     for f in sorted(os.listdir(team_dir())):
         if f.endswith(".md") and f != "README.md":
             fields, memory = parse(os.path.join(team_dir(), f))
-            rows.append({**fields, "words": words(memory)})
+            rows.append({**fields, "words": words(memory),
+                         "goals": goals_of(os.path.join(team_dir(), f))})
     return rows
 
 
@@ -128,6 +161,54 @@ def cmd_roster(a):
     for r in rows:
         print(f"{r['seat']:6} {r['name']:12} {r['role']:16} since {r['since']}  {r['about']}  "
               f"[memory {r['words']}w]")
+        for g in r["goals"]:
+            print(f"         working on: {g['practice']} (when: {g['when']})")
+
+
+def clean(text):
+    return " ".join(text.replace("|", "/").split())
+
+
+def cmd_goal(a):
+    path = seat_file(a.seat)
+    if not os.path.exists(path):
+        sys.exit(f"member: claim seat {a.seat} first")
+    fields, memory = parse(path)
+    goals = goals_of(path)
+    if a.action == "list":
+        for i, g in enumerate(goals, 1):
+            print(f"{i}. {g['practice']} | when: {g['when']} | since {g['since']}"
+                  + (f" | class: {g['cls']}" if g['cls'] else ""))
+        print(f"({len(goals)}/{GOAL_MAX} goals)" if goals else "member: no goals")
+        return
+    if a.action == "add":
+        if not a.text or not a.when:
+            sys.exit('member: goal add needs "PRACTICE" and --when "TRIGGER"')
+        if len(goals) >= GOAL_MAX:
+            sys.exit(f"member: {GOAL_MAX} goals already; close one first (graduated, dropped or recurred)")
+        practice, when = clean(a.text), clean(a.when)
+        if words(practice + " " + when) > GOAL_WORDS:
+            sys.exit(f"member: keep a goal under {GOAL_WORDS} words: one action at one moment")
+        cls = re.sub(r"[^a-z0-9:-]", "", (a.cls or "").lower())
+        goals.append({"since": date.today().isoformat(), "practice": practice, "when": when, "cls": cls})
+        write(path, fields, memory, goals)
+        print(f"member: goal {len(goals)} saved for {fields['name']}. It prints at the top of `member.py me`.")
+        return
+    # close
+    try:
+        g = goals.pop(int(a.text) - 1)
+    except (TypeError, ValueError, IndexError):
+        sys.exit(f"member: close takes a goal number (1..{len(goals)})")
+    if not a.outcome:
+        sys.exit("member: close needs --outcome graduated|dropped|recurred")
+    write(path, fields, memory, goals)
+    log = os.path.join(os.path.dirname(team_dir()), "coaching", "goals-log.jsonl")
+    os.makedirs(os.path.dirname(log), exist_ok=True)
+    with open(log, "a") as f:
+        f.write(json.dumps({"seat": a.seat, "name": fields["name"], **g,
+                            "closed": date.today().isoformat(), "outcome": a.outcome}) + "\n")
+    hint = (" Keep it in your memory in your own words if it still helps." if a.outcome == "graduated" else "")
+    print(f"member: goal closed ({a.outcome}).{hint}")
 
 
 STOP = set("""this that with from have when then they them your their into only also must
@@ -243,13 +324,20 @@ def main():
     q.add_argument("file", nargs="?", help='a file path, or "-" (default) for stdin')
     q.add_argument("--file", dest="file_opt")
     s.add_parser("roster")
+    q = s.add_parser("goal")
+    q.add_argument("--seat", required=True)
+    q.add_argument("action", choices=("add", "list", "close"))
+    q.add_argument("text", nargs="?", help="add: the practice; close: the goal number")
+    q.add_argument("--when", help="add: the moment of work that triggers it")
+    q.add_argument("--cls", help="add: optional P17 class, e.g. unbounded")
+    q.add_argument("--outcome", choices=("graduated", "dropped", "recurred"))
     q = s.add_parser("lint")
     g = q.add_mutually_exclusive_group(required=True)
     g.add_argument("--seat")
     g.add_argument("--all", action="store_true")
     a = p.parse_args()
     {"me": cmd_me, "claim": cmd_claim, "remember": cmd_remember, "roster": cmd_roster,
-     "lint": cmd_lint}[a.cmd](a)
+     "lint": cmd_lint, "goal": cmd_goal}[a.cmd](a)
 
 
 if __name__ == "__main__":

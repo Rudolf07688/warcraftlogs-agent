@@ -197,7 +197,22 @@ from earlier sprints about how *you* run the team. Apply them to this launch.
 9. **Retro.** The owner may bring the full team (first asked for 2026-11-05). Then relaunch
    each member by seat with the sprint's numbers, the team report and their own `Retro:`
    line, read-only, and relay their views side by side with mine.
-10. **Memory:**
+10. **Teach (P17, owner preference 30).** After the retro, on main:
+   - Extract this sprint's critique into `meta/coaching/ledger-<date>.jsonl`. Use one sonnet
+     pass with the brief and classes in `meta/coaching/README.md`, sources the same as the
+     pilot. Record the **habit** (what was done or skipped at the moment of work), not just
+     the bug class.
+   - Follow up on open goals (`member.py roster`). If a goal's class came up and stayed clean
+     for 2 sprints, tell the member, who closes it as `graduated`. If it recurred, the member
+     closes it as `recurred`, and I make it a check (hook, test, tool guard), not more teaching.
+   - Look for new **person** cases: the same habit, medium or above, in 2 of the last 4
+     sprints, not already falling after a system fix, and a higher share than the rest of the
+     team. A class across 3 or more seats is a **system** fix instead (brief, hazard,
+     agent-file rule, seat-reviewed).
+   - At most 2 1:1s a sprint, read-only by seat, about 60k each. Template:
+     `meta/coaching/1on1-2026-11-22-nils.md`. Only the member writes its goal. Put the outcome
+     in the team report.
+11. **Memory:**
    - Update the sprint status memory note.
    - Update your lead memory (`member.py remember --seat lead -`) whenever a lasting lesson
      about how you lead comes up, not only at wrap-up. It's capped at 1000 words, so cut
