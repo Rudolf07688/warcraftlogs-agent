@@ -38,7 +38,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types as genai_types
 from pydantic import Field
 
-from .context_trim import trim_old_tool_results, user_turn_indices
+from .context_trim import keep_turns, trim_old_tool_results, user_turn_indices
 from .provider import adk_client_kwargs, async_anthropic_client
 
 logger = logging.getLogger(__name__)
@@ -500,6 +500,30 @@ CLAUDE_CALL_TIMEOUT_S = 180.0
 _TIME_OPEN, _TIME_CLOSE = "<CURRENT_TIME>", "</CURRENT_TIME>"
 
 
+def _split_time_block(system: Any) -> tuple[dict, str, str] | None:
+    """ADK's cache-marked system as (head block, time block, rest), or None without one.
+
+    ``system`` is one text block holding the instruction only (tenant text travels in the
+    messages), so the split is at the instruction's own last ``<CURRENT_TIME>``.
+    """
+    if not (isinstance(system, list) and len(system) == 1 and isinstance(system[0], dict)):
+        return None
+    head, sep, tail = system[0].get("text", "").rpartition(_TIME_OPEN)
+    if not sep or not head.strip():
+        return None
+    time_text, close, rest = tail.partition(_TIME_CLOSE)
+    return {**system[0], "text": head}, sep + time_text + close, rest
+
+
+def _pinned(block: str, stats: TurnStats | None) -> str:
+    """The turn's first time block (079): every request of a turn repeats it."""
+    if stats is None:
+        return block
+    if stats.pinned_time is None:
+        stats.pinned_time = block
+    return stats.pinned_time
+
+
 def _pin_time_block(system: Any, stats: TurnStats | None) -> Any:
     """Split the cached system block before its time section and pin that section per turn.
 
@@ -509,18 +533,63 @@ def _pin_time_block(system: Any, stats: TurnStats | None) -> Any:
     repeated from the turn's first request, so all requests of a turn share one prefix.
     Anything after the time block (the round cap's wrap-up) rides along uncached.
     """
-    if not (isinstance(system, list) and len(system) == 1 and isinstance(system[0], dict)):
+    split = _split_time_block(system)
+    if split is None:
         return system
-    head, sep, tail = system[0].get("text", "").rpartition(_TIME_OPEN)
-    if not sep or not head.strip():
-        return system
-    time_text, close, rest = tail.partition(_TIME_CLOSE)
-    block = sep + time_text + close
-    if stats is not None:
-        if stats.pinned_time is None:
-            stats.pinned_time = block
-        block = stats.pinned_time
-    return [{**system[0], "text": head}, {"type": "text", "text": block + rest}]
+    head, block, rest = split
+    return [head, {"type": "text", "text": _pinned(block, stats) + rest}]
+
+
+# Claude rejects a cache breakpoint on a reasoning block (as in ADK's anthropic_llm).
+_UNCACHEABLE = frozenset({"thinking", "redacted_thinking"})
+
+
+def _anthropic_turn_starts(messages: list[dict]) -> list[int]:
+    """``user_turn_indices`` over Anthropic messages: user, a text block, no tool result."""
+    starts = []
+    for i, message in enumerate(messages):
+        content = message.get("content")
+        if message.get("role") != "user" or not isinstance(content, list):
+            continue
+        types = {block.get("type") for block in content if isinstance(block, dict)}
+        if "text" in types and "tool_result" not in types:
+            starts.append(i)
+    return starts
+
+
+def _turn_layout(request: dict[str, Any], stats: TurnStats) -> None:
+    """087 sc-581: lay a chat turn's request out so later turns read the history from the cache.
+
+    The prefix order is tools, system, messages. 079 kept the turn's time block in the system,
+    so each turn's first request re-wrote the whole history. Here the system is the instruction
+    head alone (plus the round cap's wrap-up, uncached), shared by every tenant; the pinned time
+    block becomes the first block of the turn's user message, before its preamble. A fourth
+    breakpoint marks the end of the turns older than ``keep_turns()``: ``context_trim`` has
+    stubbed their results and they no longer change, so the next turn reads them from the cache
+    and writes only the kept turns and its new message (board measure:087). Placement reads only
+    roles and block types, never text; at most four breakpoints (tools, head, history, end).
+    """
+    split = _split_time_block(request.get("system"))
+    messages = request.get("messages")
+    starts = _anthropic_turn_starts(messages) if isinstance(messages, list) else []
+    if split is None or not starts:
+        request["system"] = _pin_time_block(request.get("system"), stats)
+        return
+    head, block, rest = split
+    request["system"] = [head, {"type": "text", "text": rest}] if rest.strip() else [head]
+    turn = messages[starts[-1]]
+    turn["content"] = [{"type": "text", "text": _pinned(block, stats)}, *turn["content"]]
+    keep = keep_turns()
+    if len(starts) <= keep:
+        return
+    for message in reversed(messages[: starts[-keep]]):
+        content = message.get("content")
+        cacheable = [
+            b for b in content if isinstance(b, dict) and b.get("type") not in _UNCACHEABLE
+        ] if isinstance(content, list) else []
+        if cacheable:
+            cacheable[-1]["cache_control"] = head["cache_control"]
+            return
 
 
 # --- one re-run per model call (079 sc-567, 084 sc-580 / sc-586) -------------------------------
@@ -674,8 +743,10 @@ if _Claude is not None:
 
             079 sc-568: cache breakpoints on the tools, the instruction's stable head and the
             conversation's last block (ADK places them given a cache config), with the time
-            block pinned per turn (``_pin_time_block``), so each later request of a turn reads
-            the earlier ones' prompt from the cache. Usage comes back through ADK with the
+            block pinned per turn, so each later request of a turn reads the earlier ones'
+            prompt from the cache. In a chat turn (087) the time block moves into the turn's
+            user message and a fourth breakpoint ends the stubbed history (``_turn_layout``);
+            without a turn (CLI) it follows the head (``_pin_time_block``). Usage comes back through ADK with the
             cache reads and writes folded into ``prompt_token_count`` and the reads in
             ``cached_content_token_count``.
 
@@ -687,7 +758,11 @@ if _Claude is not None:
             if llm_request.cache_config is None:
                 llm_request.cache_config = _CLAUDE_CACHE
             request = super()._build_anthropic_kwargs(llm_request, *args, **kwargs)
-            request["system"] = _pin_time_block(request.get("system"), current_turn.get())
+            stats = current_turn.get()
+            if stats is None:
+                request["system"] = _pin_time_block(request.get("system"), None)
+            else:
+                _turn_layout(request, stats)
             thinking = request.get("thinking")
             if isinstance(thinking, dict) and thinking.get("type") == "adaptive":
                 request["thinking"] = {

@@ -97,13 +97,15 @@ async def test_later_calls_of_a_turn_extend_the_cached_prefix(use_provider, scri
     first, second = api.bodies()
     for body in (first, second):
         assert body["tools"][-1]["cache_control"] == {"type": "ephemeral"}
-        head, time_block = body["system"]
+        head = body["system"][0]
         assert head["cache_control"] == {"type": "ephemeral"}
-        assert "<CURRENT_TIME>" not in head["text"] and time_block["text"].startswith("<CURRENT_TIME>")
+        # 087: the time block leads the turn's user message, after the history, not the system.
+        assert "<CURRENT_TIME>" not in json.dumps(body["system"])
+        assert body["messages"][0]["content"][0]["text"].startswith("<CURRENT_TIME>")
         assert body["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
     # The first request, breakpoint at its end, is a prefix of the second although the clock
     # moved between them: the time block stays the turn's first.
-    assert "2026-11-07 20:00 UTC" in second["system"][1]["text"]
+    assert "2026-11-07 20:00 UTC" in second["messages"][0]["content"][0]["text"]
     assert _uncached(second["tools"]) == _uncached(first["tools"])
     assert _uncached(second["system"]) == _uncached(first["system"])
     n = len(first["messages"])
