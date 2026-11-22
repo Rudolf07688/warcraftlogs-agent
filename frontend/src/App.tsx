@@ -45,9 +45,10 @@ import { TelemetryBoundary } from "./telemetry/ErrorBoundary";
 const RaidsPage = lazy(() => import("./pages/RaidsPage"));
 
 const CONNECTION_LOST = "Connection lost, the answer may be incomplete.";
-// 085: after a drop, while the chat has no saved answer, check again after these delays (~1 min
-// in all: the server saves once its next send fails, which can be after a tool call).
-const DROP_RECHECK_MS = [2_000, 4_000, 8_000, 16_000, 32_000];
+// 085: after a drop, while the chat has no saved answer, check again after these delays. The
+// server saves once its next send fails, which can come after a 180 s Claude call, its 180 s
+// re-run and rate-limit waits (088b): 9 rechecks with growing gaps, 8 minutes in all.
+const DROP_RECHECK_MS = [2_000, 4_000, 8_000, 16_000, 30_000, 60_000, 90_000, 120_000, 150_000];
 // Frames that only make sense while a turn is streaming here.
 const TURN_FRAMES = new Set<Frame["type"]>([
   "token",
@@ -57,6 +58,18 @@ const TURN_FRAMES = new Set<Frame["type"]>([
   "interim",
   "done",
 ]);
+
+// 088b (PERF-003): a reload's messages, keeping each message that did not change as the object
+// already shown (so its charts are not re-rendered), and the shown list itself if none changed.
+const messageKey = (m: Message) =>
+  JSON.stringify([m.role, m.id, m.seq, m.status, m.content, m.proposals?.map((p) => [p.id, p.status])]);
+function keepUnchanged(shown: Message[], loaded: Message[]): Message[] {
+  const next = loaded.map((m, i) => (shown[i] && messageKey(shown[i]) === messageKey(m) ? shown[i] : m));
+  return next.length === shown.length && next.every((m, i) => m === shown[i]) ? shown : next;
+}
+function sameProposals(a: ProfileProposal[], b: ProfileProposal[]): boolean {
+  return a.length === b.length && a.every((p, i) => p.id === b[i].id && p.status === b[i].status);
+}
 
 export default function App() {
   const [models, setModels] = useState<string[]>([]);
@@ -111,7 +124,18 @@ export default function App() {
   // sc-376: set when the socket drops mid-answer, until the reconnect has reloaded that chat.
   const dropRef = useRef<{ conversationId: string; partial: string } | null>(null);
   const turnSeqRef = useRef(0); // counts sent turns, so a late reload can tell a newer one began
-  const recheckRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 085: next drop recheck
+  // 085: the next drop recheck. 088b: `chain` counts started and stopped chains, so a recheck of
+  // an older chain (timer or fetch in flight) does nothing: one chain at a time.
+  const recheckRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; chain: number }>({
+    timer: null,
+    chain: 0,
+  });
+  const stopRechecks = useCallback(() => {
+    const r = recheckRef.current;
+    if (r.timer !== null) clearTimeout(r.timer);
+    r.timer = null;
+    r.chain++;
+  }, []);
 
   const setStreaming = useCallback((value: boolean) => {
     streamingRef.current = value;
@@ -152,8 +176,10 @@ export default function App() {
       // An `error` frame is not: it is shown even when idle (it never touches the messages).
       if (TURN_FRAMES.has(f.type) && !streamingRef.current) return;
       // 085: this frame's status change, applied once after the switch (only the live status
-      // subscribes to it, so it never re-renders the app).
-      const turnStatus: Partial<TurnStatusState> = f.type !== "token" ? { quietSince: Date.now() } : {};
+      // subscribes to it, so it never re-renders the app). 088b: answer text after a retry or
+      // fallback notice clears it (a no-op in the store while there is none).
+      const turnStatus: Partial<TurnStatusState> =
+        f.type !== "token" ? { quietSince: Date.now() } : { notice: null };
       switch (f.type) {
         case "meta":
           turnConvRef.current = f.conversation_id;
@@ -360,44 +386,51 @@ export default function App() {
   // 085 (SEC-001): the server learns of a drop only at its next send, which can come after this
   // reload (say, at the end of a tool call). Until it has saved, the chat has no agent message
   // and our copy is shown; it can be text the turn retracted. So while nothing is saved, check
-  // again a few times (DROP_RECHECK_MS); the saved partial then replaces our copy.
+  // again (DROP_RECHECK_MS); the saved partial then replaces our copy. A new turn, opening a chat
+  // or a newer drop stops the rechecks (stopRechecks); a failed fetch counts as one and goes on.
   const reloadAfterDrop = useCallback((drop: { conversationId: string; partial: string }) => {
+    stopRechecks();
+    const chain = recheckRef.current.chain;
     const seq = turnSeqRef.current;
+    const current = () =>
+      recheckRef.current.chain === chain &&
+      activeIdRef.current === drop.conversationId &&
+      turnSeqRef.current === seq &&
+      !streamingRef.current;
+    const next = (attempt: number) => {
+      if (attempt < DROP_RECHECK_MS.length) {
+        recheckRef.current.timer = setTimeout(() => void load(attempt + 1), DROP_RECHECK_MS[attempt]);
+      }
+    };
     const load = async (attempt: number) => {
-      recheckRef.current = null;
+      recheckRef.current.timer = null;
       try {
         const detail = await getConversation(drop.conversationId);
-        if (
-          activeIdRef.current !== drop.conversationId ||
-          turnSeqRef.current !== seq ||
-          streamingRef.current
-        ) {
-          return;
-        }
+        if (!current()) return;
         const loaded: Message[] = detail.messages.map((m) => ({ ...m }));
         const saved = loaded[loaded.length - 1]?.role === "agent";
         // The backend saved nothing of the cut-off answer (yet, or a restart lost it): our copy.
         if (drop.partial && !saved) {
           loaded.push({ role: "agent", content: drop.partial });
         }
-        setMessages(loaded);
-        setLooseProposals((detail.proposals ?? []).filter((p) => p.message_seq == null));
-        if (!saved && attempt < DROP_RECHECK_MS.length) {
-          recheckRef.current = setTimeout(() => void load(attempt + 1), DROP_RECHECK_MS[attempt]);
+        setMessages((shown) => keepUnchanged(shown, loaded));
+        const loose = (detail.proposals ?? []).filter((p) => p.message_seq == null);
+        setLooseProposals((shown) => (sameProposals(shown, loose) ? shown : loose));
+        if (saved) {
+          if (dropRef.current === drop) dropRef.current = null;
+        } else {
+          next(attempt);
         }
       } catch {
         // Not kept when a new turn began or the chat changed while the request was in flight.
-        if (attempt === 0 && turnSeqRef.current === seq && activeIdRef.current === drop.conversationId) {
-          dropRef.current ??= drop;
-        }
+        if (!current()) return;
+        dropRef.current ??= drop; // the next reconnect tries again too
+        next(attempt);
       }
     };
-    if (recheckRef.current !== null) clearTimeout(recheckRef.current);
     return load(0);
-  }, []);
-  useEffect(() => () => {
-    if (recheckRef.current !== null) clearTimeout(recheckRef.current);
-  }, []);
+  }, [stopRechecks]);
+  useEffect(() => stopRechecks, [stopRechecks]);
 
   // The socket's connection changes. A drop while a turn streams ends that turn here: the
   // new socket has no turn running, so no done/error frame will ever arrive (sc-376).
@@ -497,6 +530,7 @@ export default function App() {
   const selectConversation = useCallback(async (id: string) => {
     greetingReqId.current++; // a late greeting must not land in another chat
     dropRef.current = null; // the chat is loaded from the backend now: no drop to replay
+    stopRechecks();
     const detail = await getConversation(id);
     activeIdRef.current = id;
     setActiveId(id);
@@ -510,11 +544,12 @@ export default function App() {
     setError(null);
     setSelectedBosses([]);
     activeEncountersRef.current = [];
-  }, []);
+  }, [stopRechecks]);
 
   // US5: open a clean chat and (best-effort) inject a warm Barnaby greeting, unless
   // the user starts typing/sends or switches chats first (then a late greeting is ignored).
   const newChat = useCallback(() => {
+    stopRechecks(); // 088b: a chat switch ends a drop's rechecks
     activeIdRef.current = null;
     setActiveId(null);
     setMessages([]);
@@ -537,7 +572,7 @@ export default function App() {
       .catch(() => {
         /* no greeting — a clean chat is fine */
       });
-  }, [setCards]);
+  }, [setCards, stopRechecks]);
 
   const removeConversation = useCallback(
     async (id: string) => {
@@ -576,6 +611,7 @@ export default function App() {
       turnConvRef.current = convId;
       turnSeqRef.current++;
       dropRef.current = null; // a drop kept after a failed reload is stale once a turn follows
+      stopRechecks();
       setError(null);
       setMessages((m) => [...m, { role: "user", content: text }]);
       streamRef.current = "";
@@ -599,7 +635,7 @@ export default function App() {
       }
       return !!ok;
     },
-    [setCards, setStreaming],
+    [setCards, setStreaming, stopRechecks],
   );
 
   // US4: fold the ticked bosses into the next message text (visible), then clear the

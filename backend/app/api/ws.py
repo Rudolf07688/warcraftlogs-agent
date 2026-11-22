@@ -200,13 +200,22 @@ def _retry_frame(record: dict) -> ModelRetryFrame:
     """The ``model_retry`` frame with finite, non-negative numbers (085).
 
     ``send_json`` writes a non-finite float as a bare ``NaN``/``Infinity``, which the browser's
-    ``JSON.parse`` rejects, so the retry label would never show. The shape is unchanged.
+    ``JSON.parse`` rejects, so the retry label would never show. The shape is unchanged. 088b: the
+    same for the attempt numbers; a value that is not a finite number becomes 0 instead of raising
+    (``int(nan)``), which would end the turn on the error path.
     """
-    wait_s = float(record.get("wait_s") or 0.0)
+
+    def finite(key: str) -> float:
+        try:
+            value = float(record.get(key) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+        return value if math.isfinite(value) and value > 0 else 0.0
+
     return ModelRetryFrame(
-        attempt=max(int(record.get("attempt") or 0), 0),
-        max_attempts=max(int(record.get("max_attempts") or 0), 0),
-        wait_s=wait_s if math.isfinite(wait_s) and wait_s > 0 else 0.0,
+        attempt=int(finite("attempt")),
+        max_attempts=int(finite("max_attempts")),
+        wait_s=finite("wait_s"),
     )
 
 
