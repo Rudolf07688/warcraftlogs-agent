@@ -28,7 +28,7 @@ import logging
 import random
 import time
 from collections.abc import AsyncGenerator, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any
 
@@ -101,8 +101,11 @@ class TurnStats:
     # 079 sc-568: the instruction's time block as the turn's first Claude request sent it, so
     # every later request of the turn repeats it and its cached prompt stays valid.
     pinned_time: str | None = None
-    # 079 sc-567: Claude calls that ended on max_tokens with only thinking and were re-run.
+    # 079 sc-567: Claude calls that ended on max_tokens with only thinking and were re-run
+    # (084 sc-580: also those cut at CLAUDE_CALL_TIMEOUT_S before any answer text).
     budget_retries: int = 0
+    # 084 sc-586: Gemini calls that ended STOP with nothing in them and were re-run.
+    empty_retries: int = 0
 
     def record_prompt_tokens(self, count: int | None, cached: int | None = None) -> None:
         if count is None:
@@ -110,6 +113,11 @@ class TurnStats:
         self.last_prompt_tokens = count
         self.max_prompt_tokens = max(self.max_prompt_tokens or 0, count)
         self.last_cached_tokens = cached
+
+    @property
+    def reruns(self) -> int:
+        """Re-runs of this turn's model calls so far (at most one per call, any kind)."""
+        return self.budget_retries + self.empty_retries
 
     @property
     def tool_rounds(self) -> int:
@@ -443,12 +451,34 @@ class RetryingGemini(Gemini):
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
     ) -> AsyncGenerator[LlmResponse, None]:
-        async for response in generate_with_fallback(
-            lambda: super(RetryingGemini, self).generate_content_async(llm_request, stream),
-            llm_request,
-            self.policy,
-            may_switch=self.may_switch,
-        ):
+        """The retrying call, re-run once when it ends STOP with nothing in it (084 sc-586).
+
+        Gemini sometimes ends a call STOP with no text, no function call and 0 candidate
+        tokens, on a first call as well as after a tool round; the turn would end with the
+        no-answer message. That final response is held back and the call runs once more; the
+        second outcome stands, whatever it is. Counted in ``TurnStats.empty_retries``.
+        """
+
+        def call():
+            return generate_with_fallback(
+                lambda: super(RetryingGemini, self).generate_content_async(llm_request, stream),
+                llm_request,
+                self.policy,
+                may_switch=self.may_switch,
+            )
+
+        watch = _CallWatch()
+        async for response in _watch(call(), watch, _empty_stop):
+            yield response
+        if watch.held is None:
+            return
+        _count_rerun(current_turn.get(), "empty")
+        logger.warning(
+            "gemini call %s ended STOP with no text, no function call and no output tokens; "
+            "retrying once",
+            llm_request.model,
+        )
+        async for response in call():
             yield response
 
 
@@ -462,6 +492,10 @@ CLAUDE_MAX_TOKENS = 32_000
 CLAUDE_NONSTREAM_MAX_TOKENS = 16_000
 # The effort of the one re-run of a call that ended on max_tokens with only thinking.
 BUDGET_RETRY_EFFORT = "low"
+# 084 sc-580: the longest a streamed Claude chat request may run, thinking included, before it is
+# cut off and handled like the thinking-only cut-off (scope:084:claude-call-time). Each request
+# gets its own (a rate-limit retry starts a new one); the waits between them are not counted.
+CLAUDE_CALL_TIMEOUT_S = 180.0
 # 079 sc-568: the instruction's last section, the only part that changes during a session.
 _TIME_OPEN, _TIME_CLOSE = "<CURRENT_TIME>", "</CURRENT_TIME>"
 
@@ -487,6 +521,105 @@ def _pin_time_block(system: Any, stats: TurnStats | None) -> Any:
             stats.pinned_time = block
         block = stats.pinned_time
     return [{**system[0], "text": head}, {"type": "text", "text": block + rest}]
+
+
+# --- one re-run per model call (079 sc-567, 084 sc-580 / sc-586) -------------------------------
+
+
+class ModelCallTimedOut(Exception):
+    """A streamed model request ran past its time bound and was cut off (084 sc-580)."""
+
+
+async def _within(gen: AsyncGenerator[Any, None], seconds: float) -> AsyncGenerator[Any, None]:
+    """Pass ``gen`` on until ``seconds`` have passed on :data:`_clock`, then cut it off.
+
+    The bound holds while waiting for the next chunk (``asyncio.timeout``, in this task, so a
+    stream that sends nothing more is cut too) and for each chunk as it arrives (one that comes
+    in past the bound is dropped). ``gen`` is always closed, so a cut-off stream releases its
+    connection. Raises :class:`ModelCallTimedOut` on a cut.
+    """
+    deadline = _clock() + seconds
+    try:
+        while True:
+            bound = asyncio.timeout(max(deadline - _clock(), 0.0))
+            try:
+                async with bound:
+                    item = await anext(gen)
+            except StopAsyncIteration:
+                return
+            except TimeoutError:
+                if bound.expired():
+                    raise ModelCallTimedOut(f"model request cut off after {seconds:g}s") from None
+                raise
+            if _clock() > deadline:
+                raise ModelCallTimedOut(f"model request cut off after {seconds:g}s")
+            yield item
+    finally:
+        await gen.aclose()
+
+
+@dataclass
+class _CallWatch:
+    """What one model call did, as :func:`_watch` saw it."""
+
+    held: LlmResponse | None = None  # the final response held back for a re-run
+    text: list[str] = field(default_factory=list)  # answer text streamed so far
+    final: bool = False  # a final (non-partial) response went out
+    timed_out: bool = False
+
+
+async def _watch(
+    responses: AsyncGenerator[LlmResponse, None],
+    watch: _CallWatch,
+    hold: Callable[[LlmResponse], bool],
+) -> AsyncGenerator[LlmResponse, None]:
+    """Pass a call's responses on, holding back the final one ``hold`` picks, noting the answer
+    text streamed and stopping quietly on a time cut-off (``watch.timed_out``)."""
+    try:
+        async for response in responses:
+            if hold(response):
+                watch.held = response
+                continue
+            if response.partial:
+                parts = response.content.parts if response.content else None
+                watch.text.extend(p.text for p in parts or [] if p.text and not p.thought)
+            else:
+                watch.final = True
+            yield response
+    except ModelCallTimedOut:
+        watch.timed_out = True
+
+
+def _count_rerun(stats: TurnStats | None, kind: str) -> None:
+    """A re-run is one more model request, so one more round toward ``round_cap`` (sc-580 SEC-001)."""
+    if stats is None:
+        return
+    stats.model_requests += 1
+    if kind == "empty":
+        stats.empty_retries += 1
+    else:
+        stats.budget_retries += 1
+
+
+def _cut_response(text: list[str]) -> LlmResponse:
+    """The final response of a call cut off at its time bound: the answer text it streamed, if any
+    (scope:084:time-cut-after-text), so the turn and its history keep what the player saw."""
+    joined = "".join(text)
+    return LlmResponse(
+        content=genai_types.Content(role="model", parts=[genai_types.Part(text=joined)]) if joined else None,
+        finish_reason=genai_types.FinishReason.MAX_TOKENS,
+        partial=False,
+    )
+
+
+def _empty_stop(response: LlmResponse) -> bool:
+    """A final response that ended STOP with no answer text, no tool call and no output tokens."""
+    if response.partial or response.finish_reason != genai_types.FinishReason.STOP:
+        return False
+    parts = response.content.parts if response.content else None
+    if any((p.text and not p.thought) or p.function_call for p in parts or []):
+        return False
+    return not getattr(response.usage_metadata, "candidates_token_count", None)
 
 
 def _thinking_only_cutoff(response: LlmResponse) -> bool:
@@ -573,41 +706,55 @@ if _Claude is not None:
             end the turn with no answer. It is held back (its thought partials have streamed,
             but no answer text) and the call runs once more at ``BUDGET_RETRY_EFFORT``; that
             second outcome stands, whatever it is. Counted in ``TurnStats.budget_retries``.
+
+            084 sc-580: each streamed request runs at most ``CLAUDE_CALL_TIMEOUT_S`` (thinking
+            included). A request cut off before any answer text is handled like the budget
+            cut-off; one cut off after answer text began ends with that text (a re-run would
+            repeat it), as does a cut-off re-run.
             """
             if not stream:
                 llm_request.config = llm_request.config or genai_types.GenerateContentConfig()
                 if llm_request.config.max_output_tokens is None:
                     llm_request.config.max_output_tokens = CLAUDE_NONSTREAM_MAX_TOKENS
 
-            def call():
-                return generate_with_fallback(
-                    lambda: super(RetryingClaude, self).generate_content_async(llm_request, stream),
-                    llm_request,
-                    self.policy,
-                )
+            def request():
+                responses = super(RetryingClaude, self).generate_content_async(llm_request, stream)
+                return _within(responses, CLAUDE_CALL_TIMEOUT_S) if stream else responses
 
-            cut_off: LlmResponse | None = None
-            async for response in call():
-                if _thinking_only_cutoff(response):
-                    cut_off = response
-                    continue
+            def call():
+                return generate_with_fallback(request, llm_request, self.policy)
+
+            watch = _CallWatch()
+            async for response in _watch(call(), watch, _thinking_only_cutoff):
                 yield response
-            if cut_off is None:
+            if watch.timed_out and (watch.text or watch.final):
+                if not watch.final:
+                    yield _cut_response(watch.text)
                 return
-            stats = current_turn.get()
-            if stats is not None:
-                stats.budget_retries += 1
-            usage = cut_off.usage_metadata
-            logger.warning(
-                "claude call %s ended on max_tokens with no answer (thoughts_tokens=%s); "
-                "retrying once at effort=%s",
-                llm_request.model,
-                getattr(usage, "thoughts_token_count", None),
-                BUDGET_RETRY_EFFORT,
-            )
+            if watch.held is None and not watch.timed_out:
+                return
+            _count_rerun(current_turn.get(), "budget")
+            if watch.timed_out:
+                logger.warning(
+                    "claude call %s ran past %gs with no answer; retrying once at effort=%s",
+                    llm_request.model,
+                    CLAUDE_CALL_TIMEOUT_S,
+                    BUDGET_RETRY_EFFORT,
+                )
+            else:
+                logger.warning(
+                    "claude call %s ended on max_tokens with no answer (thoughts_tokens=%s); "
+                    "retrying once at effort=%s",
+                    llm_request.model,
+                    getattr(watch.held.usage_metadata, "thoughts_token_count", None),
+                    BUDGET_RETRY_EFFORT,
+                )
             llm_request.config = _with_effort(llm_request.config, BUDGET_RETRY_EFFORT)
-            async for response in call():
+            rerun = _CallWatch()
+            async for response in _watch(call(), rerun, lambda _response: False):
                 yield response
+            if rerun.timed_out and not rerun.final:
+                yield _cut_response(rerun.text)
 
 else:  # pragma: no cover - only without the anthropic extra
     RetryingClaude = None  # type: ignore[assignment,misc]
