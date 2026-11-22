@@ -247,6 +247,12 @@ def report_link(code: str, fight_id: int | None = None) -> str:
     return f"{url}#fight={fight_id}" if fight_id is not None else url
 
 
+def _realm_key(server: str) -> str:
+    """A realm compared on letters and digits only: the report's actors drop the spaces that the
+    rankings keep ("Twilight'sHammer" vs "Twilight's Hammer", live F2)."""
+    return "".join(c for c in server.casefold() if c.isalnum())
+
+
 def _player_block(resolved, row: PercentileContext | None, extra: dict[str, Any]) -> dict[str, Any]:
     return {
         "name": resolved.name,
@@ -385,7 +391,7 @@ async def compare_player_to_cohort(
         (
             r for r in rows
             if (r.name or "").casefold() == resolved.name.casefold()
-            and (not resolved.server or not r.server or r.server.casefold() == resolved.server.casefold())
+            and (not resolved.server or not r.server or _realm_key(r.server) == _realm_key(resolved.server))
         ),
         None,
     )

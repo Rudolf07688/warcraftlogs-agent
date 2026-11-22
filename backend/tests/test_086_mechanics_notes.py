@@ -181,7 +181,8 @@ async def test_an_ability_named_with_another_boss_is_a_miss_naming_its_boss():
     assert await get_boss_mechanics("nekzali gravebound") == {
         "status": "success",
         "found": False,
-        "message": "Not in my mechanic guides for Nek'zali the Soulcoiler.",
+        "message": "Gravebound is not a Nek'zali the Soulcoiler mechanic in my guides; it is The Coiled Altar's. "
+                   "Tell the user which boss it belongs to.",
         "found_under": ["The Coiled Altar"],
     }
 

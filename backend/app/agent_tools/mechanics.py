@@ -33,6 +33,9 @@ _DIFFICULTY_WORDS = frozenset({"lfr", "normal", "heroic", "mythic"})
 SOURCE_HOSTS = frozenset({"www.method.gg", "warcraft.wiki.gg"})
 _SOURCE_URL = re.compile(r"https://([a-z0-9.-]+)(?:/[A-Za-z0-9._~%!$&'()*+,;=:/-]*)?")
 _MARKUP = re.compile(r"[<>\[\]{}`|\\#*]")
+# A link lives only in Source.url (SEC-002): a scheme, "www." or a domain-like token in prose would
+# be autolinked to any host by the chat's renderer.
+_LINK = re.compile(r"://|\bwww\.|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b", re.IGNORECASE)
 _INSTRUCTION = re.compile(
     r"\b(?:ignore|disregard|forget)\b.{0,40}\b(?:previous|prior|above|earlier|instructions?|rules)\b"
     r"|\b(?:system|assistant|user|developer|human|tool)\s*:"
@@ -50,6 +53,8 @@ def _plain(text: str) -> str:
         raise ValueError("markup character")
     if _INSTRUCTION.search(folded):
         raise ValueError("instruction-like text")
+    if _LINK.search(folded):
+        raise ValueError("link in prose")
     return text
 
 
@@ -164,13 +169,22 @@ def _candidates(key: str) -> tuple[list[tuple[Encounter, Ability]], Encounter | 
     return found, named[0] if len({id(e) for e in named}) == 1 else None
 
 
-def _miss(found_under: list[Encounter], named: Encounter | None) -> dict:
-    """A miss; ``found_under`` names (canonically) where the ability is, if anywhere."""
+def _miss(found_under: list[tuple[Encounter, Ability]], named: Encounter | None) -> dict:
+    """A miss; ``found_under`` names (canonically) where the ability is, if anywhere. With a boss
+    asked about, the message says outright that the ability is another boss's (live F1)."""
     result: dict = {"status": "success", "found": False, "message": _MISS}
     if found_under:
-        if named is not None and named is not _UNKNOWN:
-            result["message"] = f"Not in my mechanic guides for {named.name}."
-        result["found_under"] = list(dict.fromkeys(e.name for e in found_under))
+        bosses = list(dict.fromkeys(e.name for e, _ in found_under))
+        if named is not None:
+            names = list(dict.fromkeys(ab.name for _, ab in found_under))
+            ability = names[0] if len(names) == 1 else "That ability"
+            boss = "that boss's" if named is _UNKNOWN else f"a {named.name}"
+            owner = f"{bosses[0]}'s" if len(bosses) == 1 else "under " + ", ".join(bosses)
+            result["message"] = (
+                f"{ability} is not {boss} mechanic in my guides; it is {owner}. "
+                "Tell the user which boss it belongs to."
+            )
+        result["found_under"] = bosses
     return result
 
 
@@ -198,7 +212,7 @@ async def get_boss_mechanics(ability: str, encounter: str | None = None) -> dict
     else:
         hits = candidates if len({id(e) for e, _ in candidates}) == 1 else []
     if not hits:
-        return _miss([e for e, _ in candidates], named)
+        return _miss(candidates, named)
     enc, note = hits[0]
     return {
         "status": "success",
